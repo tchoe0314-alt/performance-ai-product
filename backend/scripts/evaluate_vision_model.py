@@ -15,9 +15,26 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     parser.add_argument("--iou-threshold", type=float, default=0.5)
     args = parser.parse_args()
-    predictions = _records(_read_json(args.predictions), ("predictions", "detections", "features", "annotations"))
-    ground_truth = _records(_read_json(args.ground_truth), ("ground_truth", "features", "annotations"))
-    quality = evaluate_quality_by_class(predictions, ground_truth, iou_threshold=args.iou_threshold)
+    predictions_payload = _read_json(args.predictions)
+    ground_truth_payload = _read_json(args.ground_truth)
+    predictions = _records(predictions_payload, ("predictions", "detections", "features", "annotations"))
+    ground_truth = _records(ground_truth_payload, ("ground_truth", "features", "annotations"))
+    reviewed_ground_truth = bool(
+        isinstance(ground_truth_payload, dict)
+        and ground_truth_payload.get("supervision_status") == "reviewer_labeled"
+        and ground_truth_payload.get("promotion_eligible") is True
+    )
+    evaluation_status = "measured_against_ground_truth" if reviewed_ground_truth else "unattested_or_weak_label_diagnostic"
+    quality = evaluate_quality_by_class(
+        predictions,
+        ground_truth,
+        iou_threshold=args.iou_threshold,
+        evaluation_status=evaluation_status,
+    )
+    quality["promotion_eligible"] = reviewed_ground_truth
+    quality["evaluation_blockers"] = [] if reviewed_ground_truth else [
+        "reviewed_ground_truth_attestation_missing"
+    ]
     output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(quality, indent=2, sort_keys=True) + "\n", encoding="utf-8")

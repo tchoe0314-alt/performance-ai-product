@@ -171,7 +171,7 @@ export function useDashboardPlacementActionHandlers({
 
   const handleCreateCustomGeometry = useCallback(
     (payload: DashboardCustomGeometryPayload) => {
-      runDashboardCreateCustomGeometry({
+      return runDashboardCreateCustomGeometry({
         payload,
         buildingPlacementsRef,
         siteScaleLocked,

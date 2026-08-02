@@ -109,6 +109,21 @@ class VisionModelLifecycleTests(unittest.TestCase):
         self.assertFalse(blocked["eligible"])
         self.assertIn("ground_truth_evaluation_missing", blocked["blockers"])
 
+    def test_weak_diagnostic_status_is_preserved_per_class(self) -> None:
+        truth = [{"kind": "building", "geometry": _polygon(0, 0, 10, 10)}]
+
+        quality = evaluate_quality_by_class(
+            [{**truth[0], "confidence": 0.9}],
+            truth,
+            evaluation_status="unattested_or_weak_label_diagnostic",
+        )
+
+        self.assertEqual(quality["evaluation_status"], "unattested_or_weak_label_diagnostic")
+        self.assertEqual(
+            quality["per_class"]["building"]["evaluation_status"],
+            "unattested_or_weak_label_diagnostic",
+        )
+
     def test_manifest_is_promoted_only_with_quality_provenance_and_approver(self) -> None:
         quality = {
             "evaluation_status": "measured_against_ground_truth",

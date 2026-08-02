@@ -286,6 +286,10 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
     responseProjectInput.meta = responseProjectInput.meta ?? {};
     responseProjectInput.meta.site_inputs = {
       ...(responseProjectInput.meta.site_inputs ?? {}),
+      // Simulate an older backend project shell racing the current browser
+      // workspace. Candidate review state is authoritative, but this stale
+      // lock flag must not replace the user's newer locked site.
+      site_alignment_locked: false,
       // The top-level inbox is the authoritative decision response. Keep the
       // project snapshot stale here to prove the UI reconciles both payloads.
       candidate_review_inbox_v1: candidateInbox(),
@@ -493,6 +497,8 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect
     .poll(() => JSON.stringify(savedProjectInput), { timeout: 30_000 })
     .toContain("online_existing_conditions_discovery_v1");
+  await expect.poll(() => JSON.stringify(savedProjectInput), { timeout: 30_000 }).toContain('"site_alignment_locked":true');
+  await expect.poll(() => JSON.stringify(savedProjectInput), { timeout: 30_000 }).toContain("site_boundary_geometry");
   await expect(page.getByTestId("object-manager-panel")).toBeVisible();
   await page.getByRole("button", { name: "Setup" }).first().click();
 
@@ -563,7 +569,8 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   } else {
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Local (site coordinates|drawing scale|review canvas site extent)/i);
     await expect(page.getByTestId("preview-inner-map-toggle")).toBeDisabled();
-    await expect(page.getByTestId("local-site-bounds-overlay")).toBeVisible();
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+    await expect(page.getByTestId("local-site-bounds-overlay")).toHaveCount(0);
   }
 
   await expect(page.getByTestId("auto-site-context-summary")).toBeVisible({ timeout: 30_000 });
@@ -610,6 +617,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(detectedItems.getByRole("button", { name: "Reject" }).first()).toBeDisabled();
   releaseCandidateDecision();
   await expect(detectedItems).toContainText("Detected Items · 2 To Review");
+  await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   await expect(buildingCandidate).toContainText(/accepted/i);
   await expect(buildingCandidate.getByRole("button", { name: "Accept" })).toBeDisabled();
   const roadCandidate = detectedItems.locator('[data-candidate-id="road-1"]');
@@ -628,6 +636,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(visionCandidate).toContainText(/accepted/i);
   await expect.poll(() => lastVisionCorrectionPayload?.correction_coordinate_space).toBe("project_local");
   await expect.poll(() => (lastVisionCorrectionPayload?.corrected_geometry as { type?: string } | undefined)?.type).toBe("Polygon");
+  await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("1 reviewed");
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("0 rights-cleared");
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("Accuracy is not claimed");
@@ -647,6 +656,10 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   expect(manifestText).not.toContain("access_token");
 
   await page.getByRole("button", { name: "Draw" }).first().click();
+  await cadTools.getByTestId("cad-tool-box").filter({ visible: true }).first().click();
+  await clickExposedSurface(drawingSurface, 0.52, 0.4);
+  await clickExposedSurface(drawingSurface, 0.64, 0.55);
+  await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Rectangle/ }).first()).toBeVisible();
   await expect(page.getByTestId("object-manager-panel")).toContainText("Test Buildings");
   await expect(
     page.getByTestId("object-manager-row").filter({ hasText: "Test Buildings" }).first(),

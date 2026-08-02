@@ -23,6 +23,7 @@ def main() -> int:
     parser.add_argument("--learning-rate", type=float, default=0.0003)
     parser.add_argument("--image-size", type=int, default=512)
     parser.add_argument("--base-channels", type=int, default=32)
+    parser.add_argument("--background-weight", type=float, default=0.25)
     parser.add_argument("--seed", type=int, default=41)
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
@@ -172,7 +173,9 @@ def main() -> int:
     )
     model = CivoraUNet(class_count, max(8, args.base_channels)).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
-    criterion = nn.CrossEntropyLoss()
+    class_weights = torch.ones(class_count, dtype=torch.float32, device=device)
+    class_weights[0] = min(max(float(args.background_weight), 0.01), 1.0)
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     history: List[Dict[str, float]] = []
     best_validation_loss = float("inf")
     checkpoint_path = output_dir / "best_state_dict.pt"
@@ -217,6 +220,9 @@ def main() -> int:
         "training_image_count": len(images_by_split["train"]),
         "validation_image_count": len(images_by_split["validation"]),
         "test_image_count": len(images_by_split["test"]),
+        "supervision_status": str(dataset_payload.get("supervision_status") or "unspecified"),
+        "training_dataset_promotion_eligible": dataset_payload.get("promotion_eligible") is True,
+        "training_dataset_promotion_blockers": list(dataset_payload.get("promotion_blockers") or []),
         "categories": [{"id": 0, "name": "background"}] + categories,
         "hyperparameters": {
             "epochs": args.epochs,
@@ -224,6 +230,7 @@ def main() -> int:
             "learning_rate": args.learning_rate,
             "image_size": args.image_size,
             "base_channels": args.base_channels,
+            "background_weight": round(float(class_weights[0].detach().cpu()), 4),
             "seed": args.seed,
             "device": device_name,
         },
@@ -232,7 +239,11 @@ def main() -> int:
         "onnx_path": onnx_path.name,
         "checkpoint_path": checkpoint_path.name,
         "promotion_ready": False,
-        "promotion_blocker": "Run object-level ground-truth evaluation and the promotion gate before deployment.",
+        "promotion_blocker": (
+            "Review weak labels image by image before evaluation and promotion."
+            if dataset_payload.get("promotion_eligible") is not True
+            else "Run object-level ground-truth evaluation and the promotion gate before deployment."
+        ),
         "truth_label": (
             "Training/validation loss and pixel IoU describe this run only. They are not deployment quality, survey/control, "
             "or engineering evidence."

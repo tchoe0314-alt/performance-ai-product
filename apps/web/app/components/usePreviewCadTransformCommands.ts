@@ -64,12 +64,16 @@ export function usePreviewCadTransformCommands({
         pushCadCommandFeedback(command, "blocked", `${command.toUpperCase()} blocked: expected at least ${minPoints} coordinate point${minPoints === 1 ? "" : "s"}.`);
         return false;
       }
-      onCreateCustomGeometry({
+      const created = onCreateCustomGeometry({
         mode,
         points,
         label: options.label,
         meta: buildReviewRequiredCommandMeta(command, options.meta),
       });
+      if (!created) {
+        pushCadCommandFeedback(command, "blocked", `${command.toUpperCase()} was not added. Confirm and lock the site boundary, then try again.`);
+        return false;
+      }
       pushCadCommandFeedback(command, "applied", buildDraftGeometryCreatedMessage(command));
       return true;
     },
@@ -254,7 +258,7 @@ export function usePreviewCadTransformCommands({
             : target.geometryType === "polyline"
               ? "polyline"
               : "polygon";
-        onCreateCustomGeometry({
+        const didCreate = onCreateCustomGeometry({
           mode,
           points: copiedGeometry,
           label: `${target.label || "Draft object"} Copy`,
@@ -267,7 +271,8 @@ export function usePreviewCadTransformCommands({
             cad_layer: getCadLayer(target),
           }),
         });
-        created += 1;
+        if (didCreate) created += 1;
+        else blocked += 1;
       });
       pushCadCommandFeedback(
         "COPY",

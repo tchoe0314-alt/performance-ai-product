@@ -203,7 +203,7 @@ export function usePreviewDraftGeometry({
       if (drawMode === "site") {
         onCreateSiteBoundary?.({ points: cleaned.value });
       } else {
-        onCreateCustomGeometry({
+        const created = onCreateCustomGeometry({
           mode: drawMode,
           points: cleaned.value,
           meta: {
@@ -212,6 +212,10 @@ export function usePreviewDraftGeometry({
             polygon_holes_blocked_reason: "Canvas polygon editor supports one exterior ring only.",
           },
         });
+        if (!created) {
+          pushCadCommandFeedback("AREA", "blocked", "AREA was not added. Confirm and lock the site boundary, then try again.");
+          return;
+        }
       }
       setCadCommandStatus("POLYGON cleaned and stored as draft review geometry.");
       pushCadCommandFeedback(
@@ -228,7 +232,15 @@ export function usePreviewDraftGeometry({
       setDrawMode("select");
       return;
     }
-    onCreateCustomGeometry({ mode: drawMode, points: effectivePoints });
+    const created = onCreateCustomGeometry({ mode: drawMode, points: effectivePoints });
+    if (!created) {
+      pushCadCommandFeedback(
+        drawMode === "rect" ? "BOX" : "LINE",
+        "blocked",
+        `${drawMode === "rect" ? "BOX" : "LINE"} was not added. Confirm and lock the site boundary, then try again.`,
+      );
+      return;
+    }
     pushCadCommandFeedback(
       drawMode === "rect" ? "BOX" : "LINE",
       "applied",
@@ -304,7 +316,11 @@ export function usePreviewDraftGeometry({
       setActiveSnapPoint(sitePoint);
       const point: [number, number] = [sitePoint.x, sitePoint.y];
       if (drawMode === "point") {
-        onCreateCustomGeometry({ mode: "point", points: [point] });
+        const created = onCreateCustomGeometry({ mode: "point", points: [point] });
+        if (!created) {
+          pushCadCommandFeedback("POINT", "blocked", "POINT was not added. Confirm and lock the site boundary, then try again.");
+          return true;
+        }
         clearDraftGeometry();
         setDrawMode("select");
         return true;
@@ -315,7 +331,11 @@ export function usePreviewDraftGeometry({
           setDraftPoints([point]);
           return true;
         }
-        onCreateCustomGeometry({ mode: "rect", points: [currentDraftPoints[0], point] });
+        const created = onCreateCustomGeometry({ mode: "rect", points: [currentDraftPoints[0], point] });
+        if (!created) {
+          pushCadCommandFeedback("BOX", "blocked", "BOX was not added. Confirm and lock the site boundary, then try again.");
+          return true;
+        }
         pushCadCommandFeedback("BOX", "applied", buildDraftGeometryCreatedMessage("BOX"));
         setDrawMode("select");
         setDraftPreviewPoint(null);
@@ -368,7 +388,7 @@ export function usePreviewDraftGeometry({
             pushCadCommandFeedback("AREA", "blocked", `AREA blocked: ${reason}`);
             return true;
           }
-          onCreateCustomGeometry({
+          const created = onCreateCustomGeometry({
             mode: "polygon",
             points: cleaned.value,
             meta: {
@@ -377,9 +397,17 @@ export function usePreviewDraftGeometry({
               polygon_holes_blocked_reason: "Canvas polygon editor supports one exterior ring only.",
             },
           });
+          if (!created) {
+            pushCadCommandFeedback("AREA", "blocked", "AREA was not added. Confirm and lock the site boundary, then try again.");
+            return true;
+          }
           pushCadCommandFeedback("AREA", "applied", buildDraftGeometryCreatedMessage("AREA"));
         } else {
-          onCreateCustomGeometry({ mode: "polyline", points: nextPoints });
+          const created = onCreateCustomGeometry({ mode: "polyline", points: nextPoints });
+          if (!created) {
+            pushCadCommandFeedback("LINE", "blocked", "LINE was not added. Confirm and lock the site boundary, then try again.");
+            return true;
+          }
           pushCadCommandFeedback("LINE", "applied", buildDraftGeometryCreatedMessage("LINE"));
         }
         setDrawMode("select");

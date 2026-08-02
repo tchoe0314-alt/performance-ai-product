@@ -7,12 +7,77 @@ import type {
   CivoraVisionTrainingDataset,
   DesignAlternativesV1,
   PlanResponse,
+  ProjectInput,
   ProjectRecord,
 } from "../types";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 
 type DesignAlternativesAction = "generate" | "compare" | "choose" | "merge" | "revise";
+
+const CANDIDATE_REVIEW_SITE_INPUT_KEYS = [
+  "candidate_review_inbox_v1",
+  "candidate_review_decisions_v1",
+  "candidate_review_accepted_drafts_v1",
+  "candidate_review_rejected_v1",
+  "source_confidence_map_v1",
+  "civora_vision_training_dataset_v1",
+  "civora_vision_quality_report_v1",
+] as const;
+
+export function mergeCandidateReviewProject({
+  currentProject,
+  responseProject,
+  preserveSiteAlignmentLocked,
+  candidateReviewInbox,
+  visionTrainingDataset,
+  visionQualityReport,
+}: {
+  currentProject: ProjectRecord | null;
+  responseProject: ProjectRecord;
+  preserveSiteAlignmentLocked?: boolean;
+  candidateReviewInbox?: CandidateReviewInbox;
+  visionTrainingDataset?: CivoraVisionTrainingDataset;
+  visionQualityReport?: CivoraVisionQualityReport;
+}): ProjectRecord {
+  const currentInput = (currentProject?.project_input ?? {}) as ProjectInput;
+  const responseInput = (responseProject.project_input ?? {}) as ProjectInput;
+  const currentMeta = (currentInput.meta ?? {}) as Record<string, unknown>;
+  const responseMeta = (responseInput.meta ?? {}) as Record<string, unknown>;
+  const currentSiteInputs = (currentMeta.site_inputs ?? {}) as Record<string, unknown>;
+  const responseSiteInputs = (responseMeta.site_inputs ?? {}) as Record<string, unknown>;
+  const candidateState: Record<string, unknown> = {};
+  CANDIDATE_REVIEW_SITE_INPUT_KEYS.forEach((key) => {
+    if (responseSiteInputs[key] !== undefined) candidateState[key] = responseSiteInputs[key];
+  });
+  if (candidateReviewInbox) candidateState.candidate_review_inbox_v1 = candidateReviewInbox;
+  if (visionTrainingDataset) candidateState.civora_vision_training_dataset_v1 = visionTrainingDataset;
+  if (visionQualityReport) candidateState.civora_vision_quality_report_v1 = visionQualityReport;
+
+  return {
+    ...(currentProject ?? {}),
+    ...responseProject,
+    project_input: {
+      ...responseInput,
+      ...currentInput,
+      manual_fields: {
+        ...(responseInput.manual_fields ?? {}),
+        ...(currentInput.manual_fields ?? {}),
+      },
+      meta: {
+        ...responseMeta,
+        ...currentMeta,
+        site_inputs: {
+          ...responseSiteInputs,
+          ...currentSiteInputs,
+          ...candidateState,
+          ...(preserveSiteAlignmentLocked ? { site_alignment_locked: true } : {}),
+        },
+      },
+    },
+    latest_result: responseProject.latest_result ?? currentProject?.latest_result ?? null,
+  } as ProjectRecord;
+}
 
 function patchPlanMeta(
   setBackendResult: StateSetter<PlanResponse | null>,
@@ -36,6 +101,8 @@ function patchPlanMeta(
 export async function runDashboardCandidateReviewDecision({
   action,
   candidateId,
+  currentProject,
+  siteScaleLocked,
   currentProjectId,
   projectId,
   setBackendResult,
@@ -46,6 +113,8 @@ export async function runDashboardCandidateReviewDecision({
 }: {
   action: CandidateReviewDecision;
   candidateId: string;
+  currentProject: ProjectRecord | null;
+  siteScaleLocked: boolean;
   currentProjectId?: string;
   projectId: string;
   setBackendResult: StateSetter<PlanResponse | null>;
@@ -99,27 +168,14 @@ export async function runDashboardCandidateReviewDecision({
       { token },
     );
     const updatedProject = data.project
-      ? {
-          ...data.project,
-          project_input: data.candidate_review_inbox_v1
-            ? {
-                ...(data.project.project_input ?? {}),
-                meta: {
-                  ...(data.project.project_input?.meta ?? {}),
-                  site_inputs: {
-                    ...(data.project.project_input?.meta?.site_inputs ?? {}),
-                    candidate_review_inbox_v1: data.candidate_review_inbox_v1,
-                    ...(data.civora_vision_training_dataset_v1
-                      ? { civora_vision_training_dataset_v1: data.civora_vision_training_dataset_v1 }
-                      : {}),
-                    ...(data.civora_vision_quality_report_v1
-                      ? { civora_vision_quality_report_v1: data.civora_vision_quality_report_v1 }
-                      : {}),
-                  },
-                },
-              }
-            : data.project.project_input,
-        }
+      ? mergeCandidateReviewProject({
+          currentProject,
+          responseProject: data.project,
+          preserveSiteAlignmentLocked: siteScaleLocked,
+          candidateReviewInbox: data.candidate_review_inbox_v1,
+          visionTrainingDataset: data.civora_vision_training_dataset_v1,
+          visionQualityReport: data.civora_vision_quality_report_v1,
+        })
       : null;
     if (updatedProject) {
       setCurrentProject(updatedProject);

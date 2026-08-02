@@ -580,10 +580,14 @@ def evaluate_detection_quality(
     for prediction in sorted(predicted, key=lambda item: safe_float(item.get("confidence")), reverse=True):
         pred_label = safe_str(prediction.get("feature_type") or prediction.get("kind") or prediction.get("label"))
         pred_box = _geometry_bbox(prediction.get("geometry") or prediction.get("geo_geometry"))
+        prediction_scope = _evaluation_scope(prediction)
         best_index = -1
         best_iou = 0.0
         for index, annotation in enumerate(truth):
             if index in matched_truth:
+                continue
+            annotation_scope = _evaluation_scope(annotation)
+            if prediction_scope and annotation_scope and prediction_scope != annotation_scope:
                 continue
             truth_label = safe_str(annotation.get("feature_type") or annotation.get("kind") or annotation.get("label"))
             if pred_label != truth_label:
@@ -613,6 +617,16 @@ def evaluate_detection_quality(
         "f1": round(f1, 4),
         "mean_matched_iou": round(sum(matched_ious) / len(matched_ious), 4) if matched_ious else 0.0,
     }
+
+
+def _evaluation_scope(item: Dict[str, Any]) -> str:
+    if item.get("image_id") not in (None, ""):
+        return f"image:{item.get('image_id')}"
+    frame_id = safe_str(item.get("imagery_frame_id") or item.get("frame_id"))
+    if frame_id:
+        return f"frame:{frame_id}"
+    file_name = safe_str(item.get("file_name"))
+    return f"file:{file_name}" if file_name else ""
 
 
 def build_vision_quality_report(

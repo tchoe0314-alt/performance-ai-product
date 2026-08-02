@@ -602,6 +602,10 @@ function PerformanceAIDashboardView({
   const [previewFullscreenOpen, setPreviewFullscreenOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [currentProject, setCurrentProject] = useState<ProjectRecord | null>(null);
+  const currentProjectRef = useRef<ProjectRecord | null>(currentProject);
+  const siteScaleLockedRef = useRef(siteScaleLocked);
+  currentProjectRef.current = currentProject;
+  siteScaleLockedRef.current = siteScaleLocked;
   const [selectedRunId, setSelectedRunId] = useState("");
   const [activeJobId, setActiveJobId] = useState("");
   const [selectedJobId, setSelectedJobId] = useState("");
@@ -1067,6 +1071,7 @@ function PerformanceAIDashboardView({
   );
   const { candidateDecisionInFlight, handleCandidateReviewDecision, handleExportVisionLearning, handleDesignAlternativesAction } =
     useDashboardReviewWorkflowActions({
+      currentProject,
       currentProjectId: currentProject?.project_id,
       designAlternativeCount: designAlternativeItems.length,
       projectId,
@@ -1075,7 +1080,9 @@ function PerformanceAIDashboardView({
       setBackendResult,
       setBuildingPlacements,
       setCurrentProject,
+      setSiteScaleLocked,
       setStatusMessage,
+      siteScaleLocked,
       token,
     });
   const reactiveChangedSystems = useMemo<EngineeringSystemKey[]>(
@@ -3323,6 +3330,7 @@ function PerformanceAIDashboardView({
     clearGeneratedPreview,
     configuredLocalGisProviderCount: configuredLocalGisProviders.length,
     currentProject,
+    currentProjectRef,
     localGisProviderRegistry,
     payloadPreview,
     projectLoadRequestRef,
@@ -3343,7 +3351,7 @@ function PerformanceAIDashboardView({
     setSiteSelectionMode,
     setViewportCenter,
     siteAddress,
-    siteScaleLocked,
+    siteScaleLockedRef,
     token,
     updateProjectStatus,
   });

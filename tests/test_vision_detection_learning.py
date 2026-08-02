@@ -235,6 +235,29 @@ class VisionDetectionLearningTests(unittest.TestCase):
         self.assertEqual(quality["recall"], 0.5)
         self.assertEqual(quality["geometry_metric"], "class_aware_bounding_box_iou")
 
+    def test_quality_evaluation_does_not_match_geometry_from_different_images(self) -> None:
+        quality = evaluate_detection_quality(
+            [
+                {
+                    "image_id": 1,
+                    "feature_type": "building_footprint",
+                    "geometry": _polygon(0, 0, 10, 10),
+                    "confidence": 0.9,
+                }
+            ],
+            [
+                {
+                    "image_id": 2,
+                    "feature_type": "building_footprint",
+                    "geometry": _polygon(0, 0, 10, 10),
+                }
+            ],
+        )
+
+        self.assertEqual(quality["true_positive"], 0)
+        self.assertEqual(quality["false_positive"], 1)
+        self.assertEqual(quality["false_negative"], 1)
+
     def test_project_local_redraw_is_saved_but_not_training_eligible_until_registered(self) -> None:
         meta = _vision_meta(training_allowed=True)
         meta["candidate_review_inbox_v1"] = build_candidate_review_inbox(meta)

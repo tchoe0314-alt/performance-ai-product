@@ -32,7 +32,7 @@ type UsePreviewCadLineworkCommandsOptions = {
     points: Array<[number, number]>;
     label?: string;
     meta?: Record<string, unknown>;
-  }) => void;
+  }) => boolean;
   onRemoveBuilding: (id: string) => void;
   onSelectBuilding: (id: string | null) => void;
   onSelectObjects?: (ids: string[]) => void;
@@ -139,6 +139,22 @@ export function usePreviewCadLineworkCommands({
       selectedTargets.length === 2
         ? `${selectedTargets[0].label || "Draft"} + ${selectedTargets[1].label || "Draft"} Join`
         : `Joined Draft Object ${selectedTargets.length}`;
+    const created = onCreateCustomGeometry({
+      mode: "polyline",
+      points: joinedGeometry,
+      label: joinedLabel,
+      meta: buildReviewRequiredCommandMeta("JOIN", {
+        joined_from_object_ids: selectedTargets.map((item) => item.id),
+        joined_from_labels: selectedTargets.map((item) => item.label),
+        joined_source_count: selectedTargets.length,
+        cad_layer: getCadLayer(selectedTargets[0]),
+        source_type: "manual_drawn_join",
+      }),
+    });
+    if (!created) {
+      pushCadCommandFeedback("JOIN", "blocked", "JOIN was not added. Confirm and lock the site boundary, then try again.");
+      return;
+    }
     selectedTargets.forEach((item) => {
       onUpdateBuilding(item.id, {
         meta: {
@@ -151,18 +167,6 @@ export function usePreviewCadLineworkCommands({
           construction_release_allowed: false,
         },
       });
-    });
-    onCreateCustomGeometry({
-      mode: "polyline",
-      points: joinedGeometry,
-      label: joinedLabel,
-      meta: buildReviewRequiredCommandMeta("JOIN", {
-        joined_from_object_ids: selectedTargets.map((item) => item.id),
-        joined_from_labels: selectedTargets.map((item) => item.label),
-        joined_source_count: selectedTargets.length,
-        cad_layer: getCadLayer(selectedTargets[0]),
-        source_type: "manual_drawn_join",
-      }),
     });
     setCadSelectionSet([]);
     onSelectObjects?.([]);

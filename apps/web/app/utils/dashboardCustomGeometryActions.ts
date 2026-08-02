@@ -43,14 +43,14 @@ export function runDashboardCreateCustomGeometry({
   siteScaleLocked: boolean;
   units: string;
   actions: DashboardCustomGeometryActions;
-}) {
+}): boolean {
   actions.clearGeneratedPreview();
   const isDraftCopyCommand =
     String(payload.meta?.cad_command || "").toUpperCase() === "COPY" &&
     typeof payload.meta?.copied_from_object_id === "string";
   if (!siteScaleLocked && !isDraftCopyCommand) {
     actions.setStatusMessage("Lock the site boundary before drawing objects.");
-    return;
+    return false;
   }
   const lot = actions.resolveLotBounds();
   if (!lot.w || !lot.h) {
@@ -58,7 +58,7 @@ export function runDashboardCreateCustomGeometry({
     if (!ok) {
       actions.setStatusMessage("Set the site width and height before drawing geometry.");
     }
-    return;
+    return false;
   }
   const validPoints = payload.points
     .map(([x, y]) => [
@@ -69,7 +69,7 @@ export function runDashboardCreateCustomGeometry({
   const minRequired = payload.mode === "point" ? 1 : payload.mode === "rect" ? 2 : payload.mode === "polygon" ? 3 : 2;
   if (validPoints.length < minRequired) {
     actions.setStatusMessage("Drawn geometry needs more points before it can be added.");
-    return;
+    return false;
   }
   const geometry =
     payload.mode === "rect"
@@ -157,4 +157,5 @@ export function runDashboardCreateCustomGeometry({
   actions.markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
   actions.setStatusMessage("Custom geometry added as user-authored project geometry. Regenerate systems only after reviewing impacts.");
   actions.persistDraftRefresh("Refreshing preview after custom geometry draw...");
+  return true;
 }

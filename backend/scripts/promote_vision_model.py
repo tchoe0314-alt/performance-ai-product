@@ -33,6 +33,11 @@ def main() -> int:
         raise SystemExit("Dataset package violated the no-embedded-image contract.")
     if int(dataset.get("eligible_image_count") or 0) <= 0:
         raise SystemExit("Dataset package has no eligible rights-cleared images.")
+    if dataset.get("supervision_status") != "reviewer_labeled" or dataset.get("promotion_eligible") is not True:
+        blockers = dataset.get("promotion_blockers") or ["reviewed_training_supervision_missing"]
+        raise SystemExit(
+            "Dataset package is not eligible for model promotion: " + ", ".join(str(item) for item in blockers)
+        )
     manifest = build_model_manifest(
         model_path=args.model,
         model_name=args.name,

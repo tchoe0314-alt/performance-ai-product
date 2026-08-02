@@ -19,6 +19,7 @@ import type { SidePanelKey, WorkspaceMode } from "../utils/workspaceShell";
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 
 type DashboardReviewWorkflowActionsOptions = {
+  currentProject: ProjectRecord | null;
   currentProjectId?: string;
   designAlternativeCount: number;
   projectId: string;
@@ -27,11 +28,14 @@ type DashboardReviewWorkflowActionsOptions = {
   setBackendResult: StateSetter<PlanResponse | null>;
   setBuildingPlacements: StateSetter<BuildingPlacement[]>;
   setCurrentProject: StateSetter<ProjectRecord | null>;
+  setSiteScaleLocked: StateSetter<boolean>;
   setStatusMessage: StateSetter<string>;
+  siteScaleLocked: boolean;
   token: string;
 };
 
 export function useDashboardReviewWorkflowActions({
+  currentProject,
   currentProjectId,
   designAlternativeCount,
   projectId,
@@ -40,7 +44,9 @@ export function useDashboardReviewWorkflowActions({
   setBackendResult,
   setBuildingPlacements,
   setCurrentProject,
+  setSiteScaleLocked,
   setStatusMessage,
+  siteScaleLocked,
   token,
 }: DashboardReviewWorkflowActionsOptions) {
   const [candidateDecisionInFlight, setCandidateDecisionInFlight] = useState<{
@@ -61,6 +67,8 @@ export function useDashboardReviewWorkflowActions({
         const updatedProject = await runDashboardCandidateReviewDecision({
           action,
           candidateId,
+          currentProject,
+          siteScaleLocked,
           currentProjectId,
           projectId,
           setBackendResult,
@@ -70,6 +78,7 @@ export function useDashboardReviewWorkflowActions({
           correction,
         });
         if (updatedProject?.project_input) {
+          if (siteScaleLocked) setSiteScaleLocked(true);
           const updatedSiteInputs = (updatedProject.project_input.meta?.site_inputs ?? {}) as SiteInputs;
           const acceptedPlacements = buildAcceptedCandidatePlacements({
             projectInput: updatedProject.project_input,
@@ -90,11 +99,14 @@ export function useDashboardReviewWorkflowActions({
     },
     [
       currentProjectId,
+      currentProject,
       projectId,
       setBackendResult,
       setBuildingPlacements,
       setCurrentProject,
+      setSiteScaleLocked,
       setStatusMessage,
+      siteScaleLocked,
       token,
     ],
   );

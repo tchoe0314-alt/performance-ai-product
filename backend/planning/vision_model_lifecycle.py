@@ -157,6 +157,9 @@ def build_coco_training_package(
         "annotation_count": len(annotations),
         "excluded_example_count": len(excluded),
         "contains_image_bytes": False,
+        "supervision_status": "reviewer_labeled",
+        "promotion_eligible": bool(images and annotations),
+        "promotion_blockers": [] if images and annotations else ["reviewed_training_annotations_missing"],
         "truth_label": (
             "This package references rights-cleared local imagery assets and reviewer labels. It contains no image bytes, "
             "does not grant source rights, and is not a model-quality claim."
@@ -178,6 +181,7 @@ def evaluate_quality_by_class(
     ground_truth: Iterable[Dict[str, Any]],
     *,
     iou_threshold: float = 0.5,
+    evaluation_status: str = "measured_against_ground_truth",
 ) -> Dict[str, Any]:
     predicted = [safe_dict(item) for item in predictions if safe_dict(item)]
     truth = [safe_dict(item) for item in ground_truth if safe_dict(item)]
@@ -189,11 +193,13 @@ def evaluate_quality_by_class(
         class_truth = [item for item in truth if _label(item) == label]
         per_class[label] = {
             **evaluate_detection_quality(class_predictions, class_truth, iou_threshold=iou_threshold),
+            "evaluation_status": safe_str(evaluation_status, "unattested_ground_truth"),
             "prediction_count": len(class_predictions),
             "ground_truth_count": len(class_truth),
         }
     return {
         **overall,
+        "evaluation_status": safe_str(evaluation_status, "unattested_ground_truth"),
         "ground_truth_count": len(truth),
         "prediction_count": len(predicted),
         "per_class": per_class,

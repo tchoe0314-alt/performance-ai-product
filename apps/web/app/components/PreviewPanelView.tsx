@@ -1655,7 +1655,7 @@ export default function PreviewPanel({
       benchmark: "Benchmark",
       note_callout: "Note / Callout",
     };
-    onCreateCustomGeometry({
+    const created = onCreateCustomGeometry({
       mode: "point",
       points: [[x, y]],
       label: labels[cadSymbolDraft],
@@ -1678,6 +1678,11 @@ export default function PreviewPanel({
         source: "manual_drawn",
       },
     });
+    if (!created) {
+      setCadCommandStatus(`${labels[cadSymbolDraft]} symbol was not inserted. Confirm and lock the site boundary, then try again.`);
+      pushCadCommandFeedback("SYMBOL", "blocked", "SYMBOL was not inserted. Confirm and lock the site boundary, then try again.");
+      return;
+    }
     setCadCommandStatus(`${labels[cadSymbolDraft]} symbol inserted for draft review.`);
     pushCadCommandFeedback("SYMBOL", "applied", `SYMBOL inserted: ${labels[cadSymbolDraft]} remains draft/review-required.`);
   }, [cadCoordinateDraft.x, cadCoordinateDraft.y, cadSymbolDraft, lotHeight, lotWidth, onCreateCustomGeometry, pushCadCommandFeedback]);

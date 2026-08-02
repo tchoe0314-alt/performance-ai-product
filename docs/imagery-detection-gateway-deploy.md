@@ -116,6 +116,63 @@ Use [the example manifest](../vision/models/civora_vision_model_manifest.example
 
 ## Rights-Cleared Training Pipeline
 
+Use Python 3.11, matching the backend Docker image, for the training environment.
+
+### Public weak-supervision bootstrap
+
+The public bootstrap is useful for proving the data and training machinery before a reviewed corpus exists. It downloads
+exact-bounds USGS National Map imagery and aligns separately licensed Microsoft building footprints as weak labels. The
+images and labels retain independent source-rights records. Weak packages always use
+`weak_labels_pending_review`, set `promotion_eligible=false`, and cannot produce a deployable model manifest.
+
+Build small, geographically varied packages under the ignored `private/vision` directory:
+
+```bash
+PYTHONPATH=. python3 backend/scripts/bootstrap_public_vision_dataset.py \
+  --center-lat 41.1852405 \
+  --center-lon -96.2370225 \
+  --rows 4 \
+  --columns 4 \
+  --tile-meters 320 \
+  --image-pixels 512 \
+  --output-root private/vision/bootstrap/gretna-v1
+```
+
+Merge independent locations without losing their image IDs, split assignments, licenses, or fingerprints:
+
+```bash
+PYTHONPATH=. python3 backend/scripts/merge_public_vision_datasets.py \
+  --package private/vision/bootstrap/gretna-v1/weak-coco-package.json \
+  --package private/vision/bootstrap/dallas-v1/weak-coco-package.json \
+  --package private/vision/bootstrap/denver-v1/weak-coco-package.json \
+  --output-root private/vision/bootstrap/multi-city-v1
+```
+
+Train and run the held-out diagnostic:
+
+```bash
+python3.11 -m venv private/vision/training-venv
+private/vision/training-venv/bin/pip install \
+  -r requirements_vision_training.txt \
+  -r requirements_imagery_gateway.txt
+
+PYTHONPATH=. private/vision/training-venv/bin/python vision/train_semantic_model.py \
+  --dataset private/vision/bootstrap/multi-city-v1/weak-coco-package.json \
+  --image-root private/vision/bootstrap/multi-city-v1/images \
+  --output-dir private/vision/runs/multi-city-building-v1
+
+PYTHONPATH=. private/vision/training-venv/bin/python backend/scripts/run_vision_model_diagnostic.py \
+  --model private/vision/runs/multi-city-building-v1/civora_semantic.onnx \
+  --classes private/vision/runs/multi-city-building-v1/classes.json \
+  --dataset private/vision/bootstrap/multi-city-v1/weak-coco-package.json \
+  --image-root private/vision/bootstrap/multi-city-v1/images \
+  --output-dir private/vision/runs/multi-city-building-v1/diagnostic
+```
+
+The diagnostic deliberately scopes matching by image ID. Its precision/recall are weak-label diagnostics, not independent
+ground-truth measurements. Review every candidate image, correct omissions and geometry, reserve multiple untouched
+geographies for evaluation, export a `reviewer_labeled` package, and only then use the promotion command below.
+
 1. Collect candidate accept/reject/correct/redraw feedback through Civora Vision.
 2. Register only local source images whose licenses permit both storage and model training. The asset registry must map `imagery_frame_id` to a safe relative `file_name`, dimensions, SHA-256, and source-rights record.
 3. Export a deterministic COCO package:

@@ -210,7 +210,7 @@ export type PreviewPanelProps = {
     points: Array<[number, number]>;
     label?: string;
     meta?: Record<string, unknown>;
-  }) => void;
+  }) => boolean;
   onCreateSiteBoundary?: (payload: { points: Array<[number, number]> }) => void;
   onLockSite?: () => void;
   onUnlockSite?: () => void;

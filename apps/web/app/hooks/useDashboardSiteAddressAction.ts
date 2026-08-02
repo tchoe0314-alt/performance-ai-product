@@ -32,6 +32,7 @@ type UseDashboardSiteAddressActionOptions = {
   clearGeneratedPreview: () => void;
   configuredLocalGisProviderCount: number;
   currentProject: ProjectRecord | null;
+  currentProjectRef: MutableRefObject<ProjectRecord | null>;
   localGisProviderRegistry: LocalGisProviderRegistry;
   payloadPreview: ProjectInput;
   projectLoadRequestRef: MutableRefObject<number>;
@@ -52,7 +53,7 @@ type UseDashboardSiteAddressActionOptions = {
   setSiteSelectionMode: Dispatch<SetStateAction<boolean>>;
   setViewportCenter: Dispatch<SetStateAction<{ lat: number; lng: number } | null>>;
   siteAddress: string;
-  siteScaleLocked: boolean;
+  siteScaleLockedRef: MutableRefObject<boolean>;
   token: string | null;
   updateProjectStatus: UpdateProjectStatus;
 };
@@ -115,6 +116,7 @@ export function useDashboardSiteAddressAction({
   clearGeneratedPreview,
   configuredLocalGisProviderCount,
   currentProject,
+  currentProjectRef,
   localGisProviderRegistry,
   payloadPreview,
   projectLoadRequestRef,
@@ -135,7 +137,7 @@ export function useDashboardSiteAddressAction({
   setSiteSelectionMode,
   setViewportCenter,
   siteAddress,
-  siteScaleLocked,
+  siteScaleLockedRef,
   token,
   updateProjectStatus,
 }: UseDashboardSiteAddressActionOptions) {
@@ -496,10 +498,24 @@ export function useDashboardSiteAddressAction({
         if (onlineFetch?.source_context_detection_coverage_v1) {
           nextSiteInputs.source_context_detection_coverage_v1 = onlineFetch.source_context_detection_coverage_v1;
         }
-        nextSiteInputs.site_alignment_locked = preserveLockedSite ? true : false;
-        if (preserveLockedSite) {
+        const preserveLatestLockedSite = preserveLockedSite || siteScaleLockedRef.current;
+        const liveProjectInput = currentProjectRef.current?.project_input ?? geocodedProjectInput;
+        const liveSiteInputs = (liveProjectInput?.meta?.site_inputs ?? {}) as SiteInputs;
+        if (preserveLatestLockedSite) {
+          const writableSiteInputs = nextSiteInputs as Record<string, unknown>;
+          for (const key of [
+            "site_boundary_geometry",
+            "site_boundary_source",
+            "site_boundary_state",
+            "site_boundary_acres",
+          ] as const) {
+            if (liveSiteInputs[key] !== undefined) writableSiteInputs[key] = liveSiteInputs[key];
+          }
+        }
+        nextSiteInputs.site_alignment_locked = preserveLatestLockedSite;
+        if (preserveLatestLockedSite) {
           nextSiteInputs.site_boundary_state = "locked_canonical";
-          nextSiteInputs.site_boundary_source = "dimensions";
+          nextSiteInputs.site_boundary_source = nextSiteInputs.site_boundary_source || "dimensions";
         }
         setAddressSuggestions([]);
         const latestResultOverride =
@@ -522,15 +538,17 @@ export function useDashboardSiteAddressAction({
               }
             : undefined;
         const nextProjectInput: ProjectInput = {
-          ...currentInput,
+          ...liveProjectInput,
           input_mode: "user",
           strict_mode: false,
           allow_ai_fill_for_blanks: false,
           meta: {
-            ...(currentInput?.meta ?? {}),
+            ...(liveProjectInput?.meta ?? {}),
             site_inputs: nextSiteInputs,
           },
-          manual_fields: geocodedProjectInput.manual_fields,
+          manual_fields: preserveLatestLockedSite
+            ? liveProjectInput.manual_fields ?? geocodedProjectInput.manual_fields
+            : geocodedProjectInput.manual_fields,
         };
         setCurrentProject((project) =>
           project
@@ -549,7 +567,7 @@ export function useDashboardSiteAddressAction({
           latestResultOverride,
         });
         if (!workspaceIsCurrent()) return;
-        if (preserveLockedSite) {
+        if (preserveLatestLockedSite) {
           setSiteScaleLocked(true);
           setShowSiteBounds(false);
           setSiteSelectionMode(false);
@@ -609,17 +627,17 @@ export function useDashboardSiteAddressAction({
                 : "Online source discovery found no usable candidates yet; missing providers are listed in setup.",
           nextAction: lookupUnavailable
             ? "Add GIS providers or upload survey/topo evidence before relying on source context."
-            : preserveLockedSite || siteScaleLocked
+            : preserveLatestLockedSite
               ? "Review source candidates, then generate review drafts when ready."
               : "Lock the site boundary to check sources inside the site.",
         });
         setAutoExistingConditionsStatus({
-          status: lookupUnavailable ? "blocked" : preserveLockedSite || siteScaleLocked ? "running" : "waiting",
+          status: lookupUnavailable ? "blocked" : preserveLatestLockedSite ? "running" : "waiting",
           message: lookupUnavailable
             ? providerAbsent
               ? "Address applied, but no source providers are configured. Add GIS providers or upload survey/topo evidence before relying on source context."
               : "Address applied, but provider lookup failed or was unavailable. Retry after the backend/providers respond."
-            : preserveLockedSite || siteScaleLocked
+            : preserveLatestLockedSite
               ? "Address changed. Civora will recheck sources inside the locked site."
               : "Address applied. Lock the site boundary to auto-check roads, buildings, terrain, constraints, and utilities inside it.",
           candidateCount,
@@ -650,6 +668,7 @@ export function useDashboardSiteAddressAction({
       clearGeneratedPreview,
       configuredLocalGisProviderCount,
       currentProject,
+      currentProjectRef,
       localGisProviderRegistry,
       payloadPreview,
       projectLoadRequestRef,
@@ -670,7 +689,7 @@ export function useDashboardSiteAddressAction({
       setSiteSelectionMode,
       setViewportCenter,
       siteAddress,
-      siteScaleLocked,
+      siteScaleLockedRef,
       token,
       updateProjectStatus,
     ],
