@@ -280,7 +280,6 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
             result = run_detection_gateway({"image_url": "https://imagery.example/source.png"}, session=session)
 
         kinds = {item["kind"] for item in result["detections"]}
-
         self.assertEqual(result["provider"], "civora_heuristic")
         self.assertEqual(result["status"], "detected")
         self.assertTrue(kinds.intersection({"building", "road", "parking", "basin", "open_space"}))
@@ -291,6 +290,95 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
                 for item in result["detections"]
             )
         )
+
+    def test_shadow_model_reuses_image_and_cannot_replace_baseline_candidates(self) -> None:
+        session = _CivoraImageSession()
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_DETECTOR_KIND": "civora",
+                "CIVORA_GATEWAY_SOURCE_MODE": "direct",
+                "CIVORA_GATEWAY_SHADOW_ENABLED": "true",
+                "CIVORA_GATEWAY_SHADOW_FORCE": "true",
+                "CIVORA_GATEWAY_SHADOW_MODE": "inline",
+                "CIVORA_GATEWAY_SHADOW_MODEL_MANIFEST": "/fixture/candidate-manifest.json",
+            },
+            clear=False,
+        ), patch(
+            "backend.scripts.imagery_detection_gateway._get_shadow_runtime",
+            return_value=_LearnedRuntime(),
+        ):
+            result = run_detection_gateway(
+                {
+                    "image_url": "https://imagery.example/source.png",
+                    "candidate_types": ["building", "road"],
+                },
+                session=session,
+            )
+
+        shadow = result["civora_vision_shadow_report_v1"]
+        self.assertEqual(result["provider"], "civora_heuristic")
+        self.assertEqual(shadow["status"], "ready")
+        self.assertFalse(shadow["influenced_user_candidates"])
+        self.assertFalse(shadow["contains_shadow_geometry"])
+        self.assertTrue(result["detector_metadata"]["shadow_sampled"])
+        self.assertTrue(all(item["provider"] == "civora_heuristic" for item in result["detections"]))
+        self.assertNotIn("learned-1", json.dumps(result))
+        self.assertEqual(len(session.calls), 1)
+
+    def test_async_shadow_is_queued_without_running_on_response_path(self) -> None:
+        session = _CivoraImageSession()
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_DETECTOR_KIND": "civora",
+                "CIVORA_GATEWAY_SOURCE_MODE": "direct",
+                "CIVORA_GATEWAY_SHADOW_ENABLED": "true",
+                "CIVORA_GATEWAY_SHADOW_FORCE": "true",
+                "CIVORA_GATEWAY_SHADOW_MODE": "async",
+                "CIVORA_GATEWAY_SHADOW_MODEL_MANIFEST": "/fixture/candidate-manifest.json",
+            },
+            clear=False,
+        ), patch(
+            "backend.scripts.imagery_detection_gateway._enqueue_shadow_comparison",
+            return_value=True,
+        ) as enqueue, patch(
+            "backend.scripts.imagery_detection_gateway._get_shadow_runtime",
+            side_effect=AssertionError("shadow runtime must not execute on the response path"),
+        ):
+            result = run_detection_gateway(
+                {"image_url": "https://imagery.example/source.png", "candidate_types": ["building"]},
+                session=session,
+            )
+
+        self.assertEqual(result["civora_vision_shadow_report_v1"]["status"], "queued")
+        self.assertEqual(result["provider"], "civora_heuristic")
+        self.assertTrue(result["detections"])
+        enqueue.assert_called_once()
+
+    def test_shadow_sampling_never_exceeds_manifest_ceiling(self) -> None:
+        runtime = _LearnedRuntime()
+        runtime.manifest = {
+            "deployment_scope": {
+                "shadow_only": True,
+                "user_visible_candidates_allowed": False,
+                "sample_rate_maximum": 0.05,
+            }
+        }
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_SHADOW_SAMPLE_RATE": "1.0",
+                "CIVORA_GATEWAY_SHADOW_MODEL_MANIFEST": "/fixture/candidate-manifest.json",
+            },
+            clear=False,
+        ), patch(
+            "backend.scripts.imagery_detection_gateway._get_shadow_runtime",
+            return_value=runtime,
+        ):
+            from backend.scripts.imagery_detection_gateway import _shadow_sample_rate
+
+            self.assertEqual(_shadow_sample_rate(), 0.05)
 
     def test_gateway_runs_promoted_learned_model_and_reports_exact_runtime(self) -> None:
         session = _CivoraImageSession()

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
-from backend.planning.vision_model_lifecycle import evaluate_quality_by_class
+from backend.planning.vision_model_lifecycle import assess_ground_truth_attestation, evaluate_quality_by_class
 
 
 def main() -> int:
@@ -19,22 +19,22 @@ def main() -> int:
     ground_truth_payload = _read_json(args.ground_truth)
     predictions = _records(predictions_payload, ("predictions", "detections", "features", "annotations"))
     ground_truth = _records(ground_truth_payload, ("ground_truth", "features", "annotations"))
-    reviewed_ground_truth = bool(
-        isinstance(ground_truth_payload, dict)
-        and ground_truth_payload.get("supervision_status") == "reviewer_labeled"
-        and ground_truth_payload.get("promotion_eligible") is True
-    )
+    attestation = assess_ground_truth_attestation(ground_truth_payload if isinstance(ground_truth_payload, dict) else {})
+    reviewed_ground_truth = attestation["eligible"] is True
     evaluation_status = "measured_against_ground_truth" if reviewed_ground_truth else "unattested_or_weak_label_diagnostic"
     quality = evaluate_quality_by_class(
         predictions,
         ground_truth,
         iou_threshold=args.iou_threshold,
         evaluation_status=evaluation_status,
+        ground_truth_attestation=(ground_truth_payload.get("ground_truth_attestation") if isinstance(ground_truth_payload, dict) else {}),
+        evaluation_scope=(ground_truth_payload.get("evaluation_scope") if isinstance(ground_truth_payload, dict) else {}),
+        source_supervision_status=(ground_truth_payload.get("supervision_status") if isinstance(ground_truth_payload, dict) else ""),
+        promotion_eligible=reviewed_ground_truth,
     )
     quality["promotion_eligible"] = reviewed_ground_truth
-    quality["evaluation_blockers"] = [] if reviewed_ground_truth else [
-        "reviewed_ground_truth_attestation_missing"
-    ]
+    quality["evaluation_blockers"] = list(attestation["blockers"])
+    quality["ground_truth_attestation_assessment"] = attestation
     output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(quality, indent=2, sort_keys=True) + "\n", encoding="utf-8")

@@ -11,6 +11,7 @@ from .vision_detection_learning import (
     build_vision_detection_report_v2,
     sanitize_source_url,
 )
+from .vision_shadow_evaluation import SHADOW_REPORT_VERSION
 
 
 REPORT_VERSION = "imagery_object_detection_report_v1"
@@ -29,6 +30,7 @@ def build_imagery_object_detection_report(
     imagery_frame: Optional[Dict[str, Any]] = None,
     detector_metadata: Optional[Dict[str, Any]] = None,
     vision_report: Optional[Dict[str, Any]] = None,
+    shadow_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     normalized = [_normalize_detection(item, index, provider=provider, source_url=source_url, source_image=source_image) for index, item in enumerate(safe_list(detections))]
     normalized = [item for item in normalized if item]
@@ -67,6 +69,7 @@ def build_imagery_object_detection_report(
         "missing": missing_items,
         "warnings": [safe_str(item) for item in safe_list(warnings) if safe_str(item)],
         DETECTION_VERSION: vision,
+        SHADOW_REPORT_VERSION: safe_dict(shadow_report),
         "message": safe_str(message) or _message_for_status(state, len(normalized)),
         "review_required": True,
         "survey_control_satisfied": False,
@@ -151,6 +154,7 @@ def fetch_imagery_object_detection(
         imagery_frame=safe_dict(data.get("imagery_frame")),
         detector_metadata=safe_dict(data.get("detector_metadata")),
         vision_report=safe_dict(data.get(DETECTION_VERSION)),
+        shadow_report=safe_dict(data.get(SHADOW_REPORT_VERSION)),
     )
 
 

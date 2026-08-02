@@ -1,12 +1,13 @@
 # Civora Imagery Detection Gateway Deploy
 
-Use this to deploy Civora's learned imagery detector as a separate hosted service.
+Use this to deploy Civora's imagery detector and isolated learned-model shadow evaluator as a separate hosted service.
 
 ## What This Service Does
 
 - Receives Civora's address/site bbox payload at `/detect`.
 - Creates a source imagery request from the active bbox/site boundary.
 - Runs a fingerprinted, promoted ONNX model when `CIVORA_GATEWAY_DETECTOR_KIND=civora_model`.
+- Can sample a blocked candidate in a bounded background shadow queue without changing or delaying user-visible candidates.
 - Supports semantic segmentation so irregular roofs, roads, walks, water, and landscape regions can remain polygons instead of becoming generic boxes.
 - Reports the exact model/version/hash and whether learned inference or an explicitly enabled heuristic fallback produced the candidates.
 - Returns normalized visual candidates for buildings, roads, parking, sidewalks, trees/landscape, basins/ponds, and visible utility structures where detected.
@@ -14,7 +15,9 @@ Use this to deploy Civora's learned imagery detector as a separate hosted servic
 
 It does not create survey/control evidence, utility locates, professional acceptance, or final reliance evidence.
 
-The repository does not ship trained weights. A runtime without a valid promoted manifest and matching weights returns an unavailable health state; it does not silently call the heuristic a learned model.
+The repository ships one explicitly blocked Chat 246 shadow artifact with its test evidence and SpaceNet attribution. It is
+not valid as a primary detector. A primary learned runtime without a promoted manifest and matching weights returns an
+unavailable health state; it does not silently call the heuristic a learned model.
 
 ## Detector Modes
 
@@ -25,6 +28,10 @@ The repository does not ship trained weights. A runtime without a valid promoted
 | `civora_heuristic` | Explicit approximate color/edge detector for development or continuity only. Never presented as learned inference. |
 | `roboflow` | External Roboflow inference with normalized Civora outputs. |
 | `generic` | External model service using Civora's normalized JSON adapter. |
+
+Shadow is not another detector mode. With a heuristic baseline, `CIVORA_GATEWAY_SHADOW_ENABLED=true` samples requests,
+queues learned inference after the baseline path, and stores aggregate agreement only. Shadow geometry never enters the
+response candidate list. The queue is bounded and drops work rather than slowing or accumulating behind user traffic.
 
 `civora` remains a backward-compatible alias for `civora_heuristic`. New deployments should use an explicit mode.
 
@@ -53,7 +60,7 @@ Set the health check path to:
 Set these variables on the gateway service:
 
 ```bash
-CIVORA_GATEWAY_DETECTOR_KIND=civora_model
+CIVORA_GATEWAY_DETECTOR_KIND=civora
 CIVORA_GATEWAY_MAPBOX_TOKEN=your_mapbox_token
 CIVORA_GATEWAY_MAPBOX_STYLE=mapbox/satellite-v9
 CIVORA_GATEWAY_IMAGE_SIZE=1024x1024
@@ -62,6 +69,11 @@ CIVORA_GATEWAY_MODEL_MANIFEST=/app/vision/models/civora_vision_model_manifest.js
 CIVORA_GATEWAY_MODEL_PATH=/models/civora_semantic.onnx
 CIVORA_GATEWAY_REQUIRE_PROMOTED_MODEL=true
 CIVORA_GATEWAY_ALLOW_HEURISTIC_FALLBACK=false
+CIVORA_GATEWAY_SHADOW_ENABLED=false
+CIVORA_GATEWAY_SHADOW_MODE=async
+CIVORA_GATEWAY_SHADOW_SAMPLE_RATE=0.05
+CIVORA_GATEWAY_SHADOW_IOU_THRESHOLD=0.25
+CIVORA_GATEWAY_SHADOW_MODEL_MANIFEST=/app/vision/models/shadow/chat246/candidate-manifest.json
 CIVORA_GATEWAY_BEARER_TOKEN=generate-a-long-random-service-token
 CIVORA_GATEWAY_IMAGE_HOST_ALLOWLIST=api.mapbox.com
 CIVORA_GATEWAY_MAX_IMAGE_BYTES=15728640
@@ -87,7 +99,7 @@ https://civora-imagery-gateway.up.railway.app
 Then set these variables on the main Civora backend service:
 
 ```bash
-CIVORA_IMAGERY_DETECTION_PROVIDER=civora_learned
+CIVORA_IMAGERY_DETECTION_PROVIDER=civora_heuristic
 CIVORA_IMAGERY_DETECTION_URL=https://civora-imagery-gateway.up.railway.app/detect
 CIVORA_IMAGERY_DETECTION_TOKEN=the-same-service-token
 ```
@@ -112,6 +124,11 @@ Every deployed manifest must include:
 - measured ground-truth metrics;
 - `approved_for_review_candidates` promotion status and approver.
 
+Promotion additionally requires at least 0.85 precision and 0.75 recall overall and per required class, 100 held-out
+objects overall, 25 per class, five geographies, two seasons, two imagery-quality bands, an independently excluded test
+split, and a traceable human-reviewed or third-party benchmark attestation. Passing promotion authorizes visual review
+candidates only.
+
 Use [the example manifest](../vision/models/civora_vision_model_manifest.example.json) only as a schema reference. It is intentionally blocked and is not deployable.
 
 ## Rights-Cleared Training Pipeline
@@ -124,6 +141,22 @@ The public bootstrap is useful for proving the data and training machinery befor
 exact-bounds USGS National Map imagery and aligns separately licensed Microsoft building footprints as weak labels. The
 images and labels retain independent source-rights records. Weak packages always use
 `weak_labels_pending_review`, set `promotion_eligible=false`, and cannot produce a deployable model manifest.
+
+### Independent SpaceNet benchmark import
+
+The SpaceNet 2 importer converts official RGB PanSharpen imagery and building polygons into a traceable COCO package.
+It preserves source/label/output hashes, attribution, license, four geography-balanced splits, and an independently held-out
+test set. Source imagery remains outside Git.
+
+```bash
+PYTHONPATH=. python3 -m backend.scripts.import_spacenet_benchmark \
+  --root private/vision/source/spacenet2 \
+  --output-dir private/vision/benchmarks/spacenet2
+```
+
+SpaceNet 2 alone does not meet Civora's production coverage gate because the sample lacks season metadata, has one imagery
+quality band, and covers four geographies. The bundled Chat 246 candidate also failed precision and recall gates; it is
+retained only to prove safe shadow operations.
 
 Build small, geographically varied packages under the ignored `private/vision` directory:
 
@@ -161,7 +194,7 @@ PYTHONPATH=. private/vision/training-venv/bin/python vision/train_semantic_model
   --image-root private/vision/bootstrap/multi-city-v1/images \
   --output-dir private/vision/runs/multi-city-building-v1
 
-PYTHONPATH=. private/vision/training-venv/bin/python backend/scripts/run_vision_model_diagnostic.py \
+PYTHONPATH=. private/vision/training-venv/bin/python -m backend.scripts.run_vision_model_diagnostic \
   --model private/vision/runs/multi-city-building-v1/civora_semantic.onnx \
   --classes private/vision/runs/multi-city-building-v1/classes.json \
   --dataset private/vision/bootstrap/multi-city-v1/weak-coco-package.json \
@@ -267,7 +300,9 @@ After both services are deployed:
 7. Correct a visual candidate's type, or select a user-drawn outline and save it as the corrected geometry.
 8. Export the Civora Vision feedback manifest and confirm it contains review labels/provenance but no source image bytes or access tokens.
 9. Confirm `/health` says `learned_model_ready: true`, `capability_level: learned_model_review_candidates`, and shows the expected model hash.
-10. Confirm `/detect` metadata says `learned_model_used: true` and `fallback_used: false`.
+10. For a promoted primary model, confirm `/detect` metadata says `learned_model_used: true` and `fallback_used: false`.
+11. For shadow, confirm the response keeps baseline providers, `shadow_influenced_user_candidates: false`, and health shows
+    bounded submitted/completed/failed/dropped counts. Never use shadow agreement as an accuracy metric.
 
 The feedback manifest does not claim model accuracy. Precision/recall are reported only after a separate rights-cleared ground-truth set is evaluated. The current geometric score is explicitly class-aware bounding-box IoU.
 

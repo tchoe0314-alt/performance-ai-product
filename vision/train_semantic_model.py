@@ -24,6 +24,9 @@ def main() -> int:
     parser.add_argument("--image-size", type=int, default=512)
     parser.add_argument("--base-channels", type=int, default=32)
     parser.add_argument("--background-weight", type=float, default=0.25)
+    parser.add_argument("--dice-weight", type=float, default=0.40)
+    parser.add_argument("--architecture", choices=("unet", "lraspp_mobilenet_v3_large"), default="unet")
+    parser.add_argument("--pretrained-backbone", action="store_true")
     parser.add_argument("--seed", type=int, default=41)
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
@@ -31,6 +34,7 @@ def main() -> int:
     try:
         import torch
         import torch.nn as nn
+        import torch.nn.functional as F
         from torch.utils.data import DataLoader, Dataset
     except Exception as exc:
         raise SystemExit(
@@ -109,6 +113,18 @@ def main() -> int:
             if self.augment and random.random() < 0.25:
                 image_array = np.flip(image_array, axis=0).copy()
                 mask_array = np.flip(mask_array, axis=0).copy()
+            if self.augment and random.random() < 0.50:
+                rotations = random.randint(1, 3)
+                image_array = np.rot90(image_array, rotations, axes=(0, 1)).copy()
+                mask_array = np.rot90(mask_array, rotations, axes=(0, 1)).copy()
+            if self.augment:
+                contrast = random.uniform(0.85, 1.15)
+                brightness = random.uniform(-0.08, 0.08)
+                image_array = np.clip((image_array - 0.5) * contrast + 0.5 + brightness, 0.0, 1.0)
+            if args.architecture == "lraspp_mobilenet_v3_large":
+                image_array = (image_array - np.asarray([0.485, 0.456, 0.406], dtype=np.float32)) / np.asarray(
+                    [0.229, 0.224, 0.225], dtype=np.float32
+                )
             return (
                 torch.from_numpy(np.transpose(image_array, (2, 0, 1))).float(),
                 torch.from_numpy(mask_array).long(),
@@ -155,6 +171,30 @@ def main() -> int:
             dec1 = self.dec1(torch.cat([self.up1(dec2), enc1], dim=1))
             return self.head(dec1)
 
+    class CombinedSegmentationLoss(nn.Module):
+        def __init__(self, class_weights: Any, dice_weight: float) -> None:
+            super().__init__()
+            self.register_buffer("class_weights", class_weights)
+            self.dice_weight = max(0.0, min(1.0, float(dice_weight)))
+
+        def forward(self, logits: Any, target: Any) -> Any:
+            cross_entropy = F.cross_entropy(logits, target, weight=self.class_weights)
+            probabilities = torch.softmax(logits, dim=1)
+            truth = F.one_hot(target, num_classes=logits.shape[1]).permute(0, 3, 1, 2).float()
+            intersection = (probabilities[:, 1:] * truth[:, 1:]).sum(dim=(0, 2, 3))
+            denominator = probabilities[:, 1:].sum(dim=(0, 2, 3)) + truth[:, 1:].sum(dim=(0, 2, 3))
+            dice = (2.0 * intersection + 1.0) / (denominator + 1.0)
+            dice_loss = 1.0 - dice.mean() if dice.numel() else logits.new_tensor(0.0)
+            return (1.0 - self.dice_weight) * cross_entropy + self.dice_weight * dice_loss
+
+    class LogitsOnly(nn.Module):
+        def __init__(self, wrapped: Any) -> None:
+            super().__init__()
+            self.wrapped = wrapped
+
+        def forward(self, value: Any) -> Any:
+            return _model_logits(self.wrapped(value))
+
     device_name = args.device
     if device_name == "auto":
         device_name = "cuda" if torch.cuda.is_available() else "mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() else "cpu"
@@ -171,11 +211,28 @@ def main() -> int:
         shuffle=False,
         num_workers=0,
     )
-    model = CivoraUNet(class_count, max(8, args.base_channels)).to(device)
+    if args.architecture == "lraspp_mobilenet_v3_large":
+        try:
+            from torchvision.models.segmentation import (
+                LRASPP_MobileNet_V3_Large_Weights,
+                lraspp_mobilenet_v3_large,
+            )
+        except Exception as exc:
+            raise SystemExit("torchvision is required for the LRASPP training architecture.") from exc
+        weights = LRASPP_MobileNet_V3_Large_Weights.DEFAULT if args.pretrained_backbone else None
+        if weights is None:
+            model = lraspp_mobilenet_v3_large(weights=None, weights_backbone=None, num_classes=class_count)
+        else:
+            model = lraspp_mobilenet_v3_large(weights=weights)
+            model.classifier.low_classifier = nn.Conv2d(40, class_count, kernel_size=1)
+            model.classifier.high_classifier = nn.Conv2d(128, class_count, kernel_size=1)
+    else:
+        model = CivoraUNet(class_count, max(8, args.base_channels))
+    model = model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
     class_weights = torch.ones(class_count, dtype=torch.float32, device=device)
     class_weights[0] = min(max(float(args.background_weight), 0.01), 1.0)
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion = CombinedSegmentationLoss(class_weights, args.dice_weight)
     history: List[Dict[str, float]] = []
     best_validation_loss = float("inf")
     checkpoint_path = output_dir / "best_state_dict.pt"
@@ -185,7 +242,7 @@ def main() -> int:
         for images, masks in train_loader:
             images, masks = images.to(device), masks.to(device)
             optimizer.zero_grad(set_to_none=True)
-            loss = criterion(model(images), masks)
+            loss = criterion(_model_logits(model(images)), masks)
             loss.backward()
             optimizer.step()
             training_loss += float(loss.detach().cpu())
@@ -204,8 +261,9 @@ def main() -> int:
     model.eval()
     onnx_path = output_dir / "civora_semantic.onnx"
     dummy = torch.zeros((1, 3, args.image_size, args.image_size), dtype=torch.float32, device=device)
+    export_model = LogitsOnly(model).to(device).eval()
     torch.onnx.export(
-        model,
+        export_model,
         dummy,
         str(onnx_path),
         input_names=["images"],
@@ -231,6 +289,9 @@ def main() -> int:
             "image_size": args.image_size,
             "base_channels": args.base_channels,
             "background_weight": round(float(class_weights[0].detach().cpu()), 4),
+            "dice_weight": round(float(args.dice_weight), 4),
+            "architecture": args.architecture,
+            "pretrained_backbone": args.pretrained_backbone,
             "seed": args.seed,
             "device": device_name,
         },
@@ -239,6 +300,11 @@ def main() -> int:
         "onnx_path": onnx_path.name,
         "checkpoint_path": checkpoint_path.name,
         "promotion_ready": False,
+        "input_normalization": (
+            {"scale": 1.0 / 255.0, "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
+            if args.architecture == "lraspp_mobilenet_v3_large"
+            else {"scale": 1.0 / 255.0, "mean": [0.0, 0.0, 0.0], "std": [1.0, 1.0, 1.0]}
+        ),
         "promotion_blocker": (
             "Review weak labels image by image before evaluation and promotion."
             if dataset_payload.get("promotion_eligible") is not True
@@ -276,7 +342,7 @@ def _validate(model: Any, loader: Any, criterion: Any, device: Any, class_count:
     with torch.no_grad():
         for images, masks in loader:
             images, masks = images.to(device), masks.to(device)
-            logits = model(images)
+            logits = _model_logits(model(images))
             loss_total += float(criterion(logits, masks).detach().cpu())
             predicted = torch.argmax(logits, dim=1)
             correct += int((predicted == masks).sum().detach().cpu())
@@ -294,6 +360,14 @@ def _validate(model: Any, loader: Any, criterion: Any, device: Any, class_count:
         "validation_pixel_accuracy": round(correct / max(pixels, 1), 6),
         "validation_mean_foreground_iou": round(float(np.mean(class_ious)) if class_ious else 0.0, 6),
     }
+
+
+def _model_logits(value: Any) -> Any:
+    if isinstance(value, dict):
+        if "out" not in value:
+            raise RuntimeError("Segmentation model output is missing the 'out' logits tensor.")
+        return value["out"]
+    return value
 
 
 if __name__ == "__main__":

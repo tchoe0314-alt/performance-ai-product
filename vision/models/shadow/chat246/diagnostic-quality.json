@@ -1,0 +1,77 @@
+{
+  "evaluation_blockers": [],
+  "evaluation_scope": {
+    "density_band_count": 3,
+    "density_bands": [
+      "high",
+      "low",
+      "medium"
+    ],
+    "geographies": [
+      "Khartoum",
+      "Paris",
+      "Shanghai",
+      "Vegas"
+    ],
+    "geography_count": 4,
+    "imagery_quality_band_count": 1,
+    "imagery_quality_bands": [
+      "spacenet_rgb_pansharpened"
+    ],
+    "season_count": 0,
+    "season_metadata_status": "not_provided_by_source",
+    "seasons": [],
+    "supported_classes": [
+      "building"
+    ]
+  },
+  "evaluation_split": "test",
+  "evaluation_status": "measured_against_ground_truth",
+  "f1": 0.3175,
+  "false_negative": 94,
+  "false_positive": 35,
+  "geometry_metric": "class_aware_bounding_box_iou",
+  "ground_truth_attestation": {
+    "annotation_source": "official_dataset_labels",
+    "attribution": "SpaceNet Partners",
+    "dataset_name": "SpaceNet 2 Buildings",
+    "dataset_url": "https://spacenet.ai/spacenet-buildings-dataset-v2/",
+    "independent_test_split": true,
+    "license": "CC-BY-SA-4.0",
+    "status": "third_party_benchmark_annotations",
+    "test_images_excluded_from_training": true
+  },
+  "ground_truth_attestation_assessment": {
+    "attestation_status": "third_party_benchmark_annotations",
+    "blockers": [],
+    "eligible": true,
+    "independent_test_split": true,
+    "supervision_status": "independent_benchmark_annotated"
+  },
+  "ground_truth_count": 124,
+  "iou_threshold": 0.5,
+  "mean_matched_iou": 0.67,
+  "per_class": {
+    "building": {
+      "evaluation_status": "measured_against_ground_truth",
+      "f1": 0.3175,
+      "false_negative": 94,
+      "false_positive": 35,
+      "geometry_metric": "class_aware_bounding_box_iou",
+      "ground_truth_count": 124,
+      "iou_threshold": 0.5,
+      "mean_matched_iou": 0.67,
+      "precision": 0.4615,
+      "prediction_count": 65,
+      "recall": 0.2419,
+      "true_positive": 30
+    }
+  },
+  "precision": 0.4615,
+  "prediction_count": 65,
+  "promotion_eligible": true,
+  "recall": 0.2419,
+  "source_supervision_status": "independent_benchmark_annotated",
+  "true_positive": 30,
+  "truth_label": "These metrics use an independently held-out, attested benchmark split. Promotion still requires every quality, class-depth, coverage, artifact, and human-approval gate."
+}

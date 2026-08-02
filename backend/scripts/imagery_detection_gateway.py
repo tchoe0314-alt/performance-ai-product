@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import ipaddress
+import queue
 import secrets
 import tempfile
 import threading
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, urlsplit
 
@@ -17,6 +20,11 @@ from backend.planning.vision_detection_learning import (
     build_vision_detection_report_v2,
     sanitize_source_url,
 )
+from backend.planning.vision_shadow_evaluation import (
+    SHADOW_REPORT_VERSION,
+    build_shadow_comparison_report,
+    build_shadow_status_report,
+)
 from vision.model_runtime import LearnedVisionRuntime, VisionModelRuntimeError, runtime_from_environment
 
 
@@ -26,6 +34,20 @@ HYBRID_DETECTOR_KINDS = {"civora_hybrid", "hybrid"}
 HEURISTIC_DETECTOR_KINDS = {"civora", "civora_heuristic", "local"}
 _RUNTIME_CACHE: Dict[tuple[str, str, str], LearnedVisionRuntime] = {}
 _RUNTIME_CACHE_LOCK = threading.Lock()
+_SHADOW_RUNTIME_CACHE: Dict[str, LearnedVisionRuntime] = {}
+_SHADOW_RUNTIME_CACHE_LOCK = threading.Lock()
+_SHADOW_QUEUE: queue.Queue[Dict[str, Any]] = queue.Queue(maxsize=4)
+_SHADOW_WORKER_LOCK = threading.Lock()
+_SHADOW_WORKER_STARTED = False
+_SHADOW_STATS_LOCK = threading.Lock()
+_SHADOW_STATS: Dict[str, Any] = {
+    "submitted_count": 0,
+    "completed_count": 0,
+    "failed_count": 0,
+    "dropped_count": 0,
+    "last_completed_at": "",
+    "last_report": {},
+}
 
 
 def gateway_health_status() -> Dict[str, Any]:
@@ -61,6 +83,27 @@ def gateway_health_status() -> Dict[str, Any]:
         if detector_kind in {"generic", "roboflow"}
         else "model_unavailable"
     )
+    shadow_enabled = _env_true("CIVORA_GATEWAY_SHADOW_ENABLED")
+    shadow_status = build_shadow_status_report("disabled", reason="shadow_inference_disabled")
+    if shadow_enabled:
+        try:
+            shadow_health = _get_shadow_runtime().health(load_session=True)
+            shadow_status = {
+                **build_shadow_status_report(
+                    "ready" if shadow_health.get("ready") is True else "failed",
+                    reason="" if shadow_health.get("ready") is True else "shadow_model_unavailable",
+                    shadow_model=shadow_health,
+                ),
+                "sample_rate": _shadow_sample_rate(),
+                "classes": _list(shadow_health.get("classes")),
+                "runtime_statistics": _shadow_runtime_statistics(),
+            }
+        except Exception:
+            shadow_status = {
+                **build_shadow_status_report("failed", reason="shadow_model_unavailable"),
+                "sample_rate": _shadow_sample_rate(),
+                "runtime_statistics": _shadow_runtime_statistics(),
+            }
     return {
         "success": success,
         "detector_kind": detector_kind,
@@ -81,6 +124,7 @@ def gateway_health_status() -> Dict[str, Any]:
             "storage_allowed": _env_true("CIVORA_GATEWAY_SOURCE_STORAGE_ALLOWED"),
             "request_attestation_trusted": _env_true("CIVORA_GATEWAY_TRUST_REQUEST_SOURCE_RIGHTS"),
         },
+        "shadow_inference": shadow_status,
     }
 
 
@@ -163,6 +207,7 @@ def normalize_generic_response(response: Dict[str, Any], *, source_url: str = ""
 
 def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -> Dict[str, Any]:
     provider = os.getenv("CIVORA_GATEWAY_DETECTOR_KIND", "generic").strip().lower() or "generic"
+    detector_kind = provider
     image_url = str(payload.get("image_url") or payload.get("source_image") or "")
     source_mode = os.getenv("CIVORA_GATEWAY_SOURCE_MODE", "mapbox_static").strip().lower()
     if not image_url and source_mode == "mapbox_static":
@@ -183,8 +228,31 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
         )
     runtime_metadata: Dict[str, Any] = {}
     detection_warnings: List[str] = []
+    shadow_enabled = _env_true("CIVORA_GATEWAY_SHADOW_ENABLED")
+    shadow_selected = shadow_enabled and detector_kind in HEURISTIC_DETECTOR_KINDS and _shadow_request_selected(
+        payload,
+        image_url=image_url,
+    )
+    shared_image: Optional[tuple[bytes, str]] = None
+    shadow_report = build_shadow_status_report(
+        "disabled" if not shadow_enabled else "not_sampled" if detector_kind in HEURISTIC_DETECTOR_KINDS else "not_run",
+        reason=(
+            "shadow_inference_disabled"
+            if not shadow_enabled
+            else "request_not_selected_for_shadow_sample"
+            if detector_kind in HEURISTIC_DETECTOR_KINDS
+            else "shadow_only_runs_beside_heuristic_baseline"
+        ),
+    )
     if provider in HEURISTIC_DETECTOR_KINDS:
-        detections = _call_civora_detector(image_url=image_url, session=session)
+        if shadow_selected:
+            shared_image = _fetch_image(image_url=image_url, session=session)
+        detections = _call_civora_detector(
+            image_url=image_url,
+            session=session,
+            image_content=shared_image[0] if shared_image else None,
+            content_type=shared_image[1] if shared_image else "",
+        )
         provider = "civora_heuristic"
         runtime_metadata = {
             "capability_level": "heuristic_visual_candidates",
@@ -224,6 +292,27 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
     else:
         response = _call_generic_detector(payload=payload, image_url=image_url, session=session)
         detections = normalize_generic_response(response, source_url=image_url, provider=provider)
+    if shadow_selected:
+        if str(os.getenv("CIVORA_GATEWAY_SHADOW_MODE") or "async").strip().lower() == "inline":
+            shadow_report = _run_shadow_comparison(
+                baseline_detections=detections,
+                baseline_provider=provider,
+                image_url=image_url,
+                image_content=shared_image[0] if shared_image else b"",
+                requested_kinds=_list(payload.get("candidate_types")),
+            )
+        else:
+            queued = _enqueue_shadow_comparison(
+                baseline_detections=detections,
+                baseline_provider=provider,
+                image_url=image_url,
+                image_content=shared_image[0] if shared_image else b"",
+                requested_kinds=_list(payload.get("candidate_types")),
+            )
+            shadow_report = build_shadow_status_report(
+                "queued" if queued else "dropped",
+                reason="background_shadow_inference_queued" if queued else "shadow_queue_at_capacity",
+            )
     image_width, image_height = _image_dimensions(payload, detections)
     requested_source_rights = _dict(payload.get("source_rights"))
     trust_request_source_rights = _env_true("CIVORA_GATEWAY_TRUST_REQUEST_SOURCE_RIGHTS")
@@ -276,6 +365,9 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
             "image_size": os.getenv("CIVORA_GATEWAY_IMAGE_SIZE", "1024x1024"),
             "civora_max_size": os.getenv("CIVORA_GATEWAY_CIVORA_MAX_SIZE", "768"),
         },
+        "shadow_status": shadow_report.get("status"),
+        "shadow_sampled": shadow_selected,
+        "shadow_influenced_user_candidates": False,
     }
     vision_report = build_vision_detection_report_v2(
         detections=detections,
@@ -292,6 +384,7 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
         imagery_frame=imagery_frame,
         detector_metadata=detector_metadata,
         vision_report=vision_report,
+        shadow_report=shadow_report,
     )
 
 
@@ -348,12 +441,20 @@ def _call_roboflow(*, image_url: str, session: Any) -> Dict[str, Any]:
     return _dict(response.json())
 
 
-def _call_civora_detector(*, image_url: str, session: Any) -> List[Dict[str, Any]]:
+def _call_civora_detector(
+    *,
+    image_url: str,
+    session: Any,
+    image_content: Optional[bytes] = None,
+    content_type: str = "",
+) -> List[Dict[str, Any]]:
     try:
         from vision.feature_detection_engine import FeatureDetectionEngine
     except Exception as exc:  # pragma: no cover - import guard
         raise RuntimeError("Civora detector could not import FeatureDetectionEngine.") from exc
-    content, content_type = _fetch_image(image_url=image_url, session=session)
+    content = image_content
+    if content is None:
+        content, content_type = _fetch_image(image_url=image_url, session=session)
     suffix = ".jpg"
     if "png" in content_type:
         suffix = ".png"
@@ -400,21 +501,26 @@ def _call_civora_learned_detector(
     image_url: str,
     session: Any,
     requested_kinds: Optional[List[Any]] = None,
+    image_content: Optional[bytes] = None,
+    runtime: Optional[LearnedVisionRuntime] = None,
+    provider_name: str = "civora_learned",
 ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    runtime = _get_learned_runtime()
+    runtime = runtime or _get_learned_runtime()
     health = runtime.health(load_session=True)
     if health.get("ready") is not True:
         raise VisionModelRuntimeError(str(health.get("error") or "Learned vision model is unavailable."))
-    content, _ = _fetch_image(image_url=image_url, session=session)
+    content = image_content
+    if content is None:
+        content, _ = _fetch_image(image_url=image_url, session=session)
     result = runtime.detect(content, requested_kinds=[str(item) for item in requested_kinds or []])
     detections = []
     for detection in result.detections:
         rec = dict(detection)
         rec["source_url"] = image_url
-        rec["provider"] = "civora_learned"
+        rec["provider"] = provider_name
         detections.append(rec)
     return detections, {
-        "capability_level": "learned_model_review_candidates",
+        "capability_level": "shadow_model_review_candidates" if provider_name == "civora_shadow" else "learned_model_review_candidates",
         "learned_model_used": True,
         "fallback_used": False,
         "model_name": result.model_name,
@@ -508,6 +614,180 @@ def _get_learned_runtime() -> LearnedVisionRuntime:
         return runtime
 
 
+def _get_shadow_runtime() -> LearnedVisionRuntime:
+    manifest_path = str(os.getenv("CIVORA_GATEWAY_SHADOW_MODEL_MANIFEST") or "").strip()
+    if not manifest_path:
+        raise VisionModelRuntimeError("Shadow model manifest is not configured.")
+    with _SHADOW_RUNTIME_CACHE_LOCK:
+        runtime = _SHADOW_RUNTIME_CACHE.get(manifest_path)
+        if runtime is None:
+            runtime = LearnedVisionRuntime(manifest_path=manifest_path, require_promoted=False)
+            deployment_scope = _dict(runtime.manifest.get("deployment_scope"))
+            if deployment_scope.get("shadow_only") is not True:
+                raise VisionModelRuntimeError("Shadow model manifest must declare deployment_scope.shadow_only=true.")
+            if deployment_scope.get("user_visible_candidates_allowed") is not False:
+                raise VisionModelRuntimeError(
+                    "Shadow model manifest must declare deployment_scope.user_visible_candidates_allowed=false."
+                )
+            _SHADOW_RUNTIME_CACHE.clear()
+            _SHADOW_RUNTIME_CACHE[manifest_path] = runtime
+        return runtime
+
+
+def _run_shadow_comparison(
+    *,
+    baseline_detections: List[Dict[str, Any]],
+    baseline_provider: str,
+    image_url: str,
+    image_content: bytes,
+    requested_kinds: List[Any],
+) -> Dict[str, Any]:
+    try:
+        shadow_runtime = _get_shadow_runtime()
+        shadow_detections, shadow_metadata = _call_civora_learned_detector(
+            image_url=image_url,
+            session=requests,
+            requested_kinds=requested_kinds,
+            image_content=image_content,
+            runtime=shadow_runtime,
+            provider_name="civora_shadow",
+        )
+        shadow_health = shadow_runtime.health(load_session=False)
+        return build_shadow_comparison_report(
+            baseline_detections,
+            shadow_detections,
+            baseline_provider=baseline_provider,
+            shadow_model={
+                **shadow_metadata,
+                "promotion_status": shadow_health.get("promotion_status") or "candidate_shadow_only",
+            },
+            iou_threshold=_shadow_iou_threshold(),
+        )
+    except Exception:
+        return build_shadow_status_report("failed", reason="shadow_model_unavailable_or_inference_failed")
+
+
+def _enqueue_shadow_comparison(
+    *,
+    baseline_detections: List[Dict[str, Any]],
+    baseline_provider: str,
+    image_url: str,
+    image_content: bytes,
+    requested_kinds: List[Any],
+) -> bool:
+    _ensure_shadow_worker()
+    job = {
+        "baseline_detections": [dict(item) for item in baseline_detections],
+        "baseline_provider": baseline_provider,
+        "image_url": image_url,
+        "image_content": image_content,
+        "requested_kinds": list(requested_kinds),
+    }
+    try:
+        _SHADOW_QUEUE.put_nowait(job)
+    except queue.Full:
+        with _SHADOW_STATS_LOCK:
+            _SHADOW_STATS["dropped_count"] += 1
+        return False
+    with _SHADOW_STATS_LOCK:
+        _SHADOW_STATS["submitted_count"] += 1
+    return True
+
+
+def _ensure_shadow_worker() -> None:
+    global _SHADOW_WORKER_STARTED
+    with _SHADOW_WORKER_LOCK:
+        if _SHADOW_WORKER_STARTED:
+            return
+        worker = threading.Thread(target=_shadow_worker_loop, name="civora-vision-shadow", daemon=True)
+        worker.start()
+        _SHADOW_WORKER_STARTED = True
+
+
+def _shadow_worker_loop() -> None:
+    while True:
+        job = _SHADOW_QUEUE.get()
+        try:
+            try:
+                report = _run_shadow_comparison(**job)
+            except Exception:
+                report = build_shadow_status_report("failed", reason="unexpected_shadow_worker_failure")
+            with _SHADOW_STATS_LOCK:
+                if report.get("status") == "ready":
+                    _SHADOW_STATS["completed_count"] += 1
+                else:
+                    _SHADOW_STATS["failed_count"] += 1
+                _SHADOW_STATS["last_completed_at"] = _now_iso()
+                _SHADOW_STATS["last_report"] = report
+        finally:
+            _SHADOW_QUEUE.task_done()
+
+
+def _shadow_runtime_statistics() -> Dict[str, Any]:
+    with _SHADOW_STATS_LOCK:
+        return {
+            "submitted_count": int(_SHADOW_STATS["submitted_count"]),
+            "completed_count": int(_SHADOW_STATS["completed_count"]),
+            "failed_count": int(_SHADOW_STATS["failed_count"]),
+            "dropped_count": int(_SHADOW_STATS["dropped_count"]),
+            "queue_depth": _SHADOW_QUEUE.qsize(),
+            "last_completed_at": str(_SHADOW_STATS["last_completed_at"]),
+            "last_report": _dict(_SHADOW_STATS["last_report"]),
+        }
+
+
+def _shadow_request_selected(payload: Dict[str, Any], *, image_url: str) -> bool:
+    if _env_true("CIVORA_GATEWAY_SHADOW_FORCE"):
+        return True
+    sample_rate = _shadow_sample_rate()
+    if sample_rate <= 0:
+        return False
+    if sample_rate >= 1:
+        return True
+    sample_key = "|".join(
+        [
+            sanitize_source_url(image_url),
+            str(payload.get("address") or "").strip().lower(),
+            json_safe_bbox(_bbox_from_payload(payload)),
+        ]
+    )
+    bucket = int(hashlib.sha256(sample_key.encode("utf-8")).hexdigest()[:12], 16) / float(16**12)
+    return bucket < sample_rate
+
+
+def _shadow_sample_rate() -> float:
+    try:
+        value = float(os.getenv("CIVORA_GATEWAY_SHADOW_SAMPLE_RATE") or 0.05)
+    except ValueError:
+        value = 0.05
+    configured = max(0.0, min(1.0, value))
+    maximum = 0.05
+    try:
+        deployment_scope = _dict(_get_shadow_runtime().manifest.get("deployment_scope"))
+        maximum = max(0.0, min(1.0, float(deployment_scope.get("sample_rate_maximum", maximum))))
+    except (TypeError, ValueError, VisionModelRuntimeError):
+        pass
+    return min(configured, maximum)
+
+
+def _shadow_iou_threshold() -> float:
+    try:
+        value = float(os.getenv("CIVORA_GATEWAY_SHADOW_IOU_THRESHOLD") or 0.25)
+    except ValueError:
+        value = 0.25
+    return max(0.0, min(1.0, value))
+
+
+def json_safe_bbox(value: Dict[str, Any]) -> str:
+    if not value:
+        return ""
+    return ",".join(f"{key}:{float(value[key]):.8f}" for key in ("west", "south", "east", "north"))
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def _filter_civora_detections(detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     filtered: List[Dict[str, Any]] = []
     priority = {
@@ -582,6 +862,7 @@ def _gateway_response(
     imagery_frame: Optional[Dict[str, Any]] = None,
     detector_metadata: Optional[Dict[str, Any]] = None,
     vision_report: Optional[Dict[str, Any]] = None,
+    shadow_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     return {
         "status": status,
@@ -594,6 +875,7 @@ def _gateway_response(
         "imagery_frame": _dict(imagery_frame),
         "detector_metadata": _dict(detector_metadata),
         "civora_vision_detection_report_v2": _dict(vision_report),
+        SHADOW_REPORT_VERSION: _dict(shadow_report) or build_shadow_status_report("not_run", reason="shadow_status_unavailable"),
         "review_required": True,
         "truth_label": "Gateway detections are visual review candidates only, not survey/control or engineering evidence.",
     }

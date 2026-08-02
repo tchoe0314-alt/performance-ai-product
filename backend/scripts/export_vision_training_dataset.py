@@ -15,6 +15,8 @@ def main() -> int:
     parser.add_argument("--asset-registry", required=True, help="JSON registry of rights-cleared local image assets.")
     parser.add_argument("--output", required=True, help="Output COCO package JSON path.")
     parser.add_argument("--split-seed", default="civora-vision-v1")
+    parser.add_argument("--ground-truth-attestation", help="Optional JSON attestation for an independent held-out split.")
+    parser.add_argument("--evaluation-scope", help="Optional JSON coverage record for geography/season/imagery quality.")
     args = parser.parse_args()
 
     datasets: List[Dict[str, Any]] = []
@@ -28,6 +30,8 @@ def main() -> int:
         datasets,
         asset_registry=_read_json(args.asset_registry),
         split_seed=args.split_seed,
+        ground_truth_attestation=_read_json(args.ground_truth_attestation) if args.ground_truth_attestation else None,
+        evaluation_scope=_read_json(args.evaluation_scope) if args.evaluation_scope else None,
     )
     output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

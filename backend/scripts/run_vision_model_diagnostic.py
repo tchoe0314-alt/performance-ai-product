@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 from backend.planning.vision_model_lifecycle import (
     assess_model_promotion,
+    assess_ground_truth_attestation,
     build_model_manifest,
     evaluate_quality_by_class,
 )
@@ -25,6 +26,9 @@ def main() -> int:
     parser.add_argument("--training-code-revision", default="working-tree-diagnostic")
     parser.add_argument("--input-size", type=int, default=256)
     parser.add_argument("--confidence", type=float, default=0.30)
+    parser.add_argument("--minimum-component-pixels", type=int, default=24)
+    parser.add_argument("--split", choices=("validation", "test"), default="test")
+    parser.add_argument("--imagenet-normalization", action="store_true")
     args = parser.parse_args()
 
     model_path = Path(args.model).expanduser().resolve()
@@ -56,16 +60,16 @@ def main() -> int:
     _write_json(manifest_path, manifest)
     runtime = LearnedVisionRuntime(manifest_path=manifest_path, require_promoted=False)
 
-    test_ids = {int(value) for value in (dataset.get("splits") or {}).get("test") or []}
-    test_images = [
+    evaluation_ids = {int(value) for value in (dataset.get("splits") or {}).get(args.split) or []}
+    evaluation_images = [
         dict(item)
         for item in dataset.get("images") or []
-        if isinstance(item, dict) and int(item.get("id") or 0) in test_ids
+        if isinstance(item, dict) and int(item.get("id") or 0) in evaluation_ids
     ]
-    if not test_images:
-        raise SystemExit("Diagnostic test split contains no images.")
+    if not evaluation_images:
+        raise SystemExit(f"Diagnostic {args.split} split contains no images.")
     predictions: List[Dict[str, Any]] = []
-    for image in test_images:
+    for image in evaluation_images:
         path = (image_root / str(image.get("file_name") or "")).resolve()
         if image_root not in path.parents or not path.is_file():
             raise SystemExit(f"Diagnostic image is missing or escaped its image root: {path}")
@@ -85,7 +89,7 @@ def main() -> int:
     }
     ground_truth = []
     for annotation in dataset.get("annotations") or []:
-        if not isinstance(annotation, dict) or int(annotation.get("image_id") or 0) not in test_ids:
+        if not isinstance(annotation, dict) or int(annotation.get("image_id") or 0) not in evaluation_ids:
             continue
         ground_truth.append(
             {
@@ -94,22 +98,44 @@ def main() -> int:
                 "geometry": _annotation_geometry(annotation),
             }
         )
+    attestation = assess_ground_truth_attestation(dataset)
+    attested = attestation["eligible"] is True
+    measured = attested and args.split == "test"
+    evaluation_status = (
+        "measured_against_ground_truth"
+        if measured
+        else "measured_on_validation_split"
+        if attested and args.split == "validation"
+        else "unattested_or_weak_label_diagnostic"
+    )
+    evaluation_blockers = list(attestation["blockers"])
+    if attested and args.split != "test":
+        evaluation_blockers.append("independent_test_split_not_used_for_evaluation")
     quality = evaluate_quality_by_class(
         predictions,
         ground_truth,
-        evaluation_status="unattested_or_weak_label_diagnostic",
+        evaluation_status=evaluation_status,
+        ground_truth_attestation=dict(dataset.get("ground_truth_attestation") or {}),
+        evaluation_scope=dict(dataset.get("evaluation_scope") or {}),
+        source_supervision_status=str(dataset.get("supervision_status") or "unspecified"),
+        promotion_eligible=measured,
     )
     quality.update(
         {
-            "promotion_eligible": False,
-            "evaluation_blockers": [
-                "reviewed_ground_truth_attestation_missing",
-                "weak_label_temporal_alignment_unverified",
-            ],
+            "promotion_eligible": measured,
+            "evaluation_blockers": evaluation_blockers,
+            "ground_truth_attestation_assessment": attestation,
             "source_supervision_status": str(dataset.get("supervision_status") or "unspecified"),
+            "evaluation_split": args.split,
             "truth_label": (
-                "These metrics compare a diagnostic model with weak labels. They do not measure independent ground-truth "
-                "quality and cannot qualify this model for production."
+                "These metrics use an independently held-out, attested benchmark split. Promotion still requires every "
+                "quality, class-depth, coverage, artifact, and human-approval gate."
+                if measured
+                else "These metrics use attested validation labels for threshold selection. They are not independent test "
+                "evidence and cannot qualify this model for promotion."
+                if attested and args.split == "validation"
+                else "These metrics compare a diagnostic model with weak or unattested labels. They do not measure "
+                "independent ground-truth quality and cannot qualify this model for production."
             ),
         }
     )
@@ -132,11 +158,13 @@ def main() -> int:
         },
     )
     _write_json(
-        output_dir / "weak-ground-truth.json",
+        output_dir / ("ground-truth.json" if measured else "weak-ground-truth.json"),
         {
             "version": "civora_vision_diagnostic_ground_truth_v1",
             "supervision_status": dataset.get("supervision_status"),
-            "promotion_eligible": False,
+            "promotion_eligible": measured,
+            "ground_truth_attestation": dataset.get("ground_truth_attestation"),
+            "evaluation_scope": dataset.get("evaluation_scope"),
             "ground_truth": ground_truth,
         },
     )
@@ -146,11 +174,12 @@ def main() -> int:
         json.dumps(
             {
                 "success": True,
-                "test_images": len(test_images),
-                "weak_ground_truth_count": len(ground_truth),
+                "evaluation_split": args.split,
+                "evaluation_images": len(evaluation_images),
+                "ground_truth_count": len(ground_truth),
                 "prediction_count": len(predictions),
                 "diagnostic_quality": quality,
-                "promotion_eligible": False,
+                "promotion_eligible": promotion["eligible"],
                 "promotion_blockers": promotion["blockers"],
                 "candidate_manifest": str(manifest_path),
             },
@@ -176,16 +205,24 @@ def _candidate_manifest(
         classes=classes,
         quality_report=quality,
         dataset_fingerprint=str(dataset.get("dataset_fingerprint") or ""),
-        approved_by="not-approved-diagnostic",
+        approved_by="",
         model_license="internal-diagnostic-only",
         training_code_revision=args.training_code_revision,
         adapter="civora_semantic_v1",
-        input_contract={"width": args.input_size, "height": args.input_size},
+        input_contract={
+            "width": args.input_size,
+            "height": args.input_size,
+            "normalization": (
+                {"scale": 1.0 / 255.0, "mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}
+                if args.imagenet_normalization
+                else {"scale": 1.0 / 255.0, "mean": [0.0, 0.0, 0.0], "std": [1.0, 1.0, 1.0]}
+            ),
+        },
         required_classes=required_classes,
         weights_path=str(model_path),
     )
     manifest["thresholds"]["confidence"] = max(0.0, min(1.0, float(args.confidence)))
-    manifest["thresholds"]["minimum_component_pixels"] = 4
+    manifest["thresholds"]["minimum_component_pixels"] = max(1, int(args.minimum_component_pixels))
     manifest["inference"]["tile_mode"] = "disabled"
     return manifest
 

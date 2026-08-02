@@ -41,13 +41,21 @@ FEATURE_TYPE_ALIASES = {
 }
 
 DEFAULT_PROMOTION_THRESHOLDS = {
-    "precision": 0.75,
-    "recall": 0.70,
-    "f1": 0.72,
-    "mean_matched_iou": 0.55,
-    "minimum_ground_truth_count": 25,
-    "minimum_per_class_recall": 0.50,
+    "precision": 0.85,
+    "recall": 0.75,
+    "f1": 0.79,
+    "mean_matched_iou": 0.60,
+    "minimum_ground_truth_count": 100,
+    "minimum_per_class_precision": 0.85,
+    "minimum_per_class_recall": 0.75,
+    "minimum_per_class_ground_truth_count": 25,
+    "minimum_geography_count": 5,
+    "minimum_season_count": 2,
+    "minimum_imagery_quality_band_count": 2,
 }
+
+ACCEPTED_GROUND_TRUTH_SUPERVISION = {"reviewer_labeled", "independent_benchmark_annotated"}
+ACCEPTED_GROUND_TRUTH_ATTESTATIONS = {"human_reviewed_annotations", "third_party_benchmark_annotations"}
 
 
 def build_coco_training_package(
@@ -56,6 +64,8 @@ def build_coco_training_package(
     asset_registry: Dict[str, Any],
     class_map: Optional[Dict[str, str]] = None,
     split_seed: str = "civora-vision-v1",
+    ground_truth_attestation: Optional[Dict[str, Any]] = None,
+    evaluation_scope: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build a deterministic COCO manifest without copying source image bytes."""
 
@@ -136,6 +146,16 @@ def build_coco_training_package(
                 }
             )
             annotation_id += 1
+    attestation_payload = safe_dict(ground_truth_attestation)
+    scope_payload = safe_dict(evaluation_scope)
+    attestation_assessment = assess_ground_truth_attestation(
+        {
+            "supervision_status": "reviewer_labeled",
+            "evaluation_eligible": bool(images and annotations),
+            "ground_truth_attestation": attestation_payload,
+        }
+    )
+    evaluation_eligible = bool(images and annotations) and attestation_assessment["eligible"] is True
     payload: Dict[str, Any] = {
         "version": COCO_PACKAGE_VERSION,
         "generated_at": _now_iso(),
@@ -158,11 +178,24 @@ def build_coco_training_package(
         "excluded_example_count": len(excluded),
         "contains_image_bytes": False,
         "supervision_status": "reviewer_labeled",
-        "promotion_eligible": bool(images and annotations),
-        "promotion_blockers": [] if images and annotations else ["reviewed_training_annotations_missing"],
+        "evaluation_eligible": evaluation_eligible,
+        "promotion_eligible": evaluation_eligible,
+        "promotion_blockers": (
+            []
+            if evaluation_eligible
+            else sorted(
+                set(
+                    ([] if images and annotations else ["reviewed_training_annotations_missing"])
+                    + safe_list(attestation_assessment.get("blockers"))
+                )
+            )
+        ),
+        "ground_truth_attestation": attestation_payload,
+        "evaluation_scope": scope_payload,
         "truth_label": (
-            "This package references rights-cleared local imagery assets and reviewer labels. It contains no image bytes, "
-            "does not grant source rights, and is not a model-quality claim."
+            "This package references rights-cleared local imagery assets and reviewer labels. Training eligibility does "
+            "not make it independent evaluation evidence; promotion remains blocked until test-split, license, coverage, "
+            "and human-review attestations are explicitly attached."
         ),
     }
     payload["dataset_fingerprint"] = _stable_fingerprint(
@@ -182,6 +215,10 @@ def evaluate_quality_by_class(
     *,
     iou_threshold: float = 0.5,
     evaluation_status: str = "measured_against_ground_truth",
+    ground_truth_attestation: Optional[Dict[str, Any]] = None,
+    evaluation_scope: Optional[Dict[str, Any]] = None,
+    source_supervision_status: str = "",
+    promotion_eligible: Optional[bool] = None,
 ) -> Dict[str, Any]:
     predicted = [safe_dict(item) for item in predictions if safe_dict(item)]
     truth = [safe_dict(item) for item in ground_truth if safe_dict(item)]
@@ -197,12 +234,50 @@ def evaluate_quality_by_class(
             "prediction_count": len(class_predictions),
             "ground_truth_count": len(class_truth),
         }
-    return {
+    result = {
         **overall,
         "evaluation_status": safe_str(evaluation_status, "unattested_ground_truth"),
         "ground_truth_count": len(truth),
         "prediction_count": len(predicted),
         "per_class": per_class,
+    }
+    if ground_truth_attestation is not None:
+        result["ground_truth_attestation"] = safe_dict(ground_truth_attestation)
+    if evaluation_scope is not None:
+        result["evaluation_scope"] = safe_dict(evaluation_scope)
+    if safe_str(source_supervision_status):
+        result["source_supervision_status"] = safe_str(source_supervision_status)
+    if promotion_eligible is not None:
+        result["promotion_eligible"] = promotion_eligible is True
+    return result
+
+
+def assess_ground_truth_attestation(payload: Dict[str, Any]) -> Dict[str, Any]:
+    source = safe_dict(payload)
+    attestation = safe_dict(source.get("ground_truth_attestation"))
+    supervision = safe_str(source.get("source_supervision_status") or source.get("supervision_status"))
+    blockers: List[str] = []
+    if supervision not in ACCEPTED_GROUND_TRUTH_SUPERVISION:
+        blockers.append("reviewed_or_independent_ground_truth_missing")
+    if safe_str(attestation.get("status")) not in ACCEPTED_GROUND_TRUTH_ATTESTATIONS:
+        blockers.append("ground_truth_attestation_missing")
+    if attestation.get("independent_test_split") is not True:
+        blockers.append("independent_test_split_not_attested")
+    if attestation.get("test_images_excluded_from_training") is not True:
+        blockers.append("test_split_training_exclusion_not_attested")
+    if not safe_str(attestation.get("dataset_name")):
+        blockers.append("ground_truth_dataset_name_missing")
+    if not safe_str(attestation.get("license")):
+        blockers.append("ground_truth_license_missing")
+    evaluation_eligible = source.get("evaluation_eligible") is True or source.get("promotion_eligible") is True
+    if not evaluation_eligible:
+        blockers.append("ground_truth_evaluation_not_eligible")
+    return {
+        "eligible": not blockers,
+        "supervision_status": supervision,
+        "attestation_status": safe_str(attestation.get("status")),
+        "independent_test_split": attestation.get("independent_test_split") is True,
+        "blockers": sorted(set(blockers)),
     }
 
 
@@ -217,26 +292,64 @@ def assess_model_promotion(
     blockers: List[str] = []
     if safe_str(quality.get("evaluation_status")) != "measured_against_ground_truth":
         blockers.append("ground_truth_evaluation_missing")
+    attestation = assess_ground_truth_attestation(quality)
+    blockers.extend(safe_list(attestation.get("blockers")))
     for metric in ("precision", "recall", "f1", "mean_matched_iou"):
         if safe_float(quality.get(metric)) < safe_float(limits.get(metric)):
             blockers.append(f"{metric}_below_promotion_threshold")
     if int(safe_float(quality.get("ground_truth_count"))) < int(safe_float(limits.get("minimum_ground_truth_count"))):
         blockers.append("ground_truth_sample_count_below_promotion_threshold")
+    scope = safe_dict(quality.get("evaluation_scope"))
+    for field, threshold_name, blocker in (
+        ("geography_count", "minimum_geography_count", "geographic_coverage_below_promotion_threshold"),
+        ("season_count", "minimum_season_count", "seasonal_coverage_below_promotion_threshold"),
+        (
+            "imagery_quality_band_count",
+            "minimum_imagery_quality_band_count",
+            "imagery_quality_coverage_below_promotion_threshold",
+        ),
+    ):
+        if int(safe_float(scope.get(field))) < int(safe_float(limits.get(threshold_name))):
+            blockers.append(blocker)
     per_class = safe_dict(quality.get("per_class"))
+    class_assessments: Dict[str, Any] = {}
     for label in required_classes or []:
         class_quality = safe_dict(per_class.get(label))
+        class_blockers: List[str] = []
         if not class_quality:
-            blockers.append(f"required_class_not_evaluated:{label}")
-        elif safe_float(class_quality.get("recall")) < safe_float(limits.get("minimum_per_class_recall")):
-            blockers.append(f"required_class_recall_below_threshold:{label}")
+            class_blockers.append("required_class_not_evaluated")
+        else:
+            if safe_float(class_quality.get("precision")) < safe_float(limits.get("minimum_per_class_precision")):
+                class_blockers.append("required_class_precision_below_threshold")
+            if safe_float(class_quality.get("recall")) < safe_float(limits.get("minimum_per_class_recall")):
+                class_blockers.append("required_class_recall_below_threshold")
+            if int(safe_float(class_quality.get("ground_truth_count"))) < int(
+                safe_float(limits.get("minimum_per_class_ground_truth_count"))
+            ):
+                class_blockers.append("required_class_sample_count_below_threshold")
+        class_assessments[label] = {
+            "eligible": not class_blockers,
+            "precision": safe_float(class_quality.get("precision")),
+            "recall": safe_float(class_quality.get("recall")),
+            "ground_truth_count": int(safe_float(class_quality.get("ground_truth_count"))),
+            "blockers": class_blockers,
+        }
+        blockers.extend(f"{item}:{label}" for item in class_blockers)
+    eligible_classes = sorted(label for label, item in class_assessments.items() if item["eligible"])
+    blocked_classes = sorted(label for label, item in class_assessments.items() if not item["eligible"])
     return {
         "version": MODEL_PROMOTION_VERSION,
         "eligible": not blockers,
         "thresholds": limits,
         "blockers": sorted(set(blockers)),
+        "ground_truth_attestation": attestation,
+        "evaluation_scope": scope,
+        "class_assessments": class_assessments,
+        "eligible_classes": eligible_classes,
+        "blocked_classes": blocked_classes,
         "truth_label": (
-            "Promotion means eligible to create visual review candidates under the evaluated classes and conditions. "
-            "It does not make detections survey/control or engineering evidence."
+            "Promotion means eligible to create visual review candidates only for classes and operating conditions that "
+            "passed independent evidence gates. It does not make detections survey/control or engineering evidence."
         ),
     }
 
@@ -336,6 +449,8 @@ def build_model_manifest(
         "evaluation": safe_dict(quality_report),
         "promotion": {
             **promotion,
+            "evidence_eligible": promotion.get("eligible") is True,
+            "eligible": status == PROMOTED_STATUS,
             "status": status,
             "approved_by": safe_str(approved_by),
             "approved_at": _now_iso() if status == PROMOTED_STATUS else "",
@@ -474,6 +589,7 @@ __all__ = [
     "DEFAULT_CLASSES",
     "DEFAULT_PROMOTION_THRESHOLDS",
     "MODEL_PROMOTION_VERSION",
+    "assess_ground_truth_attestation",
     "assess_model_promotion",
     "build_coco_training_package",
     "build_model_manifest",

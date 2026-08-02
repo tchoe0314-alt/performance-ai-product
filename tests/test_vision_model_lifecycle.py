@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from backend.planning.vision_model_lifecycle import (
+    assess_ground_truth_attestation,
     assess_model_promotion,
     build_coco_training_package,
     build_model_manifest,
@@ -67,6 +68,25 @@ def _asset_registry(*, rights: bool = True):
     }
 
 
+def _attested_quality_scope():
+    return {
+        "source_supervision_status": "independent_benchmark_annotated",
+        "promotion_eligible": True,
+        "ground_truth_attestation": {
+            "status": "third_party_benchmark_annotations",
+            "dataset_name": "fixture benchmark",
+            "license": "CC-BY-SA-4.0",
+            "independent_test_split": True,
+            "test_images_excluded_from_training": True,
+        },
+        "evaluation_scope": {
+            "geography_count": 5,
+            "season_count": 2,
+            "imagery_quality_band_count": 2,
+        },
+    }
+
+
 class VisionModelLifecycleTests(unittest.TestCase):
     def test_coco_export_includes_reviewed_positive_and_negative_image_without_bytes(self) -> None:
         package = build_coco_training_package([_dataset()], asset_registry=_asset_registry())
@@ -75,8 +95,24 @@ class VisionModelLifecycleTests(unittest.TestCase):
         self.assertEqual(package["annotation_count"], 1)
         self.assertEqual(package["excluded_example_count"], 0)
         self.assertFalse(package["contains_image_bytes"])
+        self.assertFalse(package["promotion_eligible"])
+        self.assertIn("ground_truth_attestation_missing", package["promotion_blockers"])
         self.assertEqual(package["annotations"][0]["bbox"], [10.0, 10.0, 20.0, 25.0])
         self.assertEqual(len(package["dataset_fingerprint"]), 64)
+
+        attested = build_coco_training_package(
+            [_dataset()],
+            asset_registry=_asset_registry(),
+            ground_truth_attestation={
+                "status": "human_reviewed_annotations",
+                "dataset_name": "held-out fixture",
+                "license": "internal-rights-cleared",
+                "independent_test_split": True,
+                "test_images_excluded_from_training": True,
+            },
+            evaluation_scope={"geography_count": 5, "season_count": 2, "imagery_quality_band_count": 2},
+        )
+        self.assertTrue(attested["promotion_eligible"])
 
     def test_coco_export_blocks_source_without_training_or_storage_rights(self) -> None:
         package = build_coco_training_package(
@@ -93,11 +129,12 @@ class VisionModelLifecycleTests(unittest.TestCase):
     def test_quality_and_promotion_are_ground_truth_and_class_gated(self) -> None:
         truth = [
             {"kind": "building", "geometry": _polygon(index * 20, 0, index * 20 + 10, 10)}
-            for index in range(30)
+            for index in range(120)
         ]
         quality = evaluate_quality_by_class(
             [{**item, "confidence": 0.9} for item in truth],
             truth,
+            **_attested_quality_scope(),
         )
         promotion = assess_model_promotion(quality, required_classes=["building"])
 
@@ -108,6 +145,43 @@ class VisionModelLifecycleTests(unittest.TestCase):
         blocked = assess_model_promotion({"evaluation_status": "ground_truth_not_attached"})
         self.assertFalse(blocked["eligible"])
         self.assertIn("ground_truth_evaluation_missing", blocked["blockers"])
+
+    def test_promotion_blocks_narrow_coverage_and_reports_class_gate(self) -> None:
+        quality = {
+            "evaluation_status": "measured_against_ground_truth",
+            "precision": 0.95,
+            "recall": 0.90,
+            "f1": 0.92,
+            "mean_matched_iou": 0.80,
+            "ground_truth_count": 120,
+            "per_class": {"building": {"precision": 0.90, "recall": 0.80, "ground_truth_count": 120}},
+            **_attested_quality_scope(),
+        }
+        quality["evaluation_scope"] = {
+            "geography_count": 4,
+            "season_count": 0,
+            "imagery_quality_band_count": 1,
+        }
+
+        promotion = assess_model_promotion(quality, required_classes=["building"])
+
+        self.assertFalse(promotion["eligible"])
+        self.assertEqual(promotion["eligible_classes"], ["building"])
+        self.assertIn("geographic_coverage_below_promotion_threshold", promotion["blockers"])
+        self.assertIn("seasonal_coverage_below_promotion_threshold", promotion["blockers"])
+
+    def test_attestation_rejects_weak_or_train_overlapping_labels(self) -> None:
+        assessment = assess_ground_truth_attestation(
+            {
+                "supervision_status": "weak_public_footprint_labels",
+                "promotion_eligible": False,
+                "ground_truth_attestation": {"independent_test_split": False},
+            }
+        )
+
+        self.assertFalse(assessment["eligible"])
+        self.assertIn("reviewed_or_independent_ground_truth_missing", assessment["blockers"])
+        self.assertIn("independent_test_split_not_attested", assessment["blockers"])
 
     def test_weak_diagnostic_status_is_preserved_per_class(self) -> None:
         truth = [{"kind": "building", "geometry": _polygon(0, 0, 10, 10)}]
@@ -132,7 +206,8 @@ class VisionModelLifecycleTests(unittest.TestCase):
             "f1": 0.87,
             "mean_matched_iou": 0.7,
             "ground_truth_count": 100,
-            "per_class": {"building": {"recall": 0.8}},
+            "per_class": {"building": {"precision": 0.9, "recall": 0.8, "ground_truth_count": 100}},
+            **_attested_quality_scope(),
         }
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "model.onnx"
@@ -152,8 +227,43 @@ class VisionModelLifecycleTests(unittest.TestCase):
             )
 
         self.assertEqual(manifest["promotion"]["status"], "approved_for_review_candidates")
+        self.assertTrue(manifest["promotion"]["evidence_eligible"])
+        self.assertTrue(manifest["promotion"]["eligible"])
         self.assertEqual(manifest["adapter"], "civora_semantic_v1")
         self.assertEqual(len(manifest["artifact"]["weights_sha256"]), 64)
+
+    def test_manifest_does_not_report_eligible_when_human_approver_is_missing(self) -> None:
+        quality = {
+            "evaluation_status": "measured_against_ground_truth",
+            "precision": 0.9,
+            "recall": 0.85,
+            "f1": 0.87,
+            "mean_matched_iou": 0.7,
+            "ground_truth_count": 100,
+            "per_class": {"building": {"precision": 0.9, "recall": 0.8, "ground_truth_count": 100}},
+            **_attested_quality_scope(),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            model = Path(directory) / "model.onnx"
+            model.write_bytes(b"model-weights")
+            manifest = build_model_manifest(
+                model_path=model,
+                model_name="candidate",
+                model_version="v1",
+                classes={0: "background", 1: "building"},
+                quality_report=quality,
+                dataset_fingerprint="b" * 64,
+                approved_by="",
+                model_license="internal-rights-cleared",
+                training_code_revision="abc123",
+                adapter="civora_semantic_v1",
+                required_classes=["building"],
+            )
+
+        self.assertTrue(manifest["promotion"]["evidence_eligible"])
+        self.assertFalse(manifest["promotion"]["eligible"])
+        self.assertEqual(manifest["promotion"]["status"], "candidate_blocked")
+        self.assertIn("model_approver_missing", manifest["promotion"]["blockers"])
 
 
 if __name__ == "__main__":

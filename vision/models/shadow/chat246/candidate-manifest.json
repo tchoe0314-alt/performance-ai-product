@@ -1,0 +1,225 @@
+{
+  "adapter": "civora_semantic_v1",
+  "artifact": {
+    "weights_path": "civora_semantic.onnx",
+    "weights_sha256": "5564ffbc2e6faf2e61a868e7b06f5382b881a82eac94e20a2118624a42566206"
+  },
+  "classes": {
+    "0": "background",
+    "1": "building"
+  },
+  "deployment_scope": {
+    "background_inference_required": true,
+    "promotion_required_before_user_visible_use": true,
+    "sample_rate_maximum": 0.05,
+    "shadow_only": true,
+    "user_visible_candidates_allowed": false
+  },
+  "evaluation": {
+    "evaluation_blockers": [],
+    "evaluation_scope": {
+      "density_band_count": 3,
+      "density_bands": [
+        "high",
+        "low",
+        "medium"
+      ],
+      "geographies": [
+        "Khartoum",
+        "Paris",
+        "Shanghai",
+        "Vegas"
+      ],
+      "geography_count": 4,
+      "imagery_quality_band_count": 1,
+      "imagery_quality_bands": [
+        "spacenet_rgb_pansharpened"
+      ],
+      "season_count": 0,
+      "season_metadata_status": "not_provided_by_source",
+      "seasons": [],
+      "supported_classes": [
+        "building"
+      ]
+    },
+    "evaluation_split": "test",
+    "evaluation_status": "measured_against_ground_truth",
+    "f1": 0.3175,
+    "false_negative": 94,
+    "false_positive": 35,
+    "geometry_metric": "class_aware_bounding_box_iou",
+    "ground_truth_attestation": {
+      "annotation_source": "official_dataset_labels",
+      "attribution": "SpaceNet Partners",
+      "dataset_name": "SpaceNet 2 Buildings",
+      "dataset_url": "https://spacenet.ai/spacenet-buildings-dataset-v2/",
+      "independent_test_split": true,
+      "license": "CC-BY-SA-4.0",
+      "status": "third_party_benchmark_annotations",
+      "test_images_excluded_from_training": true
+    },
+    "ground_truth_attestation_assessment": {
+      "attestation_status": "third_party_benchmark_annotations",
+      "blockers": [],
+      "eligible": true,
+      "independent_test_split": true,
+      "supervision_status": "independent_benchmark_annotated"
+    },
+    "ground_truth_count": 124,
+    "iou_threshold": 0.5,
+    "mean_matched_iou": 0.67,
+    "per_class": {
+      "building": {
+        "evaluation_status": "measured_against_ground_truth",
+        "f1": 0.3175,
+        "false_negative": 94,
+        "false_positive": 35,
+        "geometry_metric": "class_aware_bounding_box_iou",
+        "ground_truth_count": 124,
+        "iou_threshold": 0.5,
+        "mean_matched_iou": 0.67,
+        "precision": 0.4615,
+        "prediction_count": 65,
+        "recall": 0.2419,
+        "true_positive": 30
+      }
+    },
+    "precision": 0.4615,
+    "prediction_count": 65,
+    "promotion_eligible": true,
+    "recall": 0.2419,
+    "source_supervision_status": "independent_benchmark_annotated",
+    "true_positive": 30,
+    "truth_label": "These metrics use an independently held-out, attested benchmark split. Promotion still requires every quality, class-depth, coverage, artifact, and human-approval gate."
+  },
+  "format": "onnx",
+  "inference": {
+    "tile_mode": "disabled",
+    "tile_overlap": 0.2
+  },
+  "input": {
+    "height": 384,
+    "layout": "NCHW",
+    "name": "images",
+    "normalization": {
+      "mean": [
+        0.485,
+        0.456,
+        0.406
+      ],
+      "scale": 0.00392156862745098,
+      "std": [
+        0.229,
+        0.224,
+        0.225
+      ]
+    },
+    "width": 384
+  },
+  "model_name": "civora-spacenet2-building-shadow",
+  "model_version": "chat246-v2",
+  "outputs": {
+    "background_class_id": 0,
+    "logits": "logits"
+  },
+  "promotion": {
+    "approved_at": "",
+    "approved_by": "",
+    "blocked_classes": [
+      "building"
+    ],
+    "blockers": [
+      "f1_below_promotion_threshold",
+      "geographic_coverage_below_promotion_threshold",
+      "imagery_quality_coverage_below_promotion_threshold",
+      "model_approver_missing",
+      "precision_below_promotion_threshold",
+      "recall_below_promotion_threshold",
+      "required_class_precision_below_threshold:building",
+      "required_class_recall_below_threshold:building",
+      "seasonal_coverage_below_promotion_threshold"
+    ],
+    "class_assessments": {
+      "building": {
+        "blockers": [
+          "required_class_precision_below_threshold",
+          "required_class_recall_below_threshold"
+        ],
+        "eligible": false,
+        "ground_truth_count": 124,
+        "precision": 0.4615,
+        "recall": 0.2419
+      }
+    },
+    "eligible": false,
+    "eligible_classes": [],
+    "evaluation_scope": {
+      "density_band_count": 3,
+      "density_bands": [
+        "high",
+        "low",
+        "medium"
+      ],
+      "geographies": [
+        "Khartoum",
+        "Paris",
+        "Shanghai",
+        "Vegas"
+      ],
+      "geography_count": 4,
+      "imagery_quality_band_count": 1,
+      "imagery_quality_bands": [
+        "spacenet_rgb_pansharpened"
+      ],
+      "season_count": 0,
+      "season_metadata_status": "not_provided_by_source",
+      "seasons": [],
+      "supported_classes": [
+        "building"
+      ]
+    },
+    "ground_truth_attestation": {
+      "attestation_status": "third_party_benchmark_annotations",
+      "blockers": [],
+      "eligible": true,
+      "independent_test_split": true,
+      "supervision_status": "independent_benchmark_annotated"
+    },
+    "status": "candidate_blocked",
+    "thresholds": {
+      "f1": 0.79,
+      "mean_matched_iou": 0.6,
+      "minimum_geography_count": 5,
+      "minimum_ground_truth_count": 100,
+      "minimum_imagery_quality_band_count": 2,
+      "minimum_per_class_ground_truth_count": 25,
+      "minimum_per_class_precision": 0.85,
+      "minimum_per_class_recall": 0.75,
+      "minimum_season_count": 2,
+      "precision": 0.85,
+      "recall": 0.75
+    },
+    "truth_label": "Promotion means eligible to create visual review candidates only for classes and operating conditions that passed independent evidence gates. It does not make detections survey/control or engineering evidence.",
+    "version": "civora_vision_model_promotion_v1"
+  },
+  "provenance": {
+    "backbone": "torchvision LRASPP MobileNetV3 Large pretrained weights",
+    "backbone_license": "BSD-3-Clause",
+    "dataset_fingerprint": "76e1da92ad55c666e0fa3902c1f9fa1f65f0bd246f637b1640f3ce6741dd3c58",
+    "model_license": "CC-BY-SA-4.0-derived-evaluation-artifact",
+    "training_code_revision": "70406814-chat246",
+    "training_dataset": "SpaceNet 2 Buildings sample",
+    "training_dataset_attribution": "SpaceNet Partners",
+    "training_dataset_license": "CC-BY-SA-4.0",
+    "training_dataset_url": "https://spacenet.ai/spacenet-buildings-dataset-v2/"
+  },
+  "thresholds": {
+    "confidence": 0.7,
+    "mask": 0.5,
+    "max_detections": 200,
+    "minimum_component_pixels": 256,
+    "nms_iou": 0.5
+  },
+  "truth_label": "This blocked candidate may run only in background shadow evaluation. Its output cannot alter user-visible candidates and is not survey, control, compliance, or engineering evidence.",
+  "version": "civora_vision_model_manifest_v1"
+}

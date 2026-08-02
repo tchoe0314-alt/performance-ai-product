@@ -34,5 +34,6 @@ reports/benchmarks/golden_load_benchmark_report.json
 # Rights-cleared vision source assets and generated model weights stay outside git.
 private/vision/
 *.onnx
+!vision/models/shadow/chat246/civora_semantic.onnx
 *.pt
 *.pth
