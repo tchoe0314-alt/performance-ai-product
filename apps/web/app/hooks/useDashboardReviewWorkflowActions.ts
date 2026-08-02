@@ -56,17 +56,18 @@ export function useDashboardReviewWorkflowActions({
   const candidateDecisionLockRef = useRef(false);
   const handleCandidateReviewDecision = useCallback(
     async (
-      candidateId: string,
+      candidateIds: string | string[],
       action: CandidateReviewDecision,
       correction?: CandidateReviewCorrection,
     ) => {
       if (candidateDecisionLockRef.current) return;
       candidateDecisionLockRef.current = true;
-      setCandidateDecisionInFlight({ candidateId, action });
+      const normalizedCandidateIds = Array.isArray(candidateIds) ? candidateIds : [candidateIds];
+      setCandidateDecisionInFlight({ candidateId: normalizedCandidateIds.join(","), action });
       try {
         const updatedProject = await runDashboardCandidateReviewDecision({
           action,
-          candidateId,
+          candidateIds: normalizedCandidateIds,
           currentProject,
           siteScaleLocked,
           currentProjectId,

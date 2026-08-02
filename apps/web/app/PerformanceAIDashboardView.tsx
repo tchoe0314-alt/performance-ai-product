@@ -29,6 +29,7 @@ import type {
   SiteInputs,
   CandidateReviewInbox,
   CivoraVisionQualityReport,
+  CivoraVisionReviewWorkspace,
   CivoraVisionTrainingDataset,
   DesignAlternativesV1,
   ReviewIssueTrackerV1,
@@ -1039,6 +1040,10 @@ function PerformanceAIDashboardView({
     siteInputs?.civora_vision_quality_report_v1 ??
     currentPlanMeta.civora_vision_quality_report_v1
   ) as CivoraVisionQualityReport | undefined;
+  const visionReviewWorkspace = (
+    siteInputs?.civora_vision_review_workspace_v1 ??
+    currentPlanMeta.civora_vision_review_workspace_v1
+  ) as CivoraVisionReviewWorkspace | undefined;
   const sourceConfidenceMap = useMemo<SourceConfidenceMap>(
     () =>
       buildSourceConfidenceMap({
@@ -4516,6 +4521,10 @@ function PerformanceAIDashboardView({
     [activePlacementId, buildingPlacements, selectedObjectIds],
   );
   const { selectedBuilding, selectedObjectSet, selectedObjectRows, selectedObjectMeasurements, selectedObjectMeasurementSummary, hiddenObjectCount, objectManagerTypes, objectManagerLayerRows } = objectSelectionView;
+  const selectedCorrectionObjects = useMemo(
+    () => buildingPlacements.filter((item) => selectedObjectSet.has(item.id)),
+    [buildingPlacements, selectedObjectSet],
+  );
   const sidePanelForRender = resolveSidePanelForRender({
     rightRailCollapsed,
     activeSidePanel,
@@ -5211,8 +5220,10 @@ function PerformanceAIDashboardView({
     onCandidateDecision: handleCandidateReviewDecision,
     visionTrainingDataset,
     visionQualityReport,
+    visionReviewWorkspace,
     onExportVisionLearning: handleExportVisionLearning,
     selectedCorrectionObject: selectedBuilding,
+    selectedCorrectionObjects,
     siteAddress,
     selectedAddressSuggestion,
     addressSuggestions,

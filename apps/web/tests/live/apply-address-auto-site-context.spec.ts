@@ -82,6 +82,27 @@ function candidateInbox(statuses: Record<string, "pending" | "accepted" | "rejec
         },
       },
     },
+    {
+      candidate_id: "image-road-1",
+      candidate_type: "road_row",
+      label: "Detected imagery road segment",
+      source: "Civora Vision",
+      provider: "Civora Vision",
+      confidence: 0.54,
+      object_count: 1,
+      source_record: {
+        candidate_id: "image-road-1",
+        feature_type: "road_or_drive",
+        source_type: "image_detected_candidate",
+        source_name: "Civora Vision",
+        source_feature_id: "vision-detection-2",
+        properties: {
+          vision_detection_id: "vision-detection-2",
+          imagery_frame_id: "frame-1",
+          source_rights: { training_use_allowed: true },
+        },
+      },
+    },
     ...Array.from({ length: 30 }, (_, index) => ({
       candidate_id: `parcel-extra-${index + 1}`,
       candidate_type: "parcel_site_boundary",
@@ -110,7 +131,85 @@ function candidateInbox(statuses: Record<string, "pending" | "accepted" | "rejec
   };
 }
 
-test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
+function visionReviewWorkspace(eventCount = 0) {
+  return {
+    version: "civora_vision_review_workspace_v1",
+    ledger_summary: {
+      event_count: eventCount,
+      head_hash: eventCount ? "fixture-ledger-head" : "GENESIS",
+      integrity_valid: true,
+      integrity_blockers: [],
+    },
+    dataset_summary: {
+      fingerprint: "fixture-dataset-fingerprint",
+      annotation_count: eventCount,
+      eligible_annotation_count: 0,
+      counts_by_split: { train: 0, validation: 0, test: 0 },
+      export_ready: false,
+      export_blockers: ["reviewed_geometry_needs_imagery_registration"],
+    },
+    active_learning_queue: {
+      candidate_count: eventCount ? 1 : 2,
+      items: eventCount
+        ? [
+            {
+              candidate_id: "image-road-1",
+              feature_type: "road_or_drive",
+              label: "Detected imagery road segment",
+              priority_score: 89,
+              confidence: 0.54,
+              reason_codes: ["pending_human_review", "high_model_uncertainty", "underrepresented_class"],
+            },
+          ]
+        : [
+            {
+              candidate_id: "image-building-1",
+              feature_type: "building_footprint",
+              label: "Detected imagery building footprint",
+              priority_score: 92,
+              confidence: 0.62,
+              reason_codes: ["pending_human_review", "high_model_uncertainty", "underrepresented_class"],
+            },
+            {
+              candidate_id: "image-road-1",
+              feature_type: "road_or_drive",
+              label: "Detected imagery road segment",
+              priority_score: 89,
+              confidence: 0.54,
+              reason_codes: ["pending_human_review", "high_model_uncertainty", "underrepresented_class"],
+            },
+          ],
+    },
+    coverage: {
+      blocked_classes: ["building_footprint", "road_or_drive"],
+      target_ready_classes: [],
+      geography_count: 1,
+      season_count: 1,
+      imagery_quality_band_count: 1,
+      classes: {
+        building_footprint: {
+          reviewed_annotation_count: eventCount,
+          target_annotation_count: 500,
+          geography_count: 1,
+          season_count: 1,
+          imagery_quality_band_count: 1,
+          target_ready: false,
+          blockers: ["reviewed_example_target_not_met"],
+        },
+      },
+    },
+    class_readiness: {
+      model_status: "candidate_blocked",
+      eligible_classes: [],
+      blocked_classes: ["building_footprint"],
+      visible_model_use_allowed: false,
+    },
+    visible_detection_influence: false,
+    model_promotion_status: "candidate_blocked",
+  };
+}
+
+test("Apply Address automatically runs Auto Site Context", async ({ page }, testInfo) => {
   let savedProjectInput: Record<string, unknown> | null = null;
   let fetchOnlineCalled = false;
   let fetchOnlineRequest: Record<string, unknown> | null = null;
@@ -236,7 +335,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await page.route("**/api/projects/*/candidate-review", async (route) => {
     const payload = route.request().postDataJSON() as {
       candidate_ids?: string[];
-      action?: "accept" | "reject" | "pending" | "correct";
+      action?: "accept" | "reject" | "pending" | "correct" | "reclassify" | "redraw" | "merge" | "split";
       corrected_feature_type?: string;
       corrected_geometry?: Record<string, unknown>;
       correction_coordinate_space?: string;
@@ -246,7 +345,12 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
     }
     for (const candidateId of payload.candidate_ids ?? []) {
       candidateStatuses[candidateId] =
-        payload.action === "accept" || payload.action === "correct"
+        payload.action === "accept" ||
+        payload.action === "correct" ||
+        payload.action === "reclassify" ||
+        payload.action === "redraw" ||
+        payload.action === "merge" ||
+        payload.action === "split"
           ? "accepted"
           : payload.action === "reject"
             ? "rejected"
@@ -369,6 +473,9 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
           recall: null,
           quality_claim_allowed: false,
         },
+        civora_vision_review_workspace_v1: visionReviewWorkspace(
+          candidateStatuses["image-building-1"] === "accepted" ? 1 : 0,
+        ),
       }),
     });
   });
@@ -394,6 +501,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
           recall: null,
           quality_claim_allowed: false,
         },
+        civora_vision_review_workspace_v1: visionReviewWorkspace(1),
       }),
     });
   });
@@ -491,6 +599,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
           },
         },
         candidate_review_inbox_v1: candidateInbox(),
+        civora_vision_review_workspace_v1: visionReviewWorkspace(),
         existing_conditions_package: { status: "review_required", production_ready: false },
         existing_conditions_summary: { production_ready: false },
       }),
@@ -650,12 +759,23 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await page.getByTestId("review-found-context").click();
   const detectedItems = page.getByTestId("detected-items-review");
   await expect(detectedItems).toBeVisible();
-  await expect(detectedItems).toContainText("Detected Items · 33 To Review");
-  await expect(detectedItems.getByTestId("detected-items-page-summary")).toHaveText("Showing 1-12 of 33");
+  await expect(detectedItems).toContainText("Detected Items · 34 To Review");
+  await expect(detectedItems.getByTestId("detected-items-page-summary")).toHaveText("Showing 1-12 of 34");
   await expect(detectedItems.getByTestId("detected-item-candidate")).toHaveCount(12);
-  await detectedItems.getByRole("tab", { name: "Vision 1" }).click();
-  await expect(detectedItems.getByTestId("detected-item-candidate")).toHaveCount(1);
-  await expect(detectedItems.getByTestId("detected-items-page-summary")).toHaveText("Showing 1-1 of 1");
+  await detectedItems.getByRole("tab", { name: "Vision 2" }).click();
+  await expect(detectedItems.getByTestId("detected-item-candidate")).toHaveCount(2);
+  await expect(detectedItems.getByTestId("detected-items-page-summary")).toHaveText("Showing 1-2 of 2");
+  const groundTruthWorkspace = detectedItems.getByTestId("vision-ground-truth-workspace");
+  await expect(groundTruthWorkspace).toBeVisible();
+  await expect(groundTruthWorkspace).toContainText("Ledger verified");
+  await expect(groundTruthWorkspace).toContainText("Priority 92");
+  await detectedItems.getByLabel("Select vision detection Detected imagery building footprint").check();
+  await expect(groundTruthWorkspace.getByTestId("vision-review-selection-actions")).toContainText("1 detection selected");
+  await expect(groundTruthWorkspace.getByRole("button", { name: "Split outline" })).toBeDisabled();
+  await detectedItems.getByLabel("Select vision detection Detected imagery road segment").check();
+  await expect(groundTruthWorkspace.getByTestId("vision-review-selection-actions")).toContainText("2 detections selected");
+  await expect(groundTruthWorkspace.getByRole("button", { name: "Merge outlines" })).toBeEnabled();
+  await groundTruthWorkspace.getByRole("button", { name: "Clear" }).click();
   await detectedItems.getByRole("tab", { name: "All" }).click();
   await expect(detectedItems.getByTestId("detected-item-candidate")).toHaveCount(12);
   const buildingCandidate = detectedItems.locator('[data-candidate-id="building-1"]');
@@ -664,13 +784,13 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(buildingCandidate.getByRole("button", { name: "Saving..." })).toBeVisible();
   await expect(detectedItems.getByRole("button", { name: "Reject" }).first()).toBeDisabled();
   releaseCandidateDecision();
-  await expect(detectedItems).toContainText("Detected Items · 32 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 33 To Review");
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   await expect(buildingCandidate).toContainText(/accepted/i);
   await expect(buildingCandidate.getByRole("button", { name: "Accept" })).toBeDisabled();
   const roadCandidate = detectedItems.locator('[data-candidate-id="road-1"]');
   await roadCandidate.getByRole("button", { name: "Reject" }).click();
-  await expect(detectedItems).toContainText("Detected Items · 31 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 32 To Review");
   await expect(detectedItems).toContainText("Accepted");
   await expect(detectedItems).toContainText("Rejected");
   const visionCandidate = detectedItems.locator('[data-candidate-id="image-building-1"]');
@@ -680,7 +800,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
     .selectOption("parking_area");
   await expect(visionCandidate).toContainText(/Selected outline: Custom Area/i);
   await visionCandidate.getByRole("button", { name: "Use selected outline" }).click();
-  await expect(detectedItems).toContainText("Detected Items · 30 To Review");
+  await expect(detectedItems).toContainText("Detected Items · 31 To Review");
   await expect(visionCandidate).toContainText(/accepted/i);
   await expect.poll(() => lastVisionCorrectionPayload?.correction_coordinate_space).toBe("project_local");
   await expect.poll(() => (lastVisionCorrectionPayload?.corrected_geometry as { type?: string } | undefined)?.type).toBe("Polygon");
@@ -706,7 +826,12 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }) => {
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("1 reviewed");
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("0 rights-cleared");
   await expect(detectedItems.getByTestId("vision-learning-summary")).toContainText("Accuracy is not claimed");
+  await expect(detectedItems.getByTestId("vision-ground-truth-workspace")).toContainText(/Review events\s*1/);
   await expect(detectedItems.getByTestId("vision-inference-source-summary")).toContainText("external/other");
+  await testInfo.attach("vision-ground-truth-workspace", {
+    body: await detectedItems.getByTestId("vision-ground-truth-workspace").screenshot(),
+    contentType: "image/png",
+  });
   const learningDownload = page.waitForEvent("download");
   await detectedItems.getByRole("button", { name: "Export feedback" }).click();
   const downloadedManifest = await learningDownload;

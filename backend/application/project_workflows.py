@@ -39,6 +39,15 @@ from backend.planning.vision_detection_learning import (
     QUALITY_VERSION as VISION_QUALITY_VERSION,
     build_vision_learning_package,
 )
+from backend.planning.vision_ground_truth_flywheel import (
+    ACTIVE_QUEUE_VERSION as VISION_ACTIVE_QUEUE_VERSION,
+    COVERAGE_VERSION as VISION_COVERAGE_VERSION,
+    DATASET_VERSION as VISION_GROUND_TRUTH_DATASET_VERSION,
+    LEDGER_VERSION as VISION_GROUND_TRUTH_LEDGER_VERSION,
+    SPLIT_REGISTRY_VERSION as VISION_SPLIT_REGISTRY_VERSION,
+    WORKSPACE_VERSION as VISION_REVIEW_WORKSPACE_VERSION,
+    attach_vision_ground_truth_flywheel,
+)
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.job_workflows import JobQueueProtocol
 
@@ -1047,6 +1056,36 @@ def _project_candidate_review_meta(record: Dict[str, Any]) -> Dict[str, Any]:
             or final_meta.get(VISION_QUALITY_VERSION)
             or {}
         ),
+        VISION_GROUND_TRUTH_LEDGER_VERSION: (
+            site_inputs.get(VISION_GROUND_TRUTH_LEDGER_VERSION)
+            or final_meta.get(VISION_GROUND_TRUTH_LEDGER_VERSION)
+            or {}
+        ),
+        VISION_GROUND_TRUTH_DATASET_VERSION: (
+            site_inputs.get(VISION_GROUND_TRUTH_DATASET_VERSION)
+            or final_meta.get(VISION_GROUND_TRUTH_DATASET_VERSION)
+            or {}
+        ),
+        VISION_SPLIT_REGISTRY_VERSION: (
+            site_inputs.get(VISION_SPLIT_REGISTRY_VERSION)
+            or final_meta.get(VISION_SPLIT_REGISTRY_VERSION)
+            or {}
+        ),
+        VISION_ACTIVE_QUEUE_VERSION: (
+            site_inputs.get(VISION_ACTIVE_QUEUE_VERSION)
+            or final_meta.get(VISION_ACTIVE_QUEUE_VERSION)
+            or {}
+        ),
+        VISION_COVERAGE_VERSION: (
+            site_inputs.get(VISION_COVERAGE_VERSION)
+            or final_meta.get(VISION_COVERAGE_VERSION)
+            or {}
+        ),
+        VISION_REVIEW_WORKSPACE_VERSION: (
+            site_inputs.get(VISION_REVIEW_WORKSPACE_VERSION)
+            or final_meta.get(VISION_REVIEW_WORKSPACE_VERSION)
+            or {}
+        ),
     }
 
 
@@ -1102,13 +1141,20 @@ def get_project_vision_learning_package(
     if record is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     meta = _project_candidate_review_meta(record)
+    enriched_meta = attach_vision_ground_truth_flywheel(meta)
     package = build_vision_learning_package(
-        meta,
+        enriched_meta,
         project_input=safe_dict(record.get("project_input")),
     )
     return {
         **package,
         "project_id": project_id,
+        VISION_GROUND_TRUTH_LEDGER_VERSION: enriched_meta[VISION_GROUND_TRUTH_LEDGER_VERSION],
+        VISION_GROUND_TRUTH_DATASET_VERSION: enriched_meta[VISION_GROUND_TRUTH_DATASET_VERSION],
+        VISION_SPLIT_REGISTRY_VERSION: enriched_meta[VISION_SPLIT_REGISTRY_VERSION],
+        VISION_ACTIVE_QUEUE_VERSION: enriched_meta[VISION_ACTIVE_QUEUE_VERSION],
+        VISION_COVERAGE_VERSION: enriched_meta[VISION_COVERAGE_VERSION],
+        VISION_REVIEW_WORKSPACE_VERSION: enriched_meta[VISION_REVIEW_WORKSPACE_VERSION],
     }
 
 
@@ -1258,6 +1304,8 @@ def review_project_candidates(
     corrected_feature_type: str = "",
     corrected_geometry: Any = None,
     correction_coordinate_space: str = "",
+    replacement_geometries: Optional[list[Dict[str, Any]]] = None,
+    replacement_feature_types: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     record = _candidate_review_record(
         project_store=project_store,
@@ -1279,6 +1327,8 @@ def review_project_candidates(
             corrected_feature_type=corrected_feature_type,
             corrected_geometry=corrected_geometry,
             correction_coordinate_space=correction_coordinate_space,
+            replacement_geometries=replacement_geometries,
+            replacement_feature_types=replacement_feature_types,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1291,6 +1341,7 @@ def review_project_candidates(
     vision_package = build_vision_learning_package(updated_meta, project_input=project_input)
     updated_meta[VISION_DATASET_VERSION] = vision_package[VISION_DATASET_VERSION]
     updated_meta[VISION_QUALITY_VERSION] = vision_package[VISION_QUALITY_VERSION]
+    updated_meta = attach_vision_ground_truth_flywheel(updated_meta)
     input_meta = deepcopy(safe_dict(project_input.get("meta")))
     site_inputs = deepcopy(safe_dict(input_meta.get("site_inputs")))
     for key in (
@@ -1301,6 +1352,12 @@ def review_project_candidates(
         "source_confidence_map_v1",
         VISION_DATASET_VERSION,
         VISION_QUALITY_VERSION,
+        VISION_GROUND_TRUTH_LEDGER_VERSION,
+        VISION_GROUND_TRUTH_DATASET_VERSION,
+        VISION_SPLIT_REGISTRY_VERSION,
+        VISION_ACTIVE_QUEUE_VERSION,
+        VISION_COVERAGE_VERSION,
+        VISION_REVIEW_WORKSPACE_VERSION,
     ):
         if key in updated_meta:
             site_inputs[key] = deepcopy(updated_meta[key])
@@ -1323,6 +1380,12 @@ def review_project_candidates(
             "source_confidence_map_v1",
             VISION_DATASET_VERSION,
             VISION_QUALITY_VERSION,
+            VISION_GROUND_TRUTH_LEDGER_VERSION,
+            VISION_GROUND_TRUTH_DATASET_VERSION,
+            VISION_SPLIT_REGISTRY_VERSION,
+            VISION_ACTIVE_QUEUE_VERSION,
+            VISION_COVERAGE_VERSION,
+            VISION_REVIEW_WORKSPACE_VERSION,
         )
         if key in updated_meta
     }
@@ -1359,6 +1422,12 @@ def review_project_candidates(
         "truth_label": decision["truth_label"],
         VISION_DATASET_VERSION: vision_package[VISION_DATASET_VERSION],
         VISION_QUALITY_VERSION: vision_package[VISION_QUALITY_VERSION],
+        VISION_GROUND_TRUTH_LEDGER_VERSION: updated_meta[VISION_GROUND_TRUTH_LEDGER_VERSION],
+        VISION_GROUND_TRUTH_DATASET_VERSION: updated_meta[VISION_GROUND_TRUTH_DATASET_VERSION],
+        VISION_SPLIT_REGISTRY_VERSION: updated_meta[VISION_SPLIT_REGISTRY_VERSION],
+        VISION_ACTIVE_QUEUE_VERSION: updated_meta[VISION_ACTIVE_QUEUE_VERSION],
+        VISION_COVERAGE_VERSION: updated_meta[VISION_COVERAGE_VERSION],
+        VISION_REVIEW_WORKSPACE_VERSION: updated_meta[VISION_REVIEW_WORKSPACE_VERSION],
     }
 
 

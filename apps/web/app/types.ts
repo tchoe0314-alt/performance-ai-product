@@ -628,12 +628,14 @@ export type ReactivePartialRerun = {
   };
 };
 
-export type CandidateReviewDecision = "accept" | "reject" | "pending" | "correct" | "reclassify" | "redraw";
+export type CandidateReviewDecision = "accept" | "reject" | "pending" | "correct" | "reclassify" | "redraw" | "merge" | "split";
 
 export type CandidateReviewCorrection = {
   correctedFeatureType?: string;
   correctedGeometry?: Record<string, unknown>;
   correctionCoordinateSpace?: "image_pixels" | "EPSG:4326" | "project_local" | string;
+  replacementGeometries?: Array<Record<string, unknown>>;
+  replacementFeatureTypes?: string[];
   reason?: string;
 };
 
@@ -707,6 +709,89 @@ export type CivoraVisionQualityReport = {
   f1?: number | null;
   mean_matched_iou?: number | null;
   quality_claim_allowed?: boolean;
+  truth_label?: string;
+};
+
+export type CivoraVisionGroundTruthDataset = {
+  version?: "civora_vision_ground_truth_dataset_v1" | string;
+  dataset_fingerprint?: string;
+  annotation_count?: number;
+  eligible_annotation_count?: number;
+  negative_frame_count?: number;
+  counts_by_split?: {
+    train?: number;
+    validation?: number;
+    test?: number;
+  };
+  counts_by_class?: Record<string, number>;
+  export_ready?: boolean;
+  export_blockers?: string[];
+  contains_image_bytes?: boolean;
+  truth_label?: string;
+};
+
+export type CivoraVisionReviewWorkspace = {
+  version?: "civora_vision_review_workspace_v1" | string;
+  ledger_summary?: {
+    event_count?: number;
+    head_hash?: string;
+    integrity_valid?: boolean;
+    integrity_blockers?: string[];
+  };
+  dataset_summary?: {
+    fingerprint?: string;
+    annotation_count?: number;
+    eligible_annotation_count?: number;
+    counts_by_split?: Record<string, number>;
+    export_ready?: boolean;
+    export_blockers?: string[];
+  };
+  active_learning_queue?: {
+    candidate_count?: number;
+    items?: Array<{
+      candidate_id?: string;
+      feature_type?: string;
+      label?: string;
+      priority_score?: number;
+      confidence?: number | null;
+      reason_codes?: string[];
+      recommended_action?: string;
+    }>;
+  };
+  coverage?: {
+    blocked_classes?: string[];
+    target_ready_classes?: string[];
+    geography_count?: number;
+    season_count?: number;
+    imagery_quality_band_count?: number;
+    classes?: Record<string, {
+      reviewed_annotation_count?: number;
+      target_annotation_count?: number;
+      geography_count?: number;
+      season_count?: number;
+      imagery_quality_band_count?: number;
+      target_ready?: boolean;
+      blockers?: string[];
+    }>;
+  };
+  class_readiness?: {
+    model_status?: string;
+    eligible_classes?: string[];
+    blocked_classes?: string[];
+    visible_model_use_allowed?: boolean;
+    classes?: Record<string, {
+      status?: string;
+      eligible_for_visible_review_candidates?: boolean;
+      reviewed_annotation_count?: number;
+      precision?: number | null;
+      recall?: number | null;
+      blockers?: string[];
+    }>;
+  };
+  review_actions?: string[];
+  geometry_edit_workflow?: string;
+  visible_detection_influence?: boolean;
+  model_promotion_status?: string;
   truth_label?: string;
 };
 
@@ -1132,6 +1217,8 @@ export type UploadPlanPdfResponse = {
   candidate_review_inbox_v1?: CandidateReviewInbox;
   civora_vision_training_dataset_v1?: CivoraVisionTrainingDataset;
   civora_vision_quality_report_v1?: CivoraVisionQualityReport;
+  civora_vision_ground_truth_dataset_v1?: CivoraVisionGroundTruthDataset;
+  civora_vision_review_workspace_v1?: CivoraVisionReviewWorkspace;
 };
 
 export type PlanMeta = {
@@ -1192,6 +1279,8 @@ export type PlanMeta = {
   candidate_review_inbox_v1?: CandidateReviewInbox;
   civora_vision_training_dataset_v1?: CivoraVisionTrainingDataset;
   civora_vision_quality_report_v1?: CivoraVisionQualityReport;
+  civora_vision_ground_truth_dataset_v1?: CivoraVisionGroundTruthDataset;
+  civora_vision_review_workspace_v1?: CivoraVisionReviewWorkspace;
   design_alternatives_v1?: DesignAlternativesV1;
   review_issue_tracker_v1?: ReviewIssueTrackerV1;
   source_confidence_map_v1?: SourceConfidenceMap;
@@ -1435,6 +1524,12 @@ export type SiteInputs = {
   candidate_review_rejected_v1?: Array<Record<string, unknown>>;
   civora_vision_training_dataset_v1?: CivoraVisionTrainingDataset;
   civora_vision_quality_report_v1?: CivoraVisionQualityReport;
+  civora_vision_ground_truth_dataset_v1?: CivoraVisionGroundTruthDataset;
+  civora_vision_review_workspace_v1?: CivoraVisionReviewWorkspace;
+  civora_vision_ground_truth_ledger_v1?: Record<string, unknown>;
+  civora_vision_split_registry_v1?: Record<string, unknown>;
+  civora_vision_active_learning_queue_v1?: Record<string, unknown>;
+  civora_vision_ground_truth_coverage_v1?: Record<string, unknown>;
   existing_conditions_package?: Record<string, unknown>;
   source_context_detection_coverage_v1?: Record<string, unknown>;
   auto_existing_conditions_v1?: Record<string, unknown>;

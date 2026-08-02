@@ -282,6 +282,8 @@ export function useDashboardAutoExistingConditions({
             onlineFetch?.existing_conditions_package ?? currentSiteInputs.existing_conditions_package,
           candidate_review_inbox_v1:
             onlineFetch?.candidate_review_inbox_v1 ?? currentSiteInputs.candidate_review_inbox_v1,
+          civora_vision_review_workspace_v1:
+            onlineFetch?.civora_vision_review_workspace_v1 ?? currentSiteInputs.civora_vision_review_workspace_v1,
           source_context_detection_coverage_v1:
             onlineFetch?.source_context_detection_coverage_v1 ?? currentSiteInputs.source_context_detection_coverage_v1,
           auto_existing_conditions_v1: autoExistingConditions,
@@ -319,6 +321,7 @@ export function useDashboardAutoExistingConditions({
                     existing_conditions_package: onlineFetch?.existing_conditions_package,
                     existing_conditions_summary: onlineFetch?.existing_conditions_summary,
                     candidate_review_inbox_v1: onlineFetch?.candidate_review_inbox_v1,
+                    civora_vision_review_workspace_v1: onlineFetch?.civora_vision_review_workspace_v1,
                     source_context_detection_coverage_v1: onlineFetch?.source_context_detection_coverage_v1,
                     auto_existing_conditions_v1: autoExistingConditions,
                   },

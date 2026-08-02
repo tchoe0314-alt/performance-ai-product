@@ -193,6 +193,8 @@ class ProjectStoreFastPathTests(unittest.TestCase):
         self.assertEqual(site_inputs["candidate_review_inbox_v1"]["counts"]["accepted"], 1)
         self.assertEqual(site_inputs["candidate_review_inbox_v1"]["counts"]["pending"], 0)
         self.assertEqual(len(site_inputs["candidate_review_decisions_v1"]), 1)
+        self.assertEqual(len(site_inputs["civora_vision_ground_truth_ledger_v1"]["events"]), 1)
+        self.assertTrue(site_inputs["civora_vision_review_workspace_v1"]["ledger_summary"]["integrity_valid"])
 
     def test_new_address_can_replace_candidate_review_state(self) -> None:
         saved = self._saved_project()
@@ -222,6 +224,8 @@ class ProjectStoreFastPathTests(unittest.TestCase):
         self.assertEqual(site_inputs["address"], "20525 Margo St, Gretna, NE 68028")
         self.assertEqual(site_inputs["candidate_review_inbox_v1"]["counts"]["pending"], 1)
         self.assertNotIn("candidate_review_decisions_v1", site_inputs)
+        self.assertNotIn("civora_vision_ground_truth_ledger_v1", site_inputs)
+        self.assertNotIn("civora_vision_split_registry_v1", site_inputs)
 
 
 if __name__ == "__main__":

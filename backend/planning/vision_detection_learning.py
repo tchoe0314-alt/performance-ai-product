@@ -165,6 +165,9 @@ def build_imagery_frame_v2(
         "source_url": sanitized_url,
         "source_fingerprint_sha256": _source_fingerprint(source_url or sanitized_url),
         "captured_at": safe_str(request.get("imagery_date") or request.get("source_date")),
+        "geography_id": safe_str(request.get("geography_id") or request.get("market") or request.get("city")),
+        "season": safe_str(request.get("imagery_season") or request.get("season")),
+        "imagery_quality_band": safe_str(request.get("imagery_quality_band") or request.get("quality_band")),
         "retrieved_at": _now_iso(),
         "image_width_px": width,
         "image_height_px": height,
@@ -182,6 +185,11 @@ def build_imagery_frame_v2(
             "attribution": safe_str(rights.get("attribution")),
             "training_use_allowed": training_allowed,
             "storage_allowed": storage_allowed,
+            "derivative_labels_allowed": (
+                rights.get("derivative_labels_allowed") is True
+                if rights.get("derivative_labels_allowed") is not None
+                else None
+            ),
             "rights_source": safe_str(rights.get("rights_source")),
             "reviewed_by": safe_str(rights.get("reviewed_by")),
             "reviewed_at": safe_str(rights.get("reviewed_at")),

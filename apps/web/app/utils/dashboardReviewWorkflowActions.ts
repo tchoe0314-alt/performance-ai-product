@@ -3,7 +3,9 @@ import type {
   CandidateReviewCorrection,
   CandidateReviewDecision,
   CandidateReviewInbox,
+  CivoraVisionGroundTruthDataset,
   CivoraVisionQualityReport,
+  CivoraVisionReviewWorkspace,
   CivoraVisionTrainingDataset,
   DesignAlternativesV1,
   PlanResponse,
@@ -23,6 +25,12 @@ const CANDIDATE_REVIEW_SITE_INPUT_KEYS = [
   "source_confidence_map_v1",
   "civora_vision_training_dataset_v1",
   "civora_vision_quality_report_v1",
+  "civora_vision_ground_truth_ledger_v1",
+  "civora_vision_ground_truth_dataset_v1",
+  "civora_vision_split_registry_v1",
+  "civora_vision_active_learning_queue_v1",
+  "civora_vision_ground_truth_coverage_v1",
+  "civora_vision_review_workspace_v1",
 ] as const;
 
 export function mergeCandidateReviewProject({
@@ -32,6 +40,8 @@ export function mergeCandidateReviewProject({
   candidateReviewInbox,
   visionTrainingDataset,
   visionQualityReport,
+  visionGroundTruthDataset,
+  visionReviewWorkspace,
 }: {
   currentProject: ProjectRecord | null;
   responseProject: ProjectRecord;
@@ -39,6 +49,8 @@ export function mergeCandidateReviewProject({
   candidateReviewInbox?: CandidateReviewInbox;
   visionTrainingDataset?: CivoraVisionTrainingDataset;
   visionQualityReport?: CivoraVisionQualityReport;
+  visionGroundTruthDataset?: CivoraVisionGroundTruthDataset;
+  visionReviewWorkspace?: CivoraVisionReviewWorkspace;
 }): ProjectRecord {
   const currentInput = (currentProject?.project_input ?? {}) as ProjectInput;
   const responseInput = (responseProject.project_input ?? {}) as ProjectInput;
@@ -53,6 +65,8 @@ export function mergeCandidateReviewProject({
   if (candidateReviewInbox) candidateState.candidate_review_inbox_v1 = candidateReviewInbox;
   if (visionTrainingDataset) candidateState.civora_vision_training_dataset_v1 = visionTrainingDataset;
   if (visionQualityReport) candidateState.civora_vision_quality_report_v1 = visionQualityReport;
+  if (visionGroundTruthDataset) candidateState.civora_vision_ground_truth_dataset_v1 = visionGroundTruthDataset;
+  if (visionReviewWorkspace) candidateState.civora_vision_review_workspace_v1 = visionReviewWorkspace;
 
   return {
     ...(currentProject ?? {}),
@@ -100,7 +114,7 @@ function patchPlanMeta(
 
 export async function runDashboardCandidateReviewDecision({
   action,
-  candidateId,
+  candidateIds,
   currentProject,
   siteScaleLocked,
   currentProjectId,
@@ -112,7 +126,7 @@ export async function runDashboardCandidateReviewDecision({
   correction,
 }: {
   action: CandidateReviewDecision;
-  candidateId: string;
+  candidateIds: string | string[];
   currentProject: ProjectRecord | null;
   siteScaleLocked: boolean;
   currentProjectId?: string;
@@ -124,7 +138,13 @@ export async function runDashboardCandidateReviewDecision({
   correction?: CandidateReviewCorrection;
 }) {
   const activeProjectId = projectId || currentProjectId;
-  const correctionAction = action === "correct" || action === "reclassify" || action === "redraw";
+  const reviewedCandidateIds = Array.isArray(candidateIds) ? candidateIds : [candidateIds];
+  const correctionAction =
+    action === "correct" ||
+    action === "reclassify" ||
+    action === "redraw" ||
+    action === "merge" ||
+    action === "split";
   if (!token || !activeProjectId) {
     setStatusMessage("Save or load a project before reviewing candidates.");
     return null;
@@ -137,7 +157,11 @@ export async function runDashboardCandidateReviewDecision({
           : action === "reject"
             ? "Rejecting"
             : correctionAction
-              ? "Correcting"
+              ? action === "merge"
+                ? "Merging"
+                : action === "split"
+                  ? "Splitting"
+                  : "Correcting"
               : "Keeping"
       } candidate...`,
     );
@@ -147,11 +171,13 @@ export async function runDashboardCandidateReviewDecision({
       candidate_review_inbox_v1?: CandidateReviewInbox;
       civora_vision_training_dataset_v1?: CivoraVisionTrainingDataset;
       civora_vision_quality_report_v1?: CivoraVisionQualityReport;
+      civora_vision_ground_truth_dataset_v1?: CivoraVisionGroundTruthDataset;
+      civora_vision_review_workspace_v1?: CivoraVisionReviewWorkspace;
       truth_label?: string;
     }>(
       `/api/projects/${activeProjectId}/candidate-review`,
       {
-        candidate_ids: [candidateId],
+        candidate_ids: reviewedCandidateIds,
         action,
         reason:
           correction?.reason ?? (action === "accept"
@@ -159,11 +185,17 @@ export async function runDashboardCandidateReviewDecision({
             : action === "reject"
               ? "Rejected from Candidate Review Inbox."
               : correctionAction
-                ? "Corrected from Candidate Review Inbox and retained as draft/review-required evidence."
+                ? action === "merge"
+                  ? "Merged reviewed detections into one source-traceable outline."
+                  : action === "split"
+                    ? "Split the reviewed detection into source-traceable outlines."
+                    : "Corrected from Candidate Review Inbox and retained as draft/review-required evidence."
                 : "Kept pending from Candidate Review Inbox."),
         corrected_feature_type: correction?.correctedFeatureType ?? "",
         corrected_geometry: correction?.correctedGeometry,
         correction_coordinate_space: correction?.correctionCoordinateSpace ?? "",
+        replacement_geometries: correction?.replacementGeometries ?? [],
+        replacement_feature_types: correction?.replacementFeatureTypes ?? [],
       },
       { token },
     );
@@ -175,6 +207,8 @@ export async function runDashboardCandidateReviewDecision({
           candidateReviewInbox: data.candidate_review_inbox_v1,
           visionTrainingDataset: data.civora_vision_training_dataset_v1,
           visionQualityReport: data.civora_vision_quality_report_v1,
+          visionGroundTruthDataset: data.civora_vision_ground_truth_dataset_v1,
+          visionReviewWorkspace: data.civora_vision_review_workspace_v1,
         })
       : null;
     if (updatedProject) {
@@ -192,6 +226,12 @@ export async function runDashboardCandidateReviewDecision({
         ...(data.civora_vision_quality_report_v1
           ? { civora_vision_quality_report_v1: data.civora_vision_quality_report_v1 }
           : {}),
+        ...(data.civora_vision_ground_truth_dataset_v1
+          ? { civora_vision_ground_truth_dataset_v1: data.civora_vision_ground_truth_dataset_v1 }
+          : {}),
+        ...(data.civora_vision_review_workspace_v1
+          ? { civora_vision_review_workspace_v1: data.civora_vision_review_workspace_v1 }
+          : {}),
       });
     }
     setStatusMessage(
@@ -200,7 +240,11 @@ export async function runDashboardCandidateReviewDecision({
         : action === "reject"
           ? "Candidate rejected and preserved in the audit trail."
           : correctionAction
-            ? "Detection correction saved as draft evidence and learning feedback."
+            ? action === "merge"
+              ? "Reviewed detections merged and recorded in the learning ledger."
+              : action === "split"
+                ? "Reviewed detection split and recorded in the learning ledger."
+                : "Detection correction saved as draft evidence and learning feedback."
             : "Candidate kept pending.",
     );
     return updatedProject;

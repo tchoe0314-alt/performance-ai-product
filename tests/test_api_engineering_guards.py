@@ -29,6 +29,7 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
             "type": "Polygon",
             "coordinates": [[[10, 10], [20, 10], [20, 20], [10, 10]]],
         }
+        replacement_geometries = [corrected_geometry, corrected_geometry]
         api_module = importlib.import_module("backend.api.app")
         with patch.object(api_module, "application_review_project_candidates") as workflow:
             workflow.return_value = {"success": True}
@@ -40,6 +41,8 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
                     corrected_feature_type="parking_area",
                     corrected_geometry=corrected_geometry,
                     correction_coordinate_space="project_local",
+                    replacement_geometries=replacement_geometries,
+                    replacement_feature_types=["parking_area", "parking_area"],
                 ),
                 {"user_id": "reviewer-1", "email": "reviewer@example.test"},
             )
@@ -48,6 +51,8 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
         self.assertEqual(workflow.call_args.kwargs["corrected_feature_type"], "parking_area")
         self.assertEqual(workflow.call_args.kwargs["corrected_geometry"], corrected_geometry)
         self.assertEqual(workflow.call_args.kwargs["correction_coordinate_space"], "project_local")
+        self.assertEqual(workflow.call_args.kwargs["replacement_geometries"], replacement_geometries)
+        self.assertEqual(workflow.call_args.kwargs["replacement_feature_types"], ["parking_area", "parking_area"])
 
     def test_queue_request_payload_uses_nested_project_id_when_outer_missing(self) -> None:
         project_id, request_payload = _queue_request_payload_with_project(

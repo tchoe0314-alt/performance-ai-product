@@ -72,8 +72,10 @@ type UseDashboardDataSourcesPanelPropsInput = {
   onCandidateDecision: DataSourcesPanelProps["onCandidateDecision"];
   visionTrainingDataset: DataSourcesPanelProps["visionTrainingDataset"];
   visionQualityReport: DataSourcesPanelProps["visionQualityReport"];
+  visionReviewWorkspace: DataSourcesPanelProps["visionReviewWorkspace"];
   onExportVisionLearning: DataSourcesPanelProps["onExportVisionLearning"];
   selectedCorrectionObject?: BuildingPlacement | null;
+  selectedCorrectionObjects?: BuildingPlacement[];
   siteAddress: string;
   selectedAddressSuggestion: AddressSuggestion | null;
   addressSuggestions: AddressSuggestion[];
@@ -171,8 +173,10 @@ export function useDashboardDataSourcesPanelProps({
   onCandidateDecision,
   visionTrainingDataset,
   visionQualityReport,
+  visionReviewWorkspace,
   onExportVisionLearning,
   selectedCorrectionObject,
+  selectedCorrectionObjects,
   siteAddress,
   selectedAddressSuggestion,
   addressSuggestions,
@@ -282,8 +286,10 @@ export function useDashboardDataSourcesPanelProps({
     onCandidateDecision: (candidateId, decision, correction) => void onCandidateDecision(candidateId, decision, correction),
     visionTrainingDataset,
     visionQualityReport,
+    visionReviewWorkspace,
     onExportVisionLearning,
     selectedCorrectionObject,
+    selectedCorrectionObjects,
     siteAddress,
     selectedAddressSuggestion,
     addressSuggestions,
@@ -434,6 +440,7 @@ export function useDashboardDataSourcesPanelProps({
     planPdfUploadState,
     selectedAddressSuggestion,
     selectedCorrectionObject,
+    selectedCorrectionObjects,
     selectedPlanPdfElement,
     siteAddress,
     siteRotationDeg,
@@ -449,6 +456,7 @@ export function useDashboardDataSourcesPanelProps({
     uploadedImageApiUrl,
     uploadedImagePreviewUrl,
     visionQualityReport,
+    visionReviewWorkspace,
     visionTrainingDataset,
   ]);
 }

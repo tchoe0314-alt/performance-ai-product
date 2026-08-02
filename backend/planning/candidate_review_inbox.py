@@ -10,6 +10,16 @@ from .cad_entity_model import plan_pdf_elements_to_cad_entities
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .map_feature_detection import accept_feature_candidate_as_draft_object
 from .vision_detection_learning import TRAINABLE_FEATURE_TYPES
+from .vision_ground_truth_flywheel import (
+    ACTIVE_QUEUE_VERSION as VISION_ACTIVE_QUEUE_VERSION,
+    COVERAGE_VERSION as VISION_COVERAGE_VERSION,
+    DATASET_VERSION as VISION_GROUND_TRUTH_DATASET_VERSION,
+    LEDGER_VERSION as VISION_GROUND_TRUTH_LEDGER_VERSION,
+    SPLIT_REGISTRY_VERSION as VISION_SPLIT_REGISTRY_VERSION,
+    WORKSPACE_VERSION as VISION_REVIEW_WORKSPACE_VERSION,
+    append_ground_truth_review_event,
+    attach_vision_ground_truth_flywheel,
+)
 
 
 INBOX_VERSION = "candidate_review_inbox_v1"
@@ -553,6 +563,8 @@ def _decision_audit(
     corrected_feature_type: str = "",
     corrected_geometry: Any = None,
     correction_coordinate_space: str = "",
+    replacement_geometries: Optional[Iterable[Dict[str, Any]]] = None,
+    replacement_feature_types: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
     record = {
         "action": action,
@@ -568,12 +580,19 @@ def _decision_audit(
             "correct": "draft_review_required",
             "reclassify": "draft_review_required",
             "redraw": "draft_review_required",
+            "merge": "draft_review_required",
+            "split": "draft_review_required",
         }.get(action, "pending"),
     }
     if corrected_feature_type:
         record["corrected_feature_type"] = corrected_feature_type
     if corrected_geometry not in (None, {}, []):
         record["corrected_geometry"] = deepcopy(corrected_geometry)
+        record["correction_coordinate_space"] = safe_str(correction_coordinate_space, "project_local")
+    normalized_replacements = [deepcopy(safe_dict(item)) for item in replacement_geometries or [] if safe_dict(item)]
+    if normalized_replacements:
+        record["replacement_geometries"] = normalized_replacements
+        record["replacement_feature_types"] = [safe_str(item) for item in replacement_feature_types or []]
         record["correction_coordinate_space"] = safe_str(correction_coordinate_space, "project_local")
     return record
 
@@ -588,6 +607,8 @@ def apply_candidate_review_decision(
     corrected_feature_type: str = "",
     corrected_geometry: Any = None,
     correction_coordinate_space: str = "",
+    replacement_geometries: Optional[Iterable[Dict[str, Any]]] = None,
+    replacement_feature_types: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
     # Candidate decisions only mutate the review-state slice. Keeping source
     # reports and geometry records by reference avoids cloning an entire site
@@ -599,8 +620,8 @@ def apply_candidate_review_decision(
     if not requested:
         raise ValueError("At least one candidate_id is required.")
     normalized_action = safe_str(action).lower()
-    if normalized_action not in {"accept", "reject", "pending", "correct", "reclassify", "redraw"}:
-        raise ValueError("action must be accept, reject, pending, correct, reclassify, or redraw.")
+    if normalized_action not in {"accept", "reject", "pending", "correct", "reclassify", "redraw", "merge", "split"}:
+        raise ValueError("action must be accept, reject, pending, correct, reclassify, redraw, merge, or split.")
     corrected_type = safe_str(corrected_feature_type)
     if corrected_type and corrected_type not in TRAINABLE_FEATURE_TYPES:
         raise ValueError(f"Unsupported corrected_feature_type: {corrected_type}")
@@ -608,6 +629,19 @@ def apply_candidate_review_decision(
         raise ValueError("reclassify requires corrected_feature_type.")
     if normalized_action == "redraw" and corrected_geometry in (None, {}, []):
         raise ValueError("redraw requires corrected_geometry.")
+    if normalized_action == "merge" and len(requested) < 2:
+        raise ValueError("merge requires at least two candidate_ids.")
+    if normalized_action == "merge" and corrected_geometry in (None, {}, []):
+        raise ValueError("merge requires one reviewed corrected_geometry.")
+    raw_replacement_geometries = [safe_dict(item) for item in replacement_geometries or [] if safe_dict(item)]
+    raw_replacement_types = [safe_str(item) for item in replacement_feature_types or [] if safe_str(item)]
+    if normalized_action == "split" and len(requested) != 1:
+        raise ValueError("split requires exactly one candidate_id.")
+    if normalized_action == "split" and len(raw_replacement_geometries) < 2:
+        raise ValueError("split requires at least two replacement_geometries.")
+    unsupported_replacement_types = sorted(set(raw_replacement_types) - TRAINABLE_FEATURE_TYPES)
+    if unsupported_replacement_types:
+        raise ValueError(f"Unsupported replacement_feature_type(s): {', '.join(unsupported_replacement_types)}")
     if normalized_action == "correct" and not corrected_type and corrected_geometry in (None, {}, []):
         raise ValueError("correct requires a corrected feature type or geometry.")
     reviewer = safe_str(reviewer_id, "user")
@@ -624,6 +658,18 @@ def apply_candidate_review_decision(
     decisions = safe_list(updated_meta.get("candidate_review_decisions_v1"))
     accepted_drafts = safe_list(updated_meta.get("candidate_review_accepted_drafts_v1"))
     rejected = safe_list(updated_meta.get("candidate_review_rejected_v1"))
+    normalized_replacements: List[Dict[str, Any]] = []
+    if raw_replacement_geometries:
+        split_feature_type = corrected_type or safe_str(safe_dict(found[0].get("source_record")).get("feature_type"))
+        for index, geometry in enumerate(raw_replacement_geometries):
+            replacement_type = raw_replacement_types[index] if index < len(raw_replacement_types) else split_feature_type
+            normalized_replacements.append(
+                _validated_correction_geometry(
+                    geometry,
+                    coordinate_space=safe_str(correction_coordinate_space, "project_local"),
+                    feature_type=replacement_type,
+                )
+            )
     for candidate in found:
         normalized_correction_space = safe_str(correction_coordinate_space, "project_local")
         normalized_correction_geometry = corrected_geometry
@@ -642,9 +688,11 @@ def apply_candidate_review_decision(
             corrected_feature_type=corrected_type,
             corrected_geometry=normalized_correction_geometry,
             correction_coordinate_space=normalized_correction_space,
+            replacement_geometries=normalized_replacements,
+            replacement_feature_types=raw_replacement_types,
         )
         decisions.append(audit)
-        if normalized_action in {"accept", "correct", "reclassify", "redraw"}:
+        if normalized_action in {"accept", "correct", "reclassify", "redraw", "merge", "split"}:
             corrected_candidate = deepcopy(candidate)
             corrected_source = deepcopy(safe_dict(corrected_candidate.get("source_record")))
             if corrected_type:
@@ -692,10 +740,64 @@ def apply_candidate_review_decision(
                 for item in rejected
                 if safe_str(safe_dict(item).get("candidate_id")) != safe_str(candidate.get("candidate_id"))
             ]
+    if normalized_action == "merge":
+        source_ids = sorted(safe_str(item.get("candidate_id")) for item in found)
+        accepted_drafts = [
+            item
+            for item in accepted_drafts
+            if safe_str(safe_dict(item).get("source_candidate_id")) not in source_ids
+        ]
+        merged_candidate = deepcopy(found[0])
+        merged_source = deepcopy(safe_dict(merged_candidate.get("source_record")))
+        merged_source["geometry"] = deepcopy(normalized_correction_geometry)
+        if corrected_type:
+            merged_source["feature_type"] = corrected_type
+        merged_candidate["source_record"] = merged_source
+        merged_candidate["candidate_id"] = _stable_id("merge", *source_ids, normalized_correction_geometry)
+        merged_draft = _accepted_draft_from_candidate(merged_candidate, accepted_by=reviewer)
+        merged_draft["source_candidate_ids"] = source_ids
+        merged_draft["vision_correction_action"] = "merge"
+        merged_draft["correction_coordinate_space"] = safe_str(correction_coordinate_space, "project_local")
+        accepted_drafts.append(merged_draft)
+    elif normalized_action == "split":
+        original_id = safe_str(found[0].get("candidate_id"))
+        accepted_drafts = [
+            item
+            for item in accepted_drafts
+            if safe_str(safe_dict(item).get("source_candidate_id")) != original_id
+        ]
+        for index, geometry in enumerate(normalized_replacements):
+            split_candidate = deepcopy(found[0])
+            split_source = deepcopy(safe_dict(split_candidate.get("source_record")))
+            split_source["geometry"] = deepcopy(geometry)
+            split_type = raw_replacement_types[index] if index < len(raw_replacement_types) else corrected_type
+            if split_type:
+                split_source["feature_type"] = split_type
+            split_candidate["source_record"] = split_source
+            split_candidate["candidate_id"] = _stable_id("split", original_id, index, geometry)
+            split_draft = _accepted_draft_from_candidate(split_candidate, accepted_by=reviewer)
+            split_draft["source_candidate_ids"] = [original_id]
+            split_draft["vision_correction_action"] = "split"
+            split_draft["split_part_index"] = index
+            split_draft["correction_coordinate_space"] = safe_str(correction_coordinate_space, "project_local")
+            accepted_drafts.append(split_draft)
+    updated_meta[VISION_GROUND_TRUTH_LEDGER_VERSION] = append_ground_truth_review_event(
+        updated_meta,
+        candidates=found,
+        action=normalized_action,
+        reviewer_id=reviewer,
+        reason=reason,
+        corrected_feature_type=corrected_type,
+        corrected_geometry=(normalized_correction_geometry if corrected_geometry not in (None, {}, []) else None),
+        correction_coordinate_space=correction_coordinate_space,
+        replacement_geometries=normalized_replacements,
+        replacement_feature_types=raw_replacement_types,
+    )
     updated_meta["candidate_review_decisions_v1"] = decisions
     updated_meta["candidate_review_accepted_drafts_v1"] = accepted_drafts
     updated_meta["candidate_review_rejected_v1"] = rejected
     updated_meta["candidate_review_inbox_v1"] = _inbox_with_decisions(inbox, decisions)
+    updated_meta = attach_vision_ground_truth_flywheel(updated_meta)
     return {
         "success": True,
         "action": normalized_action,
@@ -706,6 +808,12 @@ def apply_candidate_review_decision(
         "audit_trail": decisions,
         "accepted_drafts": accepted_drafts,
         "rejected_candidates": rejected,
+        VISION_GROUND_TRUTH_LEDGER_VERSION: updated_meta[VISION_GROUND_TRUTH_LEDGER_VERSION],
+        VISION_GROUND_TRUTH_DATASET_VERSION: updated_meta[VISION_GROUND_TRUTH_DATASET_VERSION],
+        VISION_SPLIT_REGISTRY_VERSION: updated_meta[VISION_SPLIT_REGISTRY_VERSION],
+        VISION_ACTIVE_QUEUE_VERSION: updated_meta[VISION_ACTIVE_QUEUE_VERSION],
+        VISION_COVERAGE_VERSION: updated_meta[VISION_COVERAGE_VERSION],
+        VISION_REVIEW_WORKSPACE_VERSION: updated_meta[VISION_REVIEW_WORKSPACE_VERSION],
         "truth_label": "Candidate decisions and corrections changed review evidence only. Vision corrections become training examples only when imagery rights and coordinate registration permit it.",
     }
 
@@ -756,6 +864,8 @@ def _inbox_with_decisions(inbox: Dict[str, Any], decisions: List[Any]) -> Dict[s
                 "correct": "accepted",
                 "reclassify": "accepted",
                 "redraw": "accepted",
+                "merge": "accepted",
+                "split": "accepted",
                 "reject": "rejected",
                 "pending": "pending",
             }.get(action, rec.get("status"))

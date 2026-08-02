@@ -114,6 +114,14 @@ _CANDIDATE_REVIEW_STATE_KEYS = (
     "candidate_review_accepted_drafts_v1",
     "candidate_review_rejected_v1",
     "source_confidence_map_v1",
+    "civora_vision_training_dataset_v1",
+    "civora_vision_quality_report_v1",
+    "civora_vision_ground_truth_ledger_v1",
+    "civora_vision_ground_truth_dataset_v1",
+    "civora_vision_split_registry_v1",
+    "civora_vision_active_learning_queue_v1",
+    "civora_vision_ground_truth_coverage_v1",
+    "civora_vision_review_workspace_v1",
 )
 
 

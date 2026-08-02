@@ -6,11 +6,13 @@ import type {
   CandidateReviewDecision,
   CandidateReviewItem,
   CivoraVisionQualityReport,
+  CivoraVisionReviewWorkspace,
   CivoraVisionTrainingDataset,
   OnlineExistingConditionsSource,
 } from "../types";
 import { sourceStatusLabel } from "../utils/dashboardDataTypes";
 import type { CapabilityExposure } from "../utils/dashboardTypes";
+import { VisionGroundTruthWorkspace } from "./VisionGroundTruthWorkspace";
 
 const DATA_CAPABILITY_KEYS = new Set([
   "existing_conditions_package",
@@ -90,8 +92,10 @@ export function SourceDataReviewPanel({
   onCandidateDecision,
   visionTrainingDataset,
   visionQualityReport,
+  visionReviewWorkspace,
   onExportVisionLearning,
   selectedCorrectionObject,
+  selectedCorrectionObjects,
 }: {
   capabilityRows: CapabilityExposure[];
   onlineDiscoveryStatus: string;
@@ -108,19 +112,22 @@ export function SourceDataReviewPanel({
     action: CandidateReviewDecision;
   } | null;
   onCandidateDecision: (
-    candidateId: string,
+    candidateId: string | string[],
     decision: CandidateReviewDecision,
     correction?: CandidateReviewCorrection,
   ) => void;
   visionTrainingDataset?: CivoraVisionTrainingDataset;
   visionQualityReport?: CivoraVisionQualityReport;
+  visionReviewWorkspace?: CivoraVisionReviewWorkspace;
   onExportVisionLearning: () => void;
   selectedCorrectionObject?: BuildingPlacement | null;
+  selectedCorrectionObjects?: BuildingPlacement[];
 }) {
   const dataCapabilityRows = capabilityRows.filter((item) => DATA_CAPABILITY_KEYS.has(item.key));
   const [candidateView, setCandidateView] = useState<CandidateView>("pending");
   const [candidatePage, setCandidatePage] = useState(0);
   const [candidateTypeCorrections, setCandidateTypeCorrections] = useState<Record<string, string>>({});
+  const [selectedVisionCandidateIds, setSelectedVisionCandidateIds] = useState<string[]>([]);
   const visionCandidateCount = candidateItems.filter(isVisionCandidate).length;
   const filteredCandidates = candidateItems.filter((candidate) => {
     const status = String(candidate.status || "pending").toLowerCase();
@@ -152,6 +159,22 @@ export function SourceDataReviewPanel({
   const reviewedVisionCount = Number(visionTrainingDataset?.reviewed_example_count ?? 0);
   const trainableVisionCount = Number(visionTrainingDataset?.training_eligible_example_count ?? 0);
   const selectedCorrectionGeometry = correctionGeometryFromObject(selectedCorrectionObject);
+  const selectedOutlines = (selectedCorrectionObjects?.length
+    ? selectedCorrectionObjects
+    : selectedCorrectionObject
+      ? [selectedCorrectionObject]
+      : [])
+    .map((item) => ({ label: item.label, geometry: correctionGeometryFromObject(item) }))
+    .filter((item): item is { label: string; geometry: Record<string, unknown> } => Boolean(item.geometry));
+  const firstSelectedVisionCandidate = candidateItems.find((item) =>
+    selectedVisionCandidateIds.includes(item.candidate_id),
+  );
+  const firstSelectedSource = firstSelectedVisionCandidate ? sourceRecord(firstSelectedVisionCandidate) : {};
+  const selectedVisionFeatureType = firstSelectedVisionCandidate
+    ? candidateTypeCorrections[firstSelectedVisionCandidate.candidate_id]
+      ?? firstSelectedVisionCandidate.corrected_feature_type
+      ?? String(firstSelectedSource.feature_type ?? "constraint_area")
+    : "constraint_area";
 
   return (
     <>
@@ -263,6 +286,15 @@ export function SourceDataReviewPanel({
             </div>
           </div>
         ) : null}
+        <VisionGroundTruthWorkspace
+          workspace={visionReviewWorkspace}
+          selectedCandidateIds={selectedVisionCandidateIds}
+          selectedOutlines={selectedOutlines}
+          selectedFeatureType={selectedVisionFeatureType}
+          busy={Boolean(candidateDecisionInFlight)}
+          onDecision={(candidateIds, action, correction) => onCandidateDecision(candidateIds, action, correction)}
+          onClearSelection={() => setSelectedVisionCandidateIds([])}
+        />
         {candidateItems.length ? (
           <div className="mt-3 flex flex-wrap items-center gap-2" role="tablist" aria-label="Detected item views">
             {([
@@ -321,7 +353,23 @@ export function SourceDataReviewPanel({
                   aria-busy={candidateBusy}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                    {visionCandidate ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select vision detection ${candidate.label || candidate.candidate_id}`}
+                        checked={selectedVisionCandidateIds.includes(candidate.candidate_id)}
+                        onChange={(event) =>
+                          setSelectedVisionCandidateIds((current) =>
+                            event.target.checked
+                              ? [...new Set([...current, candidate.candidate_id])]
+                              : current.filter((candidateId) => candidateId !== candidate.candidate_id),
+                          )
+                        }
+                        disabled={anyCandidateBusy}
+                        className="mt-1 h-4 w-4 shrink-0 accent-slate-900"
+                      />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-slate-800">{candidate.label || candidate.candidate_type || "Candidate"}</p>
                       <p className="mt-1 truncate text-xs font-medium text-slate-500">
                         {candidate.provider || candidate.source || "Unknown provider"}
@@ -409,7 +457,7 @@ export function SourceDataReviewPanel({
                           data-testid="vision-use-selected-outline"
                           onClick={() => {
                             if (!selectedCorrectionGeometry || !selectedCorrectionObject) return;
-                            onCandidateDecision(candidate.candidate_id, "correct", {
+                            onCandidateDecision(candidate.candidate_id, "redraw", {
                               correctedFeatureType: selectedFeatureType || originalFeatureType,
                               correctedGeometry: selectedCorrectionGeometry,
                               correctionCoordinateSpace: "project_local",

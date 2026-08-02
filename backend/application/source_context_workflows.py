@@ -7,6 +7,10 @@ from fastapi import HTTPException
 
 from backend.planning.candidate_review_inbox import build_candidate_review_inbox
 from backend.planning.common import safe_dict, safe_int, safe_list, safe_str
+from backend.planning.vision_ground_truth_flywheel import (
+    LEDGER_VERSION as VISION_GROUND_TRUTH_LEDGER_VERSION,
+    attach_vision_ground_truth_flywheel,
+)
 
 
 SOURCE_CONTEXT_JOB_TYPE = "source_context"
@@ -236,6 +240,8 @@ def build_source_context_job_runner(
                 "candidate_review_decisions_v1",
                 "candidate_review_accepted_drafts_v1",
                 "candidate_review_rejected_v1",
+                VISION_GROUND_TRUTH_LEDGER_VERSION,
+                "civora_vision_split_registry_v1",
             ):
                 existing_value = existing_final_meta.get(key)
                 if existing_value is None:
@@ -244,7 +250,9 @@ def build_source_context_job_runner(
                     meta_patch[key] = deepcopy(existing_value)
         inbox = build_candidate_review_inbox(meta_patch)
         meta_patch["candidate_review_inbox_v1"] = inbox
+        meta_patch = attach_vision_ground_truth_flywheel(meta_patch)
         result["candidate_review_inbox_v1"] = inbox
+        result["civora_vision_review_workspace_v1"] = meta_patch["civora_vision_review_workspace_v1"]
         if job_id:
             update_job_progress(
                 job_id,

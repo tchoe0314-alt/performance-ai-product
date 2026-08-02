@@ -381,6 +381,8 @@ class CandidateReviewPayload(BaseModel):
     corrected_feature_type: str = ""
     corrected_geometry: Optional[Dict[str, Any]] = None
     correction_coordinate_space: str = ""
+    replacement_geometries: List[Dict[str, Any]] = Field(default_factory=list)
+    replacement_feature_types: List[str] = Field(default_factory=list)
 
 
 class DesignAlternativesPayload(BaseModel):
@@ -2301,6 +2303,8 @@ def review_project_candidates(
         corrected_feature_type=payload.corrected_feature_type,
         corrected_geometry=payload.corrected_geometry,
         correction_coordinate_space=payload.correction_coordinate_space,
+        replacement_geometries=payload.replacement_geometries,
+        replacement_feature_types=payload.replacement_feature_types,
     )
 
 

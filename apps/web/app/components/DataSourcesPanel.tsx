@@ -7,6 +7,7 @@ import type {
   CandidateReviewInbox,
   CandidateReviewItem,
   CivoraVisionQualityReport,
+  CivoraVisionReviewWorkspace,
   CivoraVisionTrainingDataset,
   MapAnalysis,
   OnlineExistingConditionsSource,
@@ -87,14 +88,16 @@ export type DataSourcesPanelProps = {
     action: CandidateReviewDecision;
   } | null;
   onCandidateDecision: (
-    candidateId: string,
+    candidateId: string | string[],
     decision: CandidateReviewDecision,
     correction?: CandidateReviewCorrection,
   ) => void;
   visionTrainingDataset?: CivoraVisionTrainingDataset;
   visionQualityReport?: CivoraVisionQualityReport;
+  visionReviewWorkspace?: CivoraVisionReviewWorkspace;
   onExportVisionLearning: () => void;
   selectedCorrectionObject?: BuildingPlacement | null;
+  selectedCorrectionObjects?: BuildingPlacement[];
   siteAddress: string;
   selectedAddressSuggestion: AddressSuggestion | null;
   addressSuggestions: AddressSuggestion[];
@@ -201,8 +204,10 @@ export function DataSourcesPanel({
   onCandidateDecision,
   visionTrainingDataset,
   visionQualityReport,
+  visionReviewWorkspace,
   onExportVisionLearning,
   selectedCorrectionObject,
+  selectedCorrectionObjects,
   siteAddress,
   selectedAddressSuggestion,
   addressSuggestions,
@@ -269,6 +274,7 @@ export function DataSourcesPanel({
           Detected Items · {pendingCandidateCount} To Review
         </summary>
         <SourceDataReviewPanel
+          key={siteAddress.trim().toLowerCase() || "no-address"}
           capabilityRows={capabilityAuditRows}
           onlineDiscoveryStatus={onlineDiscoveryStatus}
           onlineDiscoveryRan={onlineDiscoveryRan}
@@ -279,8 +285,10 @@ export function DataSourcesPanel({
           onCandidateDecision={(candidateId, decision, correction) => onCandidateDecision(candidateId, decision, correction)}
           visionTrainingDataset={visionTrainingDataset}
           visionQualityReport={visionQualityReport}
+          visionReviewWorkspace={visionReviewWorkspace}
           onExportVisionLearning={onExportVisionLearning}
           selectedCorrectionObject={selectedCorrectionObject}
+          selectedCorrectionObjects={selectedCorrectionObjects}
         />
       </details>
       <details className="rounded-2xl border border-slate-200 bg-white p-4">

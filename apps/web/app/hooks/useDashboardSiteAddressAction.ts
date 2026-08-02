@@ -66,6 +66,14 @@ function clearAddressSourceContext(siteInputs: SiteInputs): SiteInputs {
   delete next.map_feature_detection_report_v1;
   delete next.existing_conditions_package;
   delete next.candidate_review_inbox_v1;
+  delete next.civora_vision_training_dataset_v1;
+  delete next.civora_vision_quality_report_v1;
+  delete next.civora_vision_ground_truth_ledger_v1;
+  delete next.civora_vision_ground_truth_dataset_v1;
+  delete next.civora_vision_split_registry_v1;
+  delete next.civora_vision_active_learning_queue_v1;
+  delete next.civora_vision_ground_truth_coverage_v1;
+  delete next.civora_vision_review_workspace_v1;
   delete next.source_context_detection_coverage_v1;
   delete next.auto_existing_conditions_v1;
   delete next.slope_estimate;
@@ -81,6 +89,14 @@ function clearLatestResultSourceContext(latestResult: ProjectRecord["latest_resu
   delete meta.existing_conditions_package;
   delete meta.existing_conditions_summary;
   delete meta.candidate_review_inbox_v1;
+  delete meta.civora_vision_training_dataset_v1;
+  delete meta.civora_vision_quality_report_v1;
+  delete meta.civora_vision_ground_truth_ledger_v1;
+  delete meta.civora_vision_ground_truth_dataset_v1;
+  delete meta.civora_vision_split_registry_v1;
+  delete meta.civora_vision_active_learning_queue_v1;
+  delete meta.civora_vision_ground_truth_coverage_v1;
+  delete meta.civora_vision_review_workspace_v1;
   delete meta.source_context_detection_coverage_v1;
   delete meta.auto_existing_conditions_v1;
   return {
@@ -495,6 +511,9 @@ export function useDashboardSiteAddressAction({
         if (onlineFetch?.candidate_review_inbox_v1) {
           nextSiteInputs.candidate_review_inbox_v1 = onlineFetch.candidate_review_inbox_v1;
         }
+        if (onlineFetch?.civora_vision_review_workspace_v1) {
+          nextSiteInputs.civora_vision_review_workspace_v1 = onlineFetch.civora_vision_review_workspace_v1;
+        }
         if (onlineFetch?.source_context_detection_coverage_v1) {
           nextSiteInputs.source_context_detection_coverage_v1 = onlineFetch.source_context_detection_coverage_v1;
         }
@@ -532,6 +551,7 @@ export function useDashboardSiteAddressAction({
                     existing_conditions_package: onlineFetch?.existing_conditions_package,
                     existing_conditions_summary: onlineFetch?.existing_conditions_summary,
                     candidate_review_inbox_v1: onlineFetch?.candidate_review_inbox_v1,
+                    civora_vision_review_workspace_v1: onlineFetch?.civora_vision_review_workspace_v1,
                     source_context_detection_coverage_v1: onlineFetch?.source_context_detection_coverage_v1,
                   },
                 },
