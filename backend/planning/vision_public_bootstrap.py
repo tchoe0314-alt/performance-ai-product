@@ -7,12 +7,54 @@ import math
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 from .common import safe_dict, safe_float, safe_list, safe_str
+from .vision_detection_learning import build_imagery_frame_v2
 from .vision_model_lifecycle import COCO_PACKAGE_VERSION
 
 
 PUBLIC_BOOTSTRAP_VERSION = "civora_public_vision_bootstrap_v1"
 WEAK_SUPERVISION_STATUS = "weak_labels_pending_review"
 REVIEWED_SUPERVISION_STATUS = "reviewer_labeled"
+REVIEW_SPRINT_VERSION = "civora_public_vision_review_sprint_v1"
+
+
+def capture_date_from_epoch_ms(value: Any) -> str:
+    milliseconds = safe_float(value)
+    if milliseconds <= 0:
+        return ""
+    try:
+        return datetime.fromtimestamp(milliseconds / 1000.0, tz=timezone.utc).date().isoformat()
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def capture_season(value: Any) -> str:
+    text = safe_str(value)
+    if not text:
+        return ""
+    try:
+        month = datetime.fromisoformat(text.replace("Z", "+00:00")).month
+    except ValueError:
+        return ""
+    if month in {12, 1, 2}:
+        return "winter"
+    if month in {3, 4, 5}:
+        return "spring"
+    if month in {6, 7, 8}:
+        return "summer"
+    return "autumn"
+
+
+def imagery_quality_band(resolution_meters: Any) -> str:
+    resolution = safe_float(resolution_meters)
+    if resolution <= 0:
+        return "unknown"
+    if resolution <= 0.3:
+        return "high_resolution_0_30m_or_better"
+    if resolution <= 0.6:
+        return "medium_resolution_0_31m_to_0_60m"
+    if resolution <= 1.0:
+        return "standard_resolution_0_61m_to_1_00m"
+    return "low_resolution_over_1_00m"
 
 
 def quadkey_for_point(longitude: float, latitude: float, *, level: int = 9) -> str:
@@ -127,6 +169,19 @@ def build_weak_supervision_package(
                 "height": int(safe_float(tile.get("height"))),
                 "imagery_frame_id": safe_str(tile.get("frame_id")),
                 "source_sha256": safe_str(tile.get("sha256")),
+                "source_url": safe_str(tile.get("source_url")),
+                "source_item_ids": [safe_str(item) for item in safe_list(tile.get("source_item_ids")) if safe_str(item)],
+                "source_item_names": [safe_str(item) for item in safe_list(tile.get("source_item_names")) if safe_str(item)],
+                "geography_id": safe_str(tile.get("geography_id")),
+                "capture_date": safe_str(tile.get("capture_date")),
+                "capture_year": int(safe_float(tile.get("capture_year"))) if tile.get("capture_year") not in (None, "") else None,
+                "season": safe_str(tile.get("season")),
+                "imagery_quality_band": safe_str(tile.get("imagery_quality_band")),
+                "resolution_meters": safe_float(tile.get("resolution_meters")) or None,
+                "source_agency": safe_str(tile.get("source_agency")),
+                "source_vendor": safe_str(tile.get("source_vendor")),
+                "sensor_type": safe_str(tile.get("sensor_type")),
+                "datum": safe_str(tile.get("datum")),
                 "split": safe_str(tile.get("split"), "train"),
                 "bbox_wgs84": bbox,
                 "source_rights": safe_dict(imagery_source.get("source_rights")),
@@ -160,6 +215,11 @@ def build_weak_supervision_package(
                         "supervision": WEAK_SUPERVISION_STATUS,
                         "label_source": safe_str(label_source.get("name")),
                         "label_license": safe_str(label_source.get("license")),
+                        "source_confidence": (
+                            round(min(max(safe_float(safe_dict(feature.get("properties")).get("confidence")), 0.0), 1.0), 4)
+                            if safe_dict(feature.get("properties")).get("confidence") not in (None, "")
+                            else None
+                        ),
                         "review_status": "pending",
                         "geo_geometry": {"type": "Polygon", "coordinates": [clipped]},
                     }
@@ -175,11 +235,26 @@ def build_weak_supervision_package(
                             "feature_type": "building",
                             "review_status": "pending",
                             "supervision": WEAK_SUPERVISION_STATUS,
+                            "imagery_frame_id": safe_str(tile.get("frame_id")),
+                            "capture_date": safe_str(tile.get("capture_date")),
+                            "season": safe_str(tile.get("season")),
+                            "imagery_quality_band": safe_str(tile.get("imagery_quality_band")),
                         },
                         "geometry": {"type": "Polygon", "coordinates": [clipped]},
                     }
                 )
                 annotation_id += 1
+    licenses = [
+        {"id": 1, **safe_dict(imagery_source)},
+        {"id": 2, **safe_dict(label_source)},
+    ]
+    registry_fingerprints = sorted(
+        {
+            safe_str(safe_dict(item.get("source_rights")).get("rights_registry_fingerprint"))
+            for item in licenses
+            if safe_str(safe_dict(item.get("source_rights")).get("rights_registry_fingerprint"))
+        }
+    )
     package: Dict[str, Any] = {
         "version": COCO_PACKAGE_VERSION,
         "bootstrap_version": PUBLIC_BOOTSTRAP_VERSION,
@@ -189,10 +264,8 @@ def build_weak_supervision_package(
             "contains_image_bytes": False,
             "supervision_status": WEAK_SUPERVISION_STATUS,
         },
-        "licenses": [
-            {"id": 1, **safe_dict(imagery_source)},
-            {"id": 2, **safe_dict(label_source)},
-        ],
+        "licenses": licenses,
+        "source_registry_fingerprints": registry_fingerprints,
         "categories": [{"id": 1, "name": "building", "source_feature_type": "building_footprint"}],
         "images": images,
         "annotations": annotations,
@@ -216,15 +289,7 @@ def build_weak_supervision_package(
             "training, but they are not reviewed ground truth and cannot promote a production model."
         ),
     }
-    package["dataset_fingerprint"] = stable_fingerprint(
-        {
-            "categories": package["categories"],
-            "images": images,
-            "annotations": annotations,
-            "splits": package["splits"],
-            "supervision_status": package["supervision_status"],
-        }
-    )
+    package["dataset_fingerprint"] = weak_supervision_package_fingerprint(package)
     return package
 
 
@@ -246,12 +311,12 @@ def merge_weak_supervision_packages(
     next_annotation_id = 1
     for source_name, raw_package in zip(source_names, packages):
         package = safe_dict(raw_package)
-        if safe_str(package.get("version")) != COCO_PACKAGE_VERSION:
-            raise ValueError(f"{source_name} is not a Civora COCO package.")
-        if safe_str(package.get("supervision_status")) != WEAK_SUPERVISION_STATUS:
-            raise ValueError(f"{source_name} is not a weak-supervision bootstrap package.")
-        if package.get("promotion_eligible") is not False:
-            raise ValueError(f"{source_name} must remain promotion-ineligible before review.")
+        validation = verify_weak_supervision_package(package)
+        if not validation["valid"]:
+            raise ValueError(
+                f"{source_name} failed weak-supervision verification: "
+                + ", ".join(validation["blockers"])
+            )
         package_categories = [safe_dict(item) for item in safe_list(package.get("categories"))]
         if not categories:
             categories = package_categories
@@ -323,6 +388,13 @@ def merge_weak_supervision_packages(
                 "annotation_count": len(safe_list(package.get("annotations"))),
             }
         )
+    registry_fingerprints = sorted(
+        {
+            safe_str(safe_dict(item.get("source_rights")).get("rights_registry_fingerprint"))
+            for item in licenses
+            if safe_str(safe_dict(item.get("source_rights")).get("rights_registry_fingerprint"))
+        }
+    )
     payload: Dict[str, Any] = {
         "version": COCO_PACKAGE_VERSION,
         "bootstrap_version": PUBLIC_BOOTSTRAP_VERSION,
@@ -333,6 +405,7 @@ def merge_weak_supervision_packages(
             "supervision_status": WEAK_SUPERVISION_STATUS,
         },
         "licenses": licenses,
+        "source_registry_fingerprints": registry_fingerprints,
         "categories": categories,
         "images": merged_images,
         "annotations": merged_annotations,
@@ -357,17 +430,324 @@ def merge_weak_supervision_packages(
             "pending human review, and ineligible for production model promotion."
         ),
     }
-    payload["dataset_fingerprint"] = stable_fingerprint(
+    payload["dataset_fingerprint"] = weak_supervision_package_fingerprint(payload)
+    return payload
+
+
+def verify_weak_supervision_package(package: Dict[str, Any]) -> Dict[str, Any]:
+    rec = safe_dict(package)
+    blockers: List[str] = []
+    if safe_str(rec.get("version")) != COCO_PACKAGE_VERSION:
+        blockers.append("unsupported_coco_package_version")
+    if safe_str(rec.get("bootstrap_version")) != PUBLIC_BOOTSTRAP_VERSION:
+        blockers.append("unsupported_public_bootstrap_version")
+    if safe_str(rec.get("supervision_status")) != WEAK_SUPERVISION_STATUS:
+        blockers.append("package_is_not_weak_supervision")
+    if rec.get("promotion_eligible") is not False:
+        blockers.append("weak_package_must_be_promotion_ineligible")
+    images = [safe_dict(item) for item in safe_list(rec.get("images")) if safe_dict(item)]
+    annotations = [safe_dict(item) for item in safe_list(rec.get("annotations")) if safe_dict(item)]
+    licenses = [safe_dict(item) for item in safe_list(rec.get("licenses")) if safe_dict(item)]
+    source_roles = {safe_str(item.get("source_role")) for item in licenses if safe_str(item.get("source_role"))}
+    if "training_imagery" not in source_roles:
+        blockers.append("training_imagery_license_record_missing")
+    if "weak_label_proposals_only" not in source_roles:
+        blockers.append("weak_label_license_record_missing")
+    registry_fingerprints = sorted(
         {
-            "categories": categories,
-            "images": merged_images,
-            "annotations": merged_annotations,
-            "splits": payload["splits"],
-            "source_datasets": source_datasets,
-            "supervision_status": WEAK_SUPERVISION_STATUS,
+            safe_str(safe_dict(item.get("source_rights")).get("rights_registry_fingerprint"))
+            for item in licenses
+            if safe_str(safe_dict(item.get("source_rights")).get("rights_registry_fingerprint"))
         }
     )
+    if not registry_fingerprints:
+        blockers.append("source_rights_registry_fingerprint_missing")
+    if registry_fingerprints != sorted(
+        safe_str(item) for item in safe_list(rec.get("source_registry_fingerprints")) if safe_str(item)
+    ):
+        blockers.append("source_rights_registry_fingerprint_mismatch")
+    for license_record in licenses:
+        rights = safe_dict(license_record.get("source_rights"))
+        if not safe_str(license_record.get("license")) or not safe_str(license_record.get("license_url")):
+            blockers.append("source_license_evidence_missing")
+        if safe_str(rights.get("license")) != safe_str(license_record.get("license")):
+            blockers.append("source_rights_license_mismatch")
+        for right_name in ("training_use_allowed", "storage_allowed", "derivative_labels_allowed"):
+            if rights.get(right_name) is not True:
+                blockers.append(f"source_{right_name}_not_confirmed")
+    image_ids = {int(safe_float(item.get("id"))) for item in images}
+    frame_ids = [safe_str(item.get("imagery_frame_id")) for item in images]
+    if not images:
+        blockers.append("imagery_frames_missing")
+    if len(frame_ids) != len(set(frame_ids)) or any(not item for item in frame_ids):
+        blockers.append("imagery_frame_ids_missing_or_duplicate")
+    for image in images:
+        rights = safe_dict(image.get("source_rights"))
+        if not safe_str(image.get("source_sha256")):
+            blockers.append("imagery_source_sha256_missing")
+        if not safe_dict(image.get("bbox_wgs84")):
+            blockers.append("imagery_bbox_missing")
+        if rights.get("training_use_allowed") is not True:
+            blockers.append("imagery_training_rights_not_confirmed")
+        if rights.get("storage_allowed") is not True:
+            blockers.append("imagery_storage_rights_not_confirmed")
+        if rights.get("derivative_labels_allowed") is not True:
+            blockers.append("imagery_derivative_label_rights_not_confirmed")
+        if not safe_str(rights.get("license")):
+            blockers.append("imagery_license_missing")
+    for annotation in annotations:
+        if int(safe_float(annotation.get("image_id"))) not in image_ids:
+            blockers.append("annotation_image_missing")
+        if safe_str(annotation.get("review_status"), "pending") != "pending":
+            blockers.append("weak_annotation_must_start_pending")
+        if safe_str(annotation.get("supervision")) != WEAK_SUPERVISION_STATUS:
+            blockers.append("weak_annotation_supervision_mismatch")
+    expected_fingerprint = weak_supervision_package_fingerprint(rec)
+    if safe_str(rec.get("dataset_fingerprint")) != expected_fingerprint:
+        blockers.append("weak_dataset_fingerprint_mismatch")
+    return {
+        "valid": not blockers,
+        "blockers": sorted(set(blockers)),
+        "dataset_fingerprint": expected_fingerprint,
+        "image_count": len(images),
+        "annotation_count": len(annotations),
+    }
+
+
+def weak_supervision_package_fingerprint(package: Dict[str, Any]) -> str:
+    rec = safe_dict(package)
+    fingerprint_payload: Dict[str, Any] = {
+        "categories": safe_list(rec.get("categories")),
+        "licenses": [safe_dict(item) for item in safe_list(rec.get("licenses")) if safe_dict(item)],
+        "images": [safe_dict(item) for item in safe_list(rec.get("images")) if safe_dict(item)],
+        "annotations": [safe_dict(item) for item in safe_list(rec.get("annotations")) if safe_dict(item)],
+        "splits": safe_dict(rec.get("splits")),
+        "source_registry_fingerprints": safe_list(rec.get("source_registry_fingerprints")),
+        "supervision_status": safe_str(rec.get("supervision_status")),
+    }
+    if safe_list(rec.get("source_datasets")):
+        fingerprint_payload["source_datasets"] = safe_list(rec.get("source_datasets"))
+    return stable_fingerprint(fingerprint_payload)
+
+
+def build_public_review_sprint(package: Dict[str, Any]) -> Dict[str, Any]:
+    validation = verify_weak_supervision_package(package)
+    if not validation["valid"]:
+        raise ValueError("Public vision package failed verification: " + ", ".join(validation["blockers"]))
+    rec = safe_dict(package)
+    images = [safe_dict(item) for item in safe_list(rec.get("images")) if safe_dict(item)]
+    image_by_id = {int(safe_float(item.get("id"))): item for item in images}
+    frames: List[Dict[str, Any]] = []
+    frame_by_image_id: Dict[int, Dict[str, Any]] = {}
+    for image in images:
+        image_id = int(safe_float(image.get("id")))
+        frame = build_imagery_frame_v2(
+            {
+                "bbox": safe_dict(image.get("bbox_wgs84")),
+                "geography_id": safe_str(image.get("geography_id") or image.get("source_dataset")),
+                "imagery_date": safe_str(image.get("capture_date")),
+                "imagery_season": safe_str(image.get("season")),
+                "imagery_quality_band": safe_str(image.get("imagery_quality_band")),
+            },
+            source_url=safe_str(image.get("source_url")),
+            provider=safe_str(image.get("source_agency"), "USGS_NAIP"),
+            image_width=image.get("width"),
+            image_height=image.get("height"),
+            source_rights=safe_dict(image.get("source_rights")),
+        )
+        frame["frame_id"] = safe_str(image.get("imagery_frame_id"))
+        frame["source_fingerprint_sha256"] = safe_str(image.get("source_sha256"))
+        frame["permanent_split"] = safe_str(image.get("split"))
+        frame["source_item_ids"] = [safe_str(item) for item in safe_list(image.get("source_item_ids")) if safe_str(item)]
+        frame["source_item_names"] = [safe_str(item) for item in safe_list(image.get("source_item_names")) if safe_str(item)]
+        frame["resolution_meters"] = image.get("resolution_meters")
+        frame["source_asset"] = {
+            "file_name": safe_str(image.get("file_name")),
+            "sha256": safe_str(image.get("source_sha256")),
+        }
+        frames.append(frame)
+        frame_by_image_id[image_id] = frame
+
+    detections: List[Dict[str, Any]] = []
+    feature_candidates: List[Dict[str, Any]] = []
+    for annotation in [safe_dict(item) for item in safe_list(rec.get("annotations")) if safe_dict(item)]:
+        image_id = int(safe_float(annotation.get("image_id")))
+        frame = frame_by_image_id.get(image_id)
+        if not frame:
+            continue
+        annotation_id = int(safe_float(annotation.get("id")))
+        detection_id = f"public_weak_building_{validation['dataset_fingerprint'][:10]}_{annotation_id}"
+        candidate_id = f"public_review_{validation['dataset_fingerprint'][:10]}_{annotation_id}"
+        pixel_geometry = _segmentation_polygon(annotation.get("segmentation"))
+        geo_geometry = safe_dict(annotation.get("geo_geometry"))
+        confidence = safe_float(annotation.get("source_confidence"), 0.5)
+        detection = {
+            "detection_id": detection_id,
+            "kind": "building",
+            "feature_type": "building_footprint",
+            "confidence": round(min(max(confidence, 0.05), 0.7), 4),
+            "pixel_geometry": pixel_geometry,
+            "geo_geometry": geo_geometry,
+            "imagery_frame_id": safe_str(frame.get("frame_id")),
+            "provider": "Microsoft Global ML Building Footprints weak alignment",
+            "source_url": safe_str(frame.get("source_url")),
+            "properties": {
+                "supervision": WEAK_SUPERVISION_STATUS,
+                "review_status": "pending",
+                "label_license": safe_str(annotation.get("label_license")),
+            },
+        }
+        detections.append(detection)
+        feature_candidates.append(
+            {
+                "candidate_id": candidate_id,
+                "feature_type": "building_footprint",
+                "geometry": geo_geometry,
+                "source_type": "image_detected_candidate",
+                "source_url": safe_str(frame.get("source_url")),
+                "source_name": "Microsoft Global ML Building Footprints weak alignment",
+                "confidence": detection["confidence"],
+                "review_required": True,
+                "needs_user_confirmation": True,
+                "acceptance_status": "pending",
+                "evidence_source": "USGS NAIP frame with Microsoft weak building proposal",
+                "blockers": [
+                    "Weak public label requires image-by-image accept, reject, or redraw review before it can become ground truth."
+                ],
+                "source_feature_id": detection_id,
+                "properties": {
+                    "vision_detection_id": detection_id,
+                    "imagery_frame_id": safe_str(frame.get("frame_id")),
+                    "pixel_geometry": pixel_geometry,
+                    "geo_geometry": geo_geometry,
+                    "geography_id": safe_str(frame.get("geography_id")),
+                    "season": safe_str(frame.get("season")),
+                    "imagery_quality_band": safe_str(frame.get("imagery_quality_band")),
+                    "source_rights": safe_dict(frame.get("source_rights")),
+                    "supervision": WEAK_SUPERVISION_STATUS,
+                },
+                "canonical_object_allowed": False,
+                "draft_object_allowed_after_acceptance": True,
+            }
+        )
+
+    vision_report = {
+        "version": "civora_vision_detection_report_v2",
+        "imagery_frame": frames[0] if len(frames) == 1 else {},
+        "imagery_frames": frames,
+        "detections": detections,
+        "detection_count": len(detections),
+        "provider": "public_weak_supervision_bootstrap",
+        "review_required": True,
+        "visible_detection_influence": False,
+    }
+    meta: Dict[str, Any] = {
+        "map_feature_detection_report_v1": {
+            "version": "map_feature_detection_report_v1",
+            "feature_candidates": feature_candidates,
+            "civora_vision_detection_report_v2": vision_report,
+            "imagery_object_detection_report_v1": {
+                "status": "ready_for_review",
+                "provider": "public_weak_supervision_bootstrap",
+                "detection_count": len(detections),
+                "civora_vision_detection_report_v2": vision_report,
+            },
+        },
+        "civora_vision_detection_report_v2": vision_report,
+    }
+    from .candidate_review_inbox import build_candidate_review_inbox
+    from .vision_ground_truth_flywheel import LEDGER_VERSION, attach_vision_ground_truth_flywheel
+
+    meta["candidate_review_inbox_v1"] = build_candidate_review_inbox(meta)
+    meta[LEDGER_VERSION] = {
+        "version": LEDGER_VERSION,
+        "created_at": now_iso(),
+        "events": [],
+        "head_hash": "GENESIS",
+        "truth_label": "The review sprint starts with an empty append-only ledger.",
+    }
+    meta = attach_vision_ground_truth_flywheel(meta)
+    payload: Dict[str, Any] = {
+        "version": REVIEW_SPRINT_VERSION,
+        "created_at": now_iso(),
+        "source_dataset_fingerprint": safe_str(rec.get("dataset_fingerprint")),
+        "source_package_validation": validation,
+        "source_assets": [safe_dict(frame.get("source_asset")) for frame in frames],
+        "imagery_frame_count": len(frames),
+        "pending_candidate_count": len(feature_candidates),
+        "ground_truth_annotation_count": 0,
+        "meta": meta,
+        "review_required": True,
+        "promotion_eligible": False,
+        "truth_label": (
+            "Every item in this sprint is a weak proposal over a rights-cleared source frame. The sprint starts with zero "
+            "ground-truth annotations and gains labels only through explicit reviewer decisions recorded in the ledger."
+        ),
+    }
+    payload["review_sprint_fingerprint"] = stable_fingerprint(
+        _review_sprint_fingerprint_payload(payload)
+    )
     return payload
+
+
+def verify_public_review_sprint(sprint: Dict[str, Any]) -> Dict[str, Any]:
+    rec = safe_dict(sprint)
+    blockers: List[str] = []
+    if safe_str(rec.get("version")) != REVIEW_SPRINT_VERSION:
+        blockers.append("unsupported_review_sprint_version")
+    if int(safe_float(rec.get("ground_truth_annotation_count"))) != 0:
+        blockers.append("review_sprint_must_start_with_zero_ground_truth")
+    if rec.get("promotion_eligible") is not False:
+        blockers.append("unreviewed_sprint_must_be_promotion_ineligible")
+    if safe_dict(rec.get("source_package_validation")).get("valid") is not True:
+        blockers.append("source_package_validation_missing_or_blocked")
+    meta = safe_dict(rec.get("meta"))
+    ledger = safe_dict(meta.get("civora_vision_ground_truth_ledger_v1"))
+    if safe_list(ledger.get("events")) or safe_str(ledger.get("head_hash"), "GENESIS") != "GENESIS":
+        blockers.append("review_sprint_ledger_must_start_empty")
+    inbox = safe_dict(meta.get("candidate_review_inbox_v1"))
+    candidates = [safe_dict(item) for item in safe_list(inbox.get("candidates")) if safe_dict(item)]
+    if len(candidates) != int(safe_float(rec.get("pending_candidate_count"))):
+        blockers.append("review_sprint_candidate_count_mismatch")
+    if any(safe_str(item.get("status"), "pending") != "pending" for item in candidates):
+        blockers.append("review_sprint_candidates_must_start_pending")
+    expected_fingerprint = stable_fingerprint(_review_sprint_fingerprint_payload(rec))
+    if safe_str(rec.get("review_sprint_fingerprint")) != expected_fingerprint:
+        blockers.append("review_sprint_fingerprint_mismatch")
+    return {
+        "valid": not blockers,
+        "blockers": sorted(set(blockers)),
+        "review_sprint_fingerprint": expected_fingerprint,
+        "imagery_frame_count": int(safe_float(rec.get("imagery_frame_count"))),
+        "pending_candidate_count": len(candidates),
+    }
+
+
+def _review_sprint_fingerprint_payload(sprint: Dict[str, Any]) -> Dict[str, Any]:
+    meta = safe_dict(sprint.get("meta"))
+    vision_report = safe_dict(meta.get("civora_vision_detection_report_v2"))
+    inbox = safe_dict(meta.get("candidate_review_inbox_v1"))
+    return {
+        "source_dataset_fingerprint": safe_str(sprint.get("source_dataset_fingerprint")),
+        "source_assets": safe_list(sprint.get("source_assets")),
+        "imagery_frames": safe_list(vision_report.get("imagery_frames")),
+        "candidates": safe_list(inbox.get("candidates")),
+        "imagery_frame_count": int(safe_float(sprint.get("imagery_frame_count"))),
+        "pending_candidate_count": int(safe_float(sprint.get("pending_candidate_count"))),
+    }
+
+
+def _segmentation_polygon(value: Any) -> Dict[str, Any]:
+    segments = safe_list(value)
+    flat = safe_list(segments[0]) if segments else []
+    points: List[List[float]] = []
+    for index in range(0, len(flat) - 1, 2):
+        points.append([safe_float(flat[index]), safe_float(flat[index + 1])])
+    if len(points) < 3:
+        return {}
+    if points[0] != points[-1]:
+        points.append(list(points[0]))
+    return {"type": "Polygon", "coordinates": [points]}
 
 
 def geometry_exterior_rings(geometry: Any) -> List[List[List[float]]]:
@@ -571,20 +951,28 @@ def _assign_balanced_splits(tiles: List[Dict[str, Any]]) -> None:
 
 __all__ = [
     "PUBLIC_BOOTSTRAP_VERSION",
+    "REVIEW_SPRINT_VERSION",
     "REVIEWED_SUPERVISION_STATUS",
     "WEAK_SUPERVISION_STATUS",
     "build_geographic_tile_grid",
+    "build_public_review_sprint",
     "build_weak_supervision_package",
+    "capture_date_from_epoch_ms",
+    "capture_season",
     "clip_ring_to_bbox",
     "coco_polygon",
     "feature_intersects_bbox",
     "geometry_bbox",
     "geometry_exterior_rings",
     "merge_weak_supervision_packages",
+    "imagery_quality_band",
     "normalize_bbox",
     "normalize_microsoft_partition_url",
     "quadkey_for_point",
     "quadkeys_for_bbox",
     "stable_fingerprint",
+    "verify_weak_supervision_package",
+    "verify_public_review_sprint",
+    "weak_supervision_package_fingerprint",
     "wgs84_ring_to_pixels",
 ]

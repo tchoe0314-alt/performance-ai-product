@@ -49,6 +49,50 @@ Each usable label needs:
 
 Do not add a dataset merely because it is publicly downloadable. Record the license and whether model training, derivative labels, storage, and redistribution are allowed.
 
+## Rights-Cleared Public Seed Collection
+
+The committed source registry at `vision/datasets/public-source-registry-v1.json` is the machine-readable allowlist for
+public bootstrap sources. The initial collection plan at `vision/datasets/us-conus-building-seed-v1.json` requests 20
+tiles across Gretna, Dallas, Denver, Phoenix, and Charlotte. Source images and generated review artifacts stay under the
+ignored `private/vision` directory.
+
+The collector accepts only exact USDA NAIP catalog records from the registered USGS ImageServer. Every image export uses
+an `esriMosaicLockRaster` rule with the selected catalog object IDs. Commercial, unidentified, non-NAIP, non-CONUS, or
+fallback imagery is rejected. Microsoft Global ML Building Footprints are used only as separately licensed weak proposals.
+
+Collect the planned corpus and create a zero-ground-truth review sprint:
+
+```bash
+PYTHONPATH=. python3 backend/scripts/bootstrap_public_vision_collection.py \
+  --plan vision/datasets/us-conus-building-seed-v1.json \
+  --source-registry vision/datasets/public-source-registry-v1.json \
+  --output-root private/vision/collections/us-conus-building-seed-v1
+```
+
+Open the generated reviewer from an HTTP server so its checksum exporter is available:
+
+```bash
+cd private/vision/collections/us-conus-building-seed-v1/merged
+python3 -m http.server 8088
+```
+
+Reviewers compare each outline with the registered image, enter a reviewer identity, attest that the source frame was
+inspected, and export `vision-review-decisions.json`. Accept and reject are supported in the gallery. Geometry correction,
+split, and merge work belongs in Civora Draw so the edited geometry is itself reviewable.
+
+Apply the checksum-protected decision file to the append-only ledger:
+
+```bash
+PYTHONPATH=. python3 backend/scripts/apply_public_vision_review_decisions.py \
+  --review-sprint private/vision/collections/us-conus-building-seed-v1/merged/vision-review-sprint.json \
+  --decisions /path/to/vision-review-decisions.json \
+  --output private/vision/collections/us-conus-building-seed-v1/merged/review-result.json
+```
+
+The handoff fails closed for changed source packages, changed sprints, missing attestation, duplicate candidates, unknown
+actions, or a changed decision checksum. A valid result creates reviewer-attributed training evidence only. It does not
+approve a model, establish survey/control, or change any project output.
+
 ## Coverage Targets
 
 The reviewer workspace reports a development target of 500 reviewed annotations per supported class, at least five geographies, two seasons, and two imagery-quality bands. These are collection targets, not model promotion gates and not a promise that 500 labels are sufficient. Dense or diverse classes may require thousands of reviewed examples.

@@ -1,0 +1,49 @@
+{
+  "version": "civora_vision_public_source_registry_v1",
+  "reviewed_at": "2026-08-02",
+  "reviewed_by": "civora_source_rights_review",
+  "review_status": "operational_source_record_not_legal_advice",
+  "sources": {
+    "microsoft_global_building_footprints": {
+      "approved_hosts": [
+        "bfppub.blob.core.windows.net",
+        "bfppub.z5.web.core.windows.net"
+      ],
+      "dataset_index_url": "https://bfppub.blob.core.windows.net/%24web/2026-07-24/dataset-links.csv",
+      "license": "CDLA-Permissive-2.0",
+      "license_url": "https://github.com/microsoft/GlobalMLBuildingFootprints/blob/main/LICENSE",
+      "name": "Microsoft Global ML Building Footprints",
+      "rights": {
+        "derivative_labels_allowed": true,
+        "redistribution_allowed": true,
+        "storage_allowed": true,
+        "training_use_allowed": true
+      },
+      "source_role": "weak_label_proposals_only",
+      "source_url": "https://github.com/microsoft/GlobalMLBuildingFootprints",
+      "supervision_status": "weak_labels_pending_review",
+      "truth_boundary": "Footprints remain machine-derived weak proposals until reviewed against the registered imagery frame."
+    },
+    "usgs_naip_conus": {
+      "approved_hosts": [
+        "imagery.nationalmap.gov"
+      ],
+      "allowed_geography": "conterminous_united_states",
+      "catalog_url": "https://data.usgs.gov/datacatalog/data/USGS:9edd9f6b-f825-47f8-8d40-50fc99995c52",
+      "image_server_url": "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer",
+      "license": "public-domain",
+      "license_url": "https://www.usgs.gov/centers/eros/science/usgs-eros-archive-aerial-photography-national-agriculture-imagery-program-naip",
+      "name": "USGS National Map NAIP",
+      "record_filter": "Category=1 AND acquisition_date IS NOT NULL AND agency='USDA'",
+      "rights": {
+        "derivative_labels_allowed": true,
+        "redistribution_allowed": true,
+        "storage_allowed": true,
+        "training_use_allowed": true
+      },
+      "source_role": "training_imagery",
+      "truth_boundary": "Only catalog records identified as USDA NAIP in CONUS are eligible. Commercial or unidentified imagery fallbacks are rejected."
+    }
+  },
+  "truth_label": "Registry entries document operational source-rights evidence. They do not replace counsel review or permit unlisted sources."
+}

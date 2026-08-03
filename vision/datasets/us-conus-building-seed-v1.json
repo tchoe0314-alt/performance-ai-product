@@ -1,0 +1,45 @@
+{
+  "version": "civora_public_vision_collection_plan_v1",
+  "collection_id": "us-conus-building-seed-v1",
+  "imagery_source_id": "usgs_naip_conus",
+  "label_source_id": "microsoft_global_building_footprints",
+  "tile_defaults": {
+    "columns": 2,
+    "image_pixels": 512,
+    "rows": 2,
+    "tile_meters": 320
+  },
+  "geographies": [
+    {
+      "center_latitude": 41.1852405,
+      "center_longitude": -96.2370225,
+      "geography_id": "gretna_ne"
+    },
+    {
+      "center_latitude": 32.7767,
+      "center_longitude": -96.797,
+      "geography_id": "dallas_tx"
+    },
+    {
+      "center_latitude": 39.7392,
+      "center_longitude": -104.9903,
+      "geography_id": "denver_co"
+    },
+    {
+      "center_latitude": 33.4484,
+      "center_longitude": -112.074,
+      "geography_id": "phoenix_az"
+    },
+    {
+      "center_latitude": 35.2271,
+      "center_longitude": -80.8431,
+      "geography_id": "charlotte_nc"
+    }
+  ],
+  "output_policy": {
+    "commit_source_images": false,
+    "ground_truth_at_collection_time": false,
+    "promotion_eligible": false,
+    "review_every_weak_label": true
+  }
+}

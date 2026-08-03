@@ -138,9 +138,22 @@ Use Python 3.11, matching the backend Docker image, for the training environment
 ### Public weak-supervision bootstrap
 
 The public bootstrap is useful for proving the data and training machinery before a reviewed corpus exists. It downloads
-exact-bounds USGS National Map imagery and aligns separately licensed Microsoft building footprints as weak labels. The
-images and labels retain independent source-rights records. Weak packages always use
+exact USDA NAIP catalog records from the USGS National Map and aligns separately licensed Microsoft building footprints
+as weak labels. Image exports are locked to catalog raster IDs; unidentified or fallback imagery is rejected. The images
+and labels retain independent source-rights records. Weak packages always use
 `weak_labels_pending_review`, set `promotion_eligible=false`, and cannot produce a deployable model manifest.
+
+Build the committed five-geography collection plan in one reproducible run:
+
+```bash
+PYTHONPATH=. python3 backend/scripts/bootstrap_public_vision_collection.py \
+  --plan vision/datasets/us-conus-building-seed-v1.json \
+  --source-registry vision/datasets/public-source-registry-v1.json \
+  --output-root private/vision/collections/us-conus-building-seed-v1
+```
+
+This creates the merged weak package, source manifest, coverage report, zero-ground-truth review sprint, and standalone
+review gallery. Source images and reviewer artifacts remain outside Git under `private/vision`.
 
 ### Independent SpaceNet benchmark import
 
