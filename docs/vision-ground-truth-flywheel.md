@@ -93,6 +93,36 @@ The handoff fails closed for changed source packages, changed sprints, missing a
 actions, or a changed decision checksum. A valid result creates reviewer-attributed training evidence only. It does not
 approve a model, establish survey/control, or change any project output.
 
+## AI-Assisted Review Triage
+
+AI-assisted triage can make a large review sprint easier to inspect without impersonating a reviewer. It verifies every
+registered image fingerprint, measures each proposal against local image context, renders one evidence crop per proposal,
+and produces contact sheets ordered for review. Its only recommendations are `likely_accept`, `likely_reject`, and
+`redraw_or_human_review`.
+
+Run triage against a verified sprint:
+
+```bash
+PYTHONPATH=. python3 backend/scripts/triage_public_vision_review_sprint.py \
+  --review-sprint private/vision/collections/us-conus-building-seed-v1/merged/vision-review-sprint.json \
+  --image-root private/vision/collections/us-conus-building-seed-v1/merged/images \
+  --output-root private/vision/triage/us-conus-building-seed-v1
+```
+
+Optional AI visual overrides use `civora_public_vision_ai_triage_overrides_v1` and must declare
+`reviewer_type: ai_assisted_non_human`. They can only change recommendation priority; they cannot claim human review.
+The resulting `civora_public_vision_ai_triage_v1` artifact always records:
+
+- `human_attestation_present: false`;
+- `ground_truth_eligible: false`;
+- `ledger_append_allowed: false`;
+- `promotion_eligible: false`;
+- `human_review_required: true` on every candidate.
+
+The human decision importer rejects AI triage artifacts because they use a separate version and do not contain a named
+reviewer attestation. A person must still inspect each submitted decision against its registered source frame before it can
+enter the append-only ledger.
+
 ## Coverage Targets
 
 The reviewer workspace reports a development target of 500 reviewed annotations per supported class, at least five geographies, two seasons, and two imagery-quality bands. These are collection targets, not model promotion gates and not a promise that 500 labels are sufficient. Dense or diverse classes may require thousands of reviewed examples.
