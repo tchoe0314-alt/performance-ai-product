@@ -1,4 +1,6 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+
+import { openCadPrecisionTools } from "./testUiHelpers";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismProvider=mock") {
   const consoleErrors: string[] = [];
@@ -42,6 +44,22 @@ async function openDrawPanel(page: Page) {
 
 function canvasObject(page: Page, label: string) {
   return page.locator(`[data-object-overlay][data-cad-object-id][aria-label*="${label}"]`).first();
+}
+
+async function exposedObjectPoint(object: Locator) {
+  return object.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    for (const xRatio of [0.35, 0.5, 0.2, 0.65]) {
+      for (const yRatio of [0.5, 0.65, 0.35]) {
+        const x = rect.left + rect.width * xRatio;
+        const y = rect.top + rect.height * yRatio;
+        const hit = document.elementFromPoint(x, y);
+        const blockedControl = hit?.closest("button,input,select,textarea,a");
+        if ((hit === element || element.contains(hit)) && !blockedControl) return { x, y };
+      }
+    }
+    throw new Error("Selected object has no exposed draggable surface.");
+  });
 }
 
 async function expectNoOverflow(page: Page) {
@@ -187,8 +205,9 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     await expect(page.getByTestId("object-manager-multi-select")).toContainText("2 objects selected");
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("Window selected 2 editable draft objects");
-    await page.getByLabel("Draft command input").fill("COPY 20,0");
-    await page.getByLabel("Draft command input").press("Enter");
+    const precisionTools = await openCadPrecisionTools(page);
+    await precisionTools.getByLabel("Draft command input").fill("COPY 20,0");
+    await precisionTools.getByLabel("Draft command input").press("Enter");
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("COPY created 2 draft review copies");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Office Building - 28,000 sf Copy");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls Copy");
@@ -240,9 +259,10 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     const beforeMove = await officeOverlay.boundingBox();
     expect(beforeMove).not.toBeNull();
-    await page.mouse.move(beforeMove!.x + beforeMove!.width * 0.78, beforeMove!.y + beforeMove!.height * 0.52);
+    const dragStart = await exposedObjectPoint(officeOverlay);
+    await page.mouse.move(dragStart.x, dragStart.y);
     await page.mouse.down();
-    await page.mouse.move(beforeMove!.x + beforeMove!.width * 0.78 + 48, beforeMove!.y + beforeMove!.height * 0.52 + 24, { steps: 8 });
+    await page.mouse.move(dragStart.x + 48, dragStart.y + 24, { steps: 8 });
     await page.mouse.up();
 
     await expect

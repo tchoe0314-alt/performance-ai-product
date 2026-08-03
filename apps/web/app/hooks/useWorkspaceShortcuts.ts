@@ -57,7 +57,9 @@ export function useWorkspaceShortcuts({
       const key = event.key.toLowerCase();
 
       if (event.key === "Escape") {
-        consumeShortcut(event);
+        // Keep Escape observable by the active canvas tool so it can clear its
+        // local draft points in addition to resetting workspace-level state.
+        event.preventDefault();
         onCancelActiveTool();
         return;
       }

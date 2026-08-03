@@ -235,7 +235,7 @@ export function SourceDataReviewPanel({
       <div className="mt-4 border-t border-slate-200 pt-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Candidate Review Inbox</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review Detected Items</p>
             <p className="mt-1 text-xs font-medium text-slate-500">Accepted items become draft evidence for review only.</p>
           </div>
           <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">

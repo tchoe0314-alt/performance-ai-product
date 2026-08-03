@@ -51,6 +51,7 @@ type UsePreviewDraftGeometryOptions = {
   ) => void;
   cursorSitePoint: CadPoint | null;
   siteDrawRequest: number;
+  cadToolRequest?: PreviewPanelProps["cadToolRequest"];
   lastSiteDrawRequestRef: MutableRefObject<number>;
   siteLocked?: boolean;
   onSetPreviewInteraction: (value: "static" | "edit") => void;
@@ -104,6 +105,7 @@ export function usePreviewDraftGeometry({
   pushCadCommandFeedback,
   cursorSitePoint,
   siteDrawRequest,
+  cadToolRequest,
   lastSiteDrawRequestRef,
   siteLocked,
   onSetPreviewInteraction,
@@ -156,6 +158,7 @@ export function usePreviewDraftGeometry({
   useEffect(() => {
     if (siteDrawRequest === lastSiteDrawRequestRef.current) return;
     lastSiteDrawRequestRef.current = siteDrawRequest;
+    if (cadToolRequest?.tool === "select" && cadToolRequest.id > siteDrawRequest) return;
     if (siteLocked) return;
     const handle = window.requestAnimationFrame(() => {
       clearDraftGeometry();
@@ -163,7 +166,7 @@ export function usePreviewDraftGeometry({
       onSetPreviewInteraction("edit");
     });
     return () => window.cancelAnimationFrame(handle);
-  }, [clearDraftGeometry, lastSiteDrawRequestRef, onSetPreviewInteraction, setDrawMode, siteDrawRequest, siteLocked]);
+  }, [cadToolRequest?.id, cadToolRequest?.tool, clearDraftGeometry, lastSiteDrawRequestRef, onSetPreviewInteraction, setDrawMode, siteDrawRequest, siteLocked]);
 
   const finishDraftGeometry = useCallback(() => {
     if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") {
@@ -535,14 +538,18 @@ export function usePreviewDraftGeometry({
   }, [applyPolylineUndo, applyRectUndo, lastPolylineEdit, lastRectEdit]);
 
   useEffect(() => {
+    const cancelDraft = () => {
+      if (!draftPoints.length && drawMode === "select") return;
+      clearDraftGeometry();
+      setDrawMode("select");
+    };
     const handleKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
       if (event.key === "Escape") {
         if (draftPoints.length || drawMode !== "select") {
           event.preventDefault();
-          clearDraftGeometry();
-          setDrawMode("select");
+          cancelDraft();
         }
         return;
       }
@@ -567,7 +574,11 @@ export function usePreviewDraftGeometry({
       }
     };
     window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    window.addEventListener("civora:cancel-active-tool", cancelDraft);
+    return () => {
+      window.removeEventListener("keydown", handleKey);
+      window.removeEventListener("civora:cancel-active-tool", cancelDraft);
+    };
   }, [
     buildingPlacements,
     clearDraftGeometry,

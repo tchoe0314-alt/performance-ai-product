@@ -2016,6 +2016,7 @@ export default function PreviewPanel({
     pushCadCommandFeedback,
     cursorSitePoint,
     siteDrawRequest,
+    cadToolRequest,
     lastSiteDrawRequestRef,
     siteLocked,
     onSetPreviewInteraction,
@@ -2466,7 +2467,7 @@ export default function PreviewPanel({
   });
   return (
     <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
-      <div className="civora-preview-canvas-container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
+      <div className="civora-preview-canvas-container flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
           <PreviewCanvasControlStack
             previewMode={previewMode}
             allowEdits={allowEdits}
@@ -2544,6 +2545,14 @@ export default function PreviewPanel({
               canvasScale: activeCanvasView.scale,
               lastCommandLabel: cadHistory.at(-1)?.label,
               finishDraftBlockedReason,
+              canFinishDraftGeometry,
+              onFinishDraftGeometry: finishDraftGeometry,
+              onCancelDraw: () => {
+                clearDraftGeometry();
+                setDrawMode("select");
+                setActiveSnapPoint(null);
+                setCadCommandStatus("Cancelled active drawing tool.");
+              },
             }}
           />
           <CadPrecisionDock
@@ -2632,16 +2641,7 @@ export default function PreviewPanel({
                 drawMode,
                 siteLocked: Boolean(siteLocked),
                 hasDrawableSiteSize,
-                canFinishDraftGeometry,
-                finishDraftBlockedReason,
                 onActivateDrawTool: activateDrawTool,
-                onFinishDraftGeometry: finishDraftGeometry,
-                onCancelDraw: () => {
-                  clearDraftGeometry();
-                  setDrawMode("select");
-                  setActiveSnapPoint(null);
-                  setCadCommandStatus("Cancelled active drawing tool.");
-                },
                 onUnlockSite,
                 onLockSite,
                 onClearDraftGeometry: clearDraftGeometry,

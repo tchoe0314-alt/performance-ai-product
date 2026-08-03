@@ -12,6 +12,9 @@ type PreviewActiveDrawHudProps = {
   canvasScale: number;
   lastCommandLabel?: string;
   finishDraftBlockedReason: string | null;
+  canFinishDraftGeometry: boolean;
+  onFinishDraftGeometry: () => void;
+  onCancelDraw: () => void;
 };
 
 export function PreviewActiveDrawHud({
@@ -26,6 +29,9 @@ export function PreviewActiveDrawHud({
   canvasScale,
   lastCommandLabel,
   finishDraftBlockedReason,
+  canFinishDraftGeometry,
+  onFinishDraftGeometry,
+  onCancelDraw,
 }: PreviewActiveDrawHudProps) {
   const statusLabel =
     drawMode === "site" && draftPointCount
@@ -61,6 +67,30 @@ export function PreviewActiveDrawHud({
           {finishDraftBlockedReason}
         </span>
       ) : null}
+      <span className="ml-auto flex shrink-0 items-center gap-1.5">
+        <button
+          type="button"
+          data-testid="canvas-quick-finish"
+          onClick={onFinishDraftGeometry}
+          disabled={!canFinishDraftGeometry}
+          title={finishDraftBlockedReason ?? "Finish drawn geometry"}
+          className={`inline-flex h-8 items-center rounded-lg border px-3 text-[11px] font-semibold normal-case tracking-normal ${
+            !canFinishDraftGeometry
+              ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
+              : "border-slate-900 bg-slate-950 text-white"
+          }`}
+        >
+          Finish
+        </button>
+        <button
+          type="button"
+          data-testid="canvas-quick-cancel"
+          onClick={onCancelDraw}
+          className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold normal-case tracking-normal text-slate-700 hover:bg-slate-50"
+        >
+          Cancel
+        </button>
+      </span>
     </div>
   );
 }

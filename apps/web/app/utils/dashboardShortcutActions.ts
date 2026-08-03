@@ -113,6 +113,7 @@ export function runDashboardCancelActiveTool({
   setPendingClarification(null);
   setPreviewInteraction("static");
   setCadToolRequestSelect();
+  window.dispatchEvent(new Event("civora:cancel-active-tool"));
   updateProjectStatus({
     state: "ready",
     area: "chat",

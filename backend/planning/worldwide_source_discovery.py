@@ -115,13 +115,13 @@ def _overpass_limits(max_features: int) -> Dict[str, int]:
     return limits
 
 
-def _overpass_query(bbox: Dict[str, Any], *, max_features: int) -> str:
+def _overpass_query(bbox: Dict[str, Any], *, max_features: int, query_timeout_seconds: int = 9) -> str:
     west, south, east, north = _bbox_bounds(bbox)
     bounds = f"{south:.7f},{west:.7f},{north:.7f},{east:.7f}"
     limits = _overpass_limits(max_features)
     return "\n".join(
         [
-            f"[out:json][timeout:20][bbox:{bounds}];",
+            f"[out:json][timeout:{max(2, min(safe_int(query_timeout_seconds, 9), 20))}][bbox:{bounds}];",
             "(",
             '  way["building"];',
             '  relation["building"];',
@@ -268,6 +268,7 @@ def fetch_openstreetmap_site_context(
     endpoint: str = "",
     max_features: int = 1200,
     max_area_sq_km: float = 25.0,
+    request_timeout_seconds: float = 5.0,
 ) -> Dict[str, Any]:
     endpoints = _overpass_endpoints(endpoint)
     max_features = min(max(safe_int(max_features, 1200), 1), 2500)
@@ -294,7 +295,12 @@ def fetch_openstreetmap_site_context(
         if cached is not None:
             cached["cache_status"] = "hit"
             return cached
-    query = _overpass_query(bbox, max_features=max_features)
+    request_timeout = min(max(safe_float(request_timeout_seconds, 5.0), 3.0), 30.0)
+    query = _overpass_query(
+        bbox,
+        max_features=max_features,
+        query_timeout_seconds=max(2, int(request_timeout) - 1),
+    )
     payload: Dict[str, Any] = {}
     resolved_endpoint = ""
     endpoint_errors: List[str] = []
@@ -304,7 +310,7 @@ def fetch_openstreetmap_site_context(
                 session,
                 candidate_endpoint,
                 params={"data": query},
-                timeout=30.0,
+                timeout=request_timeout,
                 headers={"User-Agent": "CivoraAI/0.1 (source-context; contact: support@civora.ai)"},
             )
             resolved_endpoint = candidate_endpoint

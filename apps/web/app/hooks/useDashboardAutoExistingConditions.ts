@@ -179,6 +179,29 @@ export function useDashboardAutoExistingConditions({
                     height_ft: height || viewportFootprint.heightFt,
                   }
                 : undefined,
+              geocode_context:
+                geocode?.lat != null && geocode?.lng != null
+                  ? {
+                      success: true,
+                      status: "ready",
+                      lat: geocode.lat,
+                      lng: geocode.lng,
+                      display_name: geocode.display_name || address,
+                      formatted_address: geocode.display_name || address,
+                      provider: geocode.provider || "geocoder",
+                      confidence: geocode.confidence ?? null,
+                      crs: geocode.crs ?? { epsg: "EPSG:4326", units: "degrees" },
+                      location_context: currentSiteInputs.location_context ?? {},
+                    }
+                  : {},
+              active_site_boundary: viewportFootprint?.bounds
+                ? {
+                    north: viewportFootprint.bounds.north,
+                    south: viewportFootprint.bounds.south,
+                    east: viewportFootprint.bounds.east,
+                    west: viewportFootprint.bounds.west,
+                  }
+                : {},
               include_floodplain: true,
               include_wetlands: true,
               include_parcels: true,
@@ -188,6 +211,7 @@ export function useDashboardAutoExistingConditions({
               include_contours: true,
               include_elevation: true,
               include_imagery_detection: true,
+              include_worldwide_context: true,
               provider_registry: currentSiteInputs.local_gis_provider_registry_v1 ?? siteInputs?.local_gis_provider_registry_v1 ?? {},
             },
             onProgress: (job) => {

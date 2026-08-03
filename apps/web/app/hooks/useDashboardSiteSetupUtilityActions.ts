@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import type { ProjectInput, ProjectRecord } from "../types";
 import type { AutoExistingConditionsUiStatus } from "../utils/dashboardDataTypes";
 import { parsePositiveNumber } from "../utils/formatting";
+import { OVERSIZED_SITE_MESSAGE, SITE_WARNING_ACRES, siteAreaAcresFromSize } from "../utils/workflowConstants";
 import type { ProjectStatusSummary, SidePanelKey, WorkspaceMode } from "../utils/workspaceShell";
 
 type SaveProject = (options?: {
@@ -91,8 +92,8 @@ export function useDashboardSiteSetupUtilityActions({
 }: UseDashboardSiteSetupUtilityActionsOptions) {
   const handleCreateCenteredSiteFromSetup = useCallback(async () => {
     const address = siteAddress.trim();
-    const width = parsePositiveNumber(lotWidth) ?? 1000;
-    const height = parsePositiveNumber(lotHeight) ?? 1000;
+    const width = lotWidth.trim() ? parsePositiveNumber(lotWidth) : 1000;
+    const height = lotHeight.trim() ? parsePositiveNumber(lotHeight) : 1000;
     if (!address) {
       updateProjectStatus({
         state: "needs review",
@@ -102,6 +103,26 @@ export function useDashboardSiteSetupUtilityActions({
         nextAction: "Enter an address, then create the centered site.",
       });
       siteAddressInputRef.current?.focus();
+      return;
+    }
+    if (!width || !height) {
+      updateProjectStatus({
+        state: "needs review",
+        area: "setup",
+        title: "Site size needs correction",
+        detail: "Enter a positive width and depth in feet before creating the centered site.",
+        nextAction: "Correct the site dimensions, then create the centered site again.",
+      });
+      return;
+    }
+    if (siteAreaAcresFromSize(width, height) > SITE_WARNING_ACRES) {
+      updateProjectStatus({
+        state: "needs review",
+        area: "setup",
+        title: "Site area needs correction",
+        detail: OVERSIZED_SITE_MESSAGE,
+        nextAction: "Reduce the width or depth, then create the centered site again.",
+      });
       return;
     }
     setLotWidth(String(Math.round(width)));

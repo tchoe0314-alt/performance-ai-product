@@ -77,6 +77,9 @@ async function clickSurface(page: Page, xRatio: number, yRatio: number) {
   const surface = page.getByTestId("preview-drawing-surface");
   await expect(surface).toBeVisible({ timeout: 20_000 });
   await expect(surface).not.toHaveAttribute("data-draw-mode", /^(select|pan)$/, { timeout: 10_000 });
+  await surface.evaluate((element) => {
+    element.scrollIntoView({ block: "center", inline: "nearest" });
+  });
   const point = await surface.evaluate(
     (element, ratios) => {
       const rect = element.getBoundingClientRect();

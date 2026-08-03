@@ -1508,14 +1508,14 @@ def fetch_online_existing_conditions(
                 layer_imports.append(aggregated_terrain)
 
     worldwide_context: Dict[str, Any] = {}
-    if include_worldwide_context and supplied_geocode:
+    if include_worldwide_context and geocode.get("success"):
         worldwide_context = fetch_openstreetmap_site_context(working_bbox, session=session)
         source_results["worldwide_mapped_context"] = worldwide_context
         worldwide_layers = safe_dict(worldwide_context.get("layer_results"))
         fallback_targets = {
-            "building_footprints": "building_footprints",
-            "roads": "roads_row",
-            "existing_utilities": "existing_utilities",
+            **({"building_footprints": "building_footprints"} if include_building_footprints else {}),
+            **({"roads": "roads_row"} if include_roads else {}),
+            **({"existing_utilities": "existing_utilities"} if include_utilities else {}),
         }
         for layer_name, source_key in fallback_targets.items():
             fallback_result = safe_dict(worldwide_layers.get(layer_name))
@@ -1539,9 +1539,9 @@ def fetch_online_existing_conditions(
     elif include_worldwide_context:
         worldwide_context = {
             "success": False,
-            "status": "not_requested_without_global_geocode",
+            "status": "not_requested_without_geocode",
             "source_type": "openstreetmap_overpass",
-            "warnings": ["Worldwide mapped context needs the applied global geocode coordinates supplied by the website."],
+            "warnings": ["Worldwide mapped context needs usable geocoded coordinates."],
             "review_required": True,
         }
         source_results["worldwide_mapped_context"] = worldwide_context

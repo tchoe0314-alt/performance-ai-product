@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { openCadPrecisionTools } from "./testUiHelpers";
+
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
@@ -192,8 +194,9 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   await openFreshMargoProject(page, { requireFullProgramObjects: false });
 
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
-  await page.getByLabel("Draft command input").fill("LINE 20,20 220,20");
-  await page.getByLabel("Draft command input").press("Enter");
+  const precisionTools = await openCadPrecisionTools(page);
+  await precisionTools.getByLabel("Draft command input").fill("LINE 20,20 220,20");
+  await precisionTools.getByLabel("Draft command input").press("Enter");
   await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
 
   const request = await runGenerateAndCapture(page, captured);

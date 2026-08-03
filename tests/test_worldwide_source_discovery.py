@@ -129,6 +129,27 @@ class _FallbackWorldwideSession(_WorldwideSession):
         return super().get(url, params=params, timeout=timeout, headers=headers)
 
 
+class _UsAddressAndWorldwideSession(_WorldwideSession):
+    def get(self, url, params=None, timeout=None, headers=None):
+        self.calls.append({"url": url, "params": params or {}, "timeout": timeout, "headers": headers or {}})
+        if "geocoder" in url:
+            return _Response(
+                {
+                    "result": {
+                        "addressMatches": [
+                            {
+                                "matchedAddress": "20525 MARGO ST, GRETNA, NE, 68028",
+                                "coordinates": {"x": -96.2370, "y": 41.1852},
+                            }
+                        ]
+                    }
+                }
+            )
+        if "overpass" in url:
+            return _Response(_osm_payload())
+        raise AssertionError(f"Unexpected source request: {url}")
+
+
 class _EmptyWorldwideSession(_WorldwideSession):
     def get(self, url, params=None, timeout=None, headers=None):
         self.calls.append({"url": url, "params": params or {}, "timeout": timeout, "headers": headers or {}})
@@ -192,6 +213,19 @@ class WorldwideSourceDiscoveryTests(unittest.TestCase):
         self.assertEqual(len(session.calls), 2)
         self.assertIn("Primary mapped-context endpoint failed", " ".join(result["warnings"]))
 
+    def test_openstreetmap_fetch_honors_bounded_request_timeout(self) -> None:
+        session = _WorldwideSession()
+
+        result = fetch_openstreetmap_site_context(
+            {"west": -0.126, "south": 51.499, "east": -0.124, "north": 51.501},
+            request_timeout_seconds=4.5,
+            session=session,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(session.calls[0]["timeout"], 4.5)
+        self.assertIn("[timeout:3]", session.calls[0]["params"]["data"])
+
     def test_openstreetmap_empty_result_stays_empty_without_invented_features(self) -> None:
         result = fetch_openstreetmap_site_context(
             {"west": 36.80, "south": -1.30, "east": 36.81, "north": -1.29},
@@ -204,14 +238,16 @@ class WorldwideSourceDiscoveryTests(unittest.TestCase):
         self.assertTrue(all(layer["feature_count"] == 0 for layer in result["layer_results"].values()))
 
     def test_openstreetmap_provider_outage_is_reported_without_candidates(self) -> None:
+        session = _FailedWorldwideSession()
         result = fetch_openstreetmap_site_context(
             {"west": 139.75, "south": 35.67, "east": 139.76, "north": 35.68},
-            session=_FailedWorldwideSession(),
+            session=session,
         )
 
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "fetch_failed")
         self.assertEqual(result["layer_results"], {})
+        self.assertEqual([call["timeout"] for call in session.calls], [5.0, 5.0])
         self.assertIn("no features were inferred", result["truth_label"])
 
     def test_global_elevation_keeps_dem_truth(self) -> None:
@@ -283,6 +319,55 @@ class WorldwideSourceDiscoveryTests(unittest.TestCase):
         self.assertIn("supplied_geocode", providers)
         self.assertEqual(providers["global_dem_point_elevation"]["status"], "ready")
         self.assertEqual(providers["usgs_3dep_epqs"]["status"], "available_in_us")
+
+    def test_direct_us_address_uses_worldwide_context_without_frontend_geocode_context(self) -> None:
+        session = _UsAddressAndWorldwideSession()
+
+        result = fetch_online_existing_conditions(
+            address="20525 Margo St, Gretna, NE",
+            bbox={"west": -96.238, "south": 41.184, "east": -96.236, "north": 41.186},
+            include_floodplain=False,
+            include_wetlands=False,
+            include_parcels=False,
+            include_easements=False,
+            include_zoning=False,
+            include_contours=False,
+            include_elevation=False,
+            include_imagery_detection=False,
+            session=session,
+        )
+
+        types = {candidate["feature_type"] for candidate in result["map_feature_detection_report_v1"]["feature_candidates"]}
+        self.assertTrue(any("overpass" in call["url"] for call in session.calls))
+        self.assertIn("building_footprint", types)
+        self.assertIn("road_or_drive", types)
+        self.assertTrue(result["location_source_strategy_v1"]["worldwide_fallback_used"])
+
+    def test_worldwide_fallback_respects_disabled_primary_layer_flags(self) -> None:
+        result = fetch_online_existing_conditions(
+            address="20525 Margo St, Gretna, NE",
+            bbox={"west": -96.238, "south": 41.184, "east": -96.236, "north": 41.186},
+            include_floodplain=False,
+            include_wetlands=False,
+            include_parcels=False,
+            include_building_footprints=False,
+            include_roads=False,
+            include_easements=False,
+            include_zoning=False,
+            include_utilities=False,
+            include_contours=False,
+            include_elevation=False,
+            include_imagery_detection=False,
+            session=_UsAddressAndWorldwideSession(),
+        )
+
+        layers = result["canonical_existing_conditions"]["gis_layers"]
+        self.assertEqual(layers["building_footprints"], [])
+        self.assertEqual(layers["roads"], [])
+        self.assertEqual(layers["existing_utilities"], [])
+        self.assertEqual(len(layers["parking"]), 1)
+        self.assertEqual(len(layers["sidewalks"]), 1)
+        self.assertEqual(len(layers["water"]), 1)
 
     def test_international_address_with_empty_sources_is_not_called_ready_with_context(self) -> None:
         result = fetch_online_existing_conditions(

@@ -181,16 +181,16 @@ export async function runDashboardCandidateReviewDecision({
         action,
         reason:
           correction?.reason ?? (action === "accept"
-            ? "Accepted from Candidate Review Inbox as draft/review-required project evidence."
+            ? "Accepted from Review Detected Items as draft/review-required project evidence."
             : action === "reject"
-              ? "Rejected from Candidate Review Inbox."
+              ? "Rejected from Review Detected Items."
               : correctionAction
                 ? action === "merge"
                   ? "Merged reviewed detections into one source-traceable outline."
                   : action === "split"
                     ? "Split the reviewed detection into source-traceable outlines."
-                    : "Corrected from Candidate Review Inbox and retained as draft/review-required evidence."
-                : "Kept pending from Candidate Review Inbox."),
+                    : "Corrected from Review Detected Items and retained as draft/review-required evidence."
+                : "Kept pending in Review Detected Items."),
         corrected_feature_type: correction?.correctedFeatureType ?? "",
         corrected_geometry: correction?.correctedGeometry,
         correction_coordinate_space: correction?.correctionCoordinateSpace ?? "",

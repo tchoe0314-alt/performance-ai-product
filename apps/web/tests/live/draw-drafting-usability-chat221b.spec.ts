@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { openCadPrecisionTools } from "./testUiHelpers";
+
 async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
@@ -271,7 +273,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await openDrawPanel(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
-    const commandInput = page.getByLabel("Draft command input");
+    const commandInput = (await openCadPrecisionTools(page)).getByLabel("Draft command input");
     await cadTools.getByTestId("cad-tool-line").click();
 
     await commandInput.fill("120,120");
@@ -343,7 +345,7 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
     const addLine = cadTools.getByTestId("cad-tool-line");
-    const commandInput = page.getByLabel("Draft command input");
+    const commandInput = (await openCadPrecisionTools(page)).getByLabel("Draft command input");
     const corners: Array<[number, number]> = [
       [120, 120],
       [240, 120],

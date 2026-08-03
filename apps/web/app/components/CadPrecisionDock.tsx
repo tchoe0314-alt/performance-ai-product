@@ -207,10 +207,28 @@ export function CadPrecisionDock({
     }));
 
   return (
-    <div
-      className="civora-cad-dock relative z-[10] mb-3 grid gap-3 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm lg:max-w-[calc(100%-30rem)] xl:grid-cols-2 2xl:grid-cols-[1.05fr_1fr_1fr_1.1fr]"
+    <details
+      className="civora-cad-dock group relative z-20 mb-3 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-sm"
       data-testid="cad-precision-tools"
     >
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 px-3 py-2 text-left marker:hidden">
+        <span className="min-w-0 flex-1">
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Precision &amp; commands
+          </span>
+          <span className="block truncate text-xs font-semibold text-slate-800">
+            {selectedCadObject?.label || "Coordinates, command input, layers, and properties"}
+          </span>
+        </span>
+        <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 group-open:hidden">
+          Open
+        </span>
+        <span className="hidden rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 group-open:inline-flex">
+          Close
+        </span>
+      </summary>
+      <div className="max-h-[min(55vh,42rem)] overflow-y-auto border-t border-slate-200 p-3">
+        <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-[1.05fr_1fr_1fr_1.1fr]">
       <section className="relative z-[30] min-w-0">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -539,7 +557,9 @@ export function CadPrecisionDock({
             <p>Drawing checks: no visible issues.</p>
           )}
         </div>
-      </section>
-    </div>
+        </section>
+        </div>
+      </div>
+    </details>
   );
 }

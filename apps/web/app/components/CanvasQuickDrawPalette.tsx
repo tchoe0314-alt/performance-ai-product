@@ -7,11 +7,7 @@ type CanvasQuickDrawPaletteProps = {
   drawMode: DrawMode;
   siteLocked?: boolean;
   hasDrawableSiteSize: boolean;
-  canFinishDraftGeometry: boolean;
-  finishDraftBlockedReason: string | null;
   onActivateDrawTool: (mode: DrawMode, blockedMessage?: string) => void;
-  onFinishDraftGeometry: () => void;
-  onCancelDraw: () => void;
   onUnlockSite?: () => void;
   onLockSite?: () => void;
   onClearDraftGeometry: () => void;
@@ -25,11 +21,7 @@ export function CanvasQuickDrawPalette({
   drawMode,
   siteLocked,
   hasDrawableSiteSize,
-  canFinishDraftGeometry,
-  finishDraftBlockedReason,
   onActivateDrawTool,
-  onFinishDraftGeometry,
-  onCancelDraw,
   onUnlockSite,
   onLockSite,
   onClearDraftGeometry,
@@ -105,30 +97,6 @@ export function CanvasQuickDrawPalette({
           Lock Site
         </button>
       ) : null}
-      {drawMode !== "select" && drawMode !== "point" ? (
-        <button
-          type="button"
-          data-testid="canvas-quick-finish"
-          onClick={onFinishDraftGeometry}
-          disabled={!canFinishDraftGeometry}
-          title={finishDraftBlockedReason ?? "Finish drawn geometry"}
-          className={`inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold ${
-            !canFinishDraftGeometry
-              ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
-              : "border-slate-900 bg-slate-950 text-white"
-          }`}
-        >
-          Finish
-        </button>
-      ) : null}
-      <button
-        type="button"
-        data-testid="canvas-quick-cancel"
-        onClick={onCancelDraw}
-        className="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-      >
-        Cancel
-      </button>
     </div>
   );
 }

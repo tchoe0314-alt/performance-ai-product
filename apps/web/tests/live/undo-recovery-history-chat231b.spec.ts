@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { openCadPrecisionTools } from "./testUiHelpers";
+
 async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismProvider=mock") {
   const params = new URLSearchParams(query);
   if (!params.has("seedDemo")) {
@@ -110,8 +112,9 @@ test.describe("Chat 231B undo recovery and change history", () => {
     await openDrawPanel(page);
     await expect(page.getByTestId("recent-changes-section")).toContainText("AI realism visualization regenerated");
 
-    await page.getByLabel("Draft command input").fill("LINE 20,20 90,20");
-    await page.getByLabel("Draft command input").press("Enter");
+    const precisionTools = await openCadPrecisionTools(page);
+    await precisionTools.getByLabel("Draft command input").fill("LINE 20,20 90,20");
+    await precisionTools.getByLabel("Draft command input").press("Enter");
     await openDrawPanel(page);
     await expect(page.getByTestId("recent-changes-section")).toContainText(/AI realism visualization is stale|AI realism stale/i);
 

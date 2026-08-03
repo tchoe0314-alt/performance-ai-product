@@ -322,7 +322,7 @@ export function runDashboardStartBlankSite({ actions }: { actions: DashboardSite
   actions.setRenderedSidePanel(null);
   actions.setSidePanelVisible(false);
   actions.setRightRailCollapsed(true);
-  actions.setSiteDrawRequest((value) => value + 1);
+  actions.setSiteDrawRequest((value) => Math.max(value + 1, Date.now()));
   if (typeof window !== "undefined") {
     actions.setLeftSidebarOpen(false);
   }
@@ -361,7 +361,7 @@ export function runDashboardStartSiteBoundaryDraw({
   actions.setShowSiteBounds(true);
   actions.setSiteSelectionMode(true);
   actions.setPreviewInteraction("edit");
-  actions.setSiteDrawRequest((value) => value + 1);
+  actions.setSiteDrawRequest((value) => Math.max(value + 1, Date.now()));
   actions.scrollToDrawingSurface();
   actions.setStatusMessage("Draw the site boundary on the canvas. Double-click or use Finish to lock it.");
 }

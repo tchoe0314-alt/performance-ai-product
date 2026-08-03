@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { openCadPrecisionTools } from "./testUiHelpers";
+
 async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   const shell = page.getByTestId("workspace-canvas-shell");
@@ -86,7 +88,9 @@ test.describe("button functionality audit", () => {
       await clickCadTool(page, tool, expected);
     }
 
-    await expect(page.getByLabel("Draft command input")).toHaveValue(/LINE|CIRCLE|ARC|TEXT|COPY/);
+    await expect((await openCadPrecisionTools(page)).getByLabel("Draft command input")).toHaveValue(
+      /LINE|CIRCLE|ARC|TEXT|COPY/,
+    );
 
     const powerTools = page.getByTestId("cad-power-tools");
     await expect(powerTools).toBeVisible();

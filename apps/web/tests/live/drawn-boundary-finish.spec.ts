@@ -1,5 +1,7 @@
 import { expect, type Page, type Locator, test } from "@playwright/test";
 
+import { openCadPrecisionTools } from "./testUiHelpers";
+
 async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number) {
   await surface.scrollIntoViewIfNeeded();
   const point = await surface.evaluate(
@@ -130,23 +132,13 @@ async function finishDraft(page: Page, canvas: Locator) {
   const quickFinish = canvas.getByTestId("canvas-quick-finish").filter({ visible: true }).first();
   if (await quickFinish.isVisible().catch(() => false)) {
     await expect(quickFinish).toBeEnabled();
-    const box = await quickFinish.boundingBox();
-    if (box) {
-      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    } else {
-      await quickFinish.click();
-    }
+    await quickFinish.click();
     return;
   }
   const finish = canvas.getByRole("button", { name: "Finish" }).filter({ visible: true }).first();
   await expect(finish).toBeVisible();
   await expect(finish).toBeEnabled();
-  const box = await finish.boundingBox();
-  if (box) {
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  } else {
-    await finish.click();
-  }
+  await finish.click();
 }
 
 async function clickCanvasTool(canvas: Locator, name: string) {
@@ -180,7 +172,7 @@ async function clickCanvasTool(canvas: Locator, name: string) {
 }
 
 async function addDraftPointByXY(page: Page, x: string, y: string) {
-  const cadTools = page.getByTestId("cad-precision-tools");
+  const cadTools = await openCadPrecisionTools(page);
   await cadTools.getByLabel("Draft X coordinate").fill(x);
   await cadTools.getByLabel("Draft Y coordinate").fill(y);
   await cadTools.getByRole("button", { name: "XY" }).click();
@@ -321,7 +313,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickSurfaceAt(surface, 0.72, 0.78);
     await finishDraft(page, canvas);
 
-    const cadTools = page.getByTestId("cad-precision-tools");
+    const cadTools = await openCadPrecisionTools(page);
     await expect(cadTools).toBeVisible();
     await expect(cadTools).toContainText("Draft precision");
     await expect(cadTools.getByLabel("Draft X coordinate")).toBeVisible();
