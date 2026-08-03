@@ -205,8 +205,16 @@ def build_alpha_monitoring_report(
     status = safe_str(runtime.get("status"), "missing").lower()
     if not runtime:
         blockers.append(_blocker("runtime_monitoring", "Alpha monitoring needs a runtime monitoring snapshot."))
-    elif status not in {"healthy", "ok"}:
+    elif status not in {"healthy", "ok", "warning"}:
         blockers.append(_blocker("runtime_status", f"Runtime monitoring is {status}, not healthy.", value=status))
+    elif status == "warning":
+        non_memory_warnings = [
+            item
+            for item in warnings
+            if item != "memory_warning_threshold_exceeded"
+        ]
+        if not warnings or non_memory_warnings:
+            blockers.append(_blocker("runtime_status", f"Runtime monitoring is {status}, not healthy.", value=status))
 
     rss = safe_float(runtime.get("rss_mb"), 0.0)
     peak = safe_float(runtime.get("peak_rss_mb"), 0.0)

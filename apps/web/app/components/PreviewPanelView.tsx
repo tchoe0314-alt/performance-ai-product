@@ -2543,15 +2543,7 @@ export default function PreviewPanel({
               cursorSitePoint,
               canvasScale: activeCanvasView.scale,
               lastCommandLabel: cadHistory.at(-1)?.label,
-              canFinishDraftGeometry,
               finishDraftBlockedReason,
-              onFinishDraftGeometry: finishDraftGeometry,
-              onCancelDraw: () => {
-                clearDraftGeometry();
-                setDrawMode("select");
-                setActiveSnapPoint(null);
-                setCadCommandStatus("Cancelled active drawing tool.");
-              },
             }}
           />
           <CadPrecisionDock

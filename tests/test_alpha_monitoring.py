@@ -130,6 +130,33 @@ class AlphaMonitoringTests(unittest.TestCase):
         self.assertIn("stale_job_count", fields)
         self.assertTrue(report["blocker_details"])
 
+    def test_memory_warning_honors_explicit_alpha_thresholds(self) -> None:
+        runtime = _healthy_runtime()
+        runtime["status"] = "warning"
+        runtime["peak_rss_mb"] = 745.8
+        runtime["warnings"] = ["memory_warning_threshold_exceeded"]
+
+        report = build_alpha_monitoring_report(
+            runtime,
+            thresholds={"max_rss_mb": 512, "max_peak_rss_mb": 768},
+        )
+
+        self.assertEqual(report["readiness"], "ready")
+        self.assertTrue(report["success"])
+        self.assertFalse(report["blockers"])
+        self.assertIn("memory_warning_threshold_exceeded", report["warnings"])
+
+    def test_unknown_runtime_warning_still_blocks_alpha_monitoring(self) -> None:
+        runtime = _healthy_runtime()
+        runtime["status"] = "warning"
+        runtime["warnings"] = ["unexpected_runtime_warning"]
+
+        report = build_alpha_monitoring_report(runtime)
+
+        self.assertEqual(report["readiness"], "blocked")
+        fields = {item["field"] for item in report["blockers"]}
+        self.assertIn("runtime_status", fields)
+
     def test_restart_threshold_blocks_alpha_monitoring(self) -> None:
         runtime = _healthy_runtime()
         runtime["process"]["recent_start_count"] = 4

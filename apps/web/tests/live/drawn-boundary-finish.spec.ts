@@ -125,6 +125,8 @@ async function startBoundaryDraw(page: Page) {
 }
 
 async function finishDraft(page: Page, canvas: Locator) {
+  await expect(page.getByRole("button", { name: "Finish", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(1);
   const quickFinish = canvas.getByTestId("canvas-quick-finish").filter({ visible: true }).first();
   if (await quickFinish.isVisible().catch(() => false)) {
     await expect(quickFinish).toBeEnabled();
