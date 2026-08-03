@@ -5,18 +5,15 @@ import type { ComponentProps } from "react";
 import { PreviewActiveDrawHud } from "./PreviewActiveDrawHud";
 import { PreviewCanvasHeaderControls } from "./PreviewCanvasHeaderControls";
 import { PreviewObjectManagerOverlay } from "./PreviewObjectManagerOverlay";
-import { PreviewStableDrawToolbar } from "./PreviewStableDrawToolbar";
 
 type PreviewCanvasControlStackProps = {
   activeDrawHudProps: ComponentProps<typeof PreviewActiveDrawHud>;
   allowEdits: boolean;
-  drawMode: ComponentProps<typeof PreviewStableDrawToolbar>["drawMode"];
+  drawMode: ComponentProps<typeof PreviewActiveDrawHud>["drawMode"];
   headerProps: ComponentProps<typeof PreviewCanvasHeaderControls>;
   objectManagerProps: ComponentProps<typeof PreviewObjectManagerOverlay>;
   previewMode: "2d" | "3d";
   selectedObjectPresent: boolean;
-  showDesktopDrawTools?: boolean;
-  stableDrawToolbarProps: ComponentProps<typeof PreviewStableDrawToolbar>;
 };
 
 export function PreviewCanvasControlStack({
@@ -27,8 +24,6 @@ export function PreviewCanvasControlStack({
   objectManagerProps,
   previewMode,
   selectedObjectPresent,
-  showDesktopDrawTools = true,
-  stableDrawToolbarProps,
 }: PreviewCanvasControlStackProps) {
   return (
     <div className="relative isolate z-[220] mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
@@ -41,7 +36,6 @@ export function PreviewCanvasControlStack({
           />
         ) : null}
       </div>
-      {showDesktopDrawTools && previewMode === "2d" && allowEdits ? <PreviewStableDrawToolbar {...stableDrawToolbarProps} /> : null}
       <PreviewActiveDrawHud {...activeDrawHudProps} />
     </div>
   );

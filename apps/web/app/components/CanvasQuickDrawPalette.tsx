@@ -1,15 +1,12 @@
 "use client";
 
 import type { DrawMode } from "../utils/cadToolTypes";
-import { PreviewDrawToolButtons } from "./PreviewDrawToolButtons";
 
 type CanvasQuickDrawPaletteProps = {
   visible: boolean;
   drawMode: DrawMode;
   siteLocked?: boolean;
   hasDrawableSiteSize: boolean;
-  canDrawObjects: boolean;
-  drawObjectsDisabledLabel: string;
   canFinishDraftGeometry: boolean;
   finishDraftBlockedReason: string | null;
   onActivateDrawTool: (mode: DrawMode, blockedMessage?: string) => void;
@@ -28,8 +25,6 @@ export function CanvasQuickDrawPalette({
   drawMode,
   siteLocked,
   hasDrawableSiteSize,
-  canDrawObjects,
-  drawObjectsDisabledLabel,
   canFinishDraftGeometry,
   finishDraftBlockedReason,
   onActivateDrawTool,
@@ -110,15 +105,6 @@ export function CanvasQuickDrawPalette({
           Lock Site
         </button>
       ) : null}
-      <PreviewDrawToolButtons
-        drawMode={drawMode}
-        disabled={!canDrawObjects}
-        disabledLabel={drawObjectsDisabledLabel}
-        onActivate={onActivateDrawTool}
-        buttonClassName="inline-flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-[11px] font-semibold"
-        inactiveClassName="border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-        itemKeyPrefix="canvas-quick-draw"
-      />
       {drawMode !== "select" && drawMode !== "point" ? (
         <button
           type="button"

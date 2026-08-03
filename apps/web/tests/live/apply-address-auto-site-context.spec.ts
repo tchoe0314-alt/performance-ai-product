@@ -756,6 +756,13 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(page.getByTestId("site-intelligence-driveway")).toContainText("starting suggestion");
   await expect(page.getByTestId("site-intelligence-grading")).toContainText("not a grading surface");
 
+  await page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-3d").click();
+  await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("civil-3d-viewer")).toContainText(/Terrain context found|Terrain source loaded/i);
+  await expect(page.getByTestId("civil-3d-viewer")).not.toContainText("terrain source missing");
+  await page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-2d").click();
+  await expect(page.getByTestId("preview-plan-canvas-svg")).toBeVisible();
+
   await page.getByTestId("review-found-context").click();
   const detectedItems = page.getByTestId("detected-items-review");
   await expect(detectedItems).toBeVisible();

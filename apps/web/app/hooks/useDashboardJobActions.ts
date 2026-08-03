@@ -4,6 +4,7 @@ import type { MutableRefObject } from "react";
 import { postJson } from "../../lib/api";
 import type { ChatMessage, JobSummary, PlanToolMode } from "../types";
 import type { WorkspaceToast } from "../components/WorkspaceToasts";
+import { toReadableLabel } from "../utils/formatting";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type AppendChatMessage = (role: ChatMessage["role"], content: string, kind?: ChatMessage["kind"]) => void;
@@ -240,8 +241,14 @@ export function useDashboardJobActions({
       setStatusMessage("There is no phase waiting at a review hold right now.");
       return;
     }
-    const nextPhaseLabel =
-      previewNextPendingPhase?.label || previewRunningPhase?.label || "Next phase";
+    const runtimeCheckpoint = (
+      visibleActiveJob.result?.metadata as { runtime_phase_checkpoint?: { stage_name?: string } } | undefined
+    )?.runtime_phase_checkpoint;
+    const checkpointLabel = toReadableLabel(
+      String(runtimeCheckpoint?.stage_name || previewRunningPhase?.label || visibleActiveJob.stage || "current phase"),
+    );
+    const reviewedPhaseLabel = checkpointLabel.toLowerCase() === "awaiting approval" ? "current phase" : checkpointLabel;
+    const nextPhaseLabel = previewNextPendingPhase?.label || "Next applicable stage";
     setApprovalError(null);
     setApprovalPhaseLabel(nextPhaseLabel);
     setApprovalInFlight(true);
@@ -255,15 +262,15 @@ export function useDashboardJobActions({
       upsertJobSummary(data.job);
       appendChatMessage(
         "assistant",
-        `Accepted the current phase for review workflow. Starting ${nextPhaseLabel}.`,
+        `Reviewed ${reviewedPhaseLabel}. Continuing to the next applicable stage.`,
         "status",
       );
       pushJobToast({
         title: "Job resumed",
-        detail: `${data.job.job_id} starting ${nextPhaseLabel}`,
+        detail: `${data.job.job_id} continuing after ${reviewedPhaseLabel}`,
         tone: "success",
       });
-      setStatusMessage(`Accepted ${data.job.job_id} for review workflow. Starting ${nextPhaseLabel}.`);
+      setStatusMessage(`Reviewed ${reviewedPhaseLabel}. Continuing to the next applicable stage.`);
       if (data.job.job_id) {
         setActiveJobId(data.job.job_id);
         setApprovalPendingJobId(data.job.job_id);
@@ -296,6 +303,8 @@ export function useDashboardJobActions({
     setStatusMessage,
     token,
     upsertJobSummary,
+    visibleActiveJob?.result?.metadata,
+    visibleActiveJob?.stage,
     visibleActiveJob?.job_id,
     visibleActiveJob?.status,
   ]);

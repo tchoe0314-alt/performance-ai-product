@@ -113,7 +113,7 @@ export function buildPreviewInteractionState({
     canUse3D: showMap || hasLiveObjects || preview3DItemCount > 0 || Boolean(planPreviewUrl),
     showHover: previewInteraction === "static",
     allowEdits,
-    showQuickDrawPalette: showDrawControls && !compactViewport,
+    showQuickDrawPalette: showDrawControls && !compactViewport && (drawMode !== "select" || !siteLocked),
     showMobileDrawToolbar: showDrawControls && compactViewport,
     activeDrawMode,
     drawingOwnsCanvasHits,

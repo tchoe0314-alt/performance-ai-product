@@ -27,7 +27,10 @@ type LandscapeWorkbenchPanelProps = ComponentProps<typeof LandscapeWorkbenchPane
 type UseDashboardGenerationPanelPropsInput = {
   missingSite: boolean;
   busy: boolean;
-  hasVisibleActiveJob: boolean;
+  activeJobStatus: string;
+  approvalState: GeneratePanelProps["approvalState"];
+  approvalCheckpointLabel: string | null;
+  approvalError: string | null;
   statusMessage: string;
   assistedEnabled: boolean;
   pendingPlacementCount: number;
@@ -43,6 +46,7 @@ type UseDashboardGenerationPanelPropsInput = {
   onStatusMessageChange: Dispatch<SetStateAction<string>>;
   onGenerateFlowSummaryChange: Dispatch<SetStateAction<GeneratePanelProps["generateFlowSummary"]>>;
   onGenerateSystem: (target: SystemGenerationTarget) => Promise<void>;
+  onContinueActiveJob: () => Promise<void>;
   drainageIssueApplyLabel: GeneratePanelProps["drainageIssueApplyLabel"];
   canApplyDrainageIssue: GeneratePanelProps["canApplyDrainageIssue"];
   getIssueGuidance: GeneratePanelProps["getIssueGuidance"];
@@ -122,7 +126,10 @@ type UseDashboardGenerationPanelPropsInput = {
 export function useDashboardGenerationPanelProps({
   missingSite,
   busy,
-  hasVisibleActiveJob,
+  activeJobStatus,
+  approvalState,
+  approvalCheckpointLabel,
+  approvalError,
   statusMessage,
   assistedEnabled,
   pendingPlacementCount,
@@ -138,6 +145,7 @@ export function useDashboardGenerationPanelProps({
   onStatusMessageChange,
   onGenerateFlowSummaryChange,
   onGenerateSystem,
+  onContinueActiveJob,
   drainageIssueApplyLabel,
   canApplyDrainageIssue,
   getIssueGuidance,
@@ -216,7 +224,10 @@ export function useDashboardGenerationPanelProps({
   const generatePanelProps = useMemo<GeneratePanelProps>(() => ({
     missingSite,
     busy,
-    hasVisibleActiveJob,
+    activeJobStatus,
+    approvalState,
+    approvalCheckpointLabel,
+    approvalError,
     statusMessage,
     assistedEnabled,
     pendingPlacementCount,
@@ -232,6 +243,7 @@ export function useDashboardGenerationPanelProps({
     onStatusMessageChange,
     onGenerateFlowSummaryChange: (summary) => onGenerateFlowSummaryChange(summary),
     onGenerateSystem: (target) => void onGenerateSystem(target),
+    onContinueActiveJob: () => void onContinueActiveJob(),
     drainageIssueApplyLabel,
     canApplyDrainageIssue,
     getIssueGuidance,
@@ -247,13 +259,17 @@ export function useDashboardGenerationPanelProps({
     formatStageLabel,
     generateFlowSummary,
     getIssueGuidance,
-    hasVisibleActiveJob,
+    activeJobStatus,
+    approvalCheckpointLabel,
+    approvalError,
+    approvalState,
     issues,
     missingSite,
     onApplyDrainageIssue,
     onAssistedEnabledChange,
     onGenerateFlowSummaryChange,
     onGenerateSystem,
+    onContinueActiveJob,
     onStatusMessageChange,
     pendingPlacementCount,
     pendingPlacementLabels,

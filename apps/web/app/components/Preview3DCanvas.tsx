@@ -272,6 +272,17 @@ export default function Preview3DCanvas({
     const terrainZRange = terrainZValues.length ? Math.max(...terrainZValues) - Math.min(...terrainZValues) : 0;
     const hasReviewContourSamples = sourceSamples.some((item) => /review contour/i.test(String(item.source || "")));
     if (!sourceSamples.length) {
+      if (hasTerrainSource) {
+        return {
+          label: hasGradingSurface
+            ? "Grading surface present - preview elevations unavailable"
+            : "Terrain context found - surface mesh not generated",
+          detail: hasGradingSurface
+            ? "The grading result does not include preview elevation samples, so the 3D ground stays flat."
+            : "Elevation or terrain context exists, but no triangulated or contour-derived surface is available for 3D yet.",
+          mode: "flat-source" as const,
+        };
+      }
       return {
         label: "Flat site fallback - terrain source missing",
         detail: "No preview elevation samples were supplied; no terrain is inferred.",

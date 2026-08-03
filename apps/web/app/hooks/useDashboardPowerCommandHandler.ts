@@ -13,6 +13,10 @@ import type {
 } from "../utils/dashboardDataTypes";
 import { parseDashboardDirectSiteSetupCommand } from "../utils/dashboardChatCommandParsing";
 import {
+  normalizeDashboardChatIntent,
+  userFacingWorkflowNeeds,
+} from "../utils/dashboardChatIntent";
+import {
   createDenseCommercialConceptPlacements,
   createDenseSubdivisionCadPlanPlacements,
   createUrbanizationCampusPlanPlacements,
@@ -339,6 +343,7 @@ export function useDashboardPowerCommandHandler({
 
   return useCallback((message: string): boolean | "panel" => {
     const normalized = message.trim().toLowerCase().replace(/\s+/g, " ");
+    const intentText = normalizeDashboardChatIntent(message);
     if (!normalized) return false;
     if (/\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/.test(normalized)) {
       return refuseUnsafeConstructionCommand(message);
@@ -632,7 +637,7 @@ export function useDashboardPowerCommandHandler({
       appendChatMessage("assistant", "Opened Deliver and created/updated the review package summary. It remains review-only.", "status");
       return "panel";
     }
-    if (/^what changed\??$/.test(normalized)) {
+    if (/^what changed\b/.test(intentText)) {
       appendChatMessage("user", message);
       const changed = Object.entries(systemStatuses)
         .filter(([, status]) => status === "stale")
@@ -646,23 +651,25 @@ export function useDashboardPowerCommandHandler({
       );
       return true;
     }
-    if (/^(what is blocked|what needs input|what needs attention)\??$/.test(normalized)) {
+    if (/^(what is blocked|what blocked|what needs input|what needs attention)(?: right now)?$/.test(intentText)) {
       appendChatMessage("user", message);
-      const blockers = uniqueStrings([
+      const blockers = userFacingWorkflowNeeds(uniqueStrings([
         projectStatusSummary.state === "blocked" ? `${projectStatusSummary.title}: ${projectStatusSummary.detail}` : "",
         ...issues.map((issue) => issue.message),
         ...analysisIssues.map((issue) => issue.message),
         ...(workflowReviewDashboard?.release_blockers ?? []),
         ...(generateFlowSummary?.needs_review ?? []),
-      ]);
+      ]));
       appendChatMessage(
         "assistant",
-        blockers.length ? `Needs input:\n${blockers.map((item) => `- ${item}`).join("\n")}` : "No needs-input items are currently recorded in the active workspace.",
+        blockers.length
+          ? `Needs input:\n${blockers.map((item) => `- ${item}`).join("\n")}`
+          : "Nothing is stopping the current review workflow. Review outputs are available; final professional use remains outside Civora.",
         "status",
       );
       return true;
     }
-    if (/^what should i do next\??$/.test(normalized)) {
+    if (/^what should i do next\b/.test(intentText)) {
       appendChatMessage("user", message);
       const activePlacementObject =
         activePlacementId && placementModeEnabled

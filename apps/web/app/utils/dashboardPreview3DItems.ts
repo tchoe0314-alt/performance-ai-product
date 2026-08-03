@@ -497,6 +497,17 @@ export function buildPlacementPreview3DItems({
   sourceConfidenceByObjectId: Map<string, SourceConfidenceEntry>;
 }): Preview3DItem[] {
   const items: Preview3DItem[] = [];
+  const placementIds = new Set(
+    buildingPlacements
+      .filter((item) => item.type !== "site" && item.placed)
+      .map((item) => String(item.id || ""))
+      .filter(Boolean),
+  );
+  const independentCadItems = cadEntityPreviewItems3D.filter((item) => {
+    const linkedObjectId = String(item.linkedObjectId || "");
+    const sourceId = String(item.id || "");
+    return !placementIds.has(linkedObjectId) && !placementIds.has(sourceId);
+  });
   if (lot.w && lot.h) {
     items.push({
       x: 0,
@@ -617,5 +628,5 @@ export function buildPlacementPreview3DItems({
         meta: item.meta,
       });
     });
-  return [...cadEntityPreviewItems3D, ...items];
+  return [...independentCadItems, ...items];
 }

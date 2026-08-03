@@ -148,21 +148,6 @@ async function finishDraft(page: Page, canvas: Locator) {
 }
 
 async function clickCanvasTool(canvas: Locator, name: string) {
-  const quickPalette = canvas.getByTestId("canvas-quick-draw-palette");
-  const quickTool = quickPalette.getByRole("button", { name }).filter({ visible: true }).first();
-  if (await quickTool.isVisible().catch(() => false)) {
-    await expect(quickTool).toBeEnabled();
-    await quickTool.click();
-    return;
-  }
-
-  const canvasTool = canvas.getByRole("button", { name }).filter({ visible: true }).first();
-  if (await canvasTool.isVisible().catch(() => false)) {
-    await expect(canvasTool).toBeEnabled();
-    await canvasTool.click();
-    return;
-  }
-
   const toolByName: Record<string, string> = {
     "Add Line": "line",
     "Add Area": "area",
@@ -241,15 +226,18 @@ test.describe("drawn site boundary Finish workflow", () => {
 
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     await expect(canvas).toContainText("Locked canonical site");
-    await expect(page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first()).toBeVisible();
-    await expect(page.getByTestId("change-site-boundary-toolbar").filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByTestId("draw-site-boundary-canvas")).toBeVisible();
+    await expect(page.getByTestId("change-site-boundary-canvas")).toBeVisible();
     const quickPalette = canvas.getByTestId("canvas-quick-draw-palette");
-    await expect(quickPalette.getByRole("button", { name: "Add Line" })).toBeEnabled();
-    await expect(quickPalette.getByRole("button", { name: "Add Area" })).toBeEnabled();
-    await expect(quickPalette.getByRole("button", { name: "Add Box" })).toBeEnabled();
-    await expect(quickPalette.getByRole("button", { name: "Add Point" })).toBeEnabled();
+    await expect(quickPalette.getByRole("button", { name: /Add (Line|Area|Box|Point)/ })).toHaveCount(0);
+    await openDrawControls(page);
+    const cadTools = page.getByTestId("draw-cad-tools-section");
+    await expect(cadTools.getByTestId("cad-tool-line")).toBeEnabled();
+    await expect(cadTools.getByTestId("cad-tool-area")).toBeEnabled();
+    await expect(cadTools.getByTestId("cad-tool-box")).toBeEnabled();
+    await expect(cadTools.getByTestId("cad-tool-point")).toBeEnabled();
 
-    await page.getByTestId("change-site-boundary-toolbar").filter({ visible: true }).first().click();
+    await page.getByTestId("change-site-boundary-canvas").click();
     await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
     await page.getByTestId("lock-site-boundary-toolbar").filter({ visible: true }).first().click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
@@ -258,10 +246,10 @@ test.describe("drawn site boundary Finish workflow", () => {
       await relockClose.click();
     }
     await openDrawControls(page);
-    await expect(quickPalette.getByRole("button", { name: "Add Line" })).toBeEnabled();
-    await expect(quickPalette.getByRole("button", { name: "Add Area" })).toBeEnabled();
-    await expect(quickPalette.getByRole("button", { name: "Add Box" })).toBeEnabled();
-    await expect(quickPalette.getByRole("button", { name: "Add Point" })).toBeEnabled();
+    await expect(page.getByTestId("cad-tool-line").filter({ visible: true }).first()).toBeEnabled();
+    await expect(page.getByTestId("cad-tool-area").filter({ visible: true }).first()).toBeEnabled();
+    await expect(page.getByTestId("cad-tool-box").filter({ visible: true }).first()).toBeEnabled();
+    await expect(page.getByTestId("cad-tool-point").filter({ visible: true }).first()).toBeEnabled();
 
     const beforeObjects = await page.locator("[data-object-overlay]").count();
     await clickCanvasTool(canvas, "Add Box");

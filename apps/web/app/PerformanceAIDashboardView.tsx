@@ -3987,6 +3987,20 @@ function PerformanceAIDashboardView({
     previewRunningPhase,
     previewNextPendingPhase,
   } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
+  const approvalCheckpointLabel = useMemo(() => {
+    const runtimeCheckpoint = (
+      visibleActiveJob?.result?.metadata as { runtime_phase_checkpoint?: { stage_name?: string } } | undefined
+    )?.runtime_phase_checkpoint;
+    const rawLabel = String(
+      runtimeCheckpoint?.stage_name ||
+        previewRunningPhase?.label ||
+        (currentPlanMeta?.runtime_phase_checkpoint as { stage_name?: string } | undefined)?.stage_name ||
+        "",
+    ).trim();
+    if (!rawLabel) return null;
+    const readable = toReadableLabel(rawLabel);
+    return readable.toLowerCase() === "awaiting approval" ? "current phase" : readable;
+  }, [currentPlanMeta, previewRunningPhase?.label, visibleActiveJob?.result?.metadata]);
   const {
     handleCancelActiveJob,
     handleCancelJobById,
@@ -5290,7 +5304,10 @@ function PerformanceAIDashboardView({
   } = useDashboardGenerationPanelProps({
     missingSite,
     busy,
-    hasVisibleActiveJob: Boolean(visibleActiveJob),
+    activeJobStatus: visibleActiveJob?.status ?? "",
+    approvalState: approvalStatus.state,
+    approvalCheckpointLabel,
+    approvalError,
     statusMessage,
     assistedEnabled,
     pendingPlacementCount: pendingPlacementObjects.length,
@@ -5306,6 +5323,7 @@ function PerformanceAIDashboardView({
     onStatusMessageChange: setStatusMessage,
     onGenerateFlowSummaryChange: setGenerateFlowSummary,
     onGenerateSystem: handleGenerateSystem,
+    onContinueActiveJob: handleContinueActiveJob,
     drainageIssueApplyLabel,
     canApplyDrainageIssue,
     getIssueGuidance,
@@ -5741,7 +5759,7 @@ function PerformanceAIDashboardView({
     statusMessage,
     hasVisibleActiveJob: Boolean(visibleActiveJob),
     approvalState: approvalStatus.state,
-    approvalPhaseLabel: approvalStatus.label,
+    approvalPhaseLabel: approvalStatus.label || approvalCheckpointLabel,
     approvalError,
     onToggleChatCollapsed: handleCloseSidePanel,
     summaryText: chatSummary,

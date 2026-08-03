@@ -2472,7 +2472,6 @@ export default function PreviewPanel({
             allowEdits={allowEdits}
             drawMode={drawMode}
             selectedObjectPresent={Boolean(selectedObject)}
-            showDesktopDrawTools={previewInteraction === "edit" && !showMobileDrawToolbar && !showQuickDrawPalette}
             headerProps={{
               previewMode,
               previewQuality,
@@ -2485,8 +2484,6 @@ export default function PreviewPanel({
               allowEdits,
               drawMode,
               siteLocked,
-              canDrawObjects,
-              drawObjectsDisabledLabel,
               showDrawTools: previewInteraction === "edit" && !showMobileDrawToolbar && !showQuickDrawPalette,
               isHighQuality,
               aiRealismEnabled,
@@ -2534,20 +2531,6 @@ export default function PreviewPanel({
               getPreviewObjectSourceLabel,
               getPreviewObjectStatusLabel,
               getCadLayer,
-            }}
-            stableDrawToolbarProps={{
-              drawMode,
-              siteLocked: Boolean(siteLocked),
-              hasDrawableSiteSize,
-              canDrawObjects,
-              drawObjectsDisabledLabel,
-              onUnlockSite,
-              onLockSite,
-              onClearDraftGeometry: clearDraftGeometry,
-              onSetDrawMode: setDrawMode,
-              onSetPreviewInteraction,
-              onActivateDrawTool: activateDrawTool,
-              onPushCadCommandFeedback: pushCadCommandFeedback,
             }}
             activeDrawHudProps={{
               drawMode,
@@ -2657,8 +2640,6 @@ export default function PreviewPanel({
                 drawMode,
                 siteLocked: Boolean(siteLocked),
                 hasDrawableSiteSize,
-                canDrawObjects,
-                drawObjectsDisabledLabel,
                 canFinishDraftGeometry,
                 finishDraftBlockedReason,
                 onActivateDrawTool: activateDrawTool,

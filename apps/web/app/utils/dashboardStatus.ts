@@ -1,6 +1,7 @@
 import { apiErrorMessage, classifyApiError } from "../../lib/api";
 
 import type { JobSummary, PlanToolMode } from "../types";
+import { toReadableLabel } from "./formatting";
 
 export function formatTimestamp(value?: number): string {
   if (!value) return "Unknown time";
@@ -168,6 +169,19 @@ export function buildThinkingState({
     };
   }
 
+  if (normalizedJobStatus === "awaiting_approval") {
+    const checkpointLabel = stageLabel && stageLabel.toLowerCase() !== "awaiting approval"
+      ? toReadableLabel(stageLabel)
+      : "current phase";
+    return {
+      label: "Review step",
+      detail:
+        stageDetail ||
+        `Review ${checkpointLabel}, then continue from Generate or request a change in Chat.`,
+      progress: numericProgress ?? 60,
+    };
+  }
+
   if (normalizedJobStatus && stageLabel) {
     return {
       label: stageLabel,
@@ -185,15 +199,6 @@ export function buildThinkingState({
       label: "Queued",
       detail: queueDetail,
       progress: 18,
-    };
-  }
-  if (normalizedJobStatus === "awaiting_approval") {
-    return {
-      label: stageLabel || "Review Hold",
-      detail:
-        stageDetail ||
-        "Civora saved the current phase result and is waiting for your review step to continue.",
-      progress: numericProgress ?? 60,
     };
   }
   if (normalizedJobStatus === "running") {

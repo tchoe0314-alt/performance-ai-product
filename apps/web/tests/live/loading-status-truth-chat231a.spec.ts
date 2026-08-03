@@ -225,6 +225,14 @@ test.describe("Chat 231A loading states and status truth", () => {
     await runCommand(page, "what is blocked?");
     await expect(page.getByText(/Needs input|No needs-input items|No current needs-input items/i).last()).toBeVisible();
 
+    await runCommand(page, "whats blockd rn");
+    await expect(page.getByText(/Needs input|Nothing is stopping the current review workflow/i).last()).toBeVisible();
+    await expect(page.getByTestId("floating-command-bar")).not.toContainText(/site type or land use|which systems to include/i);
+
+    await runCommand(page, "wut changed since i drew stuff");
+    await expect(page.getByText(/Last Generate|Recent changes|Changed\/stale systems|No edits, Generate runs, or review packages/i).last()).toBeVisible();
+    await expect(page.getByTestId("floating-command-bar")).not.toContainText(/site type or land use|which systems to include/i);
+
     await runCommand(page, "stamp this");
     await expect(page.getByText(/can't stamp, seal, sign, certify/i).last()).toBeVisible();
     await expect(page.getByTestId("floating-command-bar")).toContainText(/can't stamp, seal, sign, certify/i);

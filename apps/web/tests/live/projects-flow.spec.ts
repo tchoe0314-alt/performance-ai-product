@@ -256,6 +256,36 @@ async function openSetup(page: Page) {
 }
 
 test.describe("project drawer reliability", () => {
+  test("keeps a large saved-project list searchable and initially compact", async ({ page }) => {
+    const store = new Map<string, SavedProject>();
+    for (let index = 1; index <= 20; index += 1) {
+      store.set(`project-${index}`, {
+        project_id: `project-${index}`,
+        name: index === 19 ? "Omaha Retail Review" : `Project ${index}`,
+        description: index === 19 ? "North 10th Street" : `Saved project ${index}`,
+        updated_at: 1_700_000_000 + index,
+        project_input: { input_mode: "user", manual_fields: {}, meta: { site_inputs: {} } },
+        latest_result: null,
+      });
+    }
+    await mockShell(page, store);
+    await openApp(page);
+    await openProjects(page);
+
+    const drawer = page.getByTestId("projects-drawer");
+    await expect(drawer.getByRole("button", { name: /^Open project / })).toHaveCount(12);
+    await drawer.getByRole("button", { name: "Show 8 more" }).click();
+    await expect(drawer.getByRole("button", { name: /^Open project / })).toHaveCount(20);
+
+    await drawer.getByPlaceholder("Search projects").fill("north 10th");
+    await expect(drawer.getByRole("button", { name: "Open project Omaha Retail Review" })).toBeVisible();
+    await expect(drawer.getByRole("button", { name: /^Open project / })).toHaveCount(1);
+    await drawer.getByPlaceholder("Search projects").fill("not a saved project");
+    await expect(drawer).toContainText("No projects match that search.");
+    await drawer.getByRole("button", { name: "Clear search" }).click();
+    await expect(drawer.getByRole("button", { name: /^Open project / })).toHaveCount(12);
+  });
+
   test("clears a stale saved-project reference and exposes one new-project action", async ({ page }) => {
     const store = new Map<string, SavedProject>();
     await mockShell(page, store);
@@ -507,12 +537,7 @@ test.describe("project drawer reliability", () => {
       .first()
       .click();
 
-    const canvas = page.getByTestId("workspace-canvas-shell");
-    const addBox = canvas
-      .getByTestId("canvas-quick-draw-palette")
-      .getByRole("button", { name: "Add Box" })
-      .filter({ visible: true })
-      .first();
+    const addBox = page.getByTestId("cad-tool-box").filter({ visible: true }).first();
     await expect(addBox).toBeEnabled();
     await addBox.click();
 

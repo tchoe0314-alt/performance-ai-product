@@ -220,6 +220,11 @@ export function useDashboardAutoExistingConditions({
         const discovery = onlineFetch?.online_existing_conditions_discovery_v1;
         const sources = Array.isArray(discovery?.sources) ? discovery.sources : [];
         const candidateCount = Number(discovery?.candidate_count ?? 0);
+        const hasDiscoveredTerrainSource = sources.some((source) => {
+          const sourceLabel = `${source.key || ""} ${source.label || ""} ${source.source_type || ""}`.toLowerCase();
+          return Number(source.candidate_count ?? 0) > 0 && /terrain|elevation|contour|dem|lidar|topo/.test(sourceLabel);
+        });
+        const effectiveTerrainSource = hasTerrainSource || hasDiscoveredTerrainSource;
         const discoveryStatus = String(discovery?.status || onlineFetch?.status || "");
         const providerFailed = discoveryStatus.includes("failed") || Boolean(discovery?.blockers?.length && candidateCount === 0);
         const providersAbsent = candidateCount === 0 && sources.length === 0 && !configuredLocalGisProviderCount;
@@ -228,7 +233,7 @@ export function useDashboardAutoExistingConditions({
           .map((source) => String(source.label || source.key || source.source_type || "source unavailable"))
           .slice(0, 6);
         const slopePct = parsePositiveNumber(assumedTerrainSlopePct) ?? 8;
-        const needsAssumedSlope = !hasTerrainSource && !surveySlopeEstimate?.slope_percent;
+        const needsAssumedSlope = !effectiveTerrainSource && !surveySlopeEstimate?.slope_percent;
         const slopeEstimateOverride = needsAssumedSlope ? buildAssumedSlopeEstimate(slopePct) : null;
         if (needsAssumedSlope && slopeEstimateOverride) {
           setAssumedTerrainSlopePct(String(slopePct));
@@ -238,7 +243,7 @@ export function useDashboardAutoExistingConditions({
 
         const autoExistingConditions = {
           version: "auto_existing_conditions_v1",
-          status: candidateCount > 0 || slopeEstimateOverride || hasTerrainSource ? "ready_for_review" : "blocked_or_missing_sources",
+          status: candidateCount > 0 || slopeEstimateOverride || effectiveTerrainSource ? "ready_for_review" : "blocked_or_missing_sources",
           triggered_by: "site_lock",
           clipped_to_locked_site: true,
           candidate_count: candidateCount,
@@ -262,7 +267,7 @@ export function useDashboardAutoExistingConditions({
                 survey_backed: false,
               }
             : {
-                source: hasTerrainSource ? "survey_or_terrain_source" : "missing",
+                source: effectiveTerrainSource ? "detected_or_uploaded_terrain_source" : "missing",
                 review_required: true,
                 survey_backed: hasVerifiedSurveyControl,
               },
@@ -346,7 +351,7 @@ export function useDashboardAutoExistingConditions({
           latestResultOverride,
         });
         setAutoExistingConditionsStatus({
-          status: providerFailed || providersAbsent ? "blocked" : candidateCount > 0 || slopeEstimateOverride || hasTerrainSource ? "ready" : "blocked",
+          status: providerFailed || providersAbsent ? "blocked" : candidateCount > 0 || slopeEstimateOverride || effectiveTerrainSource ? "ready" : "blocked",
           message:
             providerFailed
               ? `Source provider lookup failed: ${(discovery?.blockers ?? [])[0] || "the backend/provider did not return source candidates"}. Retry source discovery after the provider responds.`
@@ -385,7 +390,7 @@ export function useDashboardAutoExistingConditions({
                 ? "Add GIS providers or upload survey/topo evidence before relying on source context."
                 : "Review source candidates and assumptions before generating.",
         });
-        if (slopeEstimateOverride || hasTerrainSource) {
+        if (slopeEstimateOverride || effectiveTerrainSource) {
           void handleGenerateSystemRef.current?.("grading", { slopeEstimateOverride });
         }
       } catch (error) {

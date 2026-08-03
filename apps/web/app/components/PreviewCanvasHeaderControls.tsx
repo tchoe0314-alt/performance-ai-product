@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Lock, RefreshCw, RotateCcw, Unlock, X } from "lucide-react";
 
 import type { CoordinateMode } from "../utils/geometryTransforms";
@@ -10,8 +11,8 @@ import {
   PREVIEW_SEMANTIC_LAYER_LABELS,
   PRIMARY_PREVIEW_SEMANTIC_LAYERS,
 } from "../utils/previewSemanticLayers";
-import { PreviewDrawToolButtons } from "./PreviewDrawToolButtons";
 import { PreviewQualityToggle } from "./PreviewQualityToggle";
+import { loadPreview3DCanvas } from "./preview3DLoader";
 
 type PreviewCanvasHeaderControlsProps = {
   previewMode: "2d" | "3d";
@@ -25,8 +26,6 @@ type PreviewCanvasHeaderControlsProps = {
   allowEdits: boolean;
   drawMode: DrawMode;
   siteLocked?: boolean;
-  canDrawObjects: boolean;
-  drawObjectsDisabledLabel: string;
   showDrawTools?: boolean;
   isHighQuality: boolean;
   aiRealismEnabled: boolean;
@@ -66,8 +65,6 @@ export function PreviewCanvasHeaderControls({
   allowEdits,
   drawMode,
   siteLocked,
-  canDrawObjects,
-  drawObjectsDisabledLabel,
   showDrawTools = true,
   isHighQuality,
   aiRealismEnabled,
@@ -94,6 +91,14 @@ export function PreviewCanvasHeaderControls({
   onToggleSemanticLayer,
   onShowAllSemanticLayers,
 }: PreviewCanvasHeaderControlsProps) {
+  useEffect(() => {
+    if (!canUse3D) return;
+    const preloadTimer = window.setTimeout(() => {
+      void loadPreview3DCanvas();
+    }, 1500);
+    return () => window.clearTimeout(preloadTimer);
+  }, [canUse3D]);
+
   const modeLabel = previewMode === "3d"
     ? "3D Model"
     : aiRealismEnabled && isHighQuality
@@ -134,6 +139,12 @@ export function PreviewCanvasHeaderControls({
           <button
             type="button"
             data-testid="preview-mode-3d"
+            onPointerEnter={() => {
+              if (canUse3D) void loadPreview3DCanvas();
+            }}
+            onFocus={() => {
+              if (canUse3D) void loadPreview3DCanvas();
+            }}
             onClick={() => {
               if (!canUse3D) return;
               onSetPreviewMode("3d");
@@ -208,7 +219,7 @@ export function PreviewCanvasHeaderControls({
           {showDrawTools && previewMode === "2d" ? (
             <button
               type="button"
-              data-testid="preview-inner-draw-site-boundary"
+              data-testid="draw-site-boundary-canvas"
               aria-pressed={drawMode === "site"}
               title={siteLocked ? "Site is locked. Use Change Site before drawing a new boundary." : "Draw the site boundary"}
               onClick={() => {
@@ -236,7 +247,7 @@ export function PreviewCanvasHeaderControls({
           {showDrawTools && previewMode === "2d" && siteLocked && onUnlockSite ? (
             <button
               type="button"
-              data-testid="change-site-boundary-toolbar-hidden"
+              data-testid="change-site-boundary-canvas"
               aria-label="Change Site Boundary"
               onClick={() => {
                 onUnlockSite();
@@ -248,16 +259,6 @@ export function PreviewCanvasHeaderControls({
             >
               Change Site
             </button>
-          ) : null}
-          {showDrawTools && previewMode === "2d" ? (
-            <PreviewDrawToolButtons
-              drawMode={drawMode}
-              disabled={!canDrawObjects}
-              disabledLabel={drawObjectsDisabledLabel}
-              onActivate={onActivateDrawTool}
-              itemKeyPrefix="canvas-primary-draw"
-              includePan
-            />
           ) : null}
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-testid="preview-semantic-layer-controls">

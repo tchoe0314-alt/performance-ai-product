@@ -55,10 +55,14 @@ export function buildDashboardSetupTruth({
   const hasAssumedTerrainSlope =
     Boolean(surveySlopeEstimate?.slope_percent) &&
     Number(surveySlopeEstimate?.point_count ?? 0) === 0;
+  const discoveredTerrainSource = (siteInputs?.online_existing_conditions_discovery_v1?.sources ?? []).some((source) => {
+    const sourceLabel = `${source.key || ""} ${source.label || ""} ${source.source_type || ""}`.toLowerCase();
+    return Number(source.candidate_count ?? 0) > 0 && /terrain|elevation|contour|dem|lidar|topo/.test(sourceLabel);
+  });
   const hasTerrainSource =
     !debugNoTerrain &&
     ((Boolean(surveyFileName) && useSurveyForGrading) ||
-      Boolean(siteInputs?.geocode?.lat && siteInputs?.geocode?.lng) ||
+      discoveredTerrainSource ||
       Boolean(surveySlopeEstimate?.slope_percent));
   const hasStandardsEvidence = standardsEvidenceValues.some(Boolean);
   const trimmedSiteAddress = siteAddress.trim();

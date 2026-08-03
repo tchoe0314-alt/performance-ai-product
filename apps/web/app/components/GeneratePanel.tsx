@@ -55,7 +55,10 @@ type SystemReadinessRow = {
 type GeneratePanelProps = {
   missingSite: boolean;
   busy: boolean;
-  hasVisibleActiveJob: boolean;
+  activeJobStatus: string;
+  approvalState: "idle" | "approving" | "starting";
+  approvalCheckpointLabel: string | null;
+  approvalError: string | null;
   statusMessage: string;
   assistedEnabled: boolean;
   pendingPlacementCount: number;
@@ -71,6 +74,7 @@ type GeneratePanelProps = {
   onStatusMessageChange: (message: string) => void;
   onGenerateFlowSummaryChange: (summary: GenerateFlowSummary) => void;
   onGenerateSystem: (target: GenerateSystemTarget) => void;
+  onContinueActiveJob: () => void;
   drainageIssueApplyLabel: (issue: Issue) => string | null;
   canApplyDrainageIssue: (issue: Issue) => boolean;
   getIssueGuidance: (issue: Issue) => { bestNextFix: string | null };
@@ -81,7 +85,10 @@ type GeneratePanelProps = {
 export function GeneratePanel({
   missingSite,
   busy,
-  hasVisibleActiveJob,
+  activeJobStatus,
+  approvalState,
+  approvalCheckpointLabel,
+  approvalError,
   statusMessage,
   assistedEnabled,
   pendingPlacementCount,
@@ -97,12 +104,19 @@ export function GeneratePanel({
   onStatusMessageChange,
   onGenerateFlowSummaryChange,
   onGenerateSystem,
+  onContinueActiveJob,
   drainageIssueApplyLabel,
   canApplyDrainageIssue,
   getIssueGuidance,
   onApplyDrainageIssue,
   formatStageLabel,
 }: GeneratePanelProps) {
+  const normalizedJobStatus = activeJobStatus.trim().toLowerCase();
+  const isAwaitingApproval = normalizedJobStatus === "awaiting_approval";
+  const isActiveJobRunning = ["queued", "running", "cancelling"].includes(normalizedJobStatus);
+  const isApprovalBusy = approvalState !== "idle";
+  const actionBusy = busy || isActiveJobRunning || isApprovalBusy;
+  const reviewCheckpointLabel = approvalCheckpointLabel || "current phase";
   const issueActions = Array.from(
     issues
       .filter((issue) => Boolean(drainageIssueApplyLabel(issue)))
@@ -123,9 +137,15 @@ export function GeneratePanel({
             <p className="mt-1 text-sm font-semibold text-slate-950">Run what is ready from the current site model.</p>
           </div>
           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-            missingSite ? "bg-amber-50 text-amber-700" : busy || hasVisibleActiveJob ? "bg-blue-50 text-blue-700" : "bg-emerald-50 text-emerald-700"
+            missingSite
+              ? "bg-amber-50 text-amber-700"
+              : isAwaitingApproval
+                ? "bg-violet-50 text-violet-700"
+                : actionBusy
+                  ? "bg-blue-50 text-blue-700"
+                  : "bg-emerald-50 text-emerald-700"
           }`}>
-            {missingSite ? "Needs site" : busy || hasVisibleActiveJob ? "Running" : "Ready"}
+            {missingSite ? "Needs site" : isAwaitingApproval ? "Review step" : actionBusy ? "Running" : "Ready"}
           </span>
         </div>
         <button
@@ -133,6 +153,10 @@ export function GeneratePanel({
           data-testid="generate-main-action"
           aria-label="Generate systems"
           onClick={() => {
+            if (isAwaitingApproval) {
+              onContinueActiveJob();
+              return;
+            }
             if (missingSite) {
               onStatusMessageChange("Generate needs a locked site boundary in Setup first.");
               onGenerateFlowSummaryChange({
@@ -153,11 +177,30 @@ export function GeneratePanel({
             }
             onGenerateSystem("full");
           }}
-          disabled={busy || hasVisibleActiveJob}
+          disabled={actionBusy}
           className="mt-4 flex w-full items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-3 py-3 text-center text-sm font-semibold text-white shadow-[0_14px_30px_-24px_rgba(37,99,235,0.85)] transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
         >
-          {busy || hasVisibleActiveJob ? "Generation Running" : missingSite ? "Generate needs site boundary" : "Generate"}
+          {isAwaitingApproval
+            ? `Continue after ${reviewCheckpointLabel}`
+            : actionBusy
+              ? approvalState === "approving"
+                ? "Saving review step"
+                : approvalState === "starting"
+                  ? "Starting next stage"
+                  : "Generation Running"
+              : missingSite
+                ? "Generate needs site boundary"
+                : "Generate"}
         </button>
+        {isAwaitingApproval ? (
+          <div
+            className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-900"
+            data-testid="generate-review-hold"
+          >
+            Review {reviewCheckpointLabel}. Continue here when it looks right, or use Chat to request a change.
+            {approvalError ? <span className="mt-1 block font-semibold text-red-700">{approvalError}</span> : null}
+          </div>
+        ) : null}
         <div
           className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600"
           data-testid="generate-auto-site-context"
@@ -213,7 +256,7 @@ export function GeneratePanel({
               type="button"
               data-testid={`generate-${row.key}`}
               onClick={() => onGenerateSystem(row.runTarget)}
-              disabled={busy || hasVisibleActiveJob}
+              disabled={actionBusy || isAwaitingApproval}
               className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="min-w-0">
@@ -265,9 +308,9 @@ export function GeneratePanel({
                       <button
                         type="button"
                         onClick={() => onApplyDrainageIssue(issue)}
-                        disabled={!canApply || busy || hasVisibleActiveJob}
+                        disabled={!canApply || actionBusy || isAwaitingApproval}
                         className={`shrink-0 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                          canApply && !busy && !hasVisibleActiveJob
+                          canApply && !actionBusy && !isAwaitingApproval
                             ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                             : "cursor-not-allowed border-slate-200 bg-white text-slate-400"
                         }`}
@@ -351,10 +394,10 @@ export function GeneratePanel({
           <button
             type="button"
             onClick={() => onGenerateSystem(reactiveAffectedRunTarget)}
-            disabled={busy || hasVisibleActiveJob}
+            disabled={actionBusy || isAwaitingApproval}
             className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {busy || hasVisibleActiveJob ? "Wait For Current Run" : "Rerun Affected Systems"}
+            {actionBusy || isAwaitingApproval ? "Wait For Current Run" : "Rerun Affected Systems"}
           </button>
         ) : null}
         {reactiveValidation.changedTargets.length ? (

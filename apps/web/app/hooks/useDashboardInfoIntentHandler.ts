@@ -9,6 +9,10 @@ import {
   formatDashboardChatPlacement,
 } from "../utils/dashboardChatResponseView";
 import { systemsImpactedByPlacement } from "../utils/dashboardGenerateLayoutContext";
+import {
+  normalizeDashboardChatIntent,
+  userFacingWorkflowNeeds,
+} from "../utils/dashboardChatIntent";
 import { formatMetric } from "../utils/formatting";
 import { uniqueStrings } from "../utils/workflowConstants";
 import {
@@ -173,7 +177,7 @@ export function useDashboardInfoIntentHandler({
   workflowActionHints,
 }: UseDashboardInfoIntentHandlerInput) {
   return useCallback((message: string): boolean => {
-    const normalized = message.toLowerCase();
+    const normalized = normalizeDashboardChatIntent(message);
     const placed = buildingPlacements.filter((item) => item.placed);
     const unplaced = buildingPlacements.filter((item) => !item.placed);
     const selected = activePlacementId
@@ -633,11 +637,11 @@ export function useDashboardInfoIntentHandler({
 
     if (/(can i export|can we export|export now|why.*export|can(?:not|'t) export|export.*blocked|why.*download)/i.test(normalized)) {
       const reason = getExportBlockReason();
-      const exportBlockers = [
+      const exportBlockers = userFacingWorkflowNeeds([
         ...(progressTimelineState.export_blockers ?? []),
         ...previewBlockedReasons,
         ...(reviewPackageFlowSummary?.missing ?? []),
-      ].filter(Boolean);
+      ]);
 	      const blockerText = exportBlockers.length
 	        ? ` Current export/review needs: ${Array.from(new Set(exportBlockers)).slice(0, 4).join("; ")}.`
 	        : "";

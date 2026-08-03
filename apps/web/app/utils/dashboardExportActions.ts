@@ -213,7 +213,8 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
       setStatusMessage(`Export needs input: ${blockReason}`);
       return;
     }
-    if (visibleActiveJob) {
+    const activeJobStatus = String(visibleActiveJob?.status || "").toLowerCase();
+    if (["queued", "running", "awaiting_approval", "cancelling"].includes(activeJobStatus)) {
       setExportActionMessage("Export is waiting for the current export or generation job to finish.");
       setStatusMessage("An export or generation job is already running. Wait for it to finish before starting another export.");
       return;

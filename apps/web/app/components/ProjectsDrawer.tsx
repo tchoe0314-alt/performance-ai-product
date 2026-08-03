@@ -1,3 +1,6 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import type { ProjectSummary } from "../types";
 
 type ProjectsDrawerProps = {
@@ -27,6 +30,23 @@ export function ProjectsDrawer({
   onOpenProject,
   onDeleteProject,
 }: ProjectsDrawerProps) {
+  const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
+  const filteredProjects = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return projects
+      .filter((project) => {
+        if (!normalizedQuery) return true;
+        return `${project.name || "Untitled Project"} ${project.description || ""}`.toLowerCase().includes(normalizedQuery);
+      })
+      .sort((a, b) => {
+        if (a.project_id === activeProjectId) return -1;
+        if (b.project_id === activeProjectId) return 1;
+        return Number(b.updated_at || 0) - Number(a.updated_at || 0);
+      });
+  }, [activeProjectId, projects, query]);
+  const visibleProjects = showAll ? filteredProjects : filteredProjects.slice(0, 12);
+
   return (
     <div className="space-y-4" data-testid="projects-drawer">
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -52,9 +72,6 @@ export function ProjectsDrawer({
         </p>
         <p data-testid="project-drawer-detail" className="mt-1 text-xs leading-5 text-slate-600">
           {notice || stateDetail}
-        </p>
-        <p className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-          Review-only workspace. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.
         </p>
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -84,7 +101,20 @@ export function ProjectsDrawer({
       </div>
       {projects.length ? (
         <div className="space-y-2">
-          {projects.map((projectSummary) => (
+          <label className="block">
+            <span className="sr-only">Search projects</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setShowAll(false);
+              }}
+              placeholder="Search projects"
+              className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400"
+            />
+          </label>
+          {visibleProjects.map((projectSummary) => (
             <div
               key={projectSummary.project_id}
               className={`w-full rounded-xl border px-3 py-3 text-left transition ${
@@ -130,6 +160,27 @@ export function ProjectsDrawer({
               </div>
             </div>
           ))}
+          {!visibleProjects.length ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-center">
+              <p className="text-sm font-semibold text-slate-900">No projects match that search.</p>
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="mt-2 text-xs font-semibold text-blue-700"
+              >
+                Clear search
+              </button>
+            </div>
+          ) : null}
+          {filteredProjects.length > 12 ? (
+            <button
+              type="button"
+              onClick={() => setShowAll((value) => !value)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              {showAll ? "Show recent projects" : `Show ${filteredProjects.length - 12} more`}
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-center">
