@@ -54,6 +54,14 @@ async function installHostedMocks(page: Page, captured: { queuedRequest: Record<
     });
   });
 
+  await page.route("**/api/projects-deleted", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, projects: [] }),
+    });
+  });
+
   await page.route("**/api/jobs**", async (route) => {
     const url = route.request().url();
     if (url.includes("/api/jobs/orchestrate") && route.request().method() === "POST") {
@@ -251,13 +259,20 @@ test("Generate immediately sees newly combined semantic objects", async ({ page 
   const manualFields = request.manual_fields as Record<string, unknown>;
   const siteObjects = manualFields.site_objects as Array<Record<string, unknown>>;
   const buildings = manualFields.buildings as Array<Record<string, unknown>>;
+  const handoffs = manualFields.canonical_geometry_handoff_v1 as Array<Record<string, unknown>>;
   const combined = siteObjects.find((item) => String(item.label) === "Combined Site Program");
+  const combinedHandoff = handoffs.find((item) => String(item.object_name) === "Combined Site Program");
 
   expect(combined).toBeTruthy();
   expect(combined?.type).toBe("office_building");
   expect(combined?.placed).toBe(true);
   expect(JSON.stringify(combined?.meta ?? {})).toContain("semantic_object_model");
   expect(JSON.stringify(combined?.meta ?? {})).toContain("combined_from_object_ids");
+  expect(combined?.canonical_geometry_handoff_v1).toBeTruthy();
+  expect(combinedHandoff?.object_type).toBe("office_building");
+  expect(combinedHandoff?.canonical_object_type).toBe("office_building");
+  expect(combinedHandoff?.creation_method).toBe("semantic_conversion");
+  expect(combinedHandoff?.valid).toBe(true);
   expect(buildings.some((item) => String(item.label) === "Combined Site Program")).toBeTruthy();
   expect(JSON.stringify(request.meta ?? {})).toContain("Combined Site Program");
 

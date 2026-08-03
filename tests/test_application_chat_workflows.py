@@ -1981,6 +1981,42 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertFalse(building["construction_release_allowed"])
         self.assertIn("review-required engineering object", converted["assistant_message"])
 
+        renamed = decide_chat(
+            {
+                "message": "rename selected engineering object to Main Office",
+                "context": {
+                    "current_project": {"project_id": "project_123"},
+                    "selected_cad_entity_ids": [combined_id],
+                },
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        self.assertEqual(renamed["action_taken"], "executed_cad_entity_command")
+        self.assertIn("Updated 1 selected engineering object", renamed["assistant_message"])
+        renamed_model = store.saved[-1]["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION]
+        self.assertEqual(renamed_model[CAD_ENGINEERING_OBJECTS_VERSION]["objects"][0]["display_name"], "Main Office")
+
+        attributes = decide_chat(
+            {
+                "message": "set selected building floor count to 2 and FFE 1042.5",
+                "context": {
+                    "current_project": {"project_id": "project_123"},
+                    "selected_cad_entity_ids": [combined_id],
+                },
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+        self.assertEqual(attributes["action_taken"], "executed_cad_entity_command")
+        attribute_model = store.saved[-1]["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION]
+        updated_building = attribute_model[CAD_ENGINEERING_OBJECTS_VERSION]["objects"][0]
+        self.assertEqual(updated_building["engineering_attributes"]["floor_count"], 2)
+        self.assertEqual(updated_building["engineering_attributes"]["finished_floor_elevation"], 1042.5)
+        self.assertIn("drainage", attribute_model["engineering_project_graph_v1"]["selective_rerun_candidates"])
+
     def test_cad_geometry_edit_chat_answers_selected_draft_operations(self):
         phrases = [
             ("trim this", "answered_cad_trim_edit_path", "trim"),

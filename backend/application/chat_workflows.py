@@ -854,7 +854,20 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         return None
     if "dimension" in lowered and "stale" in lowered and any(token in lowered for token in ("why", "what", "show", "which", "update", "refresh", "recalculate", "recalc")):
         return None
-    semantic_action = any(phrase in lowered for phrase in ("combine", "convert", "make this", "treat this", "selected area", "selected geometry"))
+    semantic_action = any(
+        phrase in lowered
+        for phrase in (
+            "combine",
+            "convert",
+            "make this",
+            "treat this",
+            "selected area",
+            "selected geometry",
+            "selected engineering object",
+            "rename selected",
+            "set selected",
+        )
+    )
     if (
         any(token in lowered for token in ("viewport", "sheet", "plot", "revision note", "road", "building", "basin"))
         and "cad entity" not in lowered
@@ -872,6 +885,18 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         "delete",
         "rotate",
         "scale",
+        "mirror",
+        "array",
+        "offset",
+        "trim",
+        "extend",
+        "fillet",
+        "join",
+        "split",
+        "reverse",
+        "hatch",
+        "open",
+        "close",
         "grip",
         "set layer",
         "change layer",
@@ -898,8 +923,10 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         "convert",
         "engineering object",
         "selected geometry",
+        "rename",
+        "set selected",
     )
-    if not any(token in lowered for token in command_tokens):
+    if not any(re.search(rf"\b{re.escape(token)}\b", lowered) for token in command_tokens):
         return None
     if "drawn object" in lowered and "convert" in lowered:
         return None
@@ -1004,7 +1031,56 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
             "next_best_action": "Review the object name and missing inputs, then update affected systems when ready.",
         }
 
-    wants_create = any(token in lowered for token in ("create", "draw", "add"))
+    targets_engineering_object = bool(selected_ids) and any(
+        phrase in lowered
+        for phrase in ("engineering object", "selected object", "selected building", "selected parking", "selected basin", "selected road")
+    )
+    if targets_engineering_object and "rename" in lowered:
+        name_match = re.search(r"\brename\b.+?\bto\b\s+['\"]?([^'\"]{1,80})['\"]?$", message, flags=re.IGNORECASE)
+        display_name = safe_str(name_match.group(1) if name_match else "")
+        if not display_name:
+            return {
+                **base,
+                "action": "update_engineering_object",
+                "missing_inputs": ["new engineering object name"],
+                "next_best_action": "Provide the new name, for example: rename selected engineering object to Office Building A.",
+            }
+        return {
+            **base,
+            "action": "update_engineering_object",
+            "display_name": display_name,
+            "target_entity_ids": selected_ids,
+            "next_best_action": "Review the renamed object and refresh sheets or reports that display its name.",
+        }
+
+    if targets_engineering_object and any(term in lowered for term in ("floor count", "floors", "finished floor", "ffe", "building use")):
+        attributes: Dict[str, Any] = {}
+        floor_match = re.search(r"(?:floor count(?:\s+to)?|([0-9]+)\s+floors?|floors?\s+to)\s*([0-9]+)?", lowered)
+        floor_value = safe_str((floor_match.group(2) or floor_match.group(1)) if floor_match else "")
+        if floor_value:
+            attributes["floor_count"] = int(float(floor_value))
+        ffe_match = re.search(r"(?:finished floor elevation|ffe)(?:\s+to|\s+is|\s*=)?\s*(-?\d+(?:\.\d+)?)", lowered)
+        if ffe_match:
+            attributes["finished_floor_elevation"] = float(ffe_match.group(1))
+        use_match = re.search(r"(?:building use|use)(?:\s+to|\s+is|\s*=)\s+([a-z][a-z _-]{1,40})", lowered)
+        if use_match:
+            attributes["use_type"] = safe_str(use_match.group(1))
+        if not attributes:
+            return {
+                **base,
+                "action": "update_engineering_object",
+                "missing_inputs": ["engineering attribute value"],
+                "next_best_action": "Provide a floor count, finished-floor elevation, or building use value.",
+            }
+        return {
+            **base,
+            "action": "update_engineering_object",
+            "engineering_attributes": attributes,
+            "target_entity_ids": selected_ids,
+            "next_best_action": "Review the changed attributes, then update only the affected engineering systems.",
+        }
+
+    wants_create = bool(re.search(r"\b(?:create|draw|add)\b", lowered))
     targeted_dimension = "dimension" in lowered and (bool(selected_ids) or "this line" in lowered or "this circle" in lowered or "this arc" in lowered)
     if re.search(r"\b(line|segment)\b", lowered) and wants_create:
         if len(points) < 2:
@@ -1018,6 +1094,22 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         if len(points) < 1 or len(values) < 4:
             return {**base, "action": "create_rectangle", "entity_type": "rectangle", "missing_inputs": ["rectangle origin", "rectangle width", "rectangle height"], "next_best_action": "Provide origin, width, and height, for example: create rectangle at 0,0 width 40 height 20."}
         return {**base, "action": "create_rectangle", "entity_type": "rectangle", "geometry": {"origin": points[0], "width": abs(values[-2]), "height": abs(values[-1]), "units": "ft"}}
+    if re.search(r"\bcircle\b", lowered) and wants_create:
+        if len(values) < 3:
+            return {**base, "action": "create_circle", "entity_type": "circle", "missing_inputs": ["circle center point", "circle radius"], "next_best_action": "Provide a center and radius, for example: create circle at 20,20 radius 8."}
+        return {**base, "action": "create_circle", "entity_type": "circle", "geometry": {"center": {"x": values[0], "y": values[1]}, "radius": abs(values[2]), "units": "ft"}}
+    if re.search(r"\barc\b", lowered) and wants_create:
+        if len(values) < 5:
+            return {**base, "action": "create_arc", "entity_type": "arc", "missing_inputs": ["arc center", "arc radius", "start angle", "end angle"], "next_best_action": "Provide center, radius, start, and end angles, for example: create arc at 20,20 radius 8 from 0 to 90 degrees."}
+        return {**base, "action": "create_arc", "entity_type": "arc", "geometry": {"center": {"x": values[0], "y": values[1]}, "radius": abs(values[2]), "start_angle": values[3], "end_angle": values[4], "units": "ft"}}
+    if re.search(r"\b(point|marker)\b", lowered) and wants_create:
+        if not points:
+            return {**base, "action": "create_point", "entity_type": "block_reference", "missing_inputs": ["point coordinate"], "next_best_action": "Provide a coordinate, for example: create point at 20,20."}
+        return {**base, "action": "create_point", "entity_type": "block_reference", "geometry": {"insert": points[0], "symbol": "point", "units": "ft"}}
+    if re.search(r"\b(polygon|area)\b", lowered) and wants_create and not any(token in lowered for token in ("parking", "basin", "building", "drainage area")):
+        if len(points) < 3:
+            return {**base, "action": "create_polygon", "entity_type": "polygon", "missing_inputs": ["at least three polygon points"], "next_best_action": "Provide at least three coordinate pairs for the area."}
+        return {**base, "action": "create_polygon", "entity_type": "polygon", "geometry": {"points": points, "closed": True, "units": "ft"}}
     if "dimension" in lowered and (wants_create or targeted_dimension):
         if len(points) < 2 and not selected_ids:
             if lowered in {"add dimension", "add dimensions"}:
@@ -1062,18 +1154,34 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         selected_action = "rotate_selected"
     elif "scale" in lowered:
         selected_action = "scale_selected"
+    elif "mirror" in lowered or re.search(r"\bflip\b", lowered):
+        selected_action = "mirror_selected"
+    elif re.search(r"\barray\b", lowered):
+        selected_action = "array_selected"
+    elif re.search(r"\boffset\b", lowered):
+        selected_action = "offset_selected"
+    elif re.search(r"\btrim\b", lowered):
+        selected_action = "trim_selected"
+    elif re.search(r"\bextend\b", lowered):
+        selected_action = "extend_selected"
+    elif re.search(r"\bfillet\b", lowered):
+        selected_action = "fillet_selected"
+    elif re.search(r"\bjoin\b", lowered):
+        selected_action = "join_selected"
+    elif re.search(r"\b(split|break)\b", lowered):
+        selected_action = "split_joined"
+    elif re.search(r"\breverse\b", lowered):
+        selected_action = "reverse_selected"
+    elif re.search(r"\bhatch\b", lowered):
+        selected_action = "hatch_selected"
+    elif re.search(r"\bopen\b", lowered):
+        selected_action = "open_selected"
+    elif re.search(r"\bclose\b", lowered):
+        selected_action = "close_selected"
     elif "layer" in lowered and any(token in lowered for token in ("set", "change", "move")):
         selected_action = "change_layer"
     elif "style" in lowered and any(token in lowered for token in ("set", "change")):
         selected_action = "change_style"
-    elif explicit_persistent_cad and any(token in lowered for token in ("trim", "extend", "fillet", "offset")):
-        unsupported = lowered.split()[0]
-        return {
-            **base,
-            "action": "unsupported",
-            "safety_blockers": [f"unsupported_persistent_cad_entity_command:{unsupported}"],
-            "next_best_action": "Use supported persistent CAD entity commands: create line/polyline/rectangle/text/dimension; move/copy/rotate/scale selected entity; change layer/style; convert drawn object; explain invalid/stale entities.",
-        }
     if not selected_action:
         return None
     if not explicit_persistent_cad:
@@ -1102,6 +1210,34 @@ def _cad_entity_chat_command_operation(message: str, context: Dict[str, Any], mo
         if not values or values[0] <= 0:
             return {**base, "action": selected_action, "missing_inputs": ["positive scale factor"], "next_best_action": "Provide a positive scale factor, for example: scale selected CAD entity by 2."}
         return {**base, "action": selected_action, "scale_factor": values[0]}
+    if selected_action == "mirror_selected":
+        axis = "horizontal" if any(token in lowered for token in (" horizontal", " x axis", " left", " right")) else "vertical" if any(token in lowered for token in (" vertical", " y axis", " up", " down")) else ""
+        if not axis:
+            return {**base, "action": selected_action, "missing_inputs": ["mirror axis: horizontal or vertical"], "next_best_action": "Name the mirror axis, for example: mirror selected CAD object horizontal."}
+        return {**base, "action": selected_action, "axis": axis}
+    if selected_action == "array_selected":
+        if len(values) < 4 or values[0] < 1 or values[1] < 1:
+            return {**base, "action": selected_action, "missing_inputs": ["array rows", "array columns", "X spacing", "Y spacing"], "next_best_action": "Use rows, columns, and spacing, for example: array selected CAD object 2 3 20 15."}
+        return {**base, "action": selected_action, "rows": int(values[0]), "columns": int(values[1]), "spacing_x": values[2], "spacing_y": values[3]}
+    if selected_action == "offset_selected":
+        if not values or abs(values[0]) <= 0:
+            return {**base, "action": selected_action, "missing_inputs": ["non-zero offset distance"], "next_best_action": "Provide an offset distance, for example: offset selected CAD object 10 feet."}
+        return {**base, "action": selected_action, "distance_ft": values[0]}
+    if selected_action in {"trim_selected", "extend_selected"}:
+        if not values or values[0] <= 0:
+            return {**base, "action": selected_action, "missing_inputs": ["positive terminal edit amount"], "next_best_action": f"Provide an amount, for example: {selected_action.replace('_selected', '')} selected CAD object 8 feet."}
+        return {**base, "action": selected_action, "amount_ft": values[0], "edit_entity_id": selected_ids[0], "cutting_entity_ids": selected_ids[1:]}
+    if selected_action == "fillet_selected":
+        if not values or values[0] <= 0:
+            return {**base, "action": selected_action, "missing_inputs": ["positive fillet radius"], "next_best_action": "Provide a radius, for example: fillet selected CAD object 5 feet."}
+        vertex_match = re.search(r"\bvertex\s+(\d+)\b", lowered)
+        return {**base, "action": selected_action, "radius_ft": values[0], "vertex_index": int(vertex_match.group(1)) if vertex_match else 1}
+    if selected_action == "join_selected":
+        if len(selected_ids) < 2:
+            return {**base, "action": selected_action, "missing_inputs": ["two or more selected CAD line/polyline entities"], "next_best_action": "Select connected linework, then join selected CAD entities."}
+        return {**base, "action": selected_action}
+    if selected_action in {"split_joined", "reverse_selected", "hatch_selected", "open_selected", "close_selected"}:
+        return {**base, "action": selected_action}
     if selected_action == "change_layer":
         phrase = _cad_layer_phrase(message)
         layer_id = _cad_layer_id_from_phrase(model, phrase)
@@ -1252,6 +1388,12 @@ def _cad_entity_chat_response(
                 assistant_message = (
                     f"Converted the selected geometry into {len(object_ids)} review-required engineering object(s). "
                     "Civora will track source, history, missing inputs, and affected systems for review."
+                )
+            elif selected_action == "update_engineering_object":
+                object_ids = _safe_list(operation_result.get("engineering_object_ids"))
+                assistant_message = (
+                    f"Updated {len(object_ids)} selected engineering object(s) in canonical project state. "
+                    "The object history and affected-system refresh list are current for review."
                 )
             else:
                 assistant_message = (
@@ -5171,6 +5313,140 @@ def decide_chat(
     if record:
         context = _canonical_chat_context(context, record)
         payload["context"] = context
+    memory_surface: Dict[str, Any] = {}
+    if project_store and user_id:
+        try:
+            memory_surface = project_store.list_engineering_memory(
+                user_id=user_id,
+                project_id=safe_str(project_id) or None,
+            )
+        except Exception:
+            memory_surface = {}
+    if memory_surface:
+        context["engineering_memory"] = memory_surface
+        payload["context"] = context
+    normalized_message = " ".join(message.lower().split())
+    asks_memory = any(
+        phrase in normalized_message
+        for phrase in (
+            "what do you remember",
+            "what have you remembered",
+            "show memory",
+            "show remembered",
+            "my preferences",
+            "company preferences",
+        )
+    )
+    wants_memory = normalized_message.startswith("remember ") or " remember for " in f" {normalized_message} "
+    if asks_memory:
+        items = list(memory_surface.get("items") or [])
+        if items:
+            lines = ["I found these explicit, suggestion-only memory items:"]
+            for item in items[:12]:
+                lines.append(
+                    f"- {safe_str(_safe_dict(item).get('label'), 'Untitled memory')} "
+                    f"({safe_str(_safe_dict(item).get('scope'), 'project')})"
+                )
+            lines.append("They do not override standards, evidence, calculations, or engineering state.")
+        else:
+            lines = [
+                "I do not have any active memory suggestions available for this project and account.",
+                "Personal and company memory stay off until you enable them explicitly; project decisions can be saved directly.",
+            ]
+        return _enrich_response_contract(
+            _truthful_decision_update(
+                {},
+                assistant_message="\n".join(lines),
+                intent="engineering_memory",
+                run_mode="none",
+                needs_clarification=False,
+                action_taken="listed_engineering_memory",
+                affected_systems=["project_memory"],
+                assumptions=[],
+                next_best_action="Add, remove, or change controlled memory from Projects > Team & memory.",
+                command_payload_updates={"engineering_memory": memory_surface},
+                outcome="understood_and_answered",
+                state_changed=False,
+            ),
+            message=message,
+        )
+    if wants_memory and project_store and user_id:
+        scope = "project"
+        if any(phrase in normalized_message for phrase in ("my preference", "personally", "for me")):
+            scope = "personal"
+        elif any(phrase in normalized_message for phrase in ("for the company", "company preference", "our company")):
+            scope = "company"
+        note = message
+        lowered_note = note.lower()
+        if " that " in lowered_note:
+            note = note[lowered_note.index(" that ") + 6 :].strip()
+        elif lowered_note.startswith("remember "):
+            note = note[9:].strip()
+        if not note:
+            return _enrich_response_contract(
+                _truthful_decision_update(
+                    {},
+                    assistant_message="What should I remember, and should it apply to this project, you personally, or the company?",
+                    intent="engineering_memory",
+                    run_mode="none",
+                    needs_clarification=True,
+                    action_taken="requested_memory_details",
+                    affected_systems=["project_memory"],
+                    assumptions=[],
+                    next_best_action="State the decision or preference and its scope.",
+                    outcome="needs_clarification",
+                    state_changed=False,
+                ),
+                message=message,
+            )
+        try:
+            memory_item = project_store.add_engineering_memory(
+                user_id=user_id,
+                scope=scope,
+                category="decision" if scope == "project" else "preference",
+                label=note[:120],
+                value={"note": note},
+                project_id=safe_str(project_id) or None,
+                source="chat_explicit",
+            )
+        except ValueError as exc:
+            return _enrich_response_contract(
+                _truthful_decision_update(
+                    {},
+                    assistant_message=str(exc),
+                    intent="engineering_memory",
+                    run_mode="none",
+                    needs_clarification=False,
+                    action_taken="blocked_engineering_memory",
+                    affected_systems=["project_memory"],
+                    assumptions=[],
+                    next_best_action="Open Projects > Team & memory to enable the requested scope or save it for this project.",
+                    blocker=str(exc),
+                    outcome="blocked",
+                    state_changed=False,
+                ),
+                message=message,
+            )
+        return _enrich_response_contract(
+            _truthful_decision_update(
+                {},
+                assistant_message=(
+                    f"Remembered for {scope}: {note}\n"
+                    "This is a suggestion-only memory. It will not override standards, source evidence, calculations, or project geometry."
+                ),
+                intent="engineering_memory",
+                run_mode="none",
+                needs_clarification=False,
+                action_taken="saved_engineering_memory",
+                affected_systems=["project_memory"],
+                assumptions=[],
+                next_best_action="Continue the project or review controlled memory from Projects > Team & memory.",
+                command_payload_updates={"engineering_memory_item": memory_item},
+                outcome="state_changed",
+                state_changed=True,
+            ),
+            message=message,
+        )
     early_project_input = _safe_dict(record.get("project_input")) if record else _safe_dict(context.get("project_input"))
     early_latest_result = _safe_dict(record.get("latest_result")) if record else _safe_dict(_safe_dict(context.get("current_project")).get("latest_result"))
     cad_entity_decision = _cad_entity_chat_response(

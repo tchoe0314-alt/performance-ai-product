@@ -1,7 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { useCallback } from "react";
 
-import { deleteJson } from "../../lib/api";
+import { deleteJson, patchJson, postJson } from "../../lib/api";
 import type {
   Assumption,
   ChatMessage,
@@ -33,6 +33,7 @@ type UseDashboardProjectActionsOptions = {
   projectLoadRequestRef: MutableRefObject<number>;
   projectResultLoadRequestRef: MutableRefObject<number>;
   projects: ProjectSummary[];
+  loadProject: (projectIdToLoad: string) => Promise<void> | void;
   refreshProjects: (token: string) => Promise<void>;
   removeProjectSummary: (projectIdToRemove: string) => void;
   resetWorkspaceState: () => void;
@@ -128,6 +129,7 @@ export function useDashboardProjectActions({
   projectLoadRequestRef,
   projectResultLoadRequestRef,
   projects,
+  loadProject,
   refreshProjects,
   removeProjectSummary,
   resetWorkspaceState,
@@ -414,7 +416,7 @@ export function useDashboardProjectActions({
     }
     const target = projects.find((item) => item.project_id === projectIdToDelete);
     const confirmed = window.confirm(
-      `Delete "${target?.name || "Untitled Project"}"? This cannot be undone.`,
+      `Move "${target?.name || "Untitled Project"}" to Recently Deleted? You can restore it later.`,
     );
     if (!confirmed) return;
     try {
@@ -441,16 +443,19 @@ export function useDashboardProjectActions({
       removeProjectSummary(projectIdToDelete);
       if (currentProject?.project_id === projectIdToDelete || projectId === projectIdToDelete) {
         await handleNewProject();
-      } else {
-        await refreshProjects(token);
+        setActiveSidePanel("projects");
+        setRenderedSidePanel("projects");
+        setSidePanelVisible(true);
+        setRightRailCollapsed(false);
       }
+      await refreshProjects(token);
       setProjectDrawerNotice("Project deleted.");
       updateProjectStatus({
         state: "ready",
         area: "projects",
-        title: "Project deleted",
-        detail: "The saved project was deleted.",
-        nextAction: "Start or open another project before continuing.",
+        title: "Project moved to Recently Deleted",
+        detail: "The saved project can be restored from Projects.",
+        nextAction: "Start, open, or restore a project before continuing.",
       });
       measureCivoraInteractionAfterPaint("projects.drawer.delete_project", deleteStartedAt, {
         projectId: projectIdToDelete,
@@ -478,9 +483,89 @@ export function useDashboardProjectActions({
     refreshProjects,
     removeProjectSummary,
     setProjectDrawerNotice,
+    setActiveSidePanel,
+    setRenderedSidePanel,
+    setRightRailCollapsed,
+    setSidePanelVisible,
     token,
     updateProjectStatus,
   ]);
 
-  return { handleDeleteProject, handleNewProject };
+  const handleDuplicateProject = useCallback(async (projectIdToDuplicate: string) => {
+    if (!token) {
+      setProjectDrawerNotice("Sign in before duplicating a project.");
+      return;
+    }
+    const target = projects.find((item) => item.project_id === projectIdToDuplicate);
+    try {
+      updateProjectStatus({
+        state: "working",
+        area: "projects",
+        title: "Duplicating project",
+        detail: `Creating an independent copy of "${target?.name || "Untitled Project"}".`,
+        nextAction: "Wait for the copy to open.",
+      });
+      const response = await postJson<{ success: boolean; project: ProjectRecord }>(
+        `/api/projects/${projectIdToDuplicate}/duplicate`,
+        {},
+        { token },
+      );
+      await refreshProjects(token);
+      await loadProject(response.project.project_id);
+      setProjectDrawerNotice(`Created "${response.project.name}" as an independent project.`);
+      updateProjectStatus({
+        state: "ready",
+        area: "projects",
+        title: "Project duplicated",
+        detail: `Opened "${response.project.name}". Changes here will not alter the original project.`,
+        nextAction: "Rename or edit the duplicated project.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Project duplicate could not finish.";
+      setProjectDrawerNotice(`Duplicate could not finish: ${message}`);
+    }
+  }, [loadProject, projects, refreshProjects, setProjectDrawerNotice, token, updateProjectStatus]);
+
+  const handleArchiveProject = useCallback(async (projectIdToArchive: string, archived: boolean) => {
+    if (!token) {
+      setProjectDrawerNotice("Sign in before changing a project's archive state.");
+      return;
+    }
+    try {
+      await patchJson(`/api/projects/${projectIdToArchive}/archive`, { archived }, { token });
+      await refreshProjects(token);
+      setProjectDrawerNotice(archived ? "Project archived." : "Project returned to Active projects.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Archive state could not be changed.";
+      setProjectDrawerNotice(message);
+    }
+  }, [refreshProjects, setProjectDrawerNotice, token]);
+
+  const handleRestoreProject = useCallback(async (projectIdToRestore: string) => {
+    if (!token) {
+      setProjectDrawerNotice("Sign in before restoring a project.");
+      return;
+    }
+    try {
+      const response = await postJson<{ success: boolean; project: ProjectRecord }>(
+        `/api/projects/${projectIdToRestore}/restore`,
+        {},
+        { token },
+      );
+      await refreshProjects(token);
+      await loadProject(response.project.project_id);
+      setProjectDrawerNotice(`Restored and opened "${response.project.name}".`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Project restore could not finish.";
+      setProjectDrawerNotice(message);
+    }
+  }, [loadProject, refreshProjects, setProjectDrawerNotice, token]);
+
+  return {
+    handleArchiveProject,
+    handleDeleteProject,
+    handleDuplicateProject,
+    handleNewProject,
+    handleRestoreProject,
+  };
 }

@@ -366,20 +366,33 @@ class ProjectStore:
         role = self.project_role(user_id=user_id, project_id=project_id)
         return bool(role and _role_allows(role, minimum_role))
 
-    def list_projects(self, *, user_id: str) -> List[Dict[str, Any]]:
+    def list_projects(
+        self,
+        *,
+        user_id: str,
+        include_archived: bool = True,
+        include_deleted: bool = False,
+    ) -> List[Dict[str, Any]]:
         connection = self.db.connect()
         try:
+            lifecycle_filters = ["(p.user_id = ? OR pm.user_id = ?)"]
+            params: List[Any] = [user_id, user_id, user_id, user_id]
+            if not include_archived:
+                lifecycle_filters.append("p.archived_at IS NULL")
+            if not include_deleted:
+                lifecycle_filters.append("p.deleted_at IS NULL")
             rows = connection.execute(
-                """
+                f"""
                 SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
                        p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
+                       p.archived_at, p.deleted_at,
                        COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
                 FROM projects p
                 LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-                WHERE p.user_id = ? OR pm.user_id = ?
-                ORDER BY p.updated_at DESC
+                WHERE {' AND '.join(lifecycle_filters)}
+                ORDER BY CASE WHEN p.archived_at IS NULL THEN 0 ELSE 1 END, p.updated_at DESC
                 """,
-                (user_id, user_id, user_id, user_id),
+                params,
             ).fetchall()
             return [
                 {
@@ -393,6 +406,8 @@ class ProjectStore:
                     "session_id": row["session_id"],
                     "tags": _json_loads(row["tags_json"], []),
                     "has_result": bool(row["has_result"]),
+                    "archived_at": row["archived_at"],
+                    "deleted_at": row["deleted_at"],
                     "access_role": _normalize_role(row["access_role"], default="owner" if row["user_id"] == user_id else "viewer"),
                 }
                 for row in rows
@@ -408,7 +423,7 @@ class ProjectStore:
                 SELECT p.*, COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
                 FROM projects p
                 LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)
                 """,
                 (user_id, user_id, project_id, user_id, user_id),
             ).fetchone()
@@ -426,10 +441,11 @@ class ProjectStore:
                 SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
                        p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
                        p.project_input_json, p.session_state_json, p.metadata_json,
+                       p.archived_at, p.deleted_at,
                        COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
                 FROM projects p
                 LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)
                 """,
                 (user_id, user_id, project_id, user_id, user_id),
             ).fetchone()
@@ -445,7 +461,7 @@ class ProjectStore:
                 SELECT p.latest_result_json
                 FROM projects p
                 LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)
                 """,
                 (user_id, project_id, user_id, user_id),
             ).fetchone()
@@ -475,7 +491,7 @@ class ProjectStore:
                        COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
                 FROM projects p
                 LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)
                 """,
                 (user_id, user_id, project_id, user_id, user_id),
             ).fetchone()
@@ -539,7 +555,7 @@ class ProjectStore:
                        COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
                 FROM projects p
                 LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)
                 """,
                 (user_id, user_id, project_id, user_id, user_id),
             ).fetchone()
@@ -632,7 +648,17 @@ class ProjectStore:
         now = _now()
         existing = self.get_project(user_id=user_id, project_id=project_id) if project_id else None
         if project_id:
-            if existing and not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role=minimum_role):
+            connection = self.db.connect()
+            try:
+                lifecycle_row = connection.execute(
+                    "SELECT user_id, deleted_at FROM projects WHERE project_id = ?",
+                    (project_id,),
+                ).fetchone()
+            finally:
+                connection.close()
+            if lifecycle_row is not None and lifecycle_row["deleted_at"] is not None:
+                raise ValueError("This project is in Recently deleted. Restore it before saving.")
+            if lifecycle_row is not None and not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role=minimum_role):
                 raise ValueError(f"You do not have {minimum_role} access to that project.")
         elif not organization_id:
             organization_id = self.ensure_default_organization(user_id=user_id)["organization_id"]
@@ -728,19 +754,131 @@ class ProjectStore:
         finally:
             connection.close()
 
+    def duplicate_project(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        name: str = "",
+    ) -> Dict[str, Any]:
+        source = self.get_project(user_id=user_id, project_id=project_id)
+        if source is None:
+            raise ValueError("Project not found.")
+        duplicate_name = str(name or "").strip() or f"{source.get('name') or 'Untitled Project'} Copy"
+        metadata = dict(source.get("metadata") or {})
+        metadata.update(
+            {
+                "duplicated_from_project_id": project_id,
+                "duplicated_at": _now(),
+                "duplicate_owner_user_id": user_id,
+            }
+        )
+        duplicate = self.save_project(
+            user_id=user_id,
+            project_id=None,
+            name=duplicate_name,
+            description=str(source.get("description") or ""),
+            session_id=None,
+            tags=list(source.get("tags") or []),
+            project_input=dict(source.get("project_input") or {}),
+            latest_result=dict(source.get("latest_result") or {}),
+            session_state=dict(source.get("session_state") or {}),
+            metadata=metadata,
+        )
+        connection = self.db.connect()
+        try:
+            self._log_access_event(
+                connection,
+                actor_user_id=user_id,
+                organization_id=duplicate.get("organization_id"),
+                project_id=duplicate["project_id"],
+                action="project_duplicated",
+                role="owner",
+                metadata={"source_project_id": project_id},
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return duplicate
+
+    def set_project_archived(self, *, user_id: str, project_id: str, archived: bool) -> Dict[str, Any]:
+        role = self.project_role(user_id=user_id, project_id=project_id)
+        if not role or not _role_allows(role, "editor"):
+            raise ValueError("You do not have editor access to that project.")
+        timestamp = _now()
+        archived_at = timestamp if archived else None
+        connection = self.db.connect()
+        try:
+            cursor = connection.execute(
+                "UPDATE projects SET archived_at = ?, updated_at = ? WHERE project_id = ? AND deleted_at IS NULL",
+                (archived_at, timestamp, project_id),
+            )
+            if cursor.rowcount <= 0:
+                raise ValueError("Project not found.")
+            self._log_access_event(
+                connection,
+                actor_user_id=user_id,
+                project_id=project_id,
+                action="project_archived" if archived else "project_unarchived",
+                role=role,
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        project = self.get_project(user_id=user_id, project_id=project_id)
+        if project is None:
+            raise ValueError("Project not found.")
+        return project
+
     def delete_project(self, *, user_id: str, project_id: str) -> bool:
         if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="owner"):
             return False
         connection = self.db.connect()
         try:
+            now = _now()
             cursor = connection.execute(
-                "DELETE FROM projects WHERE user_id = ? AND project_id = ?",
-                (user_id, project_id),
+                "UPDATE projects SET deleted_at = ?, updated_at = ? WHERE user_id = ? AND project_id = ? AND deleted_at IS NULL",
+                (now, now, user_id, project_id),
             )
+            if cursor.rowcount > 0:
+                self._log_access_event(
+                    connection,
+                    actor_user_id=user_id,
+                    project_id=project_id,
+                    action="project_soft_deleted",
+                    role="owner",
+                )
             connection.commit()
             return cursor.rowcount > 0
         finally:
             connection.close()
+
+    def restore_project(self, *, user_id: str, project_id: str) -> Dict[str, Any]:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="owner"):
+            raise ValueError("You do not have owner access to that project.")
+        connection = self.db.connect()
+        try:
+            now = _now()
+            cursor = connection.execute(
+                "UPDATE projects SET deleted_at = NULL, archived_at = NULL, updated_at = ? WHERE user_id = ? AND project_id = ? AND deleted_at IS NOT NULL",
+                (now, user_id, project_id),
+            )
+            if cursor.rowcount <= 0:
+                raise ValueError("Deleted project not found.")
+            self._log_access_event(
+                connection,
+                actor_user_id=user_id,
+                project_id=project_id,
+                action="project_restored",
+                role="owner",
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        project = self.get_project(user_id=user_id, project_id=project_id)
+        if project is None:
+            raise ValueError("Project could not be restored.")
+        return project
 
     def invite_project_member(self, *, actor_user_id: str, project_id: str, email: str, role: str) -> Dict[str, Any]:
         if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="admin"):
@@ -853,6 +991,51 @@ class ProjectStore:
             )
             connection.commit()
             return True
+        finally:
+            connection.close()
+
+    def update_project_member_role(self, *, actor_user_id: str, project_id: str, user_id: str, role: str) -> Dict[str, Any]:
+        if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="admin"):
+            raise ValueError("You do not have admin access to that project.")
+        normalized_role = _normalize_role(role, default="viewer")
+        if normalized_role == "owner":
+            raise ValueError("Owner access cannot be assigned from this endpoint.")
+        target_role = self.project_role(user_id=user_id, project_id=project_id)
+        if not target_role:
+            raise ValueError("Project member not found.")
+        if target_role == "owner":
+            raise ValueError("Owner access cannot be changed from this endpoint.")
+        connection = self.db.connect()
+        try:
+            project = connection.execute(
+                "SELECT organization_id FROM projects WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            target_user = self._public_user_by_id(user_id) or {}
+            connection.execute(
+                "UPDATE project_members SET role = ?, updated_at = ? WHERE project_id = ? AND user_id = ?",
+                (normalized_role, _now(), project_id, user_id),
+            )
+            self._log_access_event(
+                connection,
+                actor_user_id=actor_user_id,
+                organization_id=project["organization_id"] if project and "organization_id" in project.keys() else None,
+                project_id=project_id,
+                target_user_id=user_id,
+                target_email=str(target_user.get("email") or ""),
+                action="project_member_role_changed",
+                role=normalized_role,
+                metadata={"previous_role": target_role},
+            )
+            connection.commit()
+            return {
+                "project_id": project_id,
+                "user_id": user_id,
+                "email": str(target_user.get("email") or ""),
+                "name": str(target_user.get("name") or ""),
+                "role": normalized_role,
+                "previous_role": target_role,
+            }
         finally:
             connection.close()
 
@@ -970,6 +1153,571 @@ class ProjectStore:
             ),
         }
 
+    def record_project_presence(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="viewer"):
+            raise ValueError("You do not have access to that project.")
+        now = _now()
+        safe_context = {
+            key: value
+            for key, value in _json_safe(context or {}).items()
+            if key in {"mode", "selected_object_id", "view"}
+        }
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO project_presence (project_id, user_id, last_seen_at, context_json)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(project_id, user_id) DO UPDATE SET
+                    last_seen_at = excluded.last_seen_at,
+                    context_json = excluded.context_json
+                """,
+                (project_id, user_id, now, _json_dumps(safe_context)),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        user = self._public_user_by_id(user_id) or {}
+        return {
+            "project_id": project_id,
+            "user_id": user_id,
+            "name": str(user.get("name") or "Project member"),
+            "email": str(user.get("email") or ""),
+            "last_seen_at": now,
+            "context": safe_context,
+        }
+
+    def add_project_comment(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        body: str,
+        mentions: Optional[List[str]] = None,
+        object_id: str = "",
+        issue_id: str = "",
+    ) -> Dict[str, Any]:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="reviewer"):
+            raise ValueError("You need reviewer access to comment on that project.")
+        normalized_body = str(body or "").strip()
+        if not normalized_body:
+            raise ValueError("Comment text is required.")
+        if len(normalized_body) > 4000:
+            raise ValueError("Comments must be 4000 characters or fewer.")
+        normalized_mentions = list(
+            dict.fromkeys(
+                str(item or "").strip().lower()
+                for item in list(mentions or [])
+                if str(item or "").strip()
+            )
+        )[:25]
+        now = _now()
+        comment_id = _new_id("comment")
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO project_comments (
+                    comment_id, project_id, user_id, body, mentions_json,
+                    object_id, issue_id, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    comment_id,
+                    project_id,
+                    user_id,
+                    normalized_body,
+                    _json_dumps(normalized_mentions),
+                    str(object_id or "").strip(),
+                    str(issue_id or "").strip(),
+                    "open",
+                    now,
+                    now,
+                ),
+            )
+            self._log_access_event(
+                connection,
+                actor_user_id=user_id,
+                project_id=project_id,
+                action="project_comment_added",
+                role=str(self.project_role(user_id=user_id, project_id=project_id) or ""),
+                metadata={"comment_id": comment_id, "object_id": object_id, "issue_id": issue_id},
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return {
+            "comment_id": comment_id,
+            "project_id": project_id,
+            "user_id": user_id,
+            "body": normalized_body,
+            "mentions": normalized_mentions,
+            "object_id": str(object_id or "").strip(),
+            "issue_id": str(issue_id or "").strip(),
+            "status": "open",
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    def update_project_comment_status(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        comment_id: str,
+        status: str,
+    ) -> Dict[str, Any]:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="reviewer"):
+            raise ValueError("You need reviewer access to update comments.")
+        normalized_status = str(status or "").strip().lower()
+        if normalized_status not in {"open", "resolved", "reopened"}:
+            raise ValueError("Comment status must be open, resolved, or reopened.")
+        now = _now()
+        connection = self.db.connect()
+        try:
+            cursor = connection.execute(
+                "UPDATE project_comments SET status = ?, updated_at = ? WHERE project_id = ? AND comment_id = ?",
+                (normalized_status, now, project_id, comment_id),
+            )
+            if cursor.rowcount <= 0:
+                raise ValueError("Comment not found.")
+            connection.commit()
+        finally:
+            connection.close()
+        return {"comment_id": comment_id, "project_id": project_id, "status": normalized_status, "updated_at": now}
+
+    def create_review_request(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        assigned_email: str = "",
+        message: str = "",
+    ) -> Dict[str, Any]:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="editor"):
+            raise ValueError("You need editor access to request a review.")
+        target_email = str(assigned_email or "").strip().lower()
+        target_user = self._public_user_by_email(target_email) if target_email else None
+        if target_email and target_user is None:
+            raise ValueError("Invite that reviewer to the project before assigning the review request.")
+        if target_user and not self.has_project_permission(
+            user_id=str(target_user.get("user_id") or ""),
+            project_id=project_id,
+            minimum_role="reviewer",
+        ):
+            raise ValueError("The assigned user needs reviewer access to this project.")
+        now = _now()
+        request_id = _new_id("review")
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO project_review_requests (
+                    request_id, project_id, requested_by_user_id, assigned_user_id,
+                    assigned_email, message, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    request_id,
+                    project_id,
+                    user_id,
+                    target_user.get("user_id") if target_user else None,
+                    target_email,
+                    str(message or "").strip()[:4000],
+                    "open",
+                    now,
+                    now,
+                ),
+            )
+            self._log_access_event(
+                connection,
+                actor_user_id=user_id,
+                project_id=project_id,
+                target_user_id=target_user.get("user_id") if target_user else None,
+                target_email=target_email,
+                action="project_review_requested",
+                role="reviewer",
+                metadata={"request_id": request_id},
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return {
+            "request_id": request_id,
+            "project_id": project_id,
+            "requested_by_user_id": user_id,
+            "assigned_user_id": target_user.get("user_id") if target_user else None,
+            "assigned_email": target_email,
+            "message": str(message or "").strip()[:4000],
+            "status": "open",
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    def update_review_request_status(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        request_id: str,
+        status: str,
+    ) -> Dict[str, Any]:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="reviewer"):
+            raise ValueError("You need reviewer access to update a review request.")
+        normalized_status = str(status or "").strip().lower()
+        if normalized_status not in {"open", "in_review", "completed", "cancelled"}:
+            raise ValueError("Review request status is not supported.")
+        now = _now()
+        connection = self.db.connect()
+        try:
+            cursor = connection.execute(
+                "UPDATE project_review_requests SET status = ?, updated_at = ? WHERE project_id = ? AND request_id = ?",
+                (normalized_status, now, project_id, request_id),
+            )
+            if cursor.rowcount <= 0:
+                raise ValueError("Review request not found.")
+            connection.commit()
+        finally:
+            connection.close()
+        return {"request_id": request_id, "project_id": project_id, "status": normalized_status, "updated_at": now}
+
+    def project_collaboration_surface(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="viewer"):
+            return None
+        now = _now()
+        connection = self.db.connect()
+        try:
+            comments = [
+                {
+                    "comment_id": row["comment_id"],
+                    "project_id": row["project_id"],
+                    "user_id": row["user_id"],
+                    "author_name": row["author_name"],
+                    "author_email": row["author_email"],
+                    "body": row["body"],
+                    "mentions": _json_loads(row["mentions_json"], []),
+                    "object_id": row["object_id"],
+                    "issue_id": row["issue_id"],
+                    "status": row["status"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+                for row in connection.execute(
+                    """
+                    SELECT pc.*, u.name AS author_name, u.email AS author_email
+                    FROM project_comments pc
+                    JOIN users u ON u.user_id = pc.user_id
+                    WHERE pc.project_id = ?
+                    ORDER BY pc.updated_at DESC
+                    LIMIT 100
+                    """,
+                    (project_id,),
+                ).fetchall()
+            ]
+            review_requests = [dict(row) for row in connection.execute(
+                """
+                SELECT request_id, project_id, requested_by_user_id, assigned_user_id,
+                       assigned_email, message, status, created_at, updated_at
+                FROM project_review_requests
+                WHERE project_id = ?
+                ORDER BY updated_at DESC
+                LIMIT 100
+                """,
+                (project_id,),
+            ).fetchall()]
+            active_after = now - 120.0
+            presence = [
+                {
+                    "user_id": row["user_id"],
+                    "name": row["name"],
+                    "email": row["email"],
+                    "last_seen_at": row["last_seen_at"],
+                    "context": _json_loads(row["context_json"], {}),
+                }
+                for row in connection.execute(
+                    """
+                    SELECT pp.user_id, u.name, u.email, pp.last_seen_at, pp.context_json
+                    FROM project_presence pp
+                    JOIN users u ON u.user_id = pp.user_id
+                    WHERE pp.project_id = ? AND pp.last_seen_at >= ?
+                    ORDER BY pp.last_seen_at DESC
+                    """,
+                    (project_id, active_after),
+                ).fetchall()
+            ]
+        finally:
+            connection.close()
+        role = str(self.project_role(user_id=user_id, project_id=project_id) or "viewer")
+        return {
+            "project_id": project_id,
+            "current_user_role": role,
+            "permissions": {
+                "can_comment": _role_allows(role, "reviewer"),
+                "can_request_review": _role_allows(role, "editor"),
+                "can_manage_access": _role_allows(role, "admin"),
+            },
+            "presence": presence,
+            "comments": comments,
+            "review_requests": review_requests,
+            "poll_after_seconds": 20,
+        }
+
+    def get_memory_consent(self, *, user_id: str) -> Dict[str, Any]:
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                "SELECT personal_enabled, company_enabled, global_learning_enabled, updated_at FROM memory_consents WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        return {
+            "personal_enabled": bool(row["personal_enabled"]) if row else False,
+            "company_enabled": bool(row["company_enabled"]) if row else False,
+            "global_learning_enabled": bool(row["global_learning_enabled"]) if row else False,
+            "updated_at": row["updated_at"] if row else None,
+            "default": "off",
+        }
+
+    def update_memory_consent(
+        self,
+        *,
+        user_id: str,
+        personal_enabled: bool,
+        company_enabled: bool,
+        global_learning_enabled: bool,
+    ) -> Dict[str, Any]:
+        now = _now()
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO memory_consents (
+                    user_id, personal_enabled, company_enabled, global_learning_enabled, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    personal_enabled = excluded.personal_enabled,
+                    company_enabled = excluded.company_enabled,
+                    global_learning_enabled = excluded.global_learning_enabled,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    user_id,
+                    1 if personal_enabled else 0,
+                    1 if company_enabled else 0,
+                    1 if global_learning_enabled else 0,
+                    now,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return self.get_memory_consent(user_id=user_id)
+
+    def add_engineering_memory(
+        self,
+        *,
+        user_id: str,
+        scope: str,
+        category: str,
+        label: str,
+        value: Any,
+        project_id: Optional[str] = None,
+        organization_id: Optional[str] = None,
+        source: str = "user_explicit",
+    ) -> Dict[str, Any]:
+        normalized_scope = str(scope or "").strip().lower()
+        if normalized_scope not in {"project", "personal", "company"}:
+            raise ValueError("Memory scope must be project, personal, or company.")
+        consent = self.get_memory_consent(user_id=user_id)
+        if normalized_scope == "personal" and not consent["personal_enabled"]:
+            raise ValueError("Enable personal memory before saving personal preferences.")
+        if normalized_scope == "company" and not consent["company_enabled"]:
+            raise ValueError("Enable company memory before saving company preferences.")
+        if normalized_scope == "project":
+            if not project_id or not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="reviewer"):
+                raise ValueError("Reviewer access to a project is required for project memory.")
+        if normalized_scope == "company":
+            if not project_id or not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="admin"):
+                raise ValueError("Admin access to a project is required for company memory.")
+            project = self.get_project(user_id=user_id, project_id=project_id)
+            organization_id = str((project or {}).get("organization_id") or organization_id or "") or None
+            if not organization_id:
+                raise ValueError("Company memory requires an organization-backed project.")
+        normalized_label = str(label or "").strip()
+        if not normalized_label:
+            raise ValueError("A memory label is required.")
+        memory_id = _new_id("memory")
+        now = _now()
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                INSERT INTO engineering_memory (
+                    memory_id, owner_user_id, organization_id, project_id, scope,
+                    category, label, value_json, source, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    memory_id,
+                    user_id,
+                    organization_id,
+                    project_id if normalized_scope in {"project", "company"} else None,
+                    normalized_scope,
+                    str(category or "preference").strip().lower() or "preference",
+                    normalized_label[:240],
+                    _json_dumps(value),
+                    str(source or "user_explicit").strip() or "user_explicit",
+                    "active",
+                    now,
+                    now,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        return {
+            "memory_id": memory_id,
+            "scope": normalized_scope,
+            "category": str(category or "preference").strip().lower() or "preference",
+            "label": normalized_label[:240],
+            "value": _json_safe(value),
+            "project_id": project_id if normalized_scope in {"project", "company"} else None,
+            "organization_id": organization_id,
+            "source": str(source or "user_explicit").strip() or "user_explicit",
+            "status": "active",
+            "suggestion_only": True,
+            "engineering_authority": False,
+            "created_at": now,
+            "updated_at": now,
+        }
+
+    def list_engineering_memory(
+        self,
+        *,
+        user_id: str,
+        project_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        project: Optional[Dict[str, Any]] = None
+        if project_id:
+            project = self.get_project(user_id=user_id, project_id=project_id)
+            if project is None:
+                raise ValueError("Project not found.")
+        consent = self.get_memory_consent(user_id=user_id)
+        scope_clauses: List[str] = []
+        params: List[Any] = []
+        if consent["personal_enabled"]:
+            scope_clauses.append("(scope = 'personal' AND owner_user_id = ?)")
+            params.append(user_id)
+        if project_id:
+            scope_clauses.append("(scope = 'project' AND project_id = ?)")
+            params.append(project_id)
+            organization_id = str((project or {}).get("organization_id") or "")
+            if organization_id and consent["company_enabled"]:
+                scope_clauses.append("(scope = 'company' AND organization_id = ?)")
+                params.append(organization_id)
+        if not scope_clauses:
+            return {
+                "consent": consent,
+                "items": [],
+                "rules": {
+                    "silent_learning": False,
+                    "overrides_standards": False,
+                    "changes_engineering_state": False,
+                    "suggestion_only": True,
+                },
+            }
+        connection = self.db.connect()
+        try:
+            rows = connection.execute(
+                f"""
+                SELECT memory_id, owner_user_id, organization_id, project_id, scope,
+                       category, label, value_json, source, status, created_at, updated_at
+                FROM engineering_memory
+                WHERE status = 'active' AND ({' OR '.join(scope_clauses)})
+                ORDER BY updated_at DESC
+                LIMIT 200
+                """,
+                params,
+            ).fetchall()
+        finally:
+            connection.close()
+        items = [
+            {
+                "memory_id": row["memory_id"],
+                "scope": row["scope"],
+                "category": row["category"],
+                "label": row["label"],
+                "value": _json_loads(row["value_json"], None),
+                "project_id": row["project_id"],
+                "organization_id": row["organization_id"],
+                "source": row["source"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "suggestion_only": True,
+                "engineering_authority": False,
+            }
+            for row in rows
+        ]
+        return {
+            "consent": consent,
+            "items": items,
+            "rules": {
+                "silent_learning": False,
+                "overrides_standards": False,
+                "changes_engineering_state": False,
+                "suggestion_only": True,
+            },
+        }
+
+    def delete_engineering_memory(self, *, user_id: str, memory_id: str) -> bool:
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT owner_user_id, project_id, scope
+                FROM engineering_memory
+                WHERE memory_id = ? AND status = 'active'
+                """,
+                (memory_id,),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return False
+
+        owner_user_id = str(row["owner_user_id"] or "")
+        project_id = str(row["project_id"] or "")
+        scope = str(row["scope"] or "")
+        may_delete = owner_user_id == user_id
+        if not may_delete and scope in {"project", "company"} and project_id:
+            may_delete = self.has_project_permission(
+                user_id=user_id,
+                project_id=project_id,
+                minimum_role="admin",
+            )
+        if not may_delete:
+            return False
+
+        connection = self.db.connect()
+        try:
+            now = _now()
+            cursor = connection.execute(
+                "UPDATE engineering_memory SET status = 'deleted', updated_at = ? WHERE memory_id = ? AND status = 'active'",
+                (now, memory_id),
+            )
+            connection.commit()
+            return cursor.rowcount > 0
+        finally:
+            connection.close()
+
     def _row_to_record(self, row: Any) -> Dict[str, Any]:
         return {
             "project_id": row["project_id"],
@@ -986,6 +1734,8 @@ class ProjectStore:
             "latest_result": _json_loads(row["latest_result_json"], {}),
             "session_state": _json_loads(row["session_state_json"], {}),
             "metadata": _json_loads(row["metadata_json"], {}),
+            "archived_at": row["archived_at"] if "archived_at" in row.keys() else None,
+            "deleted_at": row["deleted_at"] if "deleted_at" in row.keys() else None,
             "access_role": _normalize_role(row["access_role"], default="owner") if "access_role" in row.keys() else "owner",
         }
 
@@ -1005,6 +1755,8 @@ class ProjectStore:
             "latest_result": {},
             "session_state": _json_loads(row["session_state_json"], {}),
             "metadata": _json_loads(row["metadata_json"], {}),
+            "archived_at": row["archived_at"] if "archived_at" in row.keys() else None,
+            "deleted_at": row["deleted_at"] if "deleted_at" in row.keys() else None,
             "access_role": _normalize_role(row["access_role"], default="owner") if "access_role" in row.keys() else "owner",
         }
 

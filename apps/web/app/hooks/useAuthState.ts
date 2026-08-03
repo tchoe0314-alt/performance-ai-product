@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { apiErrorMessage, classifyApiError, getJson, postJson } from "../../lib/api";
 
@@ -34,7 +34,17 @@ export default function useAuthState({
   skipStoredAuthRestore = false,
   shouldSkipStoredAuthRestore,
 }: UseAuthStateOptions) {
-  const [token, setToken] = useState("");
+  const [token, setToken] = useState(() => {
+    if (
+      typeof window === "undefined" ||
+      skipStoredAuthRestore ||
+      !shouldRestoreStoredToken() ||
+      shouldSkipStoredAuthRestore?.()
+    ) {
+      return "";
+    }
+    return getStoredToken();
+  });
   const [user, setUser] = useState<UserRecord | null>(null);
   const [authMode, setAuthMode] = useState<"login" | "register">("register");
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -120,9 +130,16 @@ export default function useAuthState({
       setToken(data.token);
       setStoredToken(data.token);
       setUser(data.user);
-      await refreshProjectsRef.current(data.token);
-      await refreshJobsRef.current(data.token, { suppressError: true });
-      onStatusMessage(`Signed in to Civora AI as ${data.user.name}.`);
+      const refreshResults = await Promise.allSettled([
+        refreshProjectsRef.current(data.token),
+        refreshJobsRef.current(data.token, { suppressError: true }),
+      ]);
+      const refreshNeedsRetry = refreshResults.some((result) => result.status === "rejected");
+      onStatusMessage(
+        refreshNeedsRetry
+          ? `Signed in to Civora AI as ${data.user.name}. Project or job lists need a refresh.`
+          : `Signed in to Civora AI as ${data.user.name}.`,
+      );
     } catch (error) {
       const kind = classifyApiError(error);
       setAuthError(
@@ -152,6 +169,19 @@ export default function useAuthState({
     onStatusMessage("Signed out.");
   }, [onLogoutCleanup, onStatusMessage, token]);
 
+  useLayoutEffect(() => {
+    if (
+      token ||
+      skipStoredAuthRestore ||
+      !shouldRestoreStoredToken() ||
+      shouldSkipStoredAuthRestoreRef.current?.()
+    ) {
+      return;
+    }
+    const stored = getStoredToken();
+    if (stored) setToken(stored);
+  }, [skipStoredAuthRestore, token]);
+
   useEffect(() => {
     if (!skipInitialAuthStatus) {
       void loadAuthStatus();
@@ -164,9 +194,11 @@ export default function useAuthState({
     if (!stored) return;
     setToken(stored);
     void loadMe(stored)
-      .then(async () => {
-        await refreshProjectsRef.current(stored);
-        await refreshJobsRef.current(stored, { suppressError: true });
+      .then(() => {
+        void Promise.allSettled([
+          refreshProjectsRef.current(stored),
+          refreshJobsRef.current(stored, { suppressError: true }),
+        ]);
       })
       .catch((error) => {
         clearStoredToken();

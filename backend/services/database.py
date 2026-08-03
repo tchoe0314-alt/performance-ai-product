@@ -220,6 +220,8 @@ class Database:
             latest_result_json TEXT NOT NULL,
             session_state_json TEXT NOT NULL,
             metadata_json TEXT NOT NULL,
+            archived_at REAL,
+            deleted_at REAL,
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
         );
 
@@ -304,6 +306,88 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_access_audit_project
         ON access_audit_log(project_id, created_at DESC);
 
+        CREATE TABLE IF NOT EXISTS project_comments (
+            comment_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            body TEXT NOT NULL,
+            mentions_json TEXT NOT NULL,
+            object_id TEXT NOT NULL DEFAULT '',
+            issue_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_comments_project
+        ON project_comments(project_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS project_review_requests (
+            request_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            requested_by_user_id TEXT NOT NULL,
+            assigned_user_id TEXT,
+            assigned_email TEXT NOT NULL DEFAULT '',
+            message TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
+            FOREIGN KEY (requested_by_user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY (assigned_user_id) REFERENCES users(user_id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_review_requests_project
+        ON project_review_requests(project_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS project_presence (
+            project_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            last_seen_at REAL NOT NULL,
+            context_json TEXT NOT NULL,
+            PRIMARY KEY (project_id, user_id),
+            FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_presence_seen
+        ON project_presence(project_id, last_seen_at DESC);
+
+        CREATE TABLE IF NOT EXISTS memory_consents (
+            user_id TEXT PRIMARY KEY,
+            personal_enabled INTEGER NOT NULL DEFAULT 0,
+            company_enabled INTEGER NOT NULL DEFAULT 0,
+            global_learning_enabled INTEGER NOT NULL DEFAULT 0,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS engineering_memory (
+            memory_id TEXT PRIMARY KEY,
+            owner_user_id TEXT NOT NULL,
+            organization_id TEXT,
+            project_id TEXT,
+            scope TEXT NOT NULL,
+            category TEXT NOT NULL,
+            label TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            source TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY (owner_user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE,
+            FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_engineering_memory_owner_scope
+        ON engineering_memory(owner_user_id, scope, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_engineering_memory_project
+        ON engineering_memory(project_id, updated_at DESC);
+
         CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
@@ -361,7 +445,9 @@ class Database:
             project_input_json TEXT NOT NULL,
             latest_result_json TEXT NOT NULL,
             session_state_json TEXT NOT NULL,
-            metadata_json TEXT NOT NULL
+            metadata_json TEXT NOT NULL,
+            archived_at DOUBLE PRECISION,
+            deleted_at DOUBLE PRECISION
         );
 
         CREATE INDEX IF NOT EXISTS idx_projects_user_updated
@@ -433,6 +519,77 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_access_audit_project
         ON access_audit_log(project_id, created_at DESC);
 
+        CREATE TABLE IF NOT EXISTS project_comments (
+            comment_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            body TEXT NOT NULL,
+            mentions_json TEXT NOT NULL,
+            object_id TEXT NOT NULL DEFAULT '',
+            issue_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_comments_project
+        ON project_comments(project_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS project_review_requests (
+            request_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            requested_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            assigned_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL,
+            assigned_email TEXT NOT NULL DEFAULT '',
+            message TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_review_requests_project
+        ON project_review_requests(project_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS project_presence (
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            last_seen_at DOUBLE PRECISION NOT NULL,
+            context_json TEXT NOT NULL,
+            PRIMARY KEY (project_id, user_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_project_presence_seen
+        ON project_presence(project_id, last_seen_at DESC);
+
+        CREATE TABLE IF NOT EXISTS memory_consents (
+            user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+            personal_enabled INTEGER NOT NULL DEFAULT 0,
+            company_enabled INTEGER NOT NULL DEFAULT 0,
+            global_learning_enabled INTEGER NOT NULL DEFAULT 0,
+            updated_at DOUBLE PRECISION NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS engineering_memory (
+            memory_id TEXT PRIMARY KEY,
+            owner_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            organization_id TEXT REFERENCES organizations(organization_id) ON DELETE CASCADE,
+            project_id TEXT REFERENCES projects(project_id) ON DELETE CASCADE,
+            scope TEXT NOT NULL,
+            category TEXT NOT NULL,
+            label TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            source TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_engineering_memory_owner_scope
+        ON engineering_memory(owner_user_id, scope, updated_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_engineering_memory_project
+        ON engineering_memory(project_id, updated_at DESC);
+
         CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -467,6 +624,7 @@ class Database:
         self._ensure_jobs_runtime_columns()
         self._ensure_project_summary_columns()
         self._ensure_team_access_columns()
+        self._ensure_project_lifecycle_columns()
 
     def _get_table_columns(self, table_name: str) -> set[str]:
         connection = self.connect()
@@ -558,6 +716,28 @@ class Database:
                     CREATE INDEX IF NOT EXISTS idx_projects_organization_updated
                     ON projects(organization_id, updated_at DESC)
                     """
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+    def _ensure_project_lifecycle_columns(self) -> None:
+        with self._lock:
+            connection = self.connect()
+            try:
+                columns = self._get_table_columns("projects")
+                if self.storage_kind == "postgres":
+                    if "archived_at" not in columns:
+                        connection.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS archived_at DOUBLE PRECISION")
+                    if "deleted_at" not in columns:
+                        connection.execute("ALTER TABLE projects ADD COLUMN IF NOT EXISTS deleted_at DOUBLE PRECISION")
+                else:
+                    if "archived_at" not in columns:
+                        connection.execute("ALTER TABLE projects ADD COLUMN archived_at REAL")
+                    if "deleted_at" not in columns:
+                        connection.execute("ALTER TABLE projects ADD COLUMN deleted_at REAL")
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_projects_lifecycle ON projects(user_id, deleted_at, archived_at, updated_at DESC)"
                 )
                 connection.commit()
             finally:

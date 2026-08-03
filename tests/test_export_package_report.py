@@ -237,6 +237,49 @@ class ExportPackageReportTests(unittest.TestCase):
         self.assertEqual(report["deliverable_confidence"], "construction_blocked")
         self.assertFalse(report["construction_release_allowed"])
 
+    def test_semantic_object_changes_are_traceable_and_block_stale_review_exports(self) -> None:
+        plan = _plan()
+        plan["meta"]["cad_entity_model_v1"] = {
+            "entities": [
+                {
+                    "id": "cad-building-a",
+                    "type": "polygon",
+                    "geometry": {"points": [{"x": 0, "y": 0}, {"x": 80, "y": 0}, {"x": 80, "y": 60}, {"x": 0, "y": 60}]},
+                    "source": "manual_drawn",
+                    "source_confidence": "user_drawn_review_required",
+                    "dirty": True,
+                    "stale": True,
+                }
+            ],
+            "engineering_objects": [
+                {
+                    "object_id": "building-a",
+                    "object_type": "building",
+                    "display_name": "Office Building A",
+                    "geometry_kind": "area",
+                    "geometry_entity_id": "cad-building-a",
+                    "source_entity_ids": ["cad-building-a"],
+                    "source": "manual_drawn",
+                    "source_confidence": "user_drawn_review_required",
+                    "affected_systems": ["parking", "drainage", "water", "sanitary", "quantities", "review_package"],
+                    "dirty": True,
+                    "stale": True,
+                    "last_change": {"action": "move_selected", "changed_fields": ["geometry"]},
+                }
+            ],
+        }
+
+        report = build_export_package_report_v1(plan, export_type="dxf")
+
+        trace = report["semantic_engineering_object_trace_v1"]
+        self.assertEqual(trace["object_count"], 1)
+        self.assertEqual(trace["objects"][0]["object_id"], "building-a")
+        self.assertTrue(trace["export_blocked_until_rerun"])
+        self.assertIn("drainage", trace["selective_rerun_candidates"])
+        self.assertIn("building-a", report["canonical_ids_included"])
+        self.assertIn("cad-building-a", report["canonical_ids_included"])
+        self.assertIn("engineering_project_graph:drainage", report["stale_outputs_detected"])
+
     def test_missing_standards_imports_and_depth_gates_block_construction_status(self) -> None:
         plan = _plan()
         plan["meta"]["construction_readiness"]["evidence"] = {

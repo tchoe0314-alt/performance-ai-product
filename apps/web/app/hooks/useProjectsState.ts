@@ -15,6 +15,7 @@ function sortProjects(items: ProjectSummary[]) {
 
 export default function useProjectsState() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [deletedProjects, setDeletedProjects] = useState<ProjectSummary[]>([]);
 
   const refreshProjects = useCallback(async (authToken: string) => {
     if (!authToken) return;
@@ -23,6 +24,17 @@ export default function useProjectsState() {
     });
     const nextProjects = Array.isArray(data.projects) ? data.projects : [];
     setProjects(sortProjects(nextProjects));
+    try {
+      const deleted = await getJson<{ projects: ProjectSummary[] }>("/api/projects-deleted", {
+        token: authToken,
+      });
+      setDeletedProjects(sortProjects(Array.isArray(deleted.projects) ? deleted.projects : []));
+    } catch (error) {
+      // Keep project loading compatible during a staged frontend/backend deploy.
+      // Authentication and runtime failures still surface normally.
+      if ((error as { status?: number })?.status !== 404) throw error;
+      setDeletedProjects([]);
+    }
   }, []);
 
   const upsertProjectSummary = useCallback(
@@ -53,14 +65,14 @@ export default function useProjectsState() {
   );
 
   const removeProjectSummary = useCallback((projectIdToRemove: string) => {
-    setProjects((current) =>
-      current.filter((item) => item.project_id !== projectIdToRemove),
-    );
+    setProjects((current) => current.filter((item) => item.project_id !== projectIdToRemove));
   }, []);
 
   return {
     projects,
+    deletedProjects,
     setProjects,
+    setDeletedProjects,
     refreshProjects,
     upsertProjectSummary,
     removeProjectSummary,

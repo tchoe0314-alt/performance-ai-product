@@ -190,13 +190,62 @@ def test_chat_blocks_cad_stamp_or_construction_release_request():
     assert store.saved == []
 
 
-def test_chat_reports_unsupported_persistent_cad_entity_command_with_reason():
+def test_chat_asks_for_missing_trim_amount_without_mutating():
     store = RecordingProjectStore(_record_with_line())
 
     result = _chat("trim selected CAD entity", store)
 
     operation = result["response_metadata"]["command_payload"][CAD_ENTITY_CHAT_OPERATION_VERSION]
-    assert result["action_taken"] == "blocked_cad_entity_command"
-    assert operation["safety_blockers"] == ["unsupported_persistent_cad_entity_command:trim"]
-    assert "not run" in result["assistant_message"]
+    assert result["action_taken"] == "asked_cad_entity_command_clarifying_question"
+    assert operation["selected_action"] == "trim_selected"
+    assert operation["missing_inputs"] == ["positive terminal edit amount"]
     assert store.saved == []
+
+
+def test_chat_runs_advanced_persistent_drafting_commands_in_canonical_model():
+    store = RecordingProjectStore(_record_with_line())
+
+    trimmed = _chat("trim selected CAD entity 2 feet", store)
+    trim_operation = trimmed["response_metadata"]["command_payload"][CAD_ENTITY_CHAT_OPERATION_VERSION]
+    assert trim_operation["selected_action"] == "trim_selected"
+    assert trim_operation["updated_entity_ids"] == ["cad-line-1"]
+    trimmed_entity = next(
+        item
+        for item in store.record["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION]["entities"]
+        if item["id"] == "cad-line-1"
+    )
+    assert trimmed_entity["geometry"]["end"] == {"x": 8.0, "y": 0.0}
+
+    offset = _chat("offset selected CAD entity 3 feet", store)
+    offset_operation = offset["response_metadata"]["command_payload"][CAD_ENTITY_CHAT_OPERATION_VERSION]
+    assert offset_operation["selected_action"] == "offset_selected"
+    assert len(offset_operation["created_entity_ids"]) == 1
+    saved_model = store.record["latest_result"]["final_plan"]["meta"][CAD_ENTITY_MODEL_VERSION]
+    offset_entity = next(item for item in saved_model["entities"] if item["id"] == offset_operation["created_entity_ids"][0])
+    assert offset_entity["offset_from_entity_id"] == "cad-line-1"
+    assert offset_entity["construction_release_allowed"] is False
+
+
+def test_chat_creates_circle_arc_point_and_bounded_array():
+    store = RecordingProjectStore(_record())
+
+    circle = _chat("create CAD circle at 20,20 radius 8", store)
+    circle_operation = circle["response_metadata"]["command_payload"][CAD_ENTITY_CHAT_OPERATION_VERSION]
+    assert circle_operation["selected_action"] == "create_circle"
+    circle_id = circle_operation["created_entity_ids"][0]
+
+    arrayed = _chat(
+        "array selected CAD entity 2 3 20 15",
+        store,
+        {"selected_cad_entity_ids": [circle_id]},
+    )
+    array_operation = arrayed["response_metadata"]["command_payload"][CAD_ENTITY_CHAT_OPERATION_VERSION]
+    assert array_operation["selected_action"] == "array_selected"
+    assert len(array_operation["created_entity_ids"]) == 5
+
+    arc = _chat("create CAD arc at 40,40 radius 12 from 0 to 90 degrees", store)
+    arc_operation = arc["response_metadata"]["command_payload"][CAD_ENTITY_CHAT_OPERATION_VERSION]
+    assert arc_operation["selected_action"] == "create_arc"
+    point = _chat("create CAD point at 5,7", store)
+    point_operation = point["response_metadata"]["command_payload"][CAD_ENTITY_CHAT_OPERATION_VERSION]
+    assert point_operation["selected_action"] == "create_point"

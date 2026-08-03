@@ -37,6 +37,9 @@ export type ProjectSummary = {
   description?: string;
   has_result?: boolean;
   updated_at?: number;
+  archived_at?: number | null;
+  deleted_at?: number | null;
+  access_role?: "owner" | "admin" | "editor" | "reviewer" | "viewer";
 };
 
 export type ProjectRecord = {
@@ -48,6 +51,83 @@ export type ProjectRecord = {
   latest_result?: PlanResponse;
   metadata?: ProjectMetadata;
   has_result?: boolean;
+  organization_id?: string | null;
+  archived_at?: number | null;
+  deleted_at?: number | null;
+  access_role?: "owner" | "admin" | "editor" | "reviewer" | "viewer";
+};
+
+export type ProjectPresence = {
+  user_id: string;
+  name: string;
+  email: string;
+  last_seen_at: number;
+  context?: Record<string, unknown>;
+};
+
+export type ProjectComment = {
+  comment_id: string;
+  project_id: string;
+  user_id: string;
+  author_name?: string;
+  author_email?: string;
+  body: string;
+  mentions?: string[];
+  object_id?: string;
+  issue_id?: string;
+  status: "open" | "resolved" | "reopened";
+  created_at: number;
+  updated_at: number;
+};
+
+export type ProjectReviewRequest = {
+  request_id: string;
+  project_id: string;
+  requested_by_user_id: string;
+  assigned_user_id?: string | null;
+  assigned_email?: string;
+  message?: string;
+  status: "open" | "in_review" | "completed" | "cancelled";
+  created_at: number;
+  updated_at: number;
+};
+
+export type ProjectCollaboration = {
+  project_id: string;
+  current_user_role: string;
+  permissions: {
+    can_comment: boolean;
+    can_request_review: boolean;
+    can_manage_access: boolean;
+  };
+  presence: ProjectPresence[];
+  comments: ProjectComment[];
+  review_requests: ProjectReviewRequest[];
+  poll_after_seconds?: number;
+};
+
+export type EngineeringMemoryConsent = {
+  personal_enabled: boolean;
+  company_enabled: boolean;
+  global_learning_enabled: boolean;
+  updated_at?: number | null;
+  default?: "off";
+};
+
+export type EngineeringMemoryItem = {
+  memory_id: string;
+  scope: "project" | "personal" | "company";
+  category: string;
+  label: string;
+  value: unknown;
+  project_id?: string | null;
+  organization_id?: string | null;
+  source: string;
+  status: string;
+  suggestion_only: boolean;
+  engineering_authority: boolean;
+  created_at: number;
+  updated_at: number;
 };
 
 export type JobSummary = {
@@ -1648,13 +1728,18 @@ export type CanonicalGeometryHandoffV1 = {
   vertices: CanonicalGeometryHandoffVertexV1[];
   units: string;
   coordinate_system: string;
-  source: "manual_drawn";
-  confidence: "user_drawn_review_required";
+  source: string;
+  confidence: string;
   engineering_status: "draft_review_required";
   metrics: CanonicalGeometryHandoffMetricsV1;
   created_at?: string;
   updated_at?: string;
-  source_ui_mode: "canvas_draw";
+  source_ui_mode: string;
+  canonical_object_type?: string;
+  creation_method?: string;
+  engineering_attributes?: Record<string, unknown>;
+  affected_systems?: string[];
+  relationships?: Array<Record<string, unknown>>;
   valid: boolean;
   blockers: string[];
 };

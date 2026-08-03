@@ -433,10 +433,8 @@ export const validateCanonicalGeometryHandoffV1 = (
   }
   if (!handoff.units.trim()) blockers.push("units are required");
   if (!handoff.coordinate_system.trim()) blockers.push("coordinate_system is required");
-  if (handoff.source !== "manual_drawn") blockers.push("source must be manual_drawn");
-  if (handoff.confidence !== "user_drawn_review_required") {
-    blockers.push("confidence must be user_drawn_review_required");
-  }
+  if (!handoff.source.trim()) blockers.push("source is required");
+  if (!handoff.confidence.trim()) blockers.push("confidence is required");
   if (handoff.engineering_status !== "draft_review_required") {
     blockers.push("engineering_status must remain draft_review_required");
   }
@@ -475,8 +473,27 @@ export const buildCanonicalGeometryHandoffV1 = (
   item: BuildingPlacement,
   fallbackUnits: string,
 ): CanonicalGeometryHandoffV1 | null => {
-  if (item.type !== "custom" || !isCustomGeometryMode(item.geometryType)) return null;
   const metadata = item.meta ?? {};
+  const itemType = item.type ?? "custom";
+  const itemX = item.x ?? 0;
+  const itemY = item.y ?? 0;
+  const areaTypes = new Set<SiteObjectType>([
+    "setback_zone", "no_build_zone", "building", "retail_building", "multifamily_building",
+    "industrial_building", "office_building", "pad", "pool", "amenity", "open_space",
+    "landscape", "parking", "basin", "lot_block",
+  ]);
+  const pathTypes = new Set<SiteObjectType>(["entrance", "driveway", "road", "sidewalk", "utility_corridor", "bridge"]);
+  const pointTypes = new Set<SiteObjectType>(["outfall", "inlet", "manhole", "hydrant"]);
+  const inferredGeometryType: CustomGeometryMode | undefined = isCustomGeometryMode(item.geometryType)
+    ? item.geometryType
+    : areaTypes.has(itemType)
+      ? "polygon"
+      : pathTypes.has(itemType)
+        ? "polyline"
+        : pointTypes.has(itemType)
+          ? "point"
+          : undefined;
+  if (itemType === "site" || !inferredGeometryType) return null;
   const objectId =
     typeof metadata.object_id === "string" && metadata.object_id.trim()
       ? metadata.object_id
@@ -493,17 +510,53 @@ export const buildCanonicalGeometryHandoffV1 = (
     typeof metadata.coordinate_system === "string" && metadata.coordinate_system.trim()
       ? metadata.coordinate_system
       : `site_local_${units || "ft"}`;
-  const rawGeometry = Array.isArray(item.geometry) ? item.geometry : [];
-  const geometry =
-    item.geometryType === "polygon" || item.geometryType === "rect"
-      ? closeAreaGeometry(rawGeometry.filter(isFinitePoint))
-      : rawGeometry.filter(isFinitePoint);
+  const acceptedSourceCandidate = metadata.acceptance_status === "accepted" || metadata.accepted_source_candidate === true;
+  const source = item.source || "manual_drawn";
+  const sourceIsDetected = source === "detected_from_gis" || source === "detected_from_image" || source === "inferred";
+  if (sourceIsDetected && !acceptedSourceCandidate && !item.confirmed) return null;
+  const confidence =
+    typeof metadata.source_confidence === "string" && metadata.source_confidence.trim()
+      ? metadata.source_confidence
+      : source === "manual_drawn"
+        ? "user_drawn_review_required"
+        : source === "user_confirmed"
+          ? "user_confirmed_review_required"
+          : sourceIsDetected
+            ? "accepted_source_candidate_review_required"
+            : "source_review_required";
+  const rawGeometry = Array.isArray(item.geometry) ? item.geometry.filter(isFinitePoint) : [];
+  const centerX = itemX + item.w / 2;
+  const centerY = itemY + item.d / 2;
+  const rotatePoint = ([x, y]: [number, number]): [number, number] => {
+    const angle = ((item.rotation || 0) * Math.PI) / 180;
+    if (!angle) return [x, y];
+    const dx = x - centerX;
+    const dy = y - centerY;
+    return [centerX + dx * Math.cos(angle) - dy * Math.sin(angle), centerY + dx * Math.sin(angle) + dy * Math.cos(angle)];
+  };
+  const inferredGeometry: Array<[number, number]> =
+    inferredGeometryType === "point"
+      ? [[centerX, centerY]]
+      : inferredGeometryType === "polyline"
+        ? ([[itemX, centerY], [itemX + item.w, centerY]] as Array<[number, number]>).map(rotatePoint)
+        : [
+            [itemX, itemY] as [number, number],
+            [itemX + item.w, itemY] as [number, number],
+            [itemX + item.w, itemY + item.d] as [number, number],
+            [itemX, itemY + item.d] as [number, number],
+          ].map(rotatePoint);
+  const usableGeometry = rawGeometry.length >= (inferredGeometryType === "point" ? 1 : inferredGeometryType === "polyline" ? 2 : 3)
+    ? rawGeometry
+    : inferredGeometry;
+  const geometry = inferredGeometryType === "polygon" || inferredGeometryType === "rect"
+    ? closeAreaGeometry(usableGeometry)
+    : usableGeometry;
   const storedVertices = Array.isArray(metadata.vertices)
     ? (metadata.vertices as Array<{ id?: unknown }>)
     : [];
   const metrics = getCustomGeometryMetrics({
     geometry: rawGeometry.filter(isFinitePoint),
-    geometryType: item.geometryType,
+    geometryType: inferredGeometryType,
     w: item.w,
     d: item.d,
   });
@@ -512,8 +565,8 @@ export const buildCanonicalGeometryHandoffV1 = (
     object_id: objectId,
     geometry_id: geometryId,
     object_name: item.label,
-    object_type: item.type,
-    geometry_type: item.geometryType,
+    object_type: itemType,
+    geometry_type: inferredGeometryType,
     vertices: geometry.map(([x, y], idx) => ({
       id:
         idx < rawGeometry.length && typeof storedVertices[idx]?.id === "string"
@@ -527,8 +580,8 @@ export const buildCanonicalGeometryHandoffV1 = (
     })),
     units,
     coordinate_system: coordinateSystem,
-    source: "manual_drawn",
-    confidence: "user_drawn_review_required",
+    source,
+    confidence,
     engineering_status: "draft_review_required",
     metrics: {
       length_ft: Number(metrics.lengthFt.toFixed(2)),
@@ -538,7 +591,28 @@ export const buildCanonicalGeometryHandoffV1 = (
     },
     created_at: typeof metadata.created_at === "string" ? metadata.created_at : undefined,
     updated_at: typeof metadata.updated_at === "string" ? metadata.updated_at : undefined,
-    source_ui_mode: "canvas_draw",
+    source_ui_mode: sourceIsDetected ? "candidate_review_acceptance" : "canvas_draw",
+    canonical_object_type: typeof metadata.canonical_object_type === "string" ? metadata.canonical_object_type : itemType,
+    creation_method: typeof metadata.semantic_object_model === "string"
+      ? "semantic_conversion"
+      : sourceIsDetected
+        ? "accepted_detected_candidate"
+        : "canvas_object",
+    engineering_attributes: {
+      ...(metadata.engineering_attributes && typeof metadata.engineering_attributes === "object"
+        ? metadata.engineering_attributes as Record<string, unknown>
+        : {}),
+      ...(typeof item.h === "number" ? { height_ft: item.h } : {}),
+      ...(typeof item.stallCount === "number" ? { stall_count: item.stallCount } : {}),
+      ...(typeof metadata.footprint_area_sf === "number" ? { footprint_area_sf: metadata.footprint_area_sf } : {}),
+      ...(item.use ? { use_type: item.use } : {}),
+    },
+    affected_systems: Array.isArray(metadata.affected_systems)
+      ? metadata.affected_systems.filter((value): value is string => typeof value === "string")
+      : item.systemDependencies,
+    relationships: Array.isArray(metadata.relationships)
+      ? metadata.relationships.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object")
+      : [],
   };
   const blockers = validateCanonicalGeometryHandoffV1(handoffCore);
   return {

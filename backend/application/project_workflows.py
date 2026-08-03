@@ -55,7 +55,13 @@ PROJECT_VERSION_HISTORY_VERSION = "project_version_history_v1"
 
 
 class ProjectStoreProtocol(Protocol):
-    def list_projects(self, *, user_id: str) -> list[Dict[str, Any]]:
+    def list_projects(
+        self,
+        *,
+        user_id: str,
+        include_archived: bool = True,
+        include_deleted: bool = False,
+    ) -> list[Dict[str, Any]]:
         ...
 
     def get_project(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
@@ -113,6 +119,15 @@ class ProjectStoreProtocol(Protocol):
         ...
 
     def delete_project(self, *, user_id: str, project_id: str) -> bool:
+        ...
+
+    def duplicate_project(self, *, user_id: str, project_id: str, name: str = "") -> Dict[str, Any]:
+        ...
+
+    def set_project_archived(self, *, user_id: str, project_id: str, archived: bool) -> Dict[str, Any]:
+        ...
+
+    def restore_project(self, *, user_id: str, project_id: str) -> Dict[str, Any]:
         ...
 
 
@@ -1551,8 +1566,6 @@ def delete_project_record(
     deleted = project_store.delete_project(user_id=user_id, project_id=project_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found.")
-    if artifact_service is not None:
-        artifact_service.delete_preview_cache_for_project(user_id=user_id, project_id=project_id)
-    if job_queue is not None:
-        job_queue.delete_jobs_for_project(user_id=user_id, project_id=project_id)
-    return {"success": True, "project_id": project_id}
+    # Project deletion is recoverable. Keep generated results, jobs, and artifacts
+    # attached until a future explicit purge policy removes them.
+    return {"success": True, "project_id": project_id, "recoverable": True}

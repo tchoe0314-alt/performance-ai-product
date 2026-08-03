@@ -475,6 +475,14 @@ def build_export_package_report_v1(
     source_hash = _canonical_hash(meta)
     included = _included_systems(plan, meta)
     stale = _stale_outputs(meta, source_revision, source_hash)
+    cad_entity_model = build_cad_entity_model(meta)
+    engineering_graph = safe_dict(cad_entity_model.get("engineering_project_graph_v1"))
+    engineering_objects = safe_list(safe_dict(cad_entity_model.get("cad_engineering_objects_v1")).get("objects"))
+    if engineering_graph.get("export_blocked_until_rerun") is True:
+        stale = _unique(
+            stale
+            + [f"engineering_project_graph:{system}" for system in safe_list(engineering_graph.get("stale_systems"))]
+        )
     standards_status = _standards_status(meta, construction_readiness)
     existing_status = _existing_conditions_status(meta, construction_readiness)
     depth_status = _engine_depth_status(meta, construction_readiness)
@@ -519,7 +527,7 @@ def build_export_package_report_v1(
     annotation_trace = build_annotation_standards_trace(meta, export_type=safe_str(export_type))
     symbol_reference_trace = build_symbol_block_reference_trace(meta)
     plotting_standards = build_plotting_standards(meta)
-    dimension_annotation_trace = build_dimension_annotation_trace(build_cad_entity_model(meta))
+    dimension_annotation_trace = build_dimension_annotation_trace(cad_entity_model)
     review_blocked = bool(audit_blocked or gate_blocked or stale)
     deliverable_confidence = (
         "construction_blocked"
@@ -528,7 +536,11 @@ def build_export_package_report_v1(
         if export_audit.get("production_export_ready") is True
         else "review_only_unverified"
     )
-    canonical_ids = _canonical_ids(evidence_meta)
+    canonical_ids = _unique(
+        _canonical_ids(evidence_meta)
+        + [safe_str(item.get("object_id")) for item in engineering_objects]
+        + [safe_str(item.get("geometry_entity_id")) for item in engineering_objects]
+    )
     return {
         "source": "export_package_report_v1",
         "export_type": safe_str(export_type),
@@ -557,6 +569,33 @@ def build_export_package_report_v1(
         "canonical_ids_included": canonical_ids,
         "annotation_standard_trace": annotation_trace,
         "cad_dimension_annotation_trace": dimension_annotation_trace,
+        "semantic_engineering_object_trace_v1": {
+            "version": "semantic_engineering_object_trace_v1",
+            "object_count": len(engineering_objects),
+            "objects": [
+                {
+                    "object_id": safe_str(item.get("object_id")),
+                    "display_name": safe_str(item.get("display_name")),
+                    "object_type": safe_str(item.get("object_type")),
+                    "geometry_entity_id": safe_str(item.get("geometry_entity_id")),
+                    "source": safe_str(item.get("source")),
+                    "source_confidence": safe_str(item.get("source_confidence")),
+                    "review_status": safe_str(item.get("review_status")),
+                    "dirty": bool(item.get("dirty")),
+                    "stale": bool(item.get("stale")),
+                    "affected_systems": deepcopy(safe_list(item.get("affected_systems"))),
+                    "construction_release_allowed": False,
+                }
+                for item in engineering_objects
+            ],
+            "stale_systems": deepcopy(safe_list(engineering_graph.get("stale_systems"))),
+            "unaffected_systems": deepcopy(safe_list(engineering_graph.get("unaffected_systems"))),
+            "selective_rerun_candidates": deepcopy(safe_list(engineering_graph.get("selective_rerun_candidates"))),
+            "change_impacts": deepcopy(safe_list(engineering_graph.get("change_impacts"))),
+            "export_blocked_until_rerun": bool(engineering_graph.get("export_blocked_until_rerun")),
+            "review_required": True,
+            "construction_release_allowed": False,
+        },
         "symbol_block_reference_trace": symbol_reference_trace,
         "layer_contract_status": _layer_contract_status(meta, cad_interop),
         "paper_model_plotting_standards_v1": plotting_standards,

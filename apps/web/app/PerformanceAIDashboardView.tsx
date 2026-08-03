@@ -700,7 +700,9 @@ function PerformanceAIDashboardView({
 
   const {
     projects,
+    deletedProjects,
     setProjects,
+    setDeletedProjects,
     refreshProjects,
     upsertProjectSummary,
     removeProjectSummary,
@@ -745,6 +747,7 @@ function PerformanceAIDashboardView({
       isDemoWorkspaceQuery(),
     onLogoutCleanup: () => {
       setProjects([]);
+      setDeletedProjects([]);
       setJobs([]);
       setCurrentProject(null);
       setProjectId("");
@@ -3853,7 +3856,13 @@ function PerformanceAIDashboardView({
   });
   resetWorkspaceStateRef.current = resetWorkspaceState;
 
-  const { handleDeleteProject, handleNewProject } = useDashboardProjectActions({
+  const {
+    handleArchiveProject,
+    handleDeleteProject,
+    handleDuplicateProject,
+    handleNewProject,
+    handleRestoreProject,
+  } = useDashboardProjectActions({
     autosaveSuspendRef,
     chatAutosaveTimeoutRef,
     chatMessagesRef,
@@ -3865,6 +3874,7 @@ function PerformanceAIDashboardView({
     projectLoadRequestRef,
     projectResultLoadRequestRef,
     projects,
+    loadProject,
     refreshProjects,
     removeProjectSummary,
     resetWorkspaceState,
@@ -5903,11 +5913,16 @@ function PerformanceAIDashboardView({
                     projectTitle={siteName || currentProject?.name || "Untitled Project"}
                     activeProjectId={projectId}
                     projects={sortedProjects}
+                    deletedProjects={deletedProjects}
+                    token={token}
                     onNewProject={handleNewProject}
                     onSaveProject={() => void saveProject()}
                     onOpenJobs={() => handleOpenSidePanel("jobs")}
                     onOpenProject={(projectIdToOpen) => void loadProject(projectIdToOpen)}
                     onDeleteProject={handleDeleteProject}
+                    onDuplicateProject={handleDuplicateProject}
+                    onArchiveProject={handleArchiveProject}
+                    onRestoreProject={handleRestoreProject}
                   />
                 ) : null}
 

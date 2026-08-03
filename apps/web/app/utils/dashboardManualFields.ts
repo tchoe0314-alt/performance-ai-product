@@ -129,6 +129,7 @@ export function buildDashboardManualFields({
         locked: placement.locked,
         placed: Boolean(placement.placed),
         source: placement.source,
+        confirmed: placement.confirmed,
         generated: placement.generated,
         geometry_type: placement.geometryType,
         geometry: placement.geometry,
@@ -139,33 +140,38 @@ export function buildDashboardManualFields({
       .filter((placement) => placement.placed && Number.isFinite(placement.x) && Number.isFinite(placement.y))
       .map((placement) => placement);
     const canonicalGeometryHandoffs = placementOverrides
+      .filter((placement) => {
+        if (placement.type === "site" || placement.generated) return false;
+        if (placement.source === "detected_from_gis" || placement.source === "detected_from_image" || placement.source === "inferred") {
+          return placement.confirmed === true || placement.meta?.acceptance_status === "accepted";
+        }
+        return true;
+      })
       .map((placement) =>
-        placement.type === "custom"
-          ? buildCanonicalGeometryHandoffV1(
-              {
-                id: placement.id,
-                label: placement.label,
-                type: "custom",
-                x: placement.x,
-                y: placement.y,
-                w: placement.w,
-                d: placement.d,
-                h: placement.height_ft,
-                rotation: placement.rotation,
-                locked: placement.locked,
-                placed: true,
-                source: "manual_drawn",
-                generated: false,
-                geometryType: isCustomGeometryMode(placement.geometry_type)
-                  ? placement.geometry_type
-                  : undefined,
-                geometry: placement.geometry,
-                meta: placement.meta,
-                systemDependencies: placement.systemDependencies,
-              },
-              nextUnits || "ft",
-            )
-          : null,
+        buildCanonicalGeometryHandoffV1(
+          {
+            id: placement.id,
+            label: placement.label,
+            type: placement.type as SiteObjectType,
+            x: placement.x,
+            y: placement.y,
+            w: placement.w,
+            d: placement.d,
+            h: placement.height_ft,
+            rotation: placement.rotation,
+            locked: placement.locked,
+            placed: true,
+            source: placement.source ?? "manual_drawn",
+            generated: false,
+            geometryType: isCustomGeometryMode(placement.geometry_type)
+              ? placement.geometry_type
+              : undefined,
+            geometry: placement.geometry,
+            meta: placement.meta,
+            systemDependencies: placement.systemDependencies,
+          },
+          nextUnits || "ft",
+        ),
       )
       .filter((handoff): handoff is CanonicalGeometryHandoffV1 => Boolean(handoff));
     const basinOverrides = placementOverrides.filter((placement) => placement.type === "basin");
@@ -272,10 +278,7 @@ export function buildDashboardManualFields({
         geometry_type: placement.geometry_type,
         geometry: placement.geometry,
         meta: placement.meta,
-        canonical_geometry_handoff_v1:
-          placement.type === "custom"
-            ? canonicalGeometryHandoffs.find((handoff) => handoff.object_id === placement.id)
-            : undefined,
+        canonical_geometry_handoff_v1: canonicalGeometryHandoffs.find((handoff) => handoff.object_id === placement.id),
         systemDependencies: placement.systemDependencies,
       }));
     }

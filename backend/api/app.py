@@ -374,6 +374,53 @@ class ProjectInvitePayload(BaseModel):
     role: str = "viewer"
 
 
+class ProjectMemberRolePayload(BaseModel):
+    role: str
+
+
+class ProjectDuplicatePayload(BaseModel):
+    name: str = ""
+
+
+class ProjectArchivePayload(BaseModel):
+    archived: bool = True
+
+
+class ProjectPresencePayload(BaseModel):
+    context: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectCommentPayload(BaseModel):
+    body: str
+    mentions: List[str] = Field(default_factory=list)
+    object_id: str = ""
+    issue_id: str = ""
+
+
+class ProjectStatusPayload(BaseModel):
+    status: str
+
+
+class ProjectReviewRequestPayload(BaseModel):
+    assigned_email: str = ""
+    message: str = ""
+
+
+class MemoryConsentPayload(BaseModel):
+    personal_enabled: bool = False
+    company_enabled: bool = False
+    global_learning_enabled: bool = False
+
+
+class EngineeringMemoryPayload(BaseModel):
+    scope: str
+    category: str = "preference"
+    label: str
+    value: Any
+    project_id: Optional[str] = None
+    organization_id: Optional[str] = None
+
+
 class CandidateReviewPayload(BaseModel):
     candidate_ids: List[str] = Field(default_factory=list)
     action: str
@@ -2148,6 +2195,20 @@ def list_projects(current_user: Dict[str, Any] = Depends(get_current_user)) -> D
     )
 
 
+@app.get("/api/projects-deleted")
+def list_deleted_projects(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    projects = [
+        item
+        for item in PROJECT_STORE.list_projects(
+            user_id=current_user["user_id"],
+            include_archived=True,
+            include_deleted=True,
+        )
+        if item.get("deleted_at") is not None
+    ]
+    return {"success": True, "projects": projects}
+
+
 @app.post("/api/projects")
 def save_project(payload: SaveProjectPayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     return application_save_project_record(
@@ -2157,6 +2218,49 @@ def save_project(payload: SaveProjectPayload, current_user: Dict[str, Any] = Dep
         export_session_state=_maybe_export_session,
         build_run_summary=_build_run_summary,
     )
+
+
+@app.post("/api/projects/{project_id}/duplicate")
+def duplicate_project(
+    project_id: str,
+    payload: ProjectDuplicatePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        project = PROJECT_STORE.duplicate_project(
+            user_id=current_user["user_id"],
+            project_id=project_id,
+            name=payload.name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "project": project}
+
+
+@app.patch("/api/projects/{project_id}/archive")
+def archive_project(
+    project_id: str,
+    payload: ProjectArchivePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        project = PROJECT_STORE.set_project_archived(
+            user_id=current_user["user_id"],
+            project_id=project_id,
+            archived=payload.archived,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return {"success": True, "project": project}
+
+
+@app.post("/api/projects/{project_id}/restore")
+def restore_project(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    try:
+        project = PROJECT_STORE.restore_project(user_id=current_user["user_id"], project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"success": True, "project": project}
 
 
 @app.get("/api/projects/{project_id}")
@@ -2222,6 +2326,25 @@ def remove_project_member(
     return {"success": True, "project_id": project_id, "removed_user_id": member_user_id}
 
 
+@app.patch("/api/projects/{project_id}/admin/members/{member_user_id}")
+def update_project_member_role(
+    project_id: str,
+    member_user_id: str,
+    payload: ProjectMemberRolePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        member = PROJECT_STORE.update_project_member_role(
+            actor_user_id=current_user["user_id"],
+            project_id=project_id,
+            user_id=member_user_id,
+            role=payload.role,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return {"success": True, "member": member}
+
+
 @app.get("/api/projects/{project_id}/admin/audit")
 def get_project_access_audit(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     return {
@@ -2229,6 +2352,166 @@ def get_project_access_audit(project_id: str, current_user: Dict[str, Any] = Dep
         "project_id": project_id,
         "audit_log": PROJECT_STORE.project_audit_log(user_id=current_user["user_id"], project_id=project_id, limit=100),
     }
+
+
+@app.get("/api/projects/{project_id}/collaboration")
+def get_project_collaboration(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    surface = PROJECT_STORE.project_collaboration_surface(user_id=current_user["user_id"], project_id=project_id)
+    if surface is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return {"success": True, **surface}
+
+
+@app.post("/api/projects/{project_id}/presence")
+def record_project_presence(
+    project_id: str,
+    payload: ProjectPresencePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        presence = PROJECT_STORE.record_project_presence(
+            user_id=current_user["user_id"],
+            project_id=project_id,
+            context=payload.context,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return {"success": True, "presence": presence}
+
+
+@app.post("/api/projects/{project_id}/comments")
+def add_project_comment(
+    project_id: str,
+    payload: ProjectCommentPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        comment = PROJECT_STORE.add_project_comment(
+            user_id=current_user["user_id"],
+            project_id=project_id,
+            body=payload.body,
+            mentions=payload.mentions,
+            object_id=payload.object_id,
+            issue_id=payload.issue_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "comment": comment}
+
+
+@app.patch("/api/projects/{project_id}/comments/{comment_id}")
+def update_project_comment(
+    project_id: str,
+    comment_id: str,
+    payload: ProjectStatusPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        comment = PROJECT_STORE.update_project_comment_status(
+            user_id=current_user["user_id"],
+            project_id=project_id,
+            comment_id=comment_id,
+            status=payload.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "comment": comment}
+
+
+@app.post("/api/projects/{project_id}/review-requests")
+def create_project_review_request(
+    project_id: str,
+    payload: ProjectReviewRequestPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        request_record = PROJECT_STORE.create_review_request(
+            user_id=current_user["user_id"],
+            project_id=project_id,
+            assigned_email=payload.assigned_email,
+            message=payload.message,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "review_request": request_record}
+
+
+@app.patch("/api/projects/{project_id}/review-requests/{request_id}")
+def update_project_review_request(
+    project_id: str,
+    request_id: str,
+    payload: ProjectStatusPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        request_record = PROJECT_STORE.update_review_request_status(
+            user_id=current_user["user_id"],
+            project_id=project_id,
+            request_id=request_id,
+            status=payload.status,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "review_request": request_record}
+
+
+@app.get("/api/memory")
+def list_engineering_memory(
+    project_id: Optional[str] = Query(default=None),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        memory = PROJECT_STORE.list_engineering_memory(user_id=current_user["user_id"], project_id=project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"success": True, **memory}
+
+
+@app.post("/api/memory")
+def add_engineering_memory(
+    payload: EngineeringMemoryPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        memory = PROJECT_STORE.add_engineering_memory(
+            user_id=current_user["user_id"],
+            scope=payload.scope,
+            category=payload.category,
+            label=payload.label,
+            value=payload.value,
+            project_id=payload.project_id,
+            organization_id=payload.organization_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "memory": memory}
+
+
+@app.delete("/api/memory/{memory_id}")
+def delete_engineering_memory(memory_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    deleted = PROJECT_STORE.delete_engineering_memory(user_id=current_user["user_id"], memory_id=memory_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Memory item not found.")
+    return {"success": True, "memory_id": memory_id}
+
+
+@app.get("/api/memory/consent")
+def get_memory_consent(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    return {"success": True, "consent": PROJECT_STORE.get_memory_consent(user_id=current_user["user_id"])}
+
+
+@app.patch("/api/memory/consent")
+def update_memory_consent(
+    payload: MemoryConsentPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    consent = PROJECT_STORE.update_memory_consent(
+        user_id=current_user["user_id"],
+        personal_enabled=payload.personal_enabled,
+        company_enabled=payload.company_enabled,
+        global_learning_enabled=payload.global_learning_enabled,
+    )
+    return {"success": True, "consent": consent}
 
 
 @app.get("/api/projects/{project_id}/candidate-review-inbox")

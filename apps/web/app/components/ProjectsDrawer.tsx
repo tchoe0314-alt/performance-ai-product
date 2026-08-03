@@ -1,7 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Archive, ArchiveRestore, Copy, RotateCcw, Trash2 } from "lucide-react";
 import type { ProjectSummary } from "../types";
+import { ProjectTeamMemoryPanel } from "./ProjectTeamMemoryPanel";
 
 type ProjectsDrawerProps = {
   stateLabel: string;
@@ -10,11 +12,16 @@ type ProjectsDrawerProps = {
   projectTitle: string;
   activeProjectId?: string | null;
   projects: ProjectSummary[];
+  deletedProjects: ProjectSummary[];
+  token?: string | null;
   onNewProject: () => Promise<void> | void;
   onSaveProject: () => void;
   onOpenJobs: () => void;
   onOpenProject: (projectId: string) => void;
   onDeleteProject: (projectId: string) => Promise<void> | void;
+  onDuplicateProject: (projectId: string) => Promise<void> | void;
+  onArchiveProject: (projectId: string, archived: boolean) => Promise<void> | void;
+  onRestoreProject: (projectId: string) => Promise<void> | void;
 };
 
 export function ProjectsDrawer({
@@ -24,18 +31,28 @@ export function ProjectsDrawer({
   projectTitle,
   activeProjectId,
   projects,
+  deletedProjects,
+  token,
   onNewProject,
   onSaveProject,
   onOpenJobs,
   onOpenProject,
   onDeleteProject,
+  onDuplicateProject,
+  onArchiveProject,
+  onRestoreProject,
 }: ProjectsDrawerProps) {
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
+  const [view, setView] = useState<"active" | "archived" | "deleted">("active");
   const filteredProjects = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return projects
+    const source = view === "deleted" ? deletedProjects : projects;
+    return source
       .filter((project) => {
+        const archived = Boolean(project.archived_at);
+        if (view === "active" && archived) return false;
+        if (view === "archived" && !archived) return false;
         if (!normalizedQuery) return true;
         return `${project.name || "Untitled Project"} ${project.description || ""}`.toLowerCase().includes(normalizedQuery);
       })
@@ -44,7 +61,7 @@ export function ProjectsDrawer({
         if (b.project_id === activeProjectId) return 1;
         return Number(b.updated_at || 0) - Number(a.updated_at || 0);
       });
-  }, [activeProjectId, projects, query]);
+  }, [activeProjectId, deletedProjects, projects, query, view]);
   const visibleProjects = showAll ? filteredProjects : filteredProjects.slice(0, 12);
 
   return (
@@ -99,7 +116,24 @@ export function ProjectsDrawer({
           Open Jobs
         </button>
       </div>
-      {projects.length ? (
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" aria-label="Project list view">
+        {(["active", "archived", "deleted"] as const).map((item) => (
+          <button
+            key={item}
+            type="button"
+            onClick={() => {
+              setView(item);
+              setShowAll(false);
+            }}
+            className={`rounded-lg px-2 py-2 text-xs font-semibold capitalize transition ${
+              view === item ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            {item === "deleted" ? "Recently deleted" : item === "active" ? "Active" : "Archived"}
+          </button>
+        ))}
+      </div>
+      {(view === "deleted" ? deletedProjects.length : projects.length) ? (
         <div className="space-y-2">
           <label className="block">
             <span className="sr-only">Search projects</span>
@@ -130,7 +164,8 @@ export function ProjectsDrawer({
                   onClick={() => {
                     onOpenProject(projectSummary.project_id);
                   }}
-                  className="min-w-0 flex-1 text-left"
+                  disabled={view === "deleted"}
+                  className="min-w-0 flex-1 text-left disabled:cursor-default"
                 >
                   <p className="truncate text-sm font-semibold">
                     {projectSummary.name || "Untitled Project"}
@@ -142,21 +177,52 @@ export function ProjectsDrawer({
                         : "No description")}
                   </p>
                 </button>
-                <button
-                  type="button"
-                  aria-label={`Delete project ${projectSummary.name || "Untitled Project"}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void onDeleteProject(projectSummary.project_id);
-                  }}
-                  className={`shrink-0 rounded-lg border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                    projectSummary.project_id === activeProjectId
-                      ? "border-white/40 text-white/80 hover:bg-white/10"
-                      : "border-slate-200 text-slate-500 hover:bg-slate-50"
-                  }`}
-                >
-                  Delete
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {view === "deleted" ? (
+                    <button
+                      type="button"
+                      title="Restore project"
+                      aria-label={`Restore project ${projectSummary.name || "Untitled Project"}`}
+                      onClick={() => void onRestoreProject(projectSummary.project_id)}
+                      className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
+                    >
+                      <RotateCcw size={14} />
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        title="Duplicate project"
+                        aria-label={`Duplicate project ${projectSummary.name || "Untitled Project"}`}
+                        onClick={() => void onDuplicateProject(projectSummary.project_id)}
+                        className={projectSummary.project_id === activeProjectId ? "rounded-lg p-1.5 text-white/80 hover:bg-white/10" : "rounded-lg p-1.5 text-slate-500 hover:bg-slate-50"}
+                      >
+                        <Copy size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        title={view === "archived" ? "Return to Active" : "Archive project"}
+                        aria-label={`${view === "archived" ? "Unarchive" : "Archive"} project ${projectSummary.name || "Untitled Project"}`}
+                        onClick={() => void onArchiveProject(projectSummary.project_id, view !== "archived")}
+                        className={projectSummary.project_id === activeProjectId ? "rounded-lg p-1.5 text-white/80 hover:bg-white/10" : "rounded-lg p-1.5 text-slate-500 hover:bg-slate-50"}
+                      >
+                        {view === "archived" ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+                      </button>
+                      <button
+                        type="button"
+                        title="Move to Recently Deleted"
+                        aria-label={`Delete project ${projectSummary.name || "Untitled Project"}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void onDeleteProject(projectSummary.project_id);
+                        }}
+                        className={projectSummary.project_id === activeProjectId ? "rounded-lg p-1.5 text-white/80 hover:bg-white/10" : "rounded-lg p-1.5 text-slate-500 hover:bg-slate-50 hover:text-red-600"}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -184,12 +250,19 @@ export function ProjectsDrawer({
         </div>
       ) : (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-center">
-          <p className="text-sm font-semibold text-slate-900">No saved projects yet.</p>
+          <p className="text-sm font-semibold text-slate-900">
+            {view === "active" ? "No active projects yet." : view === "archived" ? "No archived projects." : "Recently Deleted is empty."}
+          </p>
           <p className="mt-1 text-xs text-slate-500">
-            Use New Project above to start clean, then Save Project when this draft should be restored later.
+            {view === "active"
+              ? "Use New Project above to start clean, then Save Project when this draft should be restored later."
+              : view === "archived"
+                ? "Archived projects stay saved and can return to Active at any time."
+                : "Deleted projects stay recoverable here until a future retention policy purges them."}
           </p>
         </div>
       )}
+      <ProjectTeamMemoryPanel projectId={activeProjectId} projectName={projectTitle} token={token} />
     </div>
   );
 }
