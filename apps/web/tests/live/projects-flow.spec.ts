@@ -341,6 +341,9 @@ test.describe("project drawer reliability", () => {
     });
     await mockShell(page, store);
     await openApp(page);
+    await page.getByRole("button", { name: /^Generate$/ }).first().click();
+    await page.getByTestId("generate-main-action").click();
+    await expect(page.getByTestId("generate-flow-summary")).toContainText(/site boundary/i);
     await openProjects(page);
     await page.getByRole("button", { name: "Open project Locked Denver Site" }).click();
 
@@ -351,6 +354,8 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByLabel("Depth (ft)")).toHaveValue("730");
     await expect(page.getByTestId("setup-site-box-controls")).toContainText(/920 ft x 730 ft/i);
     await expect(page.getByTestId("setup-site-box-controls")).toContainText(/locked/i);
+    await page.getByRole("button", { name: /^Generate$/ }).first().click();
+    await expect(page.getByTestId("generate-flow-summary")).toHaveCount(0);
   });
 
   test("keeps a new workspace clean when an older save finishes late", async ({ page }) => {

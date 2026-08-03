@@ -8,6 +8,7 @@ import type {
   SurveySlopeResponse,
 } from "../types";
 import { uploadedImageSrc } from "./auth";
+import type { GenerateFlowSummary, ReviewPackageFlowSummary } from "./dashboardDataTypes";
 import { buildDashboardProjectInputView } from "./dashboardProjectInputView";
 import type { SystemStatus } from "./workflowConstants";
 
@@ -30,6 +31,7 @@ export function runDashboardApplyProjectInput({
   setDrainageMaxSlopeAdjust,
   setFileName,
   setFileNameAuto,
+  setGenerateFlowSummary,
   setGrading,
   setImageName,
   setLotHeight,
@@ -44,6 +46,7 @@ export function runDashboardApplyProjectInput({
   setProjectType,
   setPrompt,
   setRoads,
+  setReviewPackageFlowSummary,
   setSetback,
   setSiteName,
   setSiteNameAuto,
@@ -74,6 +77,7 @@ export function runDashboardApplyProjectInput({
   setDrainageMaxSlopeAdjust: StateSetter<number>;
   setFileName: StateSetter<string>;
   setFileNameAuto: StateSetter<boolean>;
+  setGenerateFlowSummary: StateSetter<GenerateFlowSummary | null>;
   setGrading: StateSetter<boolean>;
   setImageName: StateSetter<string>;
   setLotHeight: StateSetter<string>;
@@ -88,6 +92,7 @@ export function runDashboardApplyProjectInput({
   setProjectType: StateSetter<string>;
   setPrompt: StateSetter<string>;
   setRoads: StateSetter<boolean>;
+  setReviewPackageFlowSummary: StateSetter<ReviewPackageFlowSummary | null>;
   setSetback: StateSetter<string>;
   setSiteName: StateSetter<string>;
   setSiteNameAuto: StateSetter<boolean>;
@@ -126,6 +131,8 @@ export function runDashboardApplyProjectInput({
   setProjectType(restoredProjectInput.projectType);
   setLotWidth(restoredProjectInput.lotWidth);
   setLotHeight(restoredProjectInput.lotHeight);
+  setGenerateFlowSummary(null);
+  setReviewPackageFlowSummary(null);
   setSiteScaleLocked(
     Boolean(projectSiteInputs?.site_alignment_locked) &&
       Number(restoredProjectInput.lotWidth) > 0 &&
