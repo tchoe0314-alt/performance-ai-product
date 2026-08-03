@@ -307,6 +307,52 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByText(/Could not restore saved workspace/i)).toHaveCount(0);
   });
 
+  test("restores a saved locked site with its dimensions and placed objects", async ({ page }) => {
+    const store = new Map<string, SavedProject>();
+    store.set("locked-site-project", {
+      project_id: "locked-site-project",
+      name: "Locked Denver Site",
+      updated_at: Math.floor(Date.now() / 1000),
+      project_input: {
+        meta: {
+          site_inputs: {
+            address: "201 W Colfax Ave, Denver, CO",
+            site_alignment_locked: true,
+          },
+        },
+        manual_fields: {
+          lot: { x: 0, y: 0, w: 920, h: 730 },
+          site_objects: [
+            {
+              id: "denver-office",
+              label: "Denver Office",
+              type: "office",
+              x: 100,
+              y: 120,
+              width_ft: 250,
+              depth_ft: 160,
+              placed: true,
+              source: "manual_drawn",
+            },
+          ],
+        },
+      },
+      latest_result: null,
+    });
+    await mockShell(page, store);
+    await openApp(page);
+    await openProjects(page);
+    await page.getByRole("button", { name: "Open project Locked Denver Site" }).click();
+
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+    await expect(page.getByTestId("preview-object-manager-list")).toContainText("Denver Office");
+    await openSetup(page);
+    await expect(page.getByLabel("Width (ft)")).toHaveValue("920");
+    await expect(page.getByLabel("Depth (ft)")).toHaveValue("730");
+    await expect(page.getByTestId("setup-site-box-controls")).toContainText(/920 ft x 730 ft/i);
+    await expect(page.getByTestId("setup-site-box-controls")).toContainText(/locked/i);
+  });
+
   test("keeps a new workspace clean when an older save finishes late", async ({ page }) => {
     const store = new Map<string, SavedProject>();
     await mockShell(page, store);

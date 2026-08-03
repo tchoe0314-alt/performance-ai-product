@@ -47,6 +47,7 @@ export function runDashboardApplyProjectInput({
   setSetback,
   setSiteName,
   setSiteNameAuto,
+  setSiteScaleLocked,
   setSurveySlopeEstimate,
   setSystemStatuses,
   setUnits,
@@ -90,6 +91,7 @@ export function runDashboardApplyProjectInput({
   setSetback: StateSetter<string>;
   setSiteName: StateSetter<string>;
   setSiteNameAuto: StateSetter<boolean>;
+  setSiteScaleLocked: StateSetter<boolean>;
   setSurveySlopeEstimate: StateSetter<SurveySlopeResponse | null>;
   setSystemStatuses: StateSetter<Record<string, SystemStatus>>;
   setUnits: StateSetter<string>;
@@ -104,7 +106,11 @@ export function runDashboardApplyProjectInput({
     return;
   }
 
-  const restoredProjectInput = buildDashboardProjectInputView(projectInput, siteInputs);
+  const projectSiteInputs =
+    projectInput.meta?.site_inputs && typeof projectInput.meta.site_inputs === "object"
+      ? (projectInput.meta.site_inputs as SiteInputs)
+      : siteInputs;
+  const restoredProjectInput = buildDashboardProjectInputView(projectInput, projectSiteInputs);
 
   setPrompt(restoredProjectInput.promptText);
   setImageName(restoredProjectInput.imagePath);
@@ -120,6 +126,11 @@ export function runDashboardApplyProjectInput({
   setProjectType(restoredProjectInput.projectType);
   setLotWidth(restoredProjectInput.lotWidth);
   setLotHeight(restoredProjectInput.lotHeight);
+  setSiteScaleLocked(
+    Boolean(projectSiteInputs?.site_alignment_locked) &&
+      Number(restoredProjectInput.lotWidth) > 0 &&
+      Number(restoredProjectInput.lotHeight) > 0,
+  );
   setSetback(restoredProjectInput.setback);
   setBuildingWidth(restoredProjectInput.buildingWidth);
   setBuildingDepth(restoredProjectInput.buildingDepth);

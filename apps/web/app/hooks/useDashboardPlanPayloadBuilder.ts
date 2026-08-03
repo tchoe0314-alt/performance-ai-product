@@ -58,6 +58,7 @@ type UseDashboardPlanPayloadBuilderInput = {
   roads: boolean;
   setback: string;
   siteName: string;
+  siteScaleLocked: boolean;
   systemStatuses: Record<EngineeringSystemKey, SystemStatus>;
   units: string;
   utilities: boolean;
@@ -91,6 +92,7 @@ export function useDashboardPlanPayloadBuilder({
   roads,
   setback,
   siteName,
+  siteScaleLocked,
   systemStatuses,
   units,
   utilities,
@@ -137,7 +139,10 @@ export function useDashboardPlanPayloadBuilder({
       image_path: imageName || null,
       meta: {
         chat_thread: chatMessagesRef.current,
-        site_inputs: currentProject?.project_input?.meta?.site_inputs ?? {},
+        site_inputs: {
+          ...(currentProject?.project_input?.meta?.site_inputs ?? {}),
+          site_alignment_locked: siteScaleLocked,
+        },
         system_dirty_state: systemStatuses,
         reactive_edit_policy_preference: REACTIVE_EDIT_POLICY_PREFERENCE,
         site_object_id: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
@@ -195,6 +200,7 @@ export function useDashboardPlanPayloadBuilder({
     roads,
     setback,
     siteName,
+    siteScaleLocked,
     systemStatuses,
     units,
     utilities,
