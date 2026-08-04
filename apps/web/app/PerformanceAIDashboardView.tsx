@@ -1836,15 +1836,15 @@ function PerformanceAIDashboardView({
   }
 
   const scheduleScaleSave = useDashboardScaleSaveScheduler({
-    currentProject,
+    currentProjectRef,
     detectionScaleFeet,
     detectionScalePixels,
-    payloadPreview,
+    payloadPreviewRef,
     projectLoadRequestRef,
     resolvedProjectIdRef,
     saveProjectRef,
     scaleSaveTimeoutRef,
-    siteScaleLocked,
+    siteScaleLockedRef,
   });
 
   useEffect(() => {

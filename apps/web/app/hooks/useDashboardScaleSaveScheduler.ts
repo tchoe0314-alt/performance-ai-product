@@ -17,27 +17,27 @@ type SaveProjectRef = MutableRefObject<
 >;
 
 type UseDashboardScaleSaveSchedulerInput = {
-  currentProject: ProjectRecord | null;
+  currentProjectRef: MutableRefObject<ProjectRecord | null>;
   detectionScaleFeet: string;
   detectionScalePixels: string;
-  payloadPreview: PlanRequestPayload;
+  payloadPreviewRef: MutableRefObject<PlanRequestPayload>;
   projectLoadRequestRef: MutableRefObject<number>;
   resolvedProjectIdRef: MutableRefObject<string>;
   saveProjectRef: SaveProjectRef;
   scaleSaveTimeoutRef: MutableRefObject<number | null>;
-  siteScaleLocked: boolean;
+  siteScaleLockedRef: MutableRefObject<boolean>;
 };
 
 export function useDashboardScaleSaveScheduler({
-  currentProject,
+  currentProjectRef,
   detectionScaleFeet,
   detectionScalePixels,
-  payloadPreview,
+  payloadPreviewRef,
   projectLoadRequestRef,
   resolvedProjectIdRef,
   saveProjectRef,
   scaleSaveTimeoutRef,
-  siteScaleLocked,
+  siteScaleLockedRef,
 }: UseDashboardScaleSaveSchedulerInput) {
   return useCallback(
     (ftPerPx: number, source: "mapbox" | "manual" | "approximate") => {
@@ -45,15 +45,16 @@ export function useDashboardScaleSaveScheduler({
         window.clearTimeout(scaleSaveTimeoutRef.current);
         scaleSaveTimeoutRef.current = null;
       }
-      const activeProjectId = resolvedProjectIdRef.current || currentProject?.project_id || "";
+      const activeProjectId = resolvedProjectIdRef.current || currentProjectRef.current?.project_id || "";
       if (!activeProjectId) return;
       const workspaceGeneration = projectLoadRequestRef.current;
-      const currentInput = currentProject?.project_input ?? payloadPreview;
       scaleSaveTimeoutRef.current = window.setTimeout(() => {
         scaleSaveTimeoutRef.current = null;
         if (projectLoadRequestRef.current !== workspaceGeneration) return;
         if (resolvedProjectIdRef.current !== activeProjectId) return;
         if (!saveProjectRef.current) return;
+        const liveProject = currentProjectRef.current;
+        const currentInput = liveProject?.project_input ?? payloadPreviewRef.current;
         void saveProjectRef.current({
           silent: true,
           projectIdOverride: activeProjectId,
@@ -72,7 +73,7 @@ export function useDashboardScaleSaveScheduler({
                   scale_ft_per_px: ftPerPx,
                   scale_source: source,
                 },
-                site_alignment_locked: siteScaleLocked,
+                site_alignment_locked: siteScaleLockedRef.current,
               },
             },
           },
@@ -80,15 +81,15 @@ export function useDashboardScaleSaveScheduler({
       }, 600);
     },
     [
-      currentProject,
+      currentProjectRef,
       detectionScaleFeet,
       detectionScalePixels,
-      payloadPreview,
+      payloadPreviewRef,
       projectLoadRequestRef,
       resolvedProjectIdRef,
       saveProjectRef,
       scaleSaveTimeoutRef,
-      siteScaleLocked,
+      siteScaleLockedRef,
     ],
   );
 }
