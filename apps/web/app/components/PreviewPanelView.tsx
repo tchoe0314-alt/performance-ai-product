@@ -2656,6 +2656,7 @@ export default function PreviewPanel({
                       blocker: aiRealismBlocker,
                       stale: Boolean(aiRealismDisplayArtifact?.stale),
                       hasTerrainSource,
+                      showMap,
                       watermark: AI_REALISM_WATERMARK,
                       onRegenerate: generateAiRealismArtifact,
                     }

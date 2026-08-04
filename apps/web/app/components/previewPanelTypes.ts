@@ -159,6 +159,11 @@ export type AiRealismArtifact = {
   type: "high_quality_ai_render_v1";
   project_id: string;
   source_layout_hash: string;
+  site_frame: {
+    width_ft: number;
+    height_ft: number;
+    map_context_available: boolean;
+  };
   source_objects_summary: {
     total: number;
     objects_included: string[];

@@ -2,6 +2,11 @@ import type { SyntheticEvent } from "react";
 
 type AiRealismArtifactView = {
   project_id: string;
+  site_frame: {
+    width_ft: number;
+    height_ft: number;
+    map_context_available: boolean;
+  };
   source_objects_summary: {
     total: number;
     objects_included: string[];
@@ -17,6 +22,7 @@ type AiRealismPreviewOverlayProps = {
   blocker: string | null;
   stale: boolean;
   hasTerrainSource: boolean;
+  showMap: boolean;
   watermark: string;
   onRegenerate: () => void;
 };
@@ -30,13 +36,16 @@ export function AiRealismPreviewOverlay({
   blocker,
   stale,
   hasTerrainSource,
+  showMap,
   watermark,
   onRegenerate,
 }: AiRealismPreviewOverlayProps) {
   return (
     <div
       data-testid="ai-realism-preview"
-      className="pointer-events-none absolute inset-0 z-[160] flex items-center justify-center overflow-hidden rounded-[24px] bg-slate-950/35"
+      className={`pointer-events-none absolute inset-0 z-[160] flex items-center justify-center overflow-hidden rounded-[24px] ${
+        showMap ? "bg-white/5" : "bg-slate-950/12"
+      }`}
       onClick={stopPreviewPointerEvent}
       onDoubleClick={stopPreviewPointerEvent}
       onMouseDown={stopPreviewPointerEvent}
@@ -50,8 +59,14 @@ export function AiRealismPreviewOverlay({
             data-testid="ai-realism-image"
             src={artifact.image_data_url}
             alt="AI realism visualization generated from the current review layout"
-            className="pointer-events-none h-full w-full object-cover opacity-95"
+            className={`pointer-events-none h-full w-full object-contain ${showMap ? "opacity-90" : "opacity-100"}`}
           />
+          <div
+            data-testid="ai-realism-preview-badge"
+            className="absolute left-4 top-4 rounded-lg border border-white/55 bg-slate-950/72 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-lg backdrop-blur"
+          >
+            Preview · {showMap && artifact.site_frame.map_context_available ? "Live map + current layout" : "Current site layout"}
+          </div>
           <div
             data-testid="ai-realism-watermark"
             className="absolute inset-x-4 bottom-4 rounded-lg border border-white/30 bg-slate-950/66 px-4 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur"
@@ -74,6 +89,10 @@ export function AiRealismPreviewOverlay({
                         .map(([type, count]) => `${type}: ${count}`)
                         .join(", ")}`
                     : ""}
+                </p>
+                <p data-testid="ai-realism-site-frame" className="mt-0.5 text-[10px] text-slate-500">
+                  Site frame: {Math.round(artifact.site_frame.width_ft)} ft × {Math.round(artifact.site_frame.height_ft)} ft
+                  {showMap && artifact.site_frame.map_context_available ? " · registered over live map context" : " · local site coordinates"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-1">

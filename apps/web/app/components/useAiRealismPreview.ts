@@ -116,6 +116,13 @@ export function useAiRealismPreview({
       sourceSummary: aiRealismSourceSummary,
       missingInputs: aiRealismMissingInputs,
       hasTerrainSource,
+      lotWidth,
+      lotHeight,
+      mapContextAvailable:
+        typeof geocode?.lat === "number" &&
+        Number.isFinite(geocode.lat) &&
+        typeof geocode?.lng === "number" &&
+        Number.isFinite(geocode.lng),
       watermark: AI_REALISM_WATERMARK,
     }));
     setAiRealismBlocker(null);
@@ -130,7 +137,10 @@ export function useAiRealismPreview({
     aiRealismSourceObjects,
     aiRealismSourceSummary,
     currentProjectId,
+    geocode,
     hasTerrainSource,
+    lotHeight,
+    lotWidth,
     onAiRealismChange,
     planPreviewProjectId,
   ]);

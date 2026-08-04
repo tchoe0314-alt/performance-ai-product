@@ -105,9 +105,17 @@ export function PreviewPolygonObjects({
           const isBuildingSurface = visualKind === "building";
           const isAmenitySurface = item.type === "amenity";
           const isLandscapeSurface = visualKind === "landscape";
+          const parkingClipId = `plan-parking-clip-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
           return (
             <g key={`custom-poly-${item.id}`} data-semantic-layer={semanticLayerForPlacement(item)}>
+              {visualKind === "parking" ? (
+                <defs>
+                  <clipPath id={parkingClipId}>
+                    <polygon points={points.join(" ")} />
+                  </clipPath>
+                </defs>
+              ) : null}
               <polygon
                 data-testid={isBuildingSurface ? "professional-building-footprint" : "plan-polygon-object"}
                 points={points.join(" ")}
@@ -126,7 +134,11 @@ export function PreviewPolygonObjects({
                 </polygon>
               ) : null}
               {isHighQuality && visualKind === "parking" && !isFallbackBounds && supportsParkingModuleRendering(item) ? (
-                <g data-testid="plan-parking-stall-cues" opacity={cadReferenceMode ? 0.86 : 0.68}>
+                <g
+                  data-testid="plan-parking-stall-cues"
+                  opacity={cadReferenceMode ? 0.86 : 0.68}
+                  clipPath={`url(#${parkingClipId})`}
+                >
                   <line
                     x1={bounds.minX + (bounds.maxX - bounds.minX) * 0.1}
                     y1={(bounds.minY + bounds.maxY) / 2}

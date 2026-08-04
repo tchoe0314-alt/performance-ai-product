@@ -251,6 +251,54 @@ function corridorSurfaceGeometry(
   return geometry;
 }
 
+function polygonParkingStripeSegments(points: Array<[number, number]>) {
+  const clean = dedupePlanPoints(points);
+  if (clean.length < 3) return [];
+  const bounds = clean.reduce(
+    (acc, [x, y]) => ({
+      minX: Math.min(acc.minX, x),
+      minY: Math.min(acc.minY, y),
+      maxX: Math.max(acc.maxX, x),
+      maxY: Math.max(acc.maxY, y),
+    }),
+    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+  );
+  const vertical = bounds.maxX - bounds.minX >= bounds.maxY - bounds.minY;
+  const min = vertical ? bounds.minX : bounds.minY;
+  const max = vertical ? bounds.maxX : bounds.maxY;
+  const spacing = Math.max(7.5, Math.min(10, (max - min) / 22));
+  const segments: Array<[[number, number], [number, number]]> = [];
+  for (let value = min + spacing; value < max - spacing * 0.45; value += spacing) {
+    const intersections: number[] = [];
+    clean.forEach(([x1, y1], index) => {
+      const [x2, y2] = clean[(index + 1) % clean.length];
+      const a1 = vertical ? x1 : y1;
+      const a2 = vertical ? x2 : y2;
+      const b1 = vertical ? y1 : x1;
+      const b2 = vertical ? y2 : x2;
+      if (Math.abs(a2 - a1) < 0.0001) return;
+      const low = Math.min(a1, a2);
+      const high = Math.max(a1, a2);
+      if (value < low || value >= high) return;
+      const t = (value - a1) / (a2 - a1);
+      intersections.push(b1 + (b2 - b1) * t);
+    });
+    intersections.sort((a, b) => a - b);
+    for (let index = 0; index + 1 < intersections.length; index += 2) {
+      const start = intersections[index];
+      const end = intersections[index + 1];
+      if (end - start < 3) continue;
+      const inset = Math.min(2.2, (end - start) * 0.08);
+      segments.push(
+        vertical
+          ? [[value, start + inset], [value, end - inset]]
+          : [[start + inset, value], [end - inset, value]],
+      );
+    }
+  }
+  return segments.slice(0, 48);
+}
+
 export default function Preview3DCanvas({
   items,
   fullscreen = false,
@@ -291,7 +339,9 @@ export default function Preview3DCanvas({
             ? displayHeightForLayer(item, normalizeLayer(preview3DLayerText(item)))
             : null,
           priority:
-            item.meta?.hero_massing
+            getItemId(item, index) === selectedItemId
+              ? -2
+              : item.meta?.hero_massing
               ? -1
               : normalizeLayer(preview3DLayerText(item)) === "BUILDING"
               ? 0
@@ -313,7 +363,7 @@ export default function Preview3DCanvas({
         .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label))
         .slice(0, 6);
     },
-    [items],
+    [items, selectedItemId],
   );
   const massingStats = useMemo(() => {
     const visibleObjects = items.filter((item) => !item.terrainSample);
@@ -891,22 +941,17 @@ export default function Preview3DCanvas({
           }
           if (layer === "PARKING" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
             const stripeMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.34 });
-            const bounds = new THREE.Box3(
-              toScene(item.x, item.y, baseY),
-              toScene(item.x + item.w, item.y + item.h, baseY),
-            );
-            const stripeCount = Math.max(2, Math.min(12, Math.floor(Math.abs(bounds.max.x - bounds.min.x) / 9)));
-            for (let stripeIndex = 1; stripeIndex < stripeCount; stripeIndex += 1) {
-              const x = bounds.min.x + ((bounds.max.x - bounds.min.x) * stripeIndex) / stripeCount;
+            const stripeSegments = polygonParkingStripeSegments(planPoints);
+            stripeSegments.forEach(([start, end]) => {
               const line = new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints([
-                  new THREE.Vector3(x, baseY + displayDepth + 0.06, bounds.min.z),
-                  new THREE.Vector3(x, baseY + displayDepth + 0.06, bounds.max.z),
+                  toScene(start[0], start[1], baseY + displayDepth + 0.06),
+                  toScene(end[0], end[1], baseY + displayDepth + 0.06),
                 ]),
                 stripeMaterial,
               );
               object.add(line);
-            }
+            });
           }
         } else if (layer === "ROAD" || layer === "SIDEWALK") {
           const corridorWidth = Math.max(

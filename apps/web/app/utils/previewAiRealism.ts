@@ -14,6 +14,8 @@ export type AiRealismSourceObject = {
   rotation: number;
   geometryType: string;
   geometry?: Array<[number, number]>;
+  roofProfile: string;
+  stallCount: number | null;
   source: string;
   confidence: number | null;
 };
@@ -39,6 +41,8 @@ export function buildAiRealismSourceObjects(items: BuildingPlacement[]) {
       rotation: Number(item.rotation ?? 0),
       geometryType: item.geometryType || "rect",
       geometry: Array.isArray(item.geometry) ? item.geometry : undefined,
+      roofProfile: String(item.meta?.roof_profile || "flat"),
+      stallCount: typeof item.stallCount === "number" ? item.stallCount : null,
       source: item.source || (item.generated ? "generated" : "user"),
       confidence: typeof item.confidence === "number" ? item.confidence : null,
     }))
@@ -91,48 +95,66 @@ function svgEscape(value: string) {
     .replace(/"/g, "&quot;");
 }
 
+const isBuildingType = (type: string) => type === "building" || type.endsWith("_building");
+
+function scaleGeometry(points: Array<[number, number]>, factor: number) {
+  if (!points.length) return [];
+  const center = points.reduce(
+    (acc, [x, y]) => ({ x: acc.x + x / points.length, y: acc.y + y / points.length }),
+    { x: 0, y: 0 },
+  );
+  return points.map(([x, y]) => [center.x + (x - center.x) * factor, center.y + (y - center.y) * factor] as [number, number]);
+}
+
 function buildAiRealismSvg({
   sourceObjects,
   promptSummary,
   watermark,
+  lotWidth,
+  lotHeight,
+  mapContextAvailable,
 }: {
   sourceObjects: AiRealismSourceObject[];
   promptSummary: string;
   watermark: string;
+  lotWidth: number;
+  lotHeight: number;
+  mapContextAvailable: boolean;
 }) {
   const visibleObjects = sourceObjects.filter((item) => item.type !== "site");
-  const bounds = visibleObjects.reduce(
-    (acc, item) => {
-      const points = Array.isArray(item.geometry) && item.geometry.length ? item.geometry : [[item.x, item.y], [item.x + item.w, item.y + item.d]];
-      points.forEach(([x, y]) => {
-        acc.minX = Math.min(acc.minX, x);
-        acc.minY = Math.min(acc.minY, y);
-        acc.maxX = Math.max(acc.maxX, x);
-        acc.maxY = Math.max(acc.maxY, y);
-      });
-      return acc;
-    },
-    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
-  );
-  const safeBounds = Number.isFinite(bounds.minX)
-    ? bounds
-    : { minX: 0, minY: 0, maxX: 1000, maxY: 700 };
-  const sourceW = Math.max(1, safeBounds.maxX - safeBounds.minX);
-  const sourceH = Math.max(1, safeBounds.maxY - safeBounds.minY);
-  const pad = 76;
-  const scale = Math.min((1200 - pad * 2) / sourceW, (760 - pad * 2) / sourceH);
-  const offsetX = (1200 - sourceW * scale) / 2;
-  const offsetY = (760 - sourceH * scale) / 2;
-  const sx = (x: number) => offsetX + (x - safeBounds.minX) * scale;
-  const sy = (y: number) => offsetY + (y - safeBounds.minY) * scale;
+  const sourceW = Math.max(1, Number.isFinite(lotWidth) ? lotWidth : 1000);
+  const sourceH = Math.max(1, Number.isFinite(lotHeight) ? lotHeight : 700);
+  const padX = 76;
+  const padY = 68;
+  const scale = Math.min((1200 - padX * 2) / sourceW, (760 - padY * 2) / sourceH);
+  const frameW = sourceW * scale;
+  const frameH = sourceH * scale;
+  const offsetX = (1200 - frameW) / 2;
+  const offsetY = (760 - frameH) / 2;
+  const sx = (x: number) => offsetX + x * scale;
+  const sy = (y: number) => offsetY + y * scale;
   const rect = (item: AiRealismSourceObject) => ({
     x: sx(item.x),
     y: sy(item.y),
     w: Math.max(4, item.w * scale),
     h: Math.max(4, item.d * scale),
   });
-  const pointList = (item: AiRealismSourceObject) =>
-    (item.geometry || []).map(([x, y]) => `${sx(x).toFixed(1)},${sy(y).toFixed(1)}`).join(" ");
+  const hasPolygon = (item: AiRealismSourceObject) =>
+    item.geometryType === "polygon" && Array.isArray(item.geometry) && item.geometry.length >= 3;
+  const pointList = (item: AiRealismSourceObject, points = item.geometry || []) =>
+    points.map(([x, y]) => `${sx(x).toFixed(1)},${sy(y).toFixed(1)}`).join(" ");
+  const safeId = (value: string) => value.replace(/[^a-zA-Z0-9_-]/g, "-");
+  const rectTransform = (item: AiRealismSourceObject, r: ReturnType<typeof rect>) =>
+    !hasPolygon(item) && Math.abs(item.rotation) > 0.01
+      ? ` transform="rotate(${item.rotation.toFixed(2)} ${(r.x + r.w / 2).toFixed(1)} ${(r.y + r.h / 2).toFixed(1)})"`
+      : "";
+  const polygonOrRect = (
+    item: AiRealismSourceObject,
+    r: ReturnType<typeof rect>,
+    attributes: string,
+  ) => hasPolygon(item)
+    ? `<polygon data-geometry-kind="polygon" points="${pointList(item)}" ${attributes}/>`
+    : `<rect data-geometry-kind="rect" x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" ${attributes}/>`;
   const drawOrder = [...visibleObjects].sort((a, b) => {
     const priority = (item: AiRealismSourceObject) => {
       if (item.type === "lot_block") return 1;
@@ -140,50 +162,68 @@ function buildAiRealismSvg({
       if (item.type === "open_space" || item.type === "landscape") return 3;
       if (item.type === "parking") return 4;
       if (item.type === "utility_corridor") return 5;
-      if (item.type === "building") return 6;
+      if (isBuildingType(item.type)) return 6;
       if (item.type === "basin" || item.type === "pond") return 7;
       return 8;
     };
     return priority(a) - priority(b);
   });
-  const objectSvg = drawOrder.map((item) => {
+  const objectSvg = drawOrder.map((item, itemIndex) => {
     const type = String(item.type || "");
     const r = rect(item);
+    const transform = rectTransform(item, r);
+    const objectAttrs = `data-ai-object-id="${svgEscape(item.id)}" data-ai-object-type="${svgEscape(type)}"`;
     if ((type === "road" || type === "driveway") && item.geometry?.length) {
-      return `<polyline points="${pointList(item)}" fill="none" stroke="#475569" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/><polyline points="${pointList(item)}" fill="none" stroke="#f8fafc" stroke-width="4" stroke-dasharray="24 20" stroke-linecap="round" opacity="0.9"/>`;
+      return `<g ${objectAttrs}><polyline points="${pointList(item)}" fill="none" stroke="#475569" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" opacity="0.72"/><polyline points="${pointList(item)}" fill="none" stroke="#f8fafc" stroke-width="4" stroke-dasharray="24 20" stroke-linecap="round" opacity="0.88"/></g>`;
     }
     if (type === "utility_corridor" && item.geometry?.length) {
       const color = item.label.toLowerCase().includes("water") ? "#0ea5e9" : item.label.toLowerCase().includes("sanitary") ? "#c026d3" : "#0284c7";
-      return `<polyline points="${pointList(item)}" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="10 8" opacity="0.72"/>${(item.geometry || []).map(([x, y]) => `<circle cx="${sx(x).toFixed(1)}" cy="${sy(y).toFixed(1)}" r="4" fill="#fff" stroke="${color}" stroke-width="2"/>`).join("")}`;
+      return `<g ${objectAttrs}><polyline points="${pointList(item)}" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="10 8" opacity="0.78"/>${item.geometry.map(([x, y]) => `<circle cx="${sx(x).toFixed(1)}" cy="${sy(y).toFixed(1)}" r="4" fill="#fff" stroke="${color}" stroke-width="2"/>`).join("")}</g>`;
     }
-    if ((type === "open_space" || type === "amenity") && item.geometry?.length) {
+    if ((type === "open_space" || type === "amenity") && hasPolygon(item)) {
       const fill = type === "amenity" ? "#d7b56b" : "#9fbc72";
       const stroke = type === "amenity" ? "#a16207" : "#4d7c0f";
-      return `<polygon points="${pointList(item)}" fill="${fill}" fill-opacity="0.5" stroke="${stroke}" stroke-width="3"/><polygon points="${pointList(item)}" fill="url(#land)" opacity="0.28"/>`;
+      return `<g ${objectAttrs}><polygon data-geometry-kind="polygon" points="${pointList(item)}" fill="${fill}" fill-opacity="0.42" stroke="${stroke}" stroke-width="3"/><polygon points="${pointList(item)}" fill="url(#land)" opacity="0.18"/></g>`;
     }
     if (type === "lot_block") {
-      return `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" rx="6" fill="#f8fafc" fill-opacity="0.52" stroke="#0f766e" stroke-width="2"/>`;
+      return `<g ${objectAttrs}${transform}>${polygonOrRect(item, r, 'rx="6" fill="#f8fafc" fill-opacity="0.32" stroke="#0f766e" stroke-width="2"')}</g>`;
     }
     if (type === "parking") {
-      const stalls = Array.from({ length: 10 }).map((_, idx) => {
-        const x = r.x + r.w * (0.12 + idx * 0.084);
-        return `<line x1="${x.toFixed(1)}" y1="${(r.y + r.h * 0.12).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(r.y + r.h * 0.88).toFixed(1)}" stroke="#e2e8f0" stroke-width="2"/>`;
+      const clipId = `ai-parking-clip-${safeId(item.id)}-${itemIndex}`;
+      const stallCount = Math.max(4, Math.min(28, Math.round((item.stallCount || Math.max(item.w / 9, 8)) / 2)));
+      const stalls = Array.from({ length: stallCount }).map((_, idx) => {
+        const x = r.x + r.w * (0.08 + (idx / Math.max(stallCount - 1, 1)) * 0.84);
+        return `<line x1="${x.toFixed(1)}" y1="${(r.y + r.h * 0.08).toFixed(1)}" x2="${x.toFixed(1)}" y2="${(r.y + r.h * 0.92).toFixed(1)}" stroke="#f8fafc" stroke-width="2" opacity="0.82"/>`;
       }).join("");
-      return `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="#475569" fill-opacity="0.42" stroke="#f59e0b" stroke-width="3"/>${stalls}`;
+      const clipShape = hasPolygon(item)
+        ? `<polygon points="${pointList(item)}"/>`
+        : `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}"/>`;
+      const boundary = polygonOrRect(item, r, 'fill="#475569" fill-opacity="0.54" stroke="#f59e0b" stroke-width="3"');
+      return `<g ${objectAttrs}${transform}><defs><clipPath id="${clipId}">${clipShape}</clipPath></defs>${boundary}<g clip-path="url(#${clipId})">${stalls}<rect x="${r.x.toFixed(1)}" y="${(r.y + r.h * 0.42).toFixed(1)}" width="${r.w.toFixed(1)}" height="${Math.max(5, r.h * 0.16).toFixed(1)}" fill="#334155" fill-opacity="0.72"/></g><title>${svgEscape(item.label)} · ${item.stallCount || "layout"} stalls shown as a visual planning preview</title></g>`;
     }
-    if (type === "building") {
-      const roof = item.label.toLowerCase().includes("civic") ? "#111827" : "#6b7280";
-      return `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="#d6c8a8" stroke="#4b5563" stroke-width="3" filter="url(#softShadow)"/><path d="M ${r.x.toFixed(1)} ${(r.y + r.h * 0.12).toFixed(1)} L ${(r.x + r.w).toFixed(1)} ${(r.y + r.h * 0.12).toFixed(1)}" stroke="${roof}" stroke-width="2" opacity="0.6"/>`;
+    if (isBuildingType(type)) {
+      const roofColor = item.label.toLowerCase().includes("civic") ? "#111827" : "#4b5563";
+      const footprint = polygonOrRect(item, r, 'fill="#d6c8a8" fill-opacity="0.9" stroke="#374151" stroke-width="3" filter="url(#softShadow)"');
+      const roofInset = hasPolygon(item)
+        ? `<polygon points="${pointList(item, scaleGeometry(item.geometry || [], 0.88))}" fill="none" stroke="${roofColor}" stroke-width="2" opacity="0.64"/>`
+        : `<rect x="${(r.x + r.w * 0.06).toFixed(1)}" y="${(r.y + r.h * 0.08).toFixed(1)}" width="${(r.w * 0.88).toFixed(1)}" height="${(r.h * 0.84).toFixed(1)}" fill="none" stroke="${roofColor}" stroke-width="2" opacity="0.64"/>`;
+      return `<g ${objectAttrs}${transform}>${footprint}${roofInset}<title>${svgEscape(item.label)} · ${Math.round(item.h || 0)} ft high · ${svgEscape(item.roofProfile)} roof</title></g>`;
     }
     if (type === "basin" || type === "pond") {
-      return `<ellipse cx="${(r.x + r.w / 2).toFixed(1)}" cy="${(r.y + r.h / 2).toFixed(1)}" rx="${(r.w / 2).toFixed(1)}" ry="${(r.h / 2).toFixed(1)}" fill="#7dd3fc" fill-opacity="0.64" stroke="#0284c7" stroke-width="3"/><ellipse cx="${(r.x + r.w / 2).toFixed(1)}" cy="${(r.y + r.h / 2).toFixed(1)}" rx="${(r.w * 0.32).toFixed(1)}" ry="${(r.h * 0.28).toFixed(1)}" fill="none" stroke="#0369a1" stroke-width="2" opacity="0.55"/>`;
+      if (hasPolygon(item)) {
+        return `<g ${objectAttrs}><polygon data-geometry-kind="polygon" points="${pointList(item)}" fill="#7dd3fc" fill-opacity="0.58" stroke="#0284c7" stroke-width="3"/><polygon points="${pointList(item, scaleGeometry(item.geometry || [], 0.62))}" fill="#38bdf8" fill-opacity="0.42" stroke="#0369a1" stroke-width="2"/></g>`;
+      }
+      return `<g ${objectAttrs}${transform}><ellipse cx="${(r.x + r.w / 2).toFixed(1)}" cy="${(r.y + r.h / 2).toFixed(1)}" rx="${(r.w / 2).toFixed(1)}" ry="${(r.h / 2).toFixed(1)}" fill="#7dd3fc" fill-opacity="0.58" stroke="#0284c7" stroke-width="3"/><ellipse cx="${(r.x + r.w / 2).toFixed(1)}" cy="${(r.y + r.h / 2).toFixed(1)}" rx="${(r.w * 0.32).toFixed(1)}" ry="${(r.h * 0.28).toFixed(1)}" fill="none" stroke="#0369a1" stroke-width="2" opacity="0.55"/></g>`;
     }
     if (type === "landscape") {
-      return `<circle cx="${(r.x + r.w / 2).toFixed(1)}" cy="${(r.y + r.h / 2).toFixed(1)}" r="${Math.max(5, Math.min(r.w, r.h) * 0.42).toFixed(1)}" fill="#4d7c0f" fill-opacity="0.46" stroke="#365314" stroke-width="2"/>`;
+      return `<g ${objectAttrs}><circle cx="${(r.x + r.w / 2).toFixed(1)}" cy="${(r.y + r.h / 2).toFixed(1)}" r="${Math.max(5, Math.min(r.w, r.h) * 0.42).toFixed(1)}" fill="#4d7c0f" fill-opacity="0.46" stroke="#365314" stroke-width="2"/></g>`;
     }
-    return `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" fill="#94a3b8" fill-opacity="0.32" stroke="#475569" stroke-width="2"/>`;
+    return `<g ${objectAttrs}${transform}>${polygonOrRect(item, r, 'fill="#94a3b8" fill-opacity="0.3" stroke="#475569" stroke-width="2"')}</g>`;
   }).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" role="img" aria-label="AI visualization generated from current review layout"><defs><linearGradient id="site" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f6f7ef"/><stop offset="0.62" stop-color="#dce8d2"/><stop offset="1" stop-color="#c8dbbd"/></linearGradient><filter id="softShadow"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#334155" flood-opacity="0.15"/></filter><pattern id="land" width="30" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)"><path d="M0 30 L30 0" stroke="#5f7f52" stroke-width="1" opacity="0.42"/></pattern></defs><rect width="1200" height="760" fill="#f8fafc"/><rect x="36" y="36" width="1128" height="688" rx="22" fill="url(#site)" stroke="#556651" stroke-width="3"/><rect x="36" y="36" width="1128" height="688" rx="22" fill="url(#land)" opacity="0.32"/>${objectSvg}<text x="58" y="72" fill="#0f172a" font-family="Arial, sans-serif" font-size="22" font-weight="700">AI visualization</text><text x="58" y="100" fill="#334155" font-family="Arial, sans-serif" font-size="14">${svgEscape(promptSummary).slice(0, 150)}</text><rect x="52" y="678" width="1096" height="36" rx="8" fill="rgba(15,23,42,0.66)"/><text x="72" y="701" fill="#fff" font-family="Arial, sans-serif" font-size="15">${svgEscape(watermark)}</text></svg>`;
+  const siteFill = mapContextAvailable ? "#dff3db" : "url(#site)";
+  const siteFillOpacity = mapContextAvailable ? "0.10" : "0.94";
+  const hatchOpacity = mapContextAvailable ? "0.055" : "0.22";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid meet" role="img" aria-label="AI preview generated from current site layout" data-map-grounded="${mapContextAvailable ? "true" : "false"}"><defs><linearGradient id="site" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f6f7ef"/><stop offset="0.62" stop-color="#dce8d2"/><stop offset="1" stop-color="#c8dbbd"/></linearGradient><filter id="softShadow"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#0f172a" flood-opacity="0.24"/></filter><pattern id="land" width="30" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)"><path d="M0 30 L30 0" stroke="#5f7f52" stroke-width="1" opacity="0.42"/></pattern></defs><rect width="1200" height="760" fill="transparent"/><rect data-ai-site-frame="true" x="${offsetX.toFixed(1)}" y="${offsetY.toFixed(1)}" width="${frameW.toFixed(1)}" height="${frameH.toFixed(1)}" rx="8" fill="${siteFill}" fill-opacity="${siteFillOpacity}" stroke="#334155" stroke-width="2"/><rect x="${offsetX.toFixed(1)}" y="${offsetY.toFixed(1)}" width="${frameW.toFixed(1)}" height="${frameH.toFixed(1)}" rx="8" fill="url(#land)" opacity="${hatchOpacity}"/><g data-ai-layout-preview="true">${objectSvg}</g><g><rect x="52" y="684" width="1096" height="30" rx="7" fill="#0f172a" fill-opacity="0.72"/><text x="70" y="704" fill="#fff" font-family="Arial, sans-serif" font-size="13" font-weight="700">PREVIEW · ${svgEscape(promptSummary).slice(0, 92)} · ${svgEscape(watermark).slice(0, 82)}</text></g></svg>`;
 }
 
 export function aiRealismMissingInputs({
@@ -196,8 +236,13 @@ export function aiRealismMissingInputs({
   geocode?: { lat?: number; lng?: number } | null;
 }) {
   const missing: string[] = [];
+  const hasMapCoordinates =
+    typeof geocode?.lat === "number" &&
+    Number.isFinite(geocode.lat) &&
+    typeof geocode?.lng === "number" &&
+    Number.isFinite(geocode.lng);
   if (!hasTerrainSource) missing.push("terrain/source confidence");
-  if (!geocode?.lat || !geocode?.lng) missing.push("source-backed map/geocode context");
+  if (!hasMapCoordinates) missing.push("source-backed map/geocode context");
   if (!sourceObjects.some((item) => item.type === "road" || item.type === "driveway")) {
     missing.push("roads/driveways");
   }
@@ -215,6 +260,9 @@ export function createAiRealismArtifact({
   sourceSummary,
   missingInputs,
   hasTerrainSource,
+  lotWidth,
+  lotHeight,
+  mapContextAvailable,
   watermark,
 }: {
   currentProjectId?: string | null;
@@ -224,6 +272,9 @@ export function createAiRealismArtifact({
   sourceSummary: AiRealismArtifact["source_objects_summary"];
   missingInputs: string[];
   hasTerrainSource: boolean;
+  lotWidth: number;
+  lotHeight: number;
+  mapContextAvailable: boolean;
   watermark: string;
 }): AiRealismArtifact {
   const generated_timestamp = new Date().toISOString();
@@ -231,7 +282,7 @@ export function createAiRealismArtifact({
   const counts = sourceSummary.counts_by_type;
   const promptSummary = [
     `${sourceObjects.length} review layout objects`,
-    counts.building || counts.multifamily_building || counts.retail_building ? "building massing" : "",
+    Object.keys(counts).some(isBuildingType) ? "building massing" : "",
     counts.parking ? "parking fields" : "",
     counts.road || counts.driveway ? "roads and driveways" : "",
     counts.basin ? "detention basin" : "",
@@ -240,12 +291,17 @@ export function createAiRealismArtifact({
     .filter(Boolean)
     .join(", ");
   const image_data_url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-    buildAiRealismSvg({ sourceObjects, promptSummary, watermark }),
+    buildAiRealismSvg({ sourceObjects, promptSummary, watermark, lotWidth, lotHeight, mapContextAvailable }),
   )}`;
   return {
     type: "high_quality_ai_render_v1",
     project_id,
     source_layout_hash: sourceLayoutHash,
+    site_frame: {
+      width_ft: Math.max(1, lotWidth),
+      height_ft: Math.max(1, lotHeight),
+      map_context_available: mapContextAvailable,
+    },
     source_objects_summary: sourceSummary,
     missing_inputs: missingInputs,
     stale: false,
