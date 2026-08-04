@@ -530,6 +530,23 @@ export function useDashboardSiteAddressAction({
           ] as const) {
             if (liveSiteInputs[key] !== undefined) writableSiteInputs[key] = liveSiteInputs[key];
           }
+          const liveSiteObject = Array.isArray(liveProjectInput.manual_fields?.site_objects)
+            ? liveProjectInput.manual_fields.site_objects.find((item) => item?.type === "site")
+            : undefined;
+          if (writableSiteInputs.site_boundary_geometry === undefined && Array.isArray(liveSiteObject?.geometry)) {
+            writableSiteInputs.site_boundary_geometry = liveSiteObject.geometry;
+          }
+          if (writableSiteInputs.site_boundary_source === undefined && liveSiteObject) {
+            writableSiteInputs.site_boundary_source =
+              liveSiteObject.meta?.source ?? liveSiteObject.source ?? "manual_drawn";
+          }
+          if (writableSiteInputs.site_boundary_state === undefined && liveSiteObject) {
+            writableSiteInputs.site_boundary_state =
+              liveSiteObject.meta?.site_boundary_state ?? (liveSiteObject.locked ? "locked_canonical" : "draft_editable");
+          }
+          if (writableSiteInputs.site_boundary_acres === undefined && liveSiteObject?.meta?.acres !== undefined) {
+            writableSiteInputs.site_boundary_acres = liveSiteObject.meta.acres;
+          }
         }
         nextSiteInputs.site_alignment_locked = preserveLatestLockedSite;
         if (preserveLatestLockedSite) {
@@ -567,7 +584,17 @@ export function useDashboardSiteAddressAction({
             site_inputs: nextSiteInputs,
           },
           manual_fields: preserveLatestLockedSite
-            ? liveProjectInput.manual_fields ?? geocodedProjectInput.manual_fields
+            ? {
+                ...(geocodedProjectInput.manual_fields ?? {}),
+                ...(liveProjectInput.manual_fields ?? {}),
+                // Creating a centered site after Apply Address is a common
+                // path. Keep the newly requested dimensions even when the
+                // live project already has name/file fields from the earlier
+                // address-only save.
+                ...(overrideSiteWidth && overrideSiteHeight
+                  ? { lot: geocodedProjectInput.manual_fields?.lot }
+                  : {}),
+              }
             : geocodedProjectInput.manual_fields,
         };
         setCurrentProject((project) =>

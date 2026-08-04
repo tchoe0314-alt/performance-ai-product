@@ -235,6 +235,8 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
   }
   await expect(page.getByLabel("Site width in feet")).toHaveValue("1000");
   await expect(page.getByLabel("Site depth in feet")).toHaveValue("1000");
+  await page.getByRole("button", { name: "Apply address" }).click();
+  await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary", { timeout: 30_000 });
   await page.getByTestId("create-centered-site-button").click();
 
   await page.getByRole("button", { name: "Setup" }).first().click();
@@ -265,6 +267,7 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
   }
   expect(savedProjectInput).toContain("\"w\":1000");
   expect(savedProjectInput).toContain("\"h\":1000");
+  expect(savedProjectInput).toContain("\"site_alignment_locked\":true");
   expect(savedProjectInput).toContain("20525 Margo St");
 });
 
