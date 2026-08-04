@@ -5621,6 +5621,7 @@ function PerformanceAIDashboardView({
     onOpenDeliverables: () => handleOpenSidePanel("deliverables"),
   });
   const workspaceCanvasAreaProps = useDashboardCanvasAreaProps({
+    authToken: token,
     siteScaleLocked,
     workspaceChromeHidden,
     sidebarVisible,

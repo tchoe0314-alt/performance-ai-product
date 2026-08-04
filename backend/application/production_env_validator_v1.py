@@ -46,6 +46,11 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("CIVORA_AI_PROVIDER", "ai", ("public_beta", "production"), description="AI provider: none, openai, ollama, or local."),
     EnvVarSpec("OPENAI_API_KEY", "ai", (), optional=True, secret=True, description="Required when CIVORA_AI_PROVIDER=openai."),
     EnvVarSpec("CIVORA_OLLAMA_BASE_URL", "ai", (), optional=True, description="Required when CIVORA_AI_PROVIDER is ollama/local."),
+    EnvVarSpec("CIVORA_IMAGE_PROVIDER", "ai_image", (), optional=True, description="External visual-concept provider: none or openai."),
+    EnvVarSpec("CIVORA_IMAGE_MODEL", "ai_image", (), optional=True, description="Image model used for visual concepts. Defaults to gpt-image-2."),
+    EnvVarSpec("CIVORA_IMAGE_QUALITY", "ai_image", (), optional=True, description="External image quality: low, medium, high, or auto."),
+    EnvVarSpec("CIVORA_IMAGE_OUTPUT_FORMAT", "ai_image", (), optional=True, description="External image format: webp, png, or jpeg."),
+    EnvVarSpec("CIVORA_IMAGE_TIMEOUT_SECONDS", "ai_image", (), optional=True, description="Maximum external image request time."),
     EnvVarSpec("CIVORA_JOB_TIMEOUT_SECONDS", "queue", (), optional=True, description="Maximum in-process job runtime."),
     EnvVarSpec("CIVORA_MEMORY_WARN_MB", "monitoring", (), optional=True, description="Runtime memory warning threshold."),
     EnvVarSpec("CIVORA_RUNTIME_DEBUG_BEARER_TOKEN", "monitoring", (), optional=True, secret=True, description="Audit token for runtime sampling tools."),
@@ -365,6 +370,45 @@ def validate_production_env_v1(
         blockers.append(_issue("blocker", "ollama_url_missing", "CIVORA_OLLAMA_BASE_URL is required for local/ollama provider mode.", env_vars=["CIVORA_AI_PROVIDER", "CIVORA_OLLAMA_BASE_URL"]))
     elif ai_provider in {"none", "disabled", "off"} and mode == "production":
         warnings.append(_issue("warning", "ai_provider_disabled", "AI provider is disabled in production; deterministic fallbacks only.", env_vars=["CIVORA_AI_PROVIDER"]))
+
+    image_provider = str(env.get("CIVORA_IMAGE_PROVIDER") or "none").strip().lower()
+    if image_provider == "openai" and not str(env.get("OPENAI_API_KEY") or "").strip():
+        blockers.append(
+            _issue(
+                "blocker",
+                "image_openai_key_missing",
+                "OPENAI_API_KEY is required when CIVORA_IMAGE_PROVIDER=openai.",
+                env_vars=["CIVORA_IMAGE_PROVIDER", "OPENAI_API_KEY"],
+            )
+        )
+    elif image_provider not in {"", "none", "disabled", "off", "openai"}:
+        blockers.append(
+            _issue(
+                "blocker",
+                "unsupported_image_provider",
+                "CIVORA_IMAGE_PROVIDER must be none or openai.",
+                env_vars=["CIVORA_IMAGE_PROVIDER"],
+            )
+        )
+    elif image_provider in {"", "none", "disabled", "off"}:
+        warnings.append(
+            _issue(
+                "warning",
+                "image_provider_disabled",
+                "External photorealistic visualization is disabled; technical previews remain available.",
+                env_vars=["CIVORA_IMAGE_PROVIDER"],
+            )
+        )
+    image_quality = str(env.get("CIVORA_IMAGE_QUALITY") or "medium").strip().lower()
+    if image_quality not in {"low", "medium", "high", "auto"}:
+        warnings.append(
+            _issue(
+                "warning",
+                "invalid_image_quality",
+                "CIVORA_IMAGE_QUALITY should be low, medium, high, or auto; runtime will use medium.",
+                env_vars=["CIVORA_IMAGE_QUALITY"],
+            )
+        )
 
     if mode in PRODUCTION_MODES and not (env.get("MAPBOX_TOKEN") or env.get("NEXT_PUBLIC_MAPBOX_TOKEN")):
         warnings.append(_issue("warning", "mapbox_missing", "Mapbox/geocode config is missing; address lookup should return blocked responses.", env_vars=["MAPBOX_TOKEN", "NEXT_PUBLIC_MAPBOX_TOKEN"]))

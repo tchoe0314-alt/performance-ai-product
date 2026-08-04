@@ -62,7 +62,7 @@ test("keeps available map context and preserves complex building and parking pol
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
   });
 
-  await page.goto("/demo/workspace?debugPreview=1&chat230EmptyObjects=1", {
+  await page.goto("/demo/workspace?debugPreview=1&chat230EmptyObjects=1&aiRealismProvider=mock", {
     waitUntil: "domcontentloaded",
   });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });

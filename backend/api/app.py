@@ -45,6 +45,11 @@ from backend.application.auth_workflows import (
     register_user as application_register_user,
 )
 from backend.application.chat_workflows import decide_chat as application_decide_chat
+from backend.application.ai_visualization_workflows import (
+    build_ai_visualization_job_runner as application_build_ai_visualization_job_runner,
+    queue_ai_visualization_job as application_queue_ai_visualization_job,
+)
+from backend.ai.image_provider import image_provider_status
 from backend.application.cost_workflows import (
     normalize_unit_price_book_response as application_normalize_unit_price_book_response,
     unit_price_book_from_csv_response as application_unit_price_book_from_csv_response,
@@ -221,6 +226,7 @@ _RATE_LIMIT_DEFAULTS: Dict[str, tuple[int, int]] = {
     "planner": (40, 60),
     "preview": (120, 60),
     "export": (60, 60),
+    "image": (6, 60),
 }
 _RATE_LIMIT_EVENTS: Dict[str, deque[float]] = {}
 _RATE_LIMIT_LOCK = threading.Lock()
@@ -473,6 +479,17 @@ class ArtifactPayload(BaseModel):
 
 class QueueArtifactExportPayload(ArtifactPayload):
     pass
+
+
+class QueueAiVisualizationPayload(BaseModel):
+    project_id: Optional[str] = None
+    source_layout_hash: str
+    source_objects: List[Dict[str, Any]] = Field(default_factory=list)
+    source_objects_summary: Dict[str, Any] = Field(default_factory=dict)
+    missing_inputs: List[str] = Field(default_factory=list)
+    site_frame: Dict[str, Any] = Field(default_factory=dict)
+    geocode: Dict[str, Any] = Field(default_factory=dict)
+    visual_style: str = "orthographic aerial site concept"
 
 
 class ChatDecisionPayload(BaseModel):
@@ -1146,6 +1163,12 @@ def register_job_handlers() -> None:
             project_store=PROJECT_STORE,
             update_job_progress=JOB_QUEUE.update_job_progress,
             fetch_source_context=application_fetch_existing_conditions_online,
+        ),
+    )
+    _register_job_handler(
+        "ai_visualization",
+        application_build_ai_visualization_job_runner(
+            update_job_progress=JOB_QUEUE.update_job_progress,
         ),
     )
 
@@ -2717,6 +2740,46 @@ def queue_export_report_job(
         export_kind="report",
     )
     response["billing_usage_gate_v1"] = usage_gate(action="queue_export_report_job", user=current_user)
+    return response
+
+
+@app.get("/api/ai-visualization/status")
+def ai_visualization_status(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    _ = current_user
+    status = image_provider_status()
+    return {
+        "success": True,
+        "configured": bool(status.get("configured")),
+        "provider": str(status.get("provider") or "none"),
+        "model": str(status.get("model") or ""),
+        "external": bool(status.get("external")),
+        "message": str(status.get("reason") or "External photorealistic visualization is ready."),
+        "visualization_only": True,
+        "not_engineering_evidence": True,
+    }
+
+
+@app.post("/api/jobs/ai-visualization")
+def queue_ai_visualization_job(
+    payload: QueueAiVisualizationPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("image")),
+) -> Dict[str, Any]:
+    request_payload = _model_to_dict(payload)
+    project_id = request_payload.pop("project_id", None)
+    response = application_queue_ai_visualization_job(
+        project_store=PROJECT_STORE,
+        job_queue=JOB_QUEUE,
+        user_id=current_user["user_id"],
+        project_id=project_id,
+        request_payload=request_payload,
+    )
+    response["billing_usage_gate_v1"] = usage_gate(
+        action="queue_ai_visualization_job",
+        user=current_user,
+    )
     return response
 
 

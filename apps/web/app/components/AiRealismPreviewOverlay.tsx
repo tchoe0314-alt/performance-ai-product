@@ -1,6 +1,9 @@
 import type { CSSProperties, SyntheticEvent } from "react";
 
+import type { AiRealismGenerationStatus } from "./previewPanelTypes";
+
 type AiRealismArtifactView = {
+  type: "high_quality_ai_render_v1" | "high_quality_ai_render_v2";
   project_id: string;
   site_frame: {
     width_ft: number;
@@ -15,11 +18,17 @@ type AiRealismArtifactView = {
   missing_inputs: string[];
   generated_timestamp: string;
   image_data_url: string;
+  renderer?: "local_reference" | "external";
+  provider?: string;
+  model?: string;
+  mime_type?: string;
+  map_context_used?: boolean;
 };
 
 type AiRealismPreviewOverlayProps = {
   artifact: AiRealismArtifactView | null;
   blocker: string | null;
+  generationStatus: AiRealismGenerationStatus;
   stale: boolean;
   hasTerrainSource: boolean;
   showMap: boolean;
@@ -35,6 +44,7 @@ const stopPreviewPointerEvent = (event: SyntheticEvent) => {
 export function AiRealismPreviewOverlay({
   artifact,
   blocker,
+  generationStatus,
   stale,
   hasTerrainSource,
   showMap,
@@ -73,7 +83,9 @@ export function AiRealismPreviewOverlay({
             data-testid="ai-realism-preview-badge"
             className="absolute left-4 top-4 rounded-lg border border-white/55 bg-slate-950/72 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-lg backdrop-blur"
           >
-            Visual preview · {showMap && artifact.site_frame.map_context_available ? "Live map + proposed design" : "Proposed site design"}
+            {artifact.renderer === "external"
+              ? `Photoreal concept · ${showMap && artifact.site_frame.map_context_available ? "over live map" : "proposed site design"}`
+              : `Visual preview · ${showMap && artifact.site_frame.map_context_available ? "Live map + proposed design" : "Proposed site design"}`}
           </div>
           <div
             data-testid="ai-realism-watermark"
@@ -81,6 +93,18 @@ export function AiRealismPreviewOverlay({
           >
             {watermark}
           </div>
+          {generationStatus.state === "queued" || generationStatus.state === "generating" ? (
+            <div
+              data-testid="ai-realism-generation-status"
+              className="pointer-events-none absolute bottom-14 left-4 flex max-w-[min(28rem,calc(100%-2rem))] items-center gap-2 rounded-lg border border-white/50 bg-white/92 px-3 py-2 text-xs text-slate-700 shadow-lg backdrop-blur"
+            >
+              <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
+              <span>
+                <strong>{generationStatus.stage || "Updating visualization"}</strong>
+                {generationStatus.progress ? ` · ${Math.round(generationStatus.progress)}%` : ""}
+              </span>
+            </div>
+          ) : null}
           <details
             data-testid="ai-realism-source-summary"
             className="group pointer-events-auto absolute right-4 top-4 w-[min(20rem,calc(100%-2rem))] text-[11px] text-slate-700"
@@ -98,7 +122,7 @@ export function AiRealismPreviewOverlay({
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    high_quality_ai_render_v1
+                    {artifact.type}
                   </p>
                   <p className="mt-0.5 text-[10px] text-slate-500">
                     Source summary: {artifact.source_objects_summary.total} review object(s)
@@ -128,7 +152,7 @@ export function AiRealismPreviewOverlay({
                   <a
                     data-testid="ai-realism-save-snapshot"
                     href={artifact.image_data_url}
-                    download={`ai-visualization-${artifact.project_id}.svg`}
+                    download={`ai-visualization-${artifact.project_id}.${artifact.mime_type === "image/png" ? "png" : artifact.mime_type === "image/jpeg" ? "jpg" : artifact.mime_type === "image/webp" ? "webp" : "svg"}`}
                     className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700"
                   >
                     Save snapshot
@@ -152,6 +176,24 @@ export function AiRealismPreviewOverlay({
                 </p>
               ) : null}
               <dl className="mt-2 grid gap-1 leading-snug">
+                <div>
+                  <dt className="font-semibold text-slate-900">Renderer</dt>
+                  <dd data-testid="ai-realism-renderer" className="text-slate-600">
+                    {artifact.renderer === "external"
+                      ? `External photorealistic concept${artifact.model ? ` · ${artifact.model}` : ""}`
+                      : "Local plan visualization"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-semibold text-slate-900">Map relationship</dt>
+                  <dd data-testid="ai-realism-map-context" className="text-slate-600">
+                    {showMap && artifact.site_frame.map_context_available
+                      ? artifact.map_context_used
+                        ? "Map context was included in the visual reference."
+                        : "Live map is shown underneath as a separate layer; its imagery was not sent to the image provider."
+                      : "Visualization is registered to local site coordinates."}
+                  </dd>
+                </div>
                 <div>
                   <dt className="font-semibold text-slate-900">Objects included</dt>
                   <dd data-testid="ai-realism-objects-included" className="text-slate-600">
@@ -185,6 +227,31 @@ export function AiRealismPreviewOverlay({
             </div>
           </details>
         </>
+      ) : generationStatus.state === "queued" || generationStatus.state === "generating" ? (
+        <div
+          data-testid="ai-realism-generation-status"
+          className="pointer-events-auto absolute left-1/2 top-1/2 mx-4 w-[min(26rem,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-white/55 bg-white/94 p-4 text-sm text-slate-800 shadow-xl backdrop-blur"
+        >
+          <div className="flex items-center gap-3">
+            <span className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-slate-200 border-t-slate-900" />
+            <div className="min-w-0">
+              <p className="font-semibold">{generationStatus.stage || "Generating visualization"}</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-slate-600">
+                {generationStatus.detail || "Creating a photorealistic visual concept from the current layout."}
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
+            <div
+              data-testid="ai-realism-generation-progress"
+              className="h-full rounded-full bg-slate-900 transition-[width] duration-300"
+              style={{ width: `${Math.max(4, Math.min(100, generationStatus.progress))}%` }}
+            />
+          </div>
+          <p className="mt-2 text-[10px] font-semibold uppercase text-slate-500">
+            Visual concept only · technical plan remains authoritative
+          </p>
+        </div>
       ) : (
         <div
           data-testid="ai-realism-blocker"

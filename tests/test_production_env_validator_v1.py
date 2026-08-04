@@ -53,6 +53,33 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
 
         self.assertIn("openai_key_missing", {item["code"] for item in report["blockers"]})
 
+    def test_external_image_provider_requires_server_key(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_IMAGE_PROVIDER": "openai",
+            }
+        )
+
+        self.assertIn("image_openai_key_missing", {item["code"] for item in report["blockers"]})
+
+    def test_disabled_external_image_provider_is_a_truthful_warning(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_IMAGE_PROVIDER": "none",
+            }
+        )
+
+        self.assertFalse(report["release_blocked"])
+        self.assertIn("image_provider_disabled", {item["code"] for item in report["warnings"]})
+
     def test_private_alpha_warns_for_optional_provider_gaps(self) -> None:
         report = validate_production_env_v1(
             {

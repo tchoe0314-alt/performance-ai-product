@@ -305,5 +305,12 @@ export function createAiRealismArtifact({
     not_site_evidence: true,
     construction_release_allowed: false,
     image_data_url,
+    visualization_only: true,
+    not_engineering_evidence: true,
+    renderer: "local_reference",
+    provider: "local_reference",
+    model: "deterministic_svg_v1",
+    mime_type: "image/svg+xml",
+    map_context_used: false,
   };
 }

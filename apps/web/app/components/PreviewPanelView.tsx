@@ -135,7 +135,7 @@ import {
   buildPreviewParkingAccessPoints,
   findPreviewHoveredObject,
   findPreviewSelectedObject,
-  isAiRealismProviderConfigured,
+  resolveAiRealismProviderMode,
   resolvePreviewSelectedDeletableObject,
 } from "../utils/previewViewModel";
 import { buildPreviewInteractionState } from "../utils/previewInteractionState";
@@ -166,6 +166,7 @@ const HIGH_QUALITY_DRAWING_VIEWPORT = {
 };
 
 export default function PreviewPanel({
+  authToken,
   previewReview,
   onRefreshPreview,
   busy,
@@ -584,7 +585,7 @@ export default function PreviewPanel({
     mapRef.current.fitBounds(bounds, { padding: 80, duration: 0 });
   }, [lotHeight, lotWidth, mapAnchor, resetCanvasView, showMap]);
   const isHighQuality = previewQuality === "high";
-  const aiRealismProviderConfigured = useMemo(() => isAiRealismProviderConfigured(), []);
+  const aiRealismProviderMode = useMemo(() => resolveAiRealismProviderMode(), []);
   const scaleTruthLabel = useMemo(
     () =>
       liveMapFeetPerPixel
@@ -649,10 +650,12 @@ export default function PreviewPanel({
     aiRealismEnabled,
     aiRealismBlocker,
     aiRealismDisplayArtifact,
+    generationStatus: aiRealismGenerationStatus,
     generateAiRealismArtifact,
     setAiVisualizationOff,
     setAiVisualizationOn,
   } = useAiRealismPreview({
+    authToken,
     buildingPlacements: aiProposedBuildingPlacements,
     cadEntityPreviewObjects: aiProposedCadEntityPreviewObjects,
     suggestedPlacements: aiProposedSuggestedPlacements,
@@ -663,7 +666,7 @@ export default function PreviewPanel({
     geocode,
     currentProjectId,
     planPreviewProjectId,
-    aiRealismProviderConfigured,
+    providerMode: aiRealismProviderMode,
     onAiRealismChange,
   });
   const selectedDeletableObject = resolvePreviewSelectedDeletableObject({ selectedObject, buildingPlacements });
@@ -2762,6 +2765,7 @@ export default function PreviewPanel({
                   ? {
                       artifact: aiRealismDisplayArtifact,
                       blocker: aiRealismBlocker,
+                      generationStatus: aiRealismGenerationStatus,
                       stale: Boolean(aiRealismDisplayArtifact?.stale),
                       hasTerrainSource,
                       showMap,

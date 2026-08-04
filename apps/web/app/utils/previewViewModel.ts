@@ -5,15 +5,25 @@ export function buildPreviewCurrentSiteSize(lotWidth: number, lotHeight: number)
   return { width: Math.max(lotWidth, 1), height: Math.max(lotHeight, 1) };
 }
 
-export function isAiRealismProviderConfigured(search?: string) {
+export type AiRealismProviderMode = "disabled" | "mock" | "external";
+
+export function resolveAiRealismProviderMode(search?: string): AiRealismProviderMode {
   const effectiveSearch = search ?? (typeof window !== "undefined" ? window.location.search : "");
   if (effectiveSearch) {
     const params = new URLSearchParams(effectiveSearch);
-    if (params.get("aiRealismProvider") === "none") return false;
-    if (params.get("aiRealismProvider") === "mock") return true;
+    if (params.get("aiRealismProvider") === "none") return "disabled";
+    if (params.get("aiRealismProvider") === "mock") return "mock";
   }
   const configuredProvider = process.env.NEXT_PUBLIC_CIVORA_AI_REALISM_PROVIDER?.trim().toLowerCase();
-  return configuredProvider !== "none";
+  if (configuredProvider === "none" || configuredProvider === "disabled" || configuredProvider === "off") {
+    return "disabled";
+  }
+  if (configuredProvider === "mock") return "mock";
+  return "external";
+}
+
+export function isAiRealismProviderConfigured(search?: string) {
+  return resolveAiRealismProviderMode(search) !== "disabled";
 }
 
 export function findPreviewHoveredObject({

@@ -156,7 +156,7 @@ export type UtilityCoordinationRow = {
 };
 
 export type AiRealismArtifact = {
-  type: "high_quality_ai_render_v1";
+  type: "high_quality_ai_render_v1" | "high_quality_ai_render_v2";
   project_id: string;
   source_layout_hash: string;
   site_frame: {
@@ -176,12 +176,29 @@ export type AiRealismArtifact = {
   not_site_evidence: true;
   construction_release_allowed: false;
   image_data_url: string;
+  visualization_only?: true;
+  not_engineering_evidence?: true;
+  renderer?: "local_reference" | "external";
+  provider?: string;
+  model?: string;
+  request_id?: string;
+  mime_type?: string;
+  map_context_used?: boolean;
+};
+
+export type AiRealismGenerationStatus = {
+  state: "idle" | "queued" | "generating" | "ready" | "failed" | "unavailable";
+  stage: string;
+  detail: string;
+  progress: number;
+  jobId: string;
 };
 
 export const AI_REALISM_WATERMARK =
   "AI visualization from current review layout - visual concept only, not engineering evidence.";
 
 export type PreviewPanelProps = {
+  authToken?: string | null;
   previewReview: PreviewReview | null;
   onRefreshPreview: () => void;
   busy: boolean;
