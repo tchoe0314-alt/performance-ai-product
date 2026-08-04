@@ -34,7 +34,7 @@ class ReactiveModelContractTests(unittest.TestCase):
         self.assertTrue(report["export_blocked"])
         self.assertIn("stale_outputs_block_export", report["blockers"])
 
-    def test_building_change_marks_expected_systems_and_skips_unrelated(self) -> None:
+    def test_building_change_marks_every_declared_downstream_system(self) -> None:
         report = build_reactive_change_evidence(
             change_type="building",
             changed_object_id="BLDG-1",
@@ -42,16 +42,28 @@ class ReactiveModelContractTests(unittest.TestCase):
             canonical_revision_after="REV-2",
         )
 
-        self.assertEqual(report["expected_dirty_engine_ids"], ["grading", "drainage", "water", "utility_coordination", "quantity"])
-        self.assertEqual(report["expected_dirty_stages"], ["grading", "drainage", "utility_network", "coordination_resolution", "qa"])
-        self.assertIn("storm_pipe", report["expected_skipped_engine_ids"])
+        self.assertEqual(
+            report["expected_dirty_engine_ids"],
+            ["geometry", "grading", "drainage", "storm_pipe", "sanitary", "water", "utility_coordination", "earthwork", "quantity", "export_cad"],
+        )
+        self.assertEqual(report["expected_dirty_stages"], [
+            "layout",
+            "grading",
+            "drainage",
+            "storm_pipes",
+            "sanitary",
+            "utility_network",
+            "coordination_resolution",
+            "earthwork",
+            "sheets",
+            "qa",
+        ])
         self.assertIn("profile_section", report["expected_skipped_engine_ids"])
-        self.assertNotIn("storm_pipes", report["actual_dirty_stages"])
         skipped = {row["system"]: row for row in report["skipped_system_checks"]}
-        self.assertEqual(skipped["storm_pipe"]["expected"], "skipped")
-        self.assertTrue(skipped["storm_pipe"]["valid"])
+        self.assertEqual(skipped["profile_section"]["expected"], "skipped")
+        self.assertTrue(skipped["profile_section"]["valid"])
 
-    def test_basin_change_marks_drainage_storm_and_quantity_only(self) -> None:
+    def test_basin_change_marks_grading_drainage_storm_earthwork_and_exports(self) -> None:
         report = build_reactive_change_evidence(
             change_type="basin",
             changed_object_id="BASIN-1",
@@ -59,9 +71,9 @@ class ReactiveModelContractTests(unittest.TestCase):
             canonical_revision_after="REV-2",
         )
 
-        self.assertEqual(report["expected_dirty_engine_ids"], ["drainage", "storm_pipe", "hydrology", "quantity"])
-        self.assertEqual(report["expected_dirty_stages"], ["drainage", "storm_pipes", "qa"])
-        self.assertIn("grading", report["expected_skipped_engine_ids"])
+        self.assertEqual(report["expected_dirty_engine_ids"], ["grading", "drainage", "storm_pipe", "earthwork", "hydrology", "quantity", "export_cad"])
+        self.assertEqual(report["expected_dirty_stages"], ["grading", "drainage", "storm_pipes", "earthwork", "sheets", "qa"])
+        self.assertNotIn("grading", report["expected_skipped_engine_ids"])
         self.assertIn("utility_network", report["expected_skipped_stages"])
 
     def test_road_change_marks_corridor_profile_and_utility_chain(self) -> None:
@@ -74,11 +86,11 @@ class ReactiveModelContractTests(unittest.TestCase):
 
         self.assertEqual(
             report["expected_dirty_engine_ids"],
-            ["grading", "drainage", "water", "utility_coordination", "roadway_corridor", "profile_section", "quantity"],
+            ["grading", "drainage", "water", "utility_coordination", "roadway_corridor", "profile_section", "earthwork", "quantity", "export_cad"],
         )
         self.assertEqual(
             report["expected_dirty_stages"],
-            ["layout", "grading", "drainage", "utility_network", "coordination_resolution", "sheets", "qa"],
+            ["layout", "grading", "drainage", "utility_network", "coordination_resolution", "earthwork", "sheets", "qa"],
         )
         self.assertIn("storm_pipe", report["expected_skipped_engine_ids"])
         self.assertIn("storm_pipes", report["expected_skipped_stages"])
@@ -91,8 +103,8 @@ class ReactiveModelContractTests(unittest.TestCase):
             canonical_revision_after="REV-2",
         )
 
-        self.assertEqual(report["expected_dirty_engine_ids"], ["water", "utility_coordination", "profile_section", "quantity"])
-        self.assertEqual(report["expected_dirty_stages"], ["utility_network", "coordination_resolution", "sheets", "qa"])
+        self.assertEqual(report["expected_dirty_engine_ids"], ["storm_pipe", "sanitary", "water", "utility_coordination", "profile_section", "earthwork", "quantity", "export_cad"])
+        self.assertEqual(report["expected_dirty_stages"], ["storm_pipes", "sanitary", "utility_network", "coordination_resolution", "earthwork", "sheets", "qa"])
         self.assertIn("grading", report["expected_skipped_engine_ids"])
         self.assertIn("drainage", report["expected_skipped_stages"])
 
@@ -102,7 +114,7 @@ class ReactiveModelContractTests(unittest.TestCase):
             changed_object_id="ROAD-1",
             canonical_revision_before="REV-1",
             canonical_revision_after="REV-2",
-            completed_stages=["layout", "grading", "drainage", "utility_network", "coordination_resolution", "sheets", "qa"],
+            completed_stages=["layout", "grading", "drainage", "utility_network", "coordination_resolution", "earthwork", "sheets", "qa"],
         )
 
         result = validate_reactive_model_depth({"meta": {"reactive_model_evidence": evidence}})

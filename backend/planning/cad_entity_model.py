@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
+import json
 from math import atan2, cos, degrees, hypot, isfinite, radians, sin
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -205,6 +206,79 @@ def _polygon_area(points: List[Dict[str, float]]) -> float:
         nxt = points[(index + 1) % len(points)]
         total += point["x"] * nxt["y"] - nxt["x"] * point["y"]
     return abs(total) / 2.0
+
+
+def _polyline_length(points: List[Dict[str, float]]) -> float:
+    return sum(
+        hypot(second["x"] - first["x"], second["y"] - first["y"])
+        for first, second in zip(points, points[1:])
+    )
+
+
+def _derived_engineering_geometry_metrics(
+    object_type: str,
+    geometry_kind: str,
+    vertices: List[Dict[str, float]],
+) -> Dict[str, Any]:
+    if not vertices:
+        return {}
+    bbox = _bbox_from_points(vertices)
+    metrics: Dict[str, Any] = {
+        "geometry_point_count": len(vertices),
+        "geometry_bounds": bbox,
+        "geometry_metric_source": "canonical_geometry_vertices",
+    }
+    if geometry_kind == "area":
+        area_sf = round(_polygon_area(vertices), 3)
+        metrics.update({"area_sf": area_sf, "geometry_area_sf": area_sf})
+        if object_type == "building":
+            metrics["footprint_area_sf"] = area_sf
+        elif object_type == "parking_area":
+            metrics["parking_area_sf"] = area_sf
+        elif object_type == "basin":
+            metrics["basin_area_sf"] = area_sf
+    elif geometry_kind == "path":
+        length_ft = round(_polyline_length(vertices), 3)
+        metrics.update({"length_ft": length_ft, "geometry_length_ft": length_ft})
+        if object_type in {"road_centerline", "driveway"}:
+            metrics["centerline_length_ft"] = length_ft
+        elif object_type in {"storm_main", "water_main", "sanitary_main", "force_main", "utility_corridor"}:
+            metrics["alignment_length_ft"] = length_ft
+    elif geometry_kind == "point":
+        metrics["location"] = {"x": vertices[0]["x"], "y": vertices[0]["y"], "units": "ft"}
+    return metrics
+
+
+def _cad_geometry_state_hash(
+    entities: List[Dict[str, Any]],
+    engineering_objects: List[Dict[str, Any]],
+) -> str:
+    geometry_state = {
+        "entities": [
+            {
+                "id": safe_str(entity.get("id")),
+                "type": safe_str(entity.get("type")),
+                "geometry": safe_dict(entity.get("geometry")),
+                "layer_id": safe_str(entity.get("layer_id")),
+                "style_id": safe_str(entity.get("style_id")),
+                "linked_engineering_object_id": safe_str(entity.get("linked_engineering_object_id")),
+            }
+            for entity in sorted(entities, key=lambda item: safe_str(item.get("id")))
+        ],
+        "engineering_objects": [
+            {
+                "object_id": safe_str(obj.get("object_id")),
+                "object_type": safe_str(obj.get("object_type")),
+                "geometry_entity_id": safe_str(obj.get("geometry_entity_id")),
+                "engineering_attributes": safe_dict(obj.get("engineering_attributes")),
+                "relationships": safe_list(obj.get("relationships")),
+                "affected_systems": safe_list(obj.get("affected_systems")),
+            }
+            for obj in sorted(engineering_objects, key=lambda item: safe_str(item.get("object_id")))
+        ],
+    }
+    payload = json.dumps(geometry_state, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _changed_fields(before: Any, after: Any) -> List[str]:
@@ -1579,6 +1653,7 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
         for obj in engineering_objects
         for system in safe_list(obj.get("affected_systems"))
     )
+    cad_geometry_state_hash = _cad_geometry_state_hash(entities, engineering_objects)
     revision_timeline = {
         "latest_revision_id": latest_revision_id,
         "entity_counts": {
@@ -1604,6 +1679,8 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
     }
     return {
         "version": CAD_ENTITY_MODEL_VERSION,
+        "cad_geometry_state_hash": cad_geometry_state_hash,
+        "generation_sync": deepcopy(safe_dict(source_model.get("generation_sync"))),
         "layers": layers,
         "styles": styles,
         "entities": entities,
@@ -1677,13 +1754,127 @@ def build_cad_entity_model(meta: Dict[str, Any], *, project_input: Optional[Dict
     }
 
 
+def _completed_semantic_systems(final_plan_meta: Dict[str, Any]) -> List[str]:
+    meta = safe_dict(final_plan_meta)
+    review = safe_dict(meta.get("engineering_generation_review"))
+    systems = safe_dict(review.get("systems"))
+    completed_review_systems = {
+        safe_str(system_name)
+        for system_name, raw_status in systems.items()
+        if safe_dict(raw_status).get("canonical_output_present") is True
+        and safe_dict(raw_status).get("blocked") is not True
+        and safe_dict(raw_status).get("success") is not False
+    }
+    completed = set(completed_review_systems)
+    aliases = {
+        "storm": {"storm"},
+        "hydrology": {"drainage"},
+        "fire_flow": {"water"},
+        "coordination": {"utilities"},
+        "earthwork": {"grading"},
+        "review_package": {"qa_review"},
+        "ada": {"roadway"},
+    }
+    for semantic_system, proof_systems in aliases.items():
+        if proof_systems.issubset(completed_review_systems):
+            completed.add(semantic_system)
+    if safe_dict(meta.get("parking_program")) and "quantities" in completed_review_systems:
+        completed.add("parking")
+    if safe_dict(meta.get("existing_conditions_package")):
+        completed.add("existing_conditions")
+    if safe_dict(meta.get("standards_package")):
+        completed.add("standards")
+    if safe_dict(meta.get("grading")):
+        completed.add("terrain")
+    if "qa_review" in completed_review_systems:
+        completed.add("layout")
+    return sorted(completed)
+
+
+def reconcile_cad_entity_model_after_generation(
+    model: Dict[str, Any],
+    *,
+    final_plan_meta: Dict[str, Any],
+    project_input: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    source = deepcopy(safe_dict(model))
+    completed_systems = set(_completed_semantic_systems(final_plan_meta))
+    if not completed_systems:
+        return source
+
+    objects = [deepcopy(safe_dict(item)) for item in safe_list(source.get("engineering_objects"))]
+    synchronized_object_ids = set()
+    synchronized_entity_ids = set()
+    for obj in objects:
+        affected_systems = {safe_str(item) for item in safe_list(obj.get("affected_systems")) if safe_str(item)}
+        if affected_systems and affected_systems.issubset(completed_systems):
+            obj["dirty"] = False
+            obj["stale"] = False
+            obj["generation_sync_status"] = "current_for_completed_review_systems"
+            obj["last_synchronized_systems"] = sorted(affected_systems)
+            synchronized_object_ids.add(safe_str(obj.get("object_id")))
+            synchronized_entity_ids.add(safe_str(obj.get("geometry_entity_id")))
+
+    entities = [deepcopy(safe_dict(item)) for item in safe_list(source.get("entities"))]
+    for entity in entities:
+        linked_object_id = safe_str(entity.get("linked_engineering_object_id"))
+        if linked_object_id in synchronized_object_ids or safe_str(entity.get("id")) in synchronized_entity_ids:
+            entity["dirty"] = False
+            entity["stale"] = False
+            entity["review_status"] = "draft_review_required"
+            entity["generation_sync_status"] = "current_for_completed_review_systems"
+
+    source["entities"] = entities
+    source["engineering_objects"] = objects
+    source[CAD_ENGINEERING_OBJECTS_VERSION] = objects
+    rebuilt = build_cad_entity_model(
+        {CAD_ENTITY_MODEL_VERSION: source},
+        project_input=project_input,
+    )
+    rebuilt["generation_sync"] = {
+        "cad_geometry_state_hash": safe_str(rebuilt.get("cad_geometry_state_hash")),
+        "completed_semantic_systems": sorted(completed_systems),
+        "synchronized_object_ids": sorted(synchronized_object_ids),
+        "synchronized_entity_ids": sorted(synchronized_entity_ids),
+        "status": "current_for_completed_review_systems",
+        "review_required": True,
+        "construction_release_allowed": False,
+        "truth_label": "Synchronization means current against the completed review systems only; it is not professional approval or construction release.",
+    }
+    return rebuilt
+
+
 def attach_cad_entity_model_to_result(latest_result: Dict[str, Any], *, project_input: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     result = deepcopy(safe_dict(latest_result))
     final_plan = safe_dict(result.get("final_plan"))
     if not final_plan:
         return result
     meta = safe_dict(final_plan.get("meta"))
-    meta[CAD_ENTITY_MODEL_VERSION] = build_cad_entity_model(meta, project_input=project_input)
+    prior_model = safe_dict(meta.get(CAD_ENTITY_MODEL_VERSION))
+    model = build_cad_entity_model(meta, project_input=project_input)
+    review = safe_dict(meta.get("engineering_generation_review"))
+    prior_sync = safe_dict(prior_model.get("generation_sync"))
+    prior_sync_hash = safe_str(prior_sync.get("cad_geometry_state_hash"))
+    current_hash = safe_str(model.get("cad_geometry_state_hash"))
+    reactive = safe_dict(meta.get("reactive_update_report"))
+    completed_generation = bool(review.get("success")) and not safe_list(review.get("blocked_systems"))
+    completed_reactive_rerun = (
+        reactive.get("post_rerun_export_blocked") is False
+        and not safe_list(reactive.get("post_rerun_stale_outputs"))
+        and bool(safe_list(reactive.get("post_rerun_completed_stages")))
+    )
+    unchanged_since_sync = bool(prior_sync_hash and prior_sync_hash == current_hash)
+    initial_generated_attachment = completed_generation and not prior_model
+    legacy_generated_attachment = completed_generation and bool(prior_model) and not prior_sync_hash and not safe_list(prior_model.get("history"))
+    if initial_generated_attachment or legacy_generated_attachment or completed_reactive_rerun:
+        model = reconcile_cad_entity_model_after_generation(
+            model,
+            final_plan_meta=meta,
+            project_input=project_input,
+        )
+    elif unchanged_since_sync:
+        model["generation_sync"] = prior_sync
+    meta[CAD_ENTITY_MODEL_VERSION] = model
     final_plan["meta"] = meta
     result["final_plan"] = final_plan
     return result
@@ -3069,11 +3260,13 @@ def engineering_objects_from_project_input(project_input: Dict[str, Any]) -> Lis
         if not object_type:
             continue
         geometry_kind = "area" if object_type in AREA_ENGINEERING_OBJECT_TYPES else "path" if object_type in PATH_ENGINEERING_OBJECT_TYPES else "point"
+        vertices = _points(handoff.get("vertices") or handoff.get("points"))
         source_object_id = safe_str(handoff.get("object_id"))
         geometry_id = safe_str(handoff.get("geometry_id") or source_object_id)
         attributes = {
             **safe_dict(handoff.get("metrics")),
             **safe_dict(handoff.get("engineering_attributes")),
+            **_derived_engineering_geometry_metrics(object_type, geometry_kind, vertices),
         }
         objects.append(
             normalize_engineering_object(
@@ -3520,6 +3713,7 @@ __all__ = [
     "import_candidates_to_cad_entities",
     "locked_layer_blocker",
     "manual_drawn_objects_to_cad_entities",
+    "reconcile_cad_entity_model_after_generation",
     "normalize_cad_entity",
     "normalize_engineering_object",
     "plan_pdf_elements_to_cad_entities",

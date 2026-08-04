@@ -306,7 +306,7 @@ class CatchmentEngine:
 
     def _rational_peak_runoff_cfs(self, runoff_c: float, intensity_in_hr: float, area_sf: float) -> float:
         area_ac = area_sf / 43560.0
-        return runoff_c * intensity_in_hr * area_ac
+        return 1.008 * runoff_c * intensity_in_hr * area_ac
 
     # =========================================================================
     # LOW POINT / GEOMETRY

@@ -237,7 +237,7 @@ def _production_ready_meta() -> dict:
         changed_object_id="ROAD-1",
         canonical_revision_before="MODEL-DRAFT-1",
         canonical_revision_after="MODEL-FINAL-1",
-        completed_stages=["layout", "grading", "drainage", "utility_network", "coordination_resolution", "sheets", "qa"],
+        completed_stages=["layout", "grading", "drainage", "utility_network", "coordination_resolution", "earthwork", "sheets", "qa"],
     )
     meta["export_audit"] = {
         "ready": True,
