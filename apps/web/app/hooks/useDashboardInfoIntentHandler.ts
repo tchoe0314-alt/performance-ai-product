@@ -427,10 +427,14 @@ export function useDashboardInfoIntentHandler({
         ...(reviewPackageFlowSummary?.missing ?? []),
         getExportBlockReason(),
       ]);
+      const userFacingNeeds = userFacingWorkflowNeeds([
+        ...canonicalWorkspaceBlockers,
+        ...flowBlockers,
+      ]);
       appendChatMessage(
         "assistant",
-        canonicalWorkspaceBlockers.length || flowBlockers.length
-          ? `Needs input:\n${uniqueStrings([...canonicalWorkspaceBlockers, ...flowBlockers]).map((reason) => `- ${reason}`).join("\n")}`
+        userFacingNeeds.length
+          ? `Needs input:\n${userFacingNeeds.map((reason) => `- ${reason}`).join("\n")}`
           : "No current needs-input items are recorded. Outputs remain review-required.",
         "status",
       );

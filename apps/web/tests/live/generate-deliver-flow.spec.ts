@@ -74,6 +74,9 @@ test.describe("Generate and Deliver product flow", () => {
     await askChat(page, "what ran?", /Last Generate ran|Current fresh systems/i);
     await askChat(page, "what did you skip?", /Skipped:/i);
     await askChat(page, "what is blocked?", /Needs input|Outputs remain review-required/i);
+    await expect(page.getByTestId("workspace-right-panel")).not.toContainText(
+      /construction readiness blocked|construction release blocked/i,
+    );
     await askChat(page, "what changed?", /Last Generate|Auto Site Context/i);
     await askChat(page, "what do I need next?", /next visible UI action|Review missing package inputs|review-required/i);
     await askChat(page, "can I export?", /Export needs input|engineer-review packages/i);
