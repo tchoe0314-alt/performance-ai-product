@@ -97,6 +97,7 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
   let fetchOnlineCalled = false;
   const fetchOnlinePayloads: Record<string, unknown>[] = [];
   let savedProjectInput = "";
+  let projectSaveCount = 0;
 
   await page.route("**/api/auth/status", async (route) => {
     await route.fulfill({
@@ -135,6 +136,7 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
       });
       return;
     }
+    projectSaveCount += 1;
     const payload = route.request().postDataJSON() as Record<string, unknown>;
     savedProjectInput = JSON.stringify(payload.project_input ?? {});
     await route.fulfill({
@@ -269,6 +271,10 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
   expect(savedProjectInput).toContain("\"h\":1000");
   expect(savedProjectInput).toContain("\"site_alignment_locked\":true");
   expect(savedProjectInput).toContain("20525 Margo St");
+
+  const settledSaveCount = projectSaveCount;
+  await page.waitForTimeout(3_000);
+  expect(projectSaveCount - settledSaveCount).toBeLessThanOrEqual(1);
 });
 
 test("chat can create the same centered site from natural language", async ({ page }) => {

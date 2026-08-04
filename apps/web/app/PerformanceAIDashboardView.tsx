@@ -2724,18 +2724,17 @@ function PerformanceAIDashboardView({
     if (!token || !activeProjectId || currentProject?.project_id !== activeProjectId) return;
     if (autosaveSuspendRef.current) return;
     const workspaceGeneration = projectLoadRequestRef.current;
+    const normalizeAutosaveMessage = ({ role, content, kind, createdAt, id }: ChatMessage) => ({
+      role,
+      content,
+      kind,
+      createdAt,
+      id,
+    });
     const savedThread = Array.isArray(currentProject?.project_input?.meta?.chat_thread)
-      ? currentProject.project_input.meta.chat_thread
+      ? currentProject.project_input.meta.chat_thread.map(normalizeAutosaveMessage)
       : [];
-    const currentThread = chatMessagesRef.current.map(
-      ({ role, content, kind, createdAt, id }) => ({
-        role,
-        content,
-        kind,
-        createdAt,
-        id,
-      }),
-    );
+    const currentThread = chatMessagesRef.current.map(normalizeAutosaveMessage);
     const savedPrompt = String(currentProject?.project_input?.prompt_text ?? "");
     const currentPrompt = String(prompt ?? "");
     const threadChanged =
