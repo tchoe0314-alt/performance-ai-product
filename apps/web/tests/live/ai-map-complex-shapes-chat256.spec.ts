@@ -41,7 +41,7 @@ test("keeps the live map visible and preserves complex building and parking poly
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
   });
 
-  await page.goto("/demo/workspace?debugPreview=1&seedDemo=1&aiRealismProvider=mock", {
+  await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", {
     waitUntil: "domcontentloaded",
   });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });

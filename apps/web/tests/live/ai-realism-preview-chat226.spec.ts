@@ -81,7 +81,7 @@ test.describe("Chat 226 AI realism preview", () => {
       "Add or generate site objects before creating AI realism.",
     );
 
-    await openDemoWorkspace(page);
+    await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=none");
     await enableHighQuality(page);
     await page.getByTestId("ai-realism-on").click();
     await expect(page.getByTestId("ai-realism-blocker")).toContainText("AI realism provider is not configured.");

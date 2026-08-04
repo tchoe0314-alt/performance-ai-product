@@ -9,9 +9,11 @@ export function isAiRealismProviderConfigured(search?: string) {
   const effectiveSearch = search ?? (typeof window !== "undefined" ? window.location.search : "");
   if (effectiveSearch) {
     const params = new URLSearchParams(effectiveSearch);
+    if (params.get("aiRealismProvider") === "none") return false;
     if (params.get("aiRealismProvider") === "mock") return true;
   }
-  return Boolean(process.env.NEXT_PUBLIC_CIVORA_AI_REALISM_PROVIDER?.trim());
+  const configuredProvider = process.env.NEXT_PUBLIC_CIVORA_AI_REALISM_PROVIDER?.trim().toLowerCase();
+  return configuredProvider !== "none";
 }
 
 export function findPreviewHoveredObject({
