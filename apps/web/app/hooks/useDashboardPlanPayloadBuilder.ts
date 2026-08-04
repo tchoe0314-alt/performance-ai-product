@@ -128,6 +128,9 @@ export function useDashboardPlanPayloadBuilder({
     const nextMaxParkingSlopePct = overrides.maxParkingSlopePct ?? maxParkingSlopePct;
     const nextMaxRoadGradePct = overrides.maxRoadGradePct ?? maxRoadGradePct;
     const nextMaxAdaCrossSlopePct = overrides.maxAdaCrossSlopePct ?? maxAdaCrossSlopePct;
+    const effectivePlacements = placementsOverride ?? buildingPlacements;
+    const canonicalSite = effectivePlacements.find((item) => item.type === "site");
+    const effectiveSiteAlignmentLocked = siteScaleLocked || canonicalSite?.locked === true;
 
     return {
       project_id:
@@ -141,7 +144,7 @@ export function useDashboardPlanPayloadBuilder({
         chat_thread: chatMessagesRef.current,
         site_inputs: {
           ...(currentProject?.project_input?.meta?.site_inputs ?? {}),
-          site_alignment_locked: siteScaleLocked,
+          site_alignment_locked: effectiveSiteAlignmentLocked,
         },
         system_dirty_state: systemStatuses,
         reactive_edit_policy_preference: REACTIVE_EDIT_POLICY_PREFERENCE,
