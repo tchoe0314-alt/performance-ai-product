@@ -29,6 +29,7 @@ type UseDashboardProjectSaveOptions = {
   fileNameAuto: boolean;
   isSeededDemoProjectId: (projectId: string | null) => boolean;
   payloadPreview: ProjectInput;
+  payloadPreviewRef: MutableRefObject<ProjectInput>;
   projectId: string;
   projectLoadRequestRef: MutableRefObject<number>;
   resolvedProjectIdRef: MutableRefObject<string>;
@@ -53,6 +54,7 @@ export function useDashboardProjectSave({
   fileNameAuto,
   isSeededDemoProjectId,
   payloadPreview,
+  payloadPreviewRef,
   projectId,
   projectLoadRequestRef,
   resolvedProjectIdRef,
@@ -178,7 +180,20 @@ export function useDashboardProjectSave({
       }
       resolvedProjectIdRef.current = data.project.project_id;
       setProjectId(data.project.project_id);
-      setCurrentProject(data.project);
+      setCurrentProject((existing) => {
+        if (!silent || !existing || existing.project_id !== data.project.project_id) {
+          return data.project;
+        }
+        return {
+          ...data.project,
+          // Silent object autosaves may finish after another canvas edit. Keep
+          // the live workspace input so an older response cannot remove or
+          // reselect newer draft geometry while the queued save catches up.
+          project_input: payloadPreviewRef.current,
+          latest_result: data.project.latest_result ?? existing.latest_result,
+          has_result: data.project.has_result || existing.has_result,
+        };
+      });
       setWorkspaceRestoreState("restored");
       if (typeof window !== "undefined") {
         window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, data.project.project_id);
@@ -219,6 +234,7 @@ export function useDashboardProjectSave({
     fileNameAuto,
     isSeededDemoProjectId,
     payloadPreview,
+    payloadPreviewRef,
     projectId,
     projectLoadRequestRef,
     resolvedProjectIdRef,

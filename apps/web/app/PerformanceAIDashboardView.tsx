@@ -883,6 +883,10 @@ function PerformanceAIDashboardView({
     units,
     utilities,
   });
+  const payloadPreviewRef = useRef(payloadPreview);
+  useEffect(() => {
+    payloadPreviewRef.current = payloadPreview;
+  }, [payloadPreview]);
 
   const artifactPayload = useMemo(
     () => buildDashboardArtifactPayload({ backendResult, projectId, currentProject, fileName, siteName }),
@@ -2698,6 +2702,7 @@ function PerformanceAIDashboardView({
     fileNameAuto,
     isSeededDemoProjectId,
     payloadPreview,
+    payloadPreviewRef,
     projectId,
     projectLoadRequestRef,
     resolvedProjectIdRef,
@@ -4072,6 +4077,7 @@ function PerformanceAIDashboardView({
     setStatusMessage,
     siteName,
     token,
+    updateProjectStatus,
     upsertProjectSummary,
   });
   loadJobRef.current = loadJob;

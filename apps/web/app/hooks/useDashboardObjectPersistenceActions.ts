@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import type { MutableRefObject } from "react";
 
 import type {
@@ -42,6 +42,9 @@ export function useDashboardObjectPersistenceActions({
   setObjectManagerStatusMessage,
   setStatusMessage,
 }: UseDashboardObjectPersistenceActionsInput) {
+  const latestDraftRefreshRef = useRef<{ reason: string } | null>(null);
+  const draftRefreshWorkerRef = useRef<Promise<void> | null>(null);
+
   const persistDetectedPlacements = useCallback(
     (nextDetected: BuildingPlacement[]) => {
       const currentInput = currentProject?.project_input ?? payloadPreview;
@@ -75,14 +78,40 @@ export function useDashboardObjectPersistenceActions({
   }, [appendChatMessage, setObjectManagerStatusMessage, setStatusMessage]);
 
   const persistDraftRefresh = useCallback((reason: string) => {
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => {
-        previewRefreshIntentRef.current = {
-          reason,
-          track: true,
-        };
-      });
+    latestDraftRefreshRef.current = { reason };
+    if (draftRefreshWorkerRef.current) return;
+
+    draftRefreshWorkerRef.current = (async () => {
+      try {
+        while (latestDraftRefreshRef.current) {
+          await new Promise<void>((resolve) => {
+            if (typeof window === "undefined") {
+              resolve();
+              return;
+            }
+            window.requestAnimationFrame(() => resolve());
+          });
+
+          const request = latestDraftRefreshRef.current;
+          latestDraftRefreshRef.current = null;
+          await ensureProjectDraftRef.current();
+
+          // A newer object edit landed while the project was being prepared. Skip
+          // the stale payload and let the next loop persist the latest workspace.
+          if (latestDraftRefreshRef.current) continue;
+
+          await saveProjectRef.current({ silent: true });
+          if (!latestDraftRefreshRef.current && request) {
+            previewRefreshIntentRef.current = {
+              reason: request.reason,
+              track: true,
+            };
+          }
+        }
+      } finally {
+        draftRefreshWorkerRef.current = null;
+      }
+    })();
   }, [ensureProjectDraftRef, previewRefreshIntentRef, saveProjectRef]);
 
   return {

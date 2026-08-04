@@ -416,6 +416,98 @@ test.describe("project drawer reliability", () => {
       .toBeNull();
   });
 
+  test("keeps rapid drawn objects selected and persisted when autosaves finish out of order", async ({ page }) => {
+    const store = new Map<string, SavedProject>();
+    store.set("rapid-draw-project", {
+      project_id: "rapid-draw-project",
+      name: "Rapid Draw Project",
+      updated_at: Math.floor(Date.now() / 1000),
+      project_input: {
+        input_mode: "user",
+        meta: { site_inputs: { site_alignment_locked: true } },
+        manual_fields: { lot: { x: 0, y: 0, w: 1000, h: 1000 } },
+      },
+      latest_result: null,
+    });
+    await mockShell(page, store);
+
+    let saveSequence = 0;
+    await page.route("**/api/projects", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      saveSequence += 1;
+      const payload = route.request().postDataJSON() as {
+        project_id?: string | null;
+        name?: string;
+        project_input?: Record<string, unknown>;
+      };
+      await new Promise((resolve) => setTimeout(resolve, saveSequence === 1 ? 700 : 40));
+      const project: SavedProject = {
+        project_id: payload.project_id || "rapid-draw-project",
+        name: payload.name || "Rapid Draw Project",
+        updated_at: Math.floor(Date.now() / 1000),
+        project_input: payload.project_input ?? {},
+        latest_result: null,
+      };
+      store.set(project.project_id, project);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, project }),
+      });
+    });
+
+    await openApp(page);
+    await openProjects(page);
+    await page.getByRole("button", { name: "Open project Rapid Draw Project" }).click();
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+
+    const drawBox = async (first: [number, number], second: [number, number]) => {
+      const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
+      if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
+      await page
+        .getByTestId("primary-workflow-sidebar")
+        .getByRole("button", { name: /^Draw\b/i })
+        .filter({ visible: true })
+        .first()
+        .click();
+      await page.getByTestId("cad-tool-box").filter({ visible: true }).first().click();
+      const panel = page.getByTestId("workspace-right-panel");
+      await panel.getByRole("button", { name: "Minimize" }).click();
+      const surface = page.getByTestId("preview-drawing-surface");
+      const box = await surface.boundingBox();
+      expect(box).not.toBeNull();
+      await page.mouse.click(box!.x + box!.width * first[0], box!.y + box!.height * first[1]);
+      await page.mouse.click(box!.x + box!.width * second[0], box!.y + box!.height * second[1]);
+    };
+
+    await drawBox([0.54, 0.34], [0.67, 0.46]);
+    const objectManager = page.getByTestId("preview-object-manager");
+    const firstSelected = objectManager.getByRole("textbox", { name: "Rename selected object" });
+    await expect(firstSelected).toHaveValue(/Custom Rectangle/);
+    await firstSelected.fill("Office Building A");
+    await firstSelected.press("Enter");
+    await objectManager.getByTestId("preview-object-manager-type").selectOption("building");
+
+    await drawBox([0.72, 0.34], [0.85, 0.46]);
+    const secondSelected = objectManager.getByRole("textbox", { name: "Rename selected object" });
+    await expect(secondSelected).toHaveValue(/Custom Rectangle/);
+    await secondSelected.fill("Parking Field A");
+    await secondSelected.press("Enter");
+    await objectManager.getByTestId("preview-object-manager-type").selectOption("parking");
+
+    await page.waitForTimeout(1_800);
+    const objectList = page.getByTestId("preview-object-manager-list");
+    await expect(objectList).toContainText("Office Building A");
+    await expect(objectList).toContainText("Parking Field A");
+    await expect
+      .poll(() => JSON.stringify(store.get("rapid-draw-project")?.project_input ?? {}))
+      .toContain("Office Building A");
+    expect(JSON.stringify(store.get("rapid-draw-project")?.project_input ?? {})).toContain("Parking Field A");
+  });
+
   test("ignores a saved result that finishes loading after New Project", async ({ page }) => {
     const store = new Map<string, SavedProject>();
     store.set("older-project", {

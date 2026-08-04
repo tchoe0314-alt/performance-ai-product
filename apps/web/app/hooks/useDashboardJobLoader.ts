@@ -9,10 +9,12 @@ import {
   panelErrorMessage,
 } from "../utils/dashboardStatus";
 import { summarizePlanResponse, toReadableLabel } from "../utils/formatting";
+import type { ProjectStatusSummary } from "../utils/workspaceShell";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type AppendChatMessage = (role: ChatMessage["role"], content: string, kind?: ChatMessage["kind"]) => void;
 type ProjectSummary = Pick<ProjectRecord, "project_id" | "name" | "description" | "has_result" | "updated_at">;
+type UpdateProjectStatus = (updates: Omit<ProjectStatusSummary, "updatedAt">) => void;
 
 type PreviewRequest = {
   project_id: string | null;
@@ -55,6 +57,7 @@ type UseDashboardJobLoaderOptions = {
   setStatusMessage: (message: string) => void;
   siteName: string;
   token: string | null;
+  updateProjectStatus: UpdateProjectStatus;
   upsertProjectSummary: (project: ProjectSummary) => void;
 };
 
@@ -86,6 +89,7 @@ export function useDashboardJobLoader({
   setStatusMessage,
   siteName,
   token,
+  updateProjectStatus,
   upsertProjectSummary,
 }: UseDashboardJobLoaderOptions) {
   const loadJob = useCallback(async (id: string, options?: { selectionOnly?: boolean }) => {
@@ -308,8 +312,22 @@ export function useDashboardJobLoader({
               "status",
             );
             setStatusMessage("Review export downloaded. Field use remains outside Civora.");
+            updateProjectStatus({
+              state: "ready",
+              area: "deliver",
+              title: "Review export ready",
+              detail: `${toReadableLabel(String(artifact.kind || "export"))} review export completed and downloaded.`,
+              nextAction: "Review the downloaded artifact and its source/assumption notes.",
+            });
           } else {
             setStatusMessage("Export job completed but did not return a download path.");
+            updateProjectStatus({
+              state: "blocked",
+              area: "deliver",
+              title: "Export needs attention",
+              detail: "The export job completed without a download path.",
+              nextAction: "Retry the export or inspect the job detail.",
+            });
           }
           setActiveJobId("");
           if (activeTrackedProjectId) {
@@ -340,6 +358,13 @@ export function useDashboardJobLoader({
           summarizePlanResponse(job.result, "run"),
           "message",
         );
+        updateProjectStatus({
+          state: "needs review",
+          area: "generate",
+          title: "Generate completed",
+          detail: `Job ${job.job_id} completed and the current review draft is loaded.`,
+          nextAction: "Review generated systems and needs, then create the review package when ready.",
+        });
         setActiveJobId("");
         if (jobProjectId) {
           upsertProjectSummary({
@@ -366,6 +391,13 @@ export function useDashboardJobLoader({
           "status",
         );
         setStatusMessage(job.error ?? "Job failed.");
+        updateProjectStatus({
+          state: "blocked",
+          area: isArtifactExportJob(job) ? "deliver" : "generate",
+          title: isArtifactExportJob(job) ? "Export needs attention" : "Generate needs attention",
+          detail: job.error || `Job ${job.job_id} failed without backend detail.`,
+          nextAction: "Review the job inputs and backend detail, then retry.",
+        });
         setActiveJobId("");
       } else if (job.status === "cancelled") {
         appendChatMessage(
@@ -374,6 +406,13 @@ export function useDashboardJobLoader({
           "status",
         );
         setStatusMessage(`Job ${job.job_id} was cancelled.`);
+        updateProjectStatus({
+          state: "needs review",
+          area: isArtifactExportJob(job) ? "deliver" : "generate",
+          title: isArtifactExportJob(job) ? "Export cancelled" : "Generate cancelled",
+          detail: `Job ${job.job_id} was cancelled before completion.`,
+          nextAction: "Review the current project state, then restart the action when ready.",
+        });
         setActiveJobId("");
       } else {
         setStatusMessage(
@@ -389,6 +428,13 @@ export function useDashboardJobLoader({
       const message = `Job refresh failed: ${panelErrorMessage(error, "Could not refresh job detail.")}`;
       setJobsPanelStatusMessage(message);
       setStatusMessage(message);
+      updateProjectStatus({
+        state: "blocked",
+        area: "generate",
+        title: "Job status needs attention",
+        detail: message,
+        nextAction: "Check the backend connection, then refresh the job again.",
+      });
     }
   }, [
     activeJobProjectSyncRef,
@@ -417,6 +463,7 @@ export function useDashboardJobLoader({
     setStatusMessage,
     siteName,
     token,
+    updateProjectStatus,
     upsertProjectSummary,
   ]);
 

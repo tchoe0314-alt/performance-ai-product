@@ -286,3 +286,97 @@ test("a completed job does not block the next review export", async ({ page }) =
   await expect(page.getByTestId("deliver-export-status")).toContainText(/DXF review export queued as job-export-dxf/i);
   await expect(page.getByTestId("deliver-export-status")).not.toContainText(/already running|waiting for the current/i);
 });
+
+test("a completed staged run replaces the queued global status", async ({ page }) => {
+  const project = {
+    project_id: "project-status-complete",
+    name: "Completed Status Project",
+    description: "",
+    has_result: false,
+    updated_at: Date.now() / 1000,
+    project_input: {
+      input_mode: "user",
+      manual_fields: { lot: { w: 720, h: 520 } },
+      meta: { site_inputs: { site_alignment_locked: true } },
+    },
+  };
+  const result = {
+    success: true,
+    final_plan: { project_name: project.name, actions: [], meta: {} },
+  };
+  const completedJob = {
+    job_id: "job-status-complete",
+    project_id: project.project_id,
+    job_type: "orchestrate",
+    status: "completed",
+    stage: "Complete",
+    stage_detail: "Review workflow completed.",
+    progress: 100,
+    updated_at: Date.now() / 1000,
+    can_cancel: false,
+    can_retry: false,
+    can_resume: false,
+    result,
+  };
+
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/auth/status") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, auth_enabled: true }) });
+      return;
+    }
+    if (path === "/api/auth/me") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, user: { user_id: "user-1", email: "user@example.com", name: "User" } }) });
+      return;
+    }
+    if (path === "/api/projects" && request.method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, projects: [project] }) });
+      return;
+    }
+    if (path === `/api/projects/${project.project_id}`) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, project }) });
+      return;
+    }
+    if (path === `/api/projects/${project.project_id}/result`) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, project_id: project.project_id, latest_result: result }) });
+      return;
+    }
+    if (path === "/api/jobs/orchestrate" && request.method() === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, job: { ...completedJob, status: "queued", stage: "Queued", result: null } }),
+      });
+      return;
+    }
+    if (path === "/api/jobs" && request.method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, jobs: [completedJob] }) });
+      return;
+    }
+    if (path === `/api/jobs/${completedJob.job_id}`) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, job: completedJob }) });
+      return;
+    }
+    if (path === "/api/preview") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, image_url: "", summary: {} }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
+  });
+
+  await page.addInitScript((projectId) => {
+    window.localStorage.setItem("civora-ai-token", "test-token");
+    window.localStorage.setItem("civora.activeProjectId", projectId);
+    window.sessionStorage.setItem("civora-ai-session-auth-restore", "1");
+  }, project.project_id);
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
+  if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
+  await page.getByRole("button", { name: /^Generate\b/i }).filter({ visible: true }).first().click();
+  await page.getByTestId("generate-main-action").click();
+  await expect(page.getByTestId("project-status-summary")).toContainText("Generate completed", { timeout: 15_000 });
+  await expect(page.getByTestId("project-status-summary")).not.toContainText("Generate queued");
+});
