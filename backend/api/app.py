@@ -2755,7 +2755,15 @@ def ai_visualization_status(
         "provider": str(status.get("provider") or "none"),
         "model": str(status.get("model") or ""),
         "external": bool(status.get("external")),
-        "message": str(status.get("reason") or "External photorealistic visualization is ready."),
+        "self_hosted": bool(status.get("self_hosted")),
+        "message": str(
+            status.get("reason")
+            or (
+                "Civora private photorealistic visualization is ready."
+                if status.get("self_hosted")
+                else "Photorealistic visualization is ready."
+            )
+        ),
         "visualization_only": True,
         "not_engineering_evidence": True,
     }

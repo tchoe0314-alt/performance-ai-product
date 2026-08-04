@@ -156,7 +156,7 @@ export type UtilityCoordinationRow = {
 };
 
 export type AiRealismArtifact = {
-  type: "high_quality_ai_render_v1" | "high_quality_ai_render_v2";
+  type: "high_quality_ai_render_v1" | "high_quality_ai_render_v2" | "high_quality_ai_render_v3";
   project_id: string;
   source_layout_hash: string;
   site_frame: {
@@ -178,12 +178,24 @@ export type AiRealismArtifact = {
   image_data_url: string;
   visualization_only?: true;
   not_engineering_evidence?: true;
-  renderer?: "local_reference" | "external";
+  renderer?: "local_reference" | "external" | "civora_hybrid";
   provider?: string;
   model?: string;
   request_id?: string;
   mime_type?: string;
   map_context_used?: boolean;
+  self_hosted?: boolean;
+  reference_manifest?: {
+    contract?: string;
+    width?: number;
+    height?: number;
+    object_count?: number;
+    control_kinds?: string[];
+    reference_sha256?: string;
+    control_sha256?: string;
+    depth_sha256?: string;
+  };
+  renderer_provenance?: Record<string, unknown>;
 };
 
 export type AiRealismGenerationStatus = {

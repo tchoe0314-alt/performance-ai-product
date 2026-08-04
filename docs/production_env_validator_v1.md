@@ -26,6 +26,7 @@ Required for `private_alpha`, `public_beta`, or `production` as noted by the val
 Provider-conditional blockers:
 
 - `OPENAI_API_KEY` when `CIVORA_AI_PROVIDER=openai`
+- `CIVORA_IMAGE_RENDERER_URL` and a 32-character-or-longer `CIVORA_IMAGE_RENDERER_TOKEN` when `CIVORA_IMAGE_PROVIDER=civora`; this self-hosted image path does not require `OPENAI_API_KEY`
 - `CIVORA_OLLAMA_BASE_URL` when `CIVORA_AI_PROVIDER=ollama` or `local`
 - Stripe keys when `CIVORA_BILLING_PROVIDER=stripe`
 - `CIVORA_GIS_PROVIDER_REGISTRY_URL` when `CIVORA_REQUIRE_GIS_PROVIDERS=true`

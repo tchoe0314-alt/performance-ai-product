@@ -165,7 +165,7 @@ export function useAiRealismPreview({
       setGenerationStatus({
         state: status === "queued" || status === "pending" ? "queued" : "generating",
         stage: String(job.stage || (status === "queued" ? "Queued" : "Generating visualization")),
-        detail: String(job.stage_detail || "Creating an external visual concept from the current layout."),
+        detail: String(job.stage_detail || "Creating a visual concept from the current layout."),
         progress,
         jobId,
       });
@@ -186,13 +186,17 @@ export function useAiRealismPreview({
         setGenerationStatus({
           state: "ready",
           stage: "Visualization ready",
-          detail: "External photorealistic visual concept generated from the current layout.",
+          detail: artifact.renderer === "civora_hybrid"
+            ? "Civora's private hybrid renderer generated a visual concept from the current layout controls."
+            : "External photorealistic visual concept generated from the current layout.",
           progress: 100,
           jobId,
         });
         onAiRealismChange?.({
           type: "generated",
-          detail: "External photorealistic visualization generated from the current review layout.",
+          detail: artifact.renderer === "civora_hybrid"
+            ? "Private hybrid visualization generated from the current review layout."
+            : "External photorealistic visualization generated from the current review layout.",
         });
         return;
       }
@@ -247,7 +251,7 @@ export function useAiRealismPreview({
       return;
     }
     if (!authToken) {
-      setBlocked("Sign in to create an external photorealistic visualization.", "unavailable");
+      setBlocked("Sign in to create a photorealistic visualization.", "unavailable");
       return;
     }
 
@@ -258,7 +262,7 @@ export function useAiRealismPreview({
     setGenerationStatus({
       state: "queued",
       stage: "Queueing visualization",
-      detail: "Sending the current canonical site layout to the visualization queue.",
+      detail: "Sending bounded geometry controls to the visualization queue.",
       progress: 8,
       jobId: "",
     });
@@ -295,7 +299,7 @@ export function useAiRealismPreview({
       });
     } catch (error) {
       if (controller.signal.aborted || !mountedRef.current) return;
-      setBlocked(apiErrorMessage(error, "The external visualization could not complete. Retry in a moment."));
+      setBlocked(apiErrorMessage(error, "The visualization could not complete. Retry in a moment."));
     } finally {
       if (activeRequestRef.current?.id === requestId) activeRequestRef.current = null;
     }

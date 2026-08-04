@@ -3,7 +3,7 @@ import type { CSSProperties, SyntheticEvent } from "react";
 import type { AiRealismGenerationStatus } from "./previewPanelTypes";
 
 type AiRealismArtifactView = {
-  type: "high_quality_ai_render_v1" | "high_quality_ai_render_v2";
+  type: "high_quality_ai_render_v1" | "high_quality_ai_render_v2" | "high_quality_ai_render_v3";
   project_id: string;
   site_frame: {
     width_ft: number;
@@ -18,11 +18,15 @@ type AiRealismArtifactView = {
   missing_inputs: string[];
   generated_timestamp: string;
   image_data_url: string;
-  renderer?: "local_reference" | "external";
+  renderer?: "local_reference" | "external" | "civora_hybrid";
   provider?: string;
   model?: string;
   mime_type?: string;
   map_context_used?: boolean;
+  self_hosted?: boolean;
+  reference_manifest?: {
+    control_kinds?: string[];
+  };
 };
 
 type AiRealismPreviewOverlayProps = {
@@ -83,7 +87,9 @@ export function AiRealismPreviewOverlay({
             data-testid="ai-realism-preview-badge"
             className="absolute left-4 top-4 rounded-lg border border-white/55 bg-slate-950/72 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white shadow-lg backdrop-blur"
           >
-            {artifact.renderer === "external"
+            {artifact.renderer === "civora_hybrid"
+              ? `Civora private visual · ${showMap && artifact.site_frame.map_context_available ? "over live map" : "proposed site design"}`
+              : artifact.renderer === "external"
               ? `Photoreal concept · ${showMap && artifact.site_frame.map_context_available ? "over live map" : "proposed site design"}`
               : `Visual preview · ${showMap && artifact.site_frame.map_context_available ? "Live map + proposed design" : "Proposed site design"}`}
           </div>
@@ -179,7 +185,9 @@ export function AiRealismPreviewOverlay({
                 <div>
                   <dt className="font-semibold text-slate-900">Renderer</dt>
                   <dd data-testid="ai-realism-renderer" className="text-slate-600">
-                    {artifact.renderer === "external"
+                    {artifact.renderer === "civora_hybrid"
+                      ? `Civora private hybrid renderer${artifact.model ? ` · ${artifact.model}` : ""}`
+                      : artifact.renderer === "external"
                       ? `External photorealistic concept${artifact.model ? ` · ${artifact.model}` : ""}`
                       : "Local plan visualization"}
                   </dd>
@@ -190,10 +198,20 @@ export function AiRealismPreviewOverlay({
                     {showMap && artifact.site_frame.map_context_available
                       ? artifact.map_context_used
                         ? "Map context was included in the visual reference."
-                        : "Live map is shown underneath as a separate layer; its imagery was not sent to the image provider."
+                        : artifact.renderer === "civora_hybrid"
+                          ? "Live map is shown underneath as a separate layer; its imagery was not sent to the private renderer."
+                          : "Live map is shown underneath as a separate layer; its imagery was not sent to the image provider."
                       : "Visualization is registered to local site coordinates."}
                   </dd>
                 </div>
+                {artifact.renderer === "civora_hybrid" ? (
+                  <div>
+                    <dt className="font-semibold text-slate-900">Geometry controls</dt>
+                    <dd data-testid="ai-realism-control-provenance" className="text-slate-600">
+                      {(artifact.reference_manifest?.control_kinds || ["edge", "height_depth"]).join(" + ")} · private worker · no map imagery
+                    </dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt className="font-semibold text-slate-900">Objects included</dt>
                   <dd data-testid="ai-realism-objects-included" className="text-slate-600">

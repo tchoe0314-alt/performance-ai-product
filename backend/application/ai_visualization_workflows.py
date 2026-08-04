@@ -13,7 +13,10 @@ from backend.ai.image_provider import (
     build_image_provider,
     image_provider_status,
 )
-from backend.planning.ai_visualization_reference import render_ai_visualization_reference
+from backend.planning.ai_visualization_reference import (
+    AiVisualizationReferenceBundle,
+    render_ai_visualization_reference_bundle,
+)
 
 
 MAX_SOURCE_OBJECTS = 300
@@ -175,7 +178,7 @@ def queue_ai_visualization_job(
 ) -> Dict[str, Any]:
     status = dict(provider_status())
     if not status.get("configured"):
-        raise HTTPException(status_code=503, detail=str(status.get("reason") or "External image provider is unavailable."))
+        raise HTTPException(status_code=503, detail=str(status.get("reason") or "Visualization provider is unavailable."))
     if project_id and project_store.get_project(user_id=user_id, project_id=project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     normalized = normalize_ai_visualization_request(request_payload)
@@ -191,7 +194,8 @@ def queue_ai_visualization_job(
         "provider": {
             "name": status.get("provider"),
             "model": status.get("model"),
-            "external": True,
+            "external": bool(status.get("external")),
+            "self_hosted": bool(status.get("self_hosted")),
         },
         "operational_summary": {
             "status": str(job.get("status") or "queued"),
@@ -209,7 +213,7 @@ def build_ai_visualization_job_runner(
     *,
     update_job_progress: Callable[..., None],
     provider_factory: Callable[[], ImageProvider] = build_image_provider,
-    reference_renderer: Callable[..., bytes] = render_ai_visualization_reference,
+    reference_renderer: Callable[..., AiVisualizationReferenceBundle] = render_ai_visualization_reference_bundle,
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     def runner(job: Dict[str, Any]) -> Dict[str, Any]:
         payload = normalize_ai_visualization_request(dict(job.get("payload") or {}))
@@ -221,30 +225,42 @@ def build_ai_visualization_job_runner(
                 detail="Building a bounded image reference from the current canonical site layout.",
                 progress=30,
             )
-        reference_png = reference_renderer(
+        reference_bundle = reference_renderer(
             site_width_ft=payload["site_frame"]["width_ft"],
             site_height_ft=payload["site_frame"]["height_ft"],
             source_objects=payload["source_objects"],
         )
+        provider = provider_factory()
+        private_renderer = str(getattr(provider, "name", "")) == "civora"
         if job_id:
             update_job_progress(
                 job_id,
                 stage="Generating Photorealistic Visualization",
-                detail="The external image provider is rendering a visual concept. This can take up to two minutes.",
+                detail=(
+                    "The private Civora GPU renderer is applying photoreal materials while preserving the layout controls."
+                    if private_renderer
+                    else "The external image provider is rendering a visual concept. This can take up to two minutes."
+                ),
                 progress=58,
             )
-        generated = provider_factory().generate(
+        generated = provider.generate(
             prompt=build_ai_visualization_prompt(payload),
-            reference_png=reference_png,
+            reference_png=reference_bundle.reference_png,
+            control_png=reference_bundle.control_png,
+            depth_png=reference_bundle.depth_png,
             user_id=str(job.get("user_id") or ""),
+            request_context={
+                "job_id": job_id,
+                "source_layout_hash": payload["source_layout_hash"],
+            },
         )
         try:
             decoded_image = base64.b64decode(generated.image_base64, validate=True)
         except Exception as exc:
-            raise RuntimeError("The external visualization provider returned invalid image data.") from exc
+            raise RuntimeError("The visualization renderer returned invalid image data.") from exc
         if not decoded_image or len(decoded_image) > MAX_GENERATED_IMAGE_BYTES:
             raise RuntimeError(
-                "The external visualization image is empty or exceeds the 15 MB result limit."
+                "The visualization image is empty or exceeds the 15 MB result limit."
             )
         if job_id:
             update_job_progress(
@@ -255,7 +271,7 @@ def build_ai_visualization_job_runner(
             )
         timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         artifact = {
-            "type": "high_quality_ai_render_v2",
+            "type": "high_quality_ai_render_v3",
             "project_id": str(job.get("project_id") or "unsaved-review-layout"),
             "source_layout_hash": payload["source_layout_hash"],
             "site_frame": payload["site_frame"],
@@ -268,12 +284,31 @@ def build_ai_visualization_job_runner(
             "construction_release_allowed": False,
             "visualization_only": True,
             "not_engineering_evidence": True,
-            "renderer": "external",
+            "renderer": "civora_hybrid" if generated.provider == "civora" else "external",
             "provider": generated.provider,
             "model": generated.model,
             "request_id": generated.request_id,
             "mime_type": generated.mime_type,
             "map_context_used": False,
+            "self_hosted": bool(generated.metadata.get("self_hosted")),
+            "reference_manifest": dict(reference_bundle.manifest),
+            "renderer_provenance": {
+                key: generated.metadata[key]
+                for key in (
+                    "engine",
+                    "model_revision",
+                    "model_license",
+                    "controlnet_revisions",
+                    "control_kinds",
+                    "seed",
+                    "width",
+                    "height",
+                    "inference_steps",
+                    "reference_strength",
+                    "no_image_retention",
+                )
+                if key in generated.metadata
+            },
             "image_data_url": f"data:{generated.mime_type};base64,{generated.image_base64}",
             "watermark": AI_VISUALIZATION_WATERMARK,
         }
@@ -286,6 +321,9 @@ def build_ai_visualization_job_runner(
                 "source_layout_hash": payload["source_layout_hash"],
                 "provider": generated.provider,
                 "model": generated.model,
+                "renderer": "civora_hybrid" if generated.provider == "civora" else "external",
+                "self_hosted": bool(generated.metadata.get("self_hosted")),
+                "reference_manifest": dict(reference_bundle.manifest),
             },
         }
 

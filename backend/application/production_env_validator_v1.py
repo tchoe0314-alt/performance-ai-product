@@ -46,11 +46,13 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("CIVORA_AI_PROVIDER", "ai", ("public_beta", "production"), description="AI provider: none, openai, ollama, or local."),
     EnvVarSpec("OPENAI_API_KEY", "ai", (), optional=True, secret=True, description="Required when CIVORA_AI_PROVIDER=openai."),
     EnvVarSpec("CIVORA_OLLAMA_BASE_URL", "ai", (), optional=True, description="Required when CIVORA_AI_PROVIDER is ollama/local."),
-    EnvVarSpec("CIVORA_IMAGE_PROVIDER", "ai_image", (), optional=True, description="External visual-concept provider: none or openai."),
-    EnvVarSpec("CIVORA_IMAGE_MODEL", "ai_image", (), optional=True, description="Image model used for visual concepts. Defaults to gpt-image-2."),
-    EnvVarSpec("CIVORA_IMAGE_QUALITY", "ai_image", (), optional=True, description="External image quality: low, medium, high, or auto."),
-    EnvVarSpec("CIVORA_IMAGE_OUTPUT_FORMAT", "ai_image", (), optional=True, description="External image format: webp, png, or jpeg."),
-    EnvVarSpec("CIVORA_IMAGE_TIMEOUT_SECONDS", "ai_image", (), optional=True, description="Maximum external image request time."),
+    EnvVarSpec("CIVORA_IMAGE_PROVIDER", "ai_image", (), optional=True, description="Visual-concept provider: none, civora, or openai."),
+    EnvVarSpec("CIVORA_IMAGE_MODEL", "ai_image", (), optional=True, description="Image model used for visual concepts."),
+    EnvVarSpec("CIVORA_IMAGE_QUALITY", "ai_image", (), optional=True, description="Image quality: low, medium, high, or auto."),
+    EnvVarSpec("CIVORA_IMAGE_OUTPUT_FORMAT", "ai_image", (), optional=True, description="Image format: webp, png, or jpeg."),
+    EnvVarSpec("CIVORA_IMAGE_TIMEOUT_SECONDS", "ai_image", (), optional=True, description="Maximum image render request time."),
+    EnvVarSpec("CIVORA_IMAGE_RENDERER_URL", "ai_image", (), optional=True, description="Private Civora GPU renderer base URL when provider is civora."),
+    EnvVarSpec("CIVORA_IMAGE_RENDERER_TOKEN", "ai_image", (), optional=True, secret=True, description="Service token shared only with the private Civora renderer."),
     EnvVarSpec("CIVORA_JOB_TIMEOUT_SECONDS", "queue", (), optional=True, description="Maximum in-process job runtime."),
     EnvVarSpec("CIVORA_MEMORY_WARN_MB", "monitoring", (), optional=True, description="Runtime memory warning threshold."),
     EnvVarSpec("CIVORA_RUNTIME_DEBUG_BEARER_TOKEN", "monitoring", (), optional=True, secret=True, description="Audit token for runtime sampling tools."),
@@ -372,6 +374,8 @@ def validate_production_env_v1(
         warnings.append(_issue("warning", "ai_provider_disabled", "AI provider is disabled in production; deterministic fallbacks only.", env_vars=["CIVORA_AI_PROVIDER"]))
 
     image_provider = str(env.get("CIVORA_IMAGE_PROVIDER") or "none").strip().lower()
+    if image_provider in {"hybrid", "internal", "self_hosted", "self-hosted"}:
+        image_provider = "civora"
     if image_provider == "openai" and not str(env.get("OPENAI_API_KEY") or "").strip():
         blockers.append(
             _issue(
@@ -381,12 +385,53 @@ def validate_production_env_v1(
                 env_vars=["CIVORA_IMAGE_PROVIDER", "OPENAI_API_KEY"],
             )
         )
-    elif image_provider not in {"", "none", "disabled", "off", "openai"}:
+    elif image_provider == "civora":
+        renderer_url = _clean_url(str(env.get("CIVORA_IMAGE_RENDERER_URL") or ""))
+        renderer_token = str(env.get("CIVORA_IMAGE_RENDERER_TOKEN") or "").strip()
+        if not renderer_url:
+            blockers.append(
+                _issue(
+                    "blocker",
+                    "civora_image_renderer_url_missing",
+                    "CIVORA_IMAGE_RENDERER_URL is required for the private hybrid renderer.",
+                    env_vars=["CIVORA_IMAGE_PROVIDER", "CIVORA_IMAGE_RENDERER_URL"],
+                )
+            )
+        elif not _is_url(renderer_url):
+            blockers.append(
+                _issue(
+                    "blocker",
+                    "civora_image_renderer_url_invalid",
+                    "CIVORA_IMAGE_RENDERER_URL must be a valid HTTP(S) URL.",
+                    env_vars=["CIVORA_IMAGE_RENDERER_URL"],
+                )
+            )
+        elif target not in {"local"} and (
+            urlparse(renderer_url).scheme != "https" or _is_local_url(renderer_url)
+        ):
+            blockers.append(
+                _issue(
+                    "blocker",
+                    "civora_image_renderer_url_not_private_https",
+                    "Hosted Civora deployments require a non-local HTTPS private renderer URL.",
+                    env_vars=["CIVORA_IMAGE_RENDERER_URL", "CIVORA_DEPLOYMENT_TARGET"],
+                )
+            )
+        if len(renderer_token) < 32:
+            blockers.append(
+                _issue(
+                    "blocker",
+                    "civora_image_renderer_token_missing",
+                    "CIVORA_IMAGE_RENDERER_TOKEN must contain at least 32 characters for private renderer authentication.",
+                    env_vars=["CIVORA_IMAGE_PROVIDER", "CIVORA_IMAGE_RENDERER_TOKEN"],
+                )
+            )
+    elif image_provider not in {"", "none", "disabled", "off", "openai", "civora"}:
         blockers.append(
             _issue(
                 "blocker",
                 "unsupported_image_provider",
-                "CIVORA_IMAGE_PROVIDER must be none or openai.",
+                "CIVORA_IMAGE_PROVIDER must be none, civora, or openai.",
                 env_vars=["CIVORA_IMAGE_PROVIDER"],
             )
         )
@@ -395,7 +440,7 @@ def validate_production_env_v1(
             _issue(
                 "warning",
                 "image_provider_disabled",
-                "External photorealistic visualization is disabled; technical previews remain available.",
+                "Photorealistic visualization is disabled; technical previews remain available.",
                 env_vars=["CIVORA_IMAGE_PROVIDER"],
             )
         )

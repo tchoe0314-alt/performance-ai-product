@@ -66,6 +66,71 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
 
         self.assertIn("image_openai_key_missing", {item["code"] for item in report["blockers"]})
 
+    def test_private_hybrid_image_provider_requires_url_and_strong_service_token(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_IMAGE_PROVIDER": "civora",
+                "CIVORA_IMAGE_RENDERER_TOKEN": "short",
+            },
+            deployment_target="railway",
+        )
+
+        codes = {item["code"] for item in report["blockers"]}
+        self.assertIn("civora_image_renderer_url_missing", codes)
+        self.assertIn("civora_image_renderer_token_missing", codes)
+        self.assertNotIn("image_openai_key_missing", codes)
+
+    def test_private_hybrid_image_provider_accepts_https_without_openai_key(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_IMAGE_PROVIDER": "civora",
+                "CIVORA_IMAGE_RENDERER_URL": "https://renderer.example.com",
+                "CIVORA_IMAGE_RENDERER_TOKEN": "renderer-token-" + "x" * 32,
+            },
+            deployment_target="railway",
+        )
+
+        image_codes = {
+            item["code"]
+            for item in [*report["blockers"], *report["warnings"]]
+            if "image" in item["code"] or "renderer" in item["code"]
+        }
+        self.assertNotIn("image_openai_key_missing", image_codes)
+        self.assertNotIn("civora_image_renderer_url_missing", image_codes)
+        self.assertNotIn("civora_image_renderer_token_missing", image_codes)
+        self.assertNotIn("civora_image_renderer_url_not_private_https", image_codes)
+        self.assertTrue(report["diagnostics"]["CIVORA_IMAGE_RENDERER_TOKEN"]["redacted"])
+
+    def test_private_hybrid_image_provider_blocks_insecure_hosted_renderer_url(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_IMAGE_PROVIDER": "civora",
+                "CIVORA_IMAGE_RENDERER_URL": "http://127.0.0.1:8091",
+                "CIVORA_IMAGE_RENDERER_TOKEN": "renderer-token-" + "x" * 32,
+            },
+            deployment_target="railway",
+        )
+
+        self.assertIn(
+            "civora_image_renderer_url_not_private_https",
+            {item["code"] for item in report["blockers"]},
+        )
+
     def test_disabled_external_image_provider_is_a_truthful_warning(self) -> None:
         report = validate_production_env_v1(
             {
