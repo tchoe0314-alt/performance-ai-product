@@ -170,6 +170,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
     production_requirements = safe_list(validation.get("production_requirements"))
     importer_matrix = safe_list(validation.get("import_matrix") or validation.get("importer_production_matrix"))
     terrain_confidence = safe_dict(validation.get("terrain_source_confidence")) or safe_dict(safe_dict(canonical_model.get("terrain")).get("confidence"))
+    source_registration_audit = safe_dict(validation.get("source_registration_audit_v1"))
     survey_control_package = (
         safe_dict(validation.get("survey_control_package"))
         or safe_dict(summary.get("survey")).get("survey_control_package")
@@ -196,6 +197,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
             "terrain_source_confidence": safe_str(terrain_confidence.get("label"), "missing"),
             "metadata_only_source_count": len(metadata_only_sources),
             "dependency_blocked_source_count": len(safe_list(validation.get("dependency_blocked_sources"))),
+            "source_registration_status": safe_str(source_registration_audit.get("status"), "not_checked"),
             "truth_label": "The existing-conditions gate separates parsed evidence from production-grade survey/GIS/control readiness.",
         },
         "accepted": bool(acceptance["accepted"]),
@@ -222,6 +224,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
         "importer_production_matrix": deepcopy(importer_matrix),
         "canonical_vs_metadata_only": deepcopy(validation.get("canonical_vs_metadata_only")),
         "terrain_source_confidence": deepcopy(terrain_confidence),
+        "source_registration_audit_v1": deepcopy(source_registration_audit),
         "survey_control_package": deepcopy(survey_control_package),
         "source_confidence_map_v1": deepcopy(source_confidence_map),
         "survey_ready": bool(survey.get("ready")),

@@ -130,11 +130,56 @@ class RealInputFileBenchmarkTests(unittest.TestCase):
         self.assertIn("survey_points", model["canonical_targets"])
         self.assertIn("terrain_surface_metadata", model["canonical_targets"])
         self.assertIn("gis_layers", model["canonical_targets"])
+        registration = validation["source_registration_audit_v1"]
+        self.assertEqual(registration["status"], "aligned")
+        self.assertGreaterEqual(registration["registered_source_count"], 3)
+        self.assertTrue(registration["comparisons"])
+        self.assertFalse(registration["blockers"])
         self.assertFalse(validation["production_usable"])
         self.assertEqual(
             {item["field"] for item in validation["blockers"]},
             {"survey_benchmark", "survey_datum", "survey_benchmark_elevation", "survey_control_verified"},
         )
+
+    def test_spatially_disjoint_sources_are_blocked_even_when_crs_matches(self) -> None:
+        survey = import_survey_csv(FIXTURE_DIR / "survey_points.csv", coordinate_system=CONTROL_CRS)
+        far_gis = {
+            "success": True,
+            "source": "far-away-parcel.geojson",
+            "source_type": "geojson",
+            "coordinate_system": CONTROL_CRS,
+            "layers": {
+                "parcels": [
+                    {
+                        "source": "fixture parcel",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [
+                                [
+                                    [900000.0, 900000.0],
+                                    [900200.0, 900000.0],
+                                    [900200.0, 900200.0],
+                                    [900000.0, 900200.0],
+                                    [900000.0, 900000.0],
+                                ]
+                            ],
+                        },
+                    }
+                ]
+            },
+        }
+
+        merged = merge_imported_existing_conditions(survey, far_gis)
+        validation = merged["import_validation"]
+        registration = validation["source_registration_audit_v1"]
+
+        self.assertEqual(registration["status"], "blocked")
+        self.assertFalse(registration["production_usable"])
+        self.assertEqual(registration["anchor_source_id"], "survey_points")
+        self.assertIn("source_registration", {item["field"] for item in validation["blockers"]})
+        mismatch = next(item for item in registration["comparisons"] if item["source_id"] == "gis:parcels")
+        self.assertFalse(mismatch["aligned"])
+        self.assertGreater(mismatch["gap"], mismatch["allowed_gap"])
 
     def test_real_input_benchmark_can_attach_survey_control_package_v1(self) -> None:
         survey = import_survey_csv(FIXTURE_DIR / "survey_points.csv", coordinate_system=CONTROL_CRS)

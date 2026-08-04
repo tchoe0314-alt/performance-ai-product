@@ -2,11 +2,17 @@ import math
 import unittest
 
 from engines.storm.hydraulic_engine import HydraulicEngine, analyze_storm_hydraulics
+from engines.storm.catchment_engine import CatchmentEngine
 from engines.storm.storm_types import HydraulicAnalysisRequest, StormNode, StormPipe
 from engines.water_sizing_engine import WaterPipeSegment, WaterSizingEngine, WaterSizingRequest
 
 
 class RealMathHydraulicsTests(unittest.TestCase):
+    def test_storm_catchment_uses_same_us_customary_rational_conversion_as_hydrology(self) -> None:
+        flow = CatchmentEngine()._rational_peak_runoff_cfs(0.82, 4.25, 4.2 * 43560.0)
+
+        self.assertAlmostEqual(flow, 1.008 * 0.82 * 4.25 * 4.2, places=9)
+
     def test_storm_manning_full_flow_and_half_flow_normal_depth(self) -> None:
         engine = HydraulicEngine()
         full_capacity = engine._full_flow_capacity_cfs(2.0, 0.01, 0.013)

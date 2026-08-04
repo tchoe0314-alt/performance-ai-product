@@ -185,6 +185,9 @@ def test_saved_canvas_objects_converge_into_one_engineering_graph():
     assert set(by_type) == {"building", "road_centerline", "hydrant"}
     assert len(model["entities"]) == 4
     assert by_type["building"]["source_object_type"] == "office_building"
+    assert by_type["building"]["engineering_attributes"]["footprint_area_sf"] == 4800
+    assert by_type["road_centerline"]["engineering_attributes"]["centerline_length_ft"] == 200
+    assert by_type["hydrant"]["engineering_attributes"]["location"] == {"x": 25.0, "y": 90.0, "units": "ft"}
     assert "finished-floor elevation" in by_type["building"]["missing_inputs"]
     assert "fire_flow" in by_type["hydrant"]["affected_systems"]
     assert "roadway" in by_type["road_centerline"]["affected_systems"]

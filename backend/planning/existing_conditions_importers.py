@@ -6,6 +6,7 @@ import json
 import re
 import zipfile
 from copy import deepcopy
+from math import hypot, isfinite
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -100,6 +101,195 @@ def _point_quality(points: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _normalized_bounds(value: Any) -> Optional[Dict[str, float]]:
+    rec = safe_dict(value)
+    if not rec:
+        return None
+    min_x = rec.get("min_x", rec.get("x"))
+    min_y = rec.get("min_y", rec.get("y"))
+    max_x = rec.get("max_x")
+    max_y = rec.get("max_y")
+    if max_x is None and min_x is not None and rec.get("w") is not None:
+        max_x = safe_float(min_x, 0.0) + safe_float(rec.get("w"), 0.0)
+    if max_y is None and min_y is not None and rec.get("h") is not None:
+        max_y = safe_float(min_y, 0.0) + safe_float(rec.get("h"), 0.0)
+    values = [min_x, min_y, max_x, max_y]
+    if any(value is None for value in values):
+        return None
+    parsed = [safe_float(value, float("nan")) for value in values]
+    if not all(isfinite(value) for value in parsed):
+        return None
+    left, bottom, right, top = parsed
+    if right < left:
+        left, right = right, left
+    if top < bottom:
+        bottom, top = top, bottom
+    if right == left and top == bottom:
+        return None
+    return {"min_x": left, "min_y": bottom, "max_x": right, "max_y": top}
+
+
+def _coordinate_pairs(value: Any) -> Iterable[Tuple[float, float]]:
+    if isinstance(value, (list, tuple)):
+        if len(value) >= 2 and all(isinstance(item, (int, float)) for item in value[:2]):
+            x, y = float(value[0]), float(value[1])
+            if isfinite(x) and isfinite(y):
+                yield (x, y)
+            return
+        for item in value:
+            yield from _coordinate_pairs(item)
+
+
+def _feature_bounds(value: Any) -> Optional[Dict[str, float]]:
+    rec = safe_dict(value)
+    explicit = _normalized_bounds(rec.get("bounds") or rec.get("bbox"))
+    if explicit:
+        return explicit
+    geometry = safe_dict(rec.get("geometry"))
+    pairs = list(_coordinate_pairs(geometry.get("coordinates")))
+    if not pairs:
+        return None
+    xs = [point[0] for point in pairs]
+    ys = [point[1] for point in pairs]
+    return _normalized_bounds({"min_x": min(xs), "min_y": min(ys), "max_x": max(xs), "max_y": max(ys)})
+
+
+def _combined_bounds(values: Iterable[Any]) -> Optional[Dict[str, float]]:
+    rows = [bounds for value in values if (bounds := _feature_bounds(value))]
+    if not rows:
+        return None
+    return {
+        "min_x": min(row["min_x"] for row in rows),
+        "min_y": min(row["min_y"] for row in rows),
+        "max_x": max(row["max_x"] for row in rows),
+        "max_y": max(row["max_y"] for row in rows),
+    }
+
+
+def _bounds_gap(a: Dict[str, float], b: Dict[str, float]) -> float:
+    dx = max(a["min_x"] - b["max_x"], b["min_x"] - a["max_x"], 0.0)
+    dy = max(a["min_y"] - b["max_y"], b["min_y"] - a["max_y"], 0.0)
+    return hypot(dx, dy)
+
+
+def _bounds_overlap_ratio(a: Dict[str, float], b: Dict[str, float]) -> float:
+    width = max(0.0, min(a["max_x"], b["max_x"]) - max(a["min_x"], b["min_x"]))
+    height = max(0.0, min(a["max_y"], b["max_y"]) - max(a["min_y"], b["min_y"]))
+    intersection = width * height
+    a_area = max(0.0, (a["max_x"] - a["min_x"]) * (a["max_y"] - a["min_y"]))
+    b_area = max(0.0, (b["max_x"] - b["min_x"]) * (b["max_y"] - b["min_y"]))
+    denominator = min(a_area, b_area)
+    return intersection / denominator if denominator > 0.0 else 0.0
+
+
+def _source_registration_audit(rec: Dict[str, Any], point_quality: Dict[str, Any]) -> Dict[str, Any]:
+    extents: List[Dict[str, Any]] = []
+
+    survey_bounds = _normalized_bounds(point_quality.get("bounds"))
+    if survey_bounds:
+        extents.append({"source_id": "survey_points", "source_kind": "survey", "bounds": survey_bounds})
+
+    for index, surface in enumerate(safe_list(rec.get("surfaces")), start=1):
+        row = safe_dict(surface)
+        bounds = _normalized_bounds(row.get("bounds"))
+        if bounds:
+            extents.append(
+                {
+                    "source_id": safe_str(row.get("source"), f"terrain_surface_{index}"),
+                    "source_kind": "terrain_surface",
+                    "bounds": bounds,
+                }
+            )
+
+    for index, cloud in enumerate(safe_list(rec.get("point_clouds")), start=1):
+        row = safe_dict(cloud)
+        bounds = _normalized_bounds(row.get("bounds"))
+        if bounds:
+            extents.append(
+                {
+                    "source_id": safe_str(row.get("source"), f"point_cloud_{index}"),
+                    "source_kind": "point_cloud",
+                    "bounds": bounds,
+                }
+            )
+
+    gis_layers = safe_dict(rec.get("gis_layers") or rec.get("existing_conditions"))
+    for layer_name, features in gis_layers.items():
+        bounds = _combined_bounds(safe_list(features))
+        if bounds:
+            extents.append({"source_id": f"gis:{layer_name}", "source_kind": "gis", "bounds": bounds})
+
+    anchor = next((row for row in extents if row["source_kind"] == "survey"), None)
+    anchor = anchor or next((row for row in extents if row["source_kind"] in {"terrain_surface", "point_cloud"}), None)
+    anchor = anchor or next((row for row in extents if row["source_id"] == "gis:parcels"), None)
+    anchor = anchor or (extents[0] if extents else None)
+    blockers: List[Dict[str, Any]] = []
+    warnings: List[str] = []
+    comparisons: List[Dict[str, Any]] = []
+
+    if anchor:
+        anchor_bounds = safe_dict(anchor.get("bounds"))
+        anchor_diagonal = hypot(
+            anchor_bounds["max_x"] - anchor_bounds["min_x"],
+            anchor_bounds["max_y"] - anchor_bounds["min_y"],
+        )
+        coordinate = _normalize_coordinate_system(safe_dict(rec.get("coordinate_system")))
+        units = safe_str(coordinate.get("units"))
+        minimum_context_tolerance = 30.0 if units == "m" else 100.0
+        allowed_gap = max(minimum_context_tolerance, anchor_diagonal * 0.25)
+        for extent in extents:
+            if extent is anchor:
+                continue
+            bounds = safe_dict(extent.get("bounds"))
+            gap = _bounds_gap(anchor_bounds, bounds)
+            overlap = _bounds_overlap_ratio(anchor_bounds, bounds)
+            aligned = gap <= allowed_gap
+            comparison = {
+                "anchor_source_id": anchor["source_id"],
+                "source_id": extent["source_id"],
+                "source_kind": extent["source_kind"],
+                "gap": round(gap, 4),
+                "allowed_gap": round(allowed_gap, 4),
+                "overlap_ratio": round(overlap, 6),
+                "aligned": aligned,
+            }
+            comparisons.append(comparison)
+            if not aligned:
+                blockers.append(
+                    {
+                        "field": "source_registration",
+                        "reason": "Imported source extents do not overlap or fall near the selected survey/site reference.",
+                        "anchor_source_id": anchor["source_id"],
+                        "source_id": extent["source_id"],
+                        "gap": round(gap, 4),
+                        "allowed_gap": round(allowed_gap, 4),
+                    }
+                )
+            elif overlap <= 0.0 and extent["source_kind"] != "gis":
+                warnings.append(
+                    f"{extent['source_id']} is near the reference extent but does not overlap it; confirm source registration before relying on it."
+                )
+
+    if blockers:
+        status = "blocked"
+    elif len(extents) < 2:
+        status = "insufficient_comparison_evidence"
+    elif warnings:
+        status = "needs_review"
+    else:
+        status = "aligned"
+    return {
+        "version": "source_registration_audit_v1",
+        "status": status,
+        "production_usable": not blockers,
+        "anchor_source_id": safe_str(safe_dict(anchor).get("source_id")),
+        "registered_source_count": len(extents),
+        "extents": deepcopy(extents),
+        "comparisons": comparisons,
+        "blockers": blockers,
+        "warnings": dedupe_keep_order(warnings),
+        "truth_label": "Extent checks detect obvious source misregistration only; they do not replace survey control, datum verification, or professional registration review.",
+    }
 def _coordinate_key(value: Dict[str, Any]) -> str:
     rec = _normalize_coordinate_system(value)
     epsg = safe_str(rec.get("epsg"))
@@ -1421,6 +1611,9 @@ def validate_imported_existing_conditions_package(
     breakline_count = safe_int(survey.get("breakline_count"), len(safe_list(survey.get("breaklines"))))
     survey_points = [safe_dict(item) for item in safe_list(survey.get("points"))]
     point_quality = _point_quality(survey_points)
+    source_registration_audit = _source_registration_audit(rec, point_quality)
+    blockers.extend(safe_list(source_registration_audit.get("blockers")))
+    warnings.extend(safe_list(source_registration_audit.get("warnings")))
     surface_count = len(safe_list(rec.get("surfaces")))
     point_cloud_count = len(safe_list(rec.get("point_clouds")))
     terrain_evidence_count = surface_count + point_cloud_count
@@ -1600,6 +1793,7 @@ def validate_imported_existing_conditions_package(
         "point_cloud_count": point_cloud_count,
         "survey_point_count": point_count,
         "survey_point_quality": point_quality,
+        "source_registration_audit_v1": source_registration_audit,
         "breakline_count": breakline_count,
         "layer_counts": layer_counts,
         "metadata_only_source_count": len(metadata_only_sources),
