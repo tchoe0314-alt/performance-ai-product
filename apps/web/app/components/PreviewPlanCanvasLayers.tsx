@@ -77,6 +77,7 @@ type PreviewPlanCanvasLayersProps = {
   showEarthworkUx: boolean;
   gradingEarthworkUx?: GradingEarthworkUx | null;
   semanticLayerVisibility?: Partial<Record<PreviewSemanticLayer, boolean>>;
+  presentationActive?: boolean;
 };
 
 export function PreviewPlanCanvasLayers({
@@ -120,12 +121,14 @@ export function PreviewPlanCanvasLayers({
   showEarthworkUx,
   gradingEarthworkUx,
   semanticLayerVisibility = {},
+  presentationActive = false,
 }: PreviewPlanCanvasLayersProps) {
   if (!overlayBoundsResolved || previewMode !== "2d") return null;
   const hasSurveyOrTerrainEvidence = surveyPointCount > 0 || hasTerrainSurfaceEvidence;
   const layerVisibleObjects = visibleCadObjects.filter((item) =>
     isPreviewSemanticLayerVisible(semanticLayerForPlacement(item), semanticLayerVisibility),
   );
+  const showSvgObjectGeometry = !showMap;
 
   return (
     <div
@@ -153,83 +156,93 @@ export function PreviewPlanCanvasLayers({
           style={viewportTransformStyle}
         >
           <PreviewSvgDefs />
-          <PreviewBasePlanGrid
-            showMap={showMap}
-            isHighQuality={isHighQuality}
-            cadReferenceMode={cadReferenceMode}
-            siteLocked={siteLocked}
-            hasSurveyOrTerrainEvidence={hasSurveyOrTerrainEvidence}
-            lotWidth={lotWidth}
-            lotHeight={lotHeight}
-            planScaleBar={planScaleBar}
-            surveyPoints={surveyPoints}
-          />
-          <PreviewPolylineObjects
-            objects={layerVisibleObjects}
-            selectedBuildingId={selectedBuildingId}
-            isHighQuality={isHighQuality}
-            cadReferenceMode={cadReferenceMode}
-            currentSiteSize={currentSiteSize}
-            sitePointToSvgPercent={sitePointToSvgPercent}
-          />
-          <PreviewRectObjects
-            objects={layerVisibleObjects}
-            selectedBuildingId={selectedBuildingId}
-            isHighQuality={isHighQuality}
-            cadReferenceMode={cadReferenceMode}
-            mapAnchoredRectPercent={mapAnchoredRectPercent}
-          />
-          <PreviewPolygonObjects
-            objects={layerVisibleObjects}
-            selectedBuildingId={selectedBuildingId}
-            isHighQuality={isHighQuality}
-            cadReferenceMode={cadReferenceMode}
-            sitePointToSvgPercent={sitePointToSvgPercent}
-          />
-          <PreviewCadMarkers
-            objects={layerVisibleObjects}
-            selectedBuildingId={selectedBuildingId}
-            currentSiteSize={currentSiteSize}
-            sitePointToPreviewPercent={sitePointToPreviewPercent}
-            mapAnchoredRectPercent={mapAnchoredRectPercent}
-            shouldRevealObjectLabel={shouldRevealObjectLabel}
-            getObjectGeometryPoints={getObjectGeometryPoints}
-          />
-          <PreviewParkingModules
-            objects={layerVisibleObjects}
-            accessPoints={accessPointsForParking}
-            showParkingAnalysis={showParkingAnalysis}
-            buildParkingModules={buildPreviewParkingMapModules}
-            sitePointToSvgPercent={sitePointToSvgPercent}
-          />
-          <PreviewSuggestedGeometry
-            objects={suggestedPlacements}
-            selectedBuildingId={selectedBuildingId}
-            detectedStroke={legendPalette.detectedStroke}
-            detectedFill={legendPalette.detectedFill}
-            sitePointToSvgPercent={sitePointToSvgPercent}
-          />
-          <PreviewWaterFireFlowOverlay
-            waterFireFlow={waterFireFlow}
-            previewQuality={previewQuality}
-            sitePointToPreviewPercent={sitePointToPreviewPercent}
-          />
-          <PreviewDraftGeometryOverlay
-            activeSnapPoint={activeSnapPoint}
-            draftPoints={draftPoints}
-            draftPreviewPoint={draftPreviewPoint}
-            drawMode={drawMode}
-            drawingLotWidth={drawingLotWidth}
-            drawingLotHeight={drawingLotHeight}
-            lotWidth={lotWidth}
-            lotHeight={lotHeight}
-            sitePointToPreviewPercent={sitePointToPreviewPercent}
-            siteTupleToPercent={siteTupleToPercent}
-            siteRectToPercent={siteRectToPercent}
-          />
+          {!presentationActive ? (
+            <PreviewBasePlanGrid
+              showMap={showMap}
+              isHighQuality={isHighQuality}
+              cadReferenceMode={cadReferenceMode}
+              siteLocked={siteLocked}
+              hasSurveyOrTerrainEvidence={hasSurveyOrTerrainEvidence}
+              lotWidth={lotWidth}
+              lotHeight={lotHeight}
+              planScaleBar={planScaleBar}
+              surveyPoints={surveyPoints}
+            />
+          ) : null}
+          {showSvgObjectGeometry ? (
+            <>
+              <PreviewPolylineObjects
+                objects={layerVisibleObjects}
+                selectedBuildingId={selectedBuildingId}
+                isHighQuality={isHighQuality}
+                cadReferenceMode={cadReferenceMode}
+                currentSiteSize={currentSiteSize}
+                sitePointToSvgPercent={sitePointToSvgPercent}
+              />
+              <PreviewRectObjects
+                objects={layerVisibleObjects}
+                selectedBuildingId={selectedBuildingId}
+                isHighQuality={isHighQuality}
+                cadReferenceMode={cadReferenceMode}
+                mapAnchoredRectPercent={mapAnchoredRectPercent}
+              />
+              <PreviewPolygonObjects
+                objects={layerVisibleObjects}
+                selectedBuildingId={selectedBuildingId}
+                isHighQuality={isHighQuality}
+                cadReferenceMode={cadReferenceMode}
+                sitePointToSvgPercent={sitePointToSvgPercent}
+              />
+              <PreviewCadMarkers
+                objects={layerVisibleObjects}
+                selectedBuildingId={selectedBuildingId}
+                currentSiteSize={currentSiteSize}
+                sitePointToPreviewPercent={sitePointToPreviewPercent}
+                mapAnchoredRectPercent={mapAnchoredRectPercent}
+                shouldRevealObjectLabel={shouldRevealObjectLabel}
+                getObjectGeometryPoints={getObjectGeometryPoints}
+              />
+              <PreviewParkingModules
+                objects={layerVisibleObjects}
+                accessPoints={accessPointsForParking}
+                showParkingAnalysis={showParkingAnalysis}
+                buildParkingModules={buildPreviewParkingMapModules}
+                sitePointToSvgPercent={sitePointToSvgPercent}
+              />
+              <PreviewSuggestedGeometry
+                objects={suggestedPlacements}
+                selectedBuildingId={selectedBuildingId}
+                detectedStroke={legendPalette.detectedStroke}
+                detectedFill={legendPalette.detectedFill}
+                sitePointToSvgPercent={sitePointToSvgPercent}
+              />
+            </>
+          ) : null}
+          {!presentationActive && !showMap ? (
+            <PreviewWaterFireFlowOverlay
+              waterFireFlow={waterFireFlow}
+              previewQuality={previewQuality}
+              sitePointToPreviewPercent={sitePointToPreviewPercent}
+            />
+          ) : null}
+          {!presentationActive ? (
+            <PreviewDraftGeometryOverlay
+              activeSnapPoint={activeSnapPoint}
+              draftPoints={draftPoints}
+              draftPreviewPoint={draftPreviewPoint}
+              drawMode={drawMode}
+              drawingLotWidth={drawingLotWidth}
+              drawingLotHeight={drawingLotHeight}
+              lotWidth={lotWidth}
+              lotHeight={lotHeight}
+              sitePointToPreviewPercent={sitePointToPreviewPercent}
+              siteTupleToPercent={siteTupleToPercent}
+              siteRectToPercent={siteRectToPercent}
+            />
+          ) : null}
         </svg>
       ) : null}
-      {showEarthworkUx && gradingEarthworkUx ? (
+      {!presentationActive && showEarthworkUx && gradingEarthworkUx ? (
         <PreviewGradingEarthworkDock
           gradingEarthworkUx={gradingEarthworkUx}
           formatMetric={formatMetric}

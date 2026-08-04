@@ -191,12 +191,14 @@ test("creates an urbanization campus plan with colored sheet objects and 3D mass
   await expect(page.getByTestId("plan-landscape-contour-cues").first()).toBeVisible();
   await expect(page.locator('svg [data-semantic-layer="lots"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][data-semantic-layer="lots"]').first()).toBeVisible();
+  await page.getByTestId("preview-layer-menu").locator("summary").click();
   await page.getByTestId("preview-layer-toggle-lots").click();
   await expect(page.locator('svg [data-semantic-layer="lots"]')).toHaveCount(0);
   await expect(page.locator('[data-cad-object-id][data-semantic-layer="lots"]')).toHaveCount(0);
   await expect(page.locator('[data-cad-object-id][aria-label*="Civic Hall"]').first()).toBeVisible();
   await page.getByTestId("preview-layer-show-all").click();
   await expect(page.locator('svg [data-semantic-layer="lots"]').first()).toBeVisible();
+  await page.getByTestId("preview-layer-menu").locator("summary").click();
   await page.getByTestId("preview-mode-3d").click();
   await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("civil-3d-terrain-state")).toContainText(/review contour surface/i);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Lock, RefreshCw, RotateCcw, Unlock, X } from "lucide-react";
+import { Eye, EyeOff, Layers3, Lock, RefreshCw, RotateCcw, Unlock, X } from "lucide-react";
 
 import type { CoordinateMode } from "../utils/geometryTransforms";
 import { coordinateModeLabel } from "../utils/geometryTransforms";
@@ -11,6 +11,7 @@ import {
   PREVIEW_SEMANTIC_LAYER_LABELS,
   PRIMARY_PREVIEW_SEMANTIC_LAYERS,
 } from "../utils/previewSemanticLayers";
+import type { PreviewSourceLayerVisibility } from "../utils/previewSourceLayers";
 import { PreviewQualityToggle } from "./PreviewQualityToggle";
 import { loadPreview3DCanvas } from "./preview3DLoader";
 
@@ -33,6 +34,8 @@ type PreviewCanvasHeaderControlsProps = {
   busy: boolean;
   analysisHighlight: unknown;
   semanticLayerVisibility: Partial<Record<PreviewSemanticLayer, boolean>>;
+  sourceLayerVisibility: PreviewSourceLayerVisibility;
+  sourceLayerCounts: { detectedExisting: number; proposedDesign: number };
   onSetPreviewQuality: (value: "standard" | "high") => void;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetAiVisualizationOff: () => void;
@@ -51,6 +54,7 @@ type PreviewCanvasHeaderControlsProps = {
   onClearHighlights?: () => void;
   onToggleSemanticLayer: (layer: PreviewSemanticLayer) => void;
   onShowAllSemanticLayers: () => void;
+  onToggleSourceLayer: (layer: keyof PreviewSourceLayerVisibility) => void;
 };
 
 export function PreviewCanvasHeaderControls({
@@ -72,6 +76,8 @@ export function PreviewCanvasHeaderControls({
   busy,
   analysisHighlight,
   semanticLayerVisibility,
+  sourceLayerVisibility,
+  sourceLayerCounts,
   onSetPreviewQuality,
   onSetPreviewMode,
   onSetAiVisualizationOff,
@@ -90,6 +96,7 @@ export function PreviewCanvasHeaderControls({
   onClearHighlights,
   onToggleSemanticLayer,
   onShowAllSemanticLayers,
+  onToggleSourceLayer,
 }: PreviewCanvasHeaderControlsProps) {
   useEffect(() => {
     if (!canUse3D) return;
@@ -172,7 +179,10 @@ export function PreviewCanvasHeaderControls({
             type="button"
             data-testid="preview-interaction-edit"
             aria-label="Use canvas edit tool"
-            onClick={() => onSetPreviewInteraction("edit")}
+            onClick={() => {
+              if (aiRealismEnabled) onSetAiVisualizationOff();
+              onSetPreviewInteraction("edit");
+            }}
             className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
               allowEdits ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
             }`}
@@ -186,7 +196,7 @@ export function PreviewCanvasHeaderControls({
               aria-label="AI Visualization toggle"
             >
               <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
-                AI Visualization
+                View
               </span>
               <button
                 type="button"
@@ -199,12 +209,23 @@ export function PreviewCanvasHeaderControls({
                     : "border-slate-200 bg-white text-slate-600"
                 }`}
               >
-                Off
+                Plan
               </button>
               <button
                 type="button"
                 data-testid="ai-realism-on"
-                onClick={onSetAiVisualizationOn}
+                onClick={() => {
+                  if (drawMode !== "select") {
+                    onPushCadCommandFeedback(
+                      "VISUAL",
+                      "info",
+                      "Finish or cancel the active drawing before opening Visual view.",
+                    );
+                    return;
+                  }
+                  if (mapAvailable) onSetMapOverlayEnabled(() => true);
+                  onSetAiVisualizationOn();
+                }}
                 aria-pressed={aiRealismEnabled}
                 className={`h-7 rounded-md border px-2 text-[11px] font-semibold ${
                   aiRealismEnabled
@@ -212,7 +233,7 @@ export function PreviewCanvasHeaderControls({
                     : "border-slate-200 bg-white text-slate-600"
                 }`}
               >
-                On
+                Visual
               </button>
             </div>
           ) : null}
@@ -261,38 +282,116 @@ export function PreviewCanvasHeaderControls({
             </button>
           ) : null}
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5" data-testid="preview-semantic-layer-controls">
-          <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        <details
+          data-testid="preview-layer-menu"
+          className="group pointer-events-auto relative z-[210]"
+        >
+          <summary className="flex h-8 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 shadow-sm marker:hidden hover:bg-slate-50">
+            <Layers3 className="h-3.5 w-3.5" />
             Layers
-          </span>
-          {PRIMARY_PREVIEW_SEMANTIC_LAYERS.map((layer) => {
-            const visible = semanticLayerVisibility[layer] !== false;
-            return (
-              <button
-                key={layer}
-                type="button"
-                data-testid={`preview-layer-toggle-${layer}`}
-                aria-pressed={visible}
-                onClick={() => onToggleSemanticLayer(layer)}
-                className={`inline-flex h-7 items-center rounded-full border px-2 text-[10px] font-semibold uppercase tracking-[0.1em] ${
-                  visible
-                    ? "border-slate-300 bg-white text-slate-700"
-                    : "border-slate-200 bg-slate-100 text-slate-400"
-                }`}
-              >
-                {PREVIEW_SEMANTIC_LAYER_LABELS[layer]}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            data-testid="preview-layer-show-all"
-            onClick={onShowAllSemanticLayers}
-            className="inline-flex h-7 items-center rounded-full border border-slate-200 bg-white px-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500"
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+              {(sourceLayerVisibility.detectedExisting ? 1 : 0) + (sourceLayerVisibility.proposedDesign ? 1 : 0)}/2
+            </span>
+          </summary>
+          <div
+            data-testid="preview-semantic-layer-controls"
+            className="absolute left-0 top-[calc(100%+0.4rem)] z-[220] w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white/96 p-3 text-slate-700 shadow-[0_22px_70px_-38px_rgba(15,23,42,0.65)] backdrop-blur-xl"
           >
-            All
-          </button>
-        </div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View layers</p>
+            <div className="mt-2 space-y-1.5">
+              <button
+                type="button"
+                data-testid="preview-source-layer-existing"
+                aria-pressed={sourceLayerVisibility.detectedExisting}
+                onClick={() => onToggleSourceLayer("detectedExisting")}
+                className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left"
+              >
+                <span>
+                  <span className="block text-xs font-semibold text-slate-800">Detected existing context</span>
+                  <span className="block text-[10px] text-slate-500">{sourceLayerCounts.detectedExisting} source object(s)</span>
+                </span>
+                {sourceLayerVisibility.detectedExisting ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-slate-400" />}
+              </button>
+              {sourceLayerVisibility.detectedExisting ? (
+                <div className="grid grid-cols-4 gap-1" data-testid="preview-existing-sublayers">
+                  {([
+                    ["detectedBuildings", "Buildings"],
+                    ["detectedRoads", "Roads"],
+                    ["detectedParcels", "Parcels"],
+                    ["detectedOther", "Other"],
+                  ] as Array<[keyof PreviewSourceLayerVisibility, string]>).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      data-testid={`preview-source-sublayer-${key.replace("detected", "").toLowerCase()}`}
+                      aria-pressed={sourceLayerVisibility[key]}
+                      onClick={() => onToggleSourceLayer(key)}
+                      className={`h-7 rounded-md border px-1 text-[9px] font-semibold uppercase ${
+                        sourceLayerVisibility[key]
+                          ? "border-slate-300 bg-white text-slate-700"
+                          : "border-slate-200 bg-slate-100 text-slate-400"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                data-testid="preview-source-layer-proposed"
+                aria-pressed={sourceLayerVisibility.proposedDesign}
+                onClick={() => onToggleSourceLayer("proposedDesign")}
+                className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left"
+              >
+                <span>
+                  <span className="block text-xs font-semibold text-slate-800">Proposed linework</span>
+                  <span className="block text-[10px] text-slate-500">{sourceLayerCounts.proposedDesign} project object(s)</span>
+                </span>
+                {sourceLayerVisibility.proposedDesign && !aiRealismEnabled ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-slate-400" />}
+              </button>
+              {aiRealismEnabled ? (
+                <p className="rounded-md bg-sky-50 px-2 py-1.5 text-[10px] text-sky-800">
+                  Visual view replaces proposed linework to prevent duplicate geometry.
+                </p>
+              ) : null}
+            </div>
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Object types</p>
+                <button
+                  type="button"
+                  data-testid="preview-layer-show-all"
+                  onClick={onShowAllSemanticLayers}
+                  className="text-[10px] font-semibold text-slate-500 hover:text-slate-900"
+                >
+                  Show all
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {PRIMARY_PREVIEW_SEMANTIC_LAYERS.map((layer) => {
+                  const visible = semanticLayerVisibility[layer] !== false;
+                  return (
+                    <button
+                      key={layer}
+                      type="button"
+                      data-testid={`preview-layer-toggle-${layer}`}
+                      aria-pressed={visible}
+                      onClick={() => onToggleSemanticLayer(layer)}
+                      className={`inline-flex h-7 items-center rounded-full border px-2 text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                        visible
+                          ? "border-slate-300 bg-white text-slate-700"
+                          : "border-slate-200 bg-slate-100 text-slate-400"
+                      }`}
+                    >
+                      {PREVIEW_SEMANTIC_LAYER_LABELS[layer]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </details>
         {isHighQuality ? (
           <span
             data-testid="high-quality-preview-only-label"

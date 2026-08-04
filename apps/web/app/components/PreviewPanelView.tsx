@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -121,7 +121,15 @@ import type { PreviewSemanticLayer } from "../utils/previewSemanticLayers";
 import {
   isPreviewSemanticLayerVisible,
   semanticLayerFor3DItem,
+  semanticLayerForPlacement,
 } from "../utils/previewSemanticLayers";
+import {
+  DEFAULT_PREVIEW_SOURCE_LAYER_VISIBILITY,
+  isDetectedExistingPlacement,
+  isDetectedExistingPlacementVisible,
+  isPreview3DItemDetectedExisting,
+  type PreviewSourceLayerVisibility,
+} from "../utils/previewSourceLayers";
 import {
   buildPreviewCurrentSiteSize,
   buildPreviewParkingAccessPoints,
@@ -625,6 +633,18 @@ export default function PreviewPanel({
       }),
     [buildingPlacements, cadEntityPreviewObjects, cadSelectionSet, hoveredObjectId, managedObjectId, selectedBuildingId, selectedObjectIds, suggestedPlacements],
   );
+  const aiProposedBuildingPlacements = useMemo(
+    () => buildingPlacements.filter((item) => !isDetectedExistingPlacement(item)),
+    [buildingPlacements],
+  );
+  const aiProposedCadEntityPreviewObjects = useMemo(
+    () => cadEntityPreviewObjects.filter((item) => !isDetectedExistingPlacement(item)),
+    [cadEntityPreviewObjects],
+  );
+  const aiProposedSuggestedPlacements = useMemo(
+    () => suggestedPlacements.filter((item) => !isDetectedExistingPlacement(item)),
+    [suggestedPlacements],
+  );
   const {
     aiRealismEnabled,
     aiRealismBlocker,
@@ -633,9 +653,9 @@ export default function PreviewPanel({
     setAiVisualizationOff,
     setAiVisualizationOn,
   } = useAiRealismPreview({
-    buildingPlacements,
-    cadEntityPreviewObjects,
-    suggestedPlacements,
+    buildingPlacements: aiProposedBuildingPlacements,
+    cadEntityPreviewObjects: aiProposedCadEntityPreviewObjects,
+    suggestedPlacements: aiProposedSuggestedPlacements,
     lotWidth,
     lotHeight,
     siteRotationDeg: siteRotationDeg ?? 0,
@@ -944,6 +964,9 @@ export default function PreviewPanel({
     [visibleCadObjects],
   );
   const [semanticLayerVisibility, setSemanticLayerVisibility] = useState<Partial<Record<PreviewSemanticLayer, boolean>>>({});
+  const [sourceLayerVisibility, setSourceLayerVisibility] = useState<PreviewSourceLayerVisibility>(
+    DEFAULT_PREVIEW_SOURCE_LAYER_VISIBILITY,
+  );
   const toggleSemanticLayer = useCallback((layer: PreviewSemanticLayer) => {
     setSemanticLayerVisibility((current) => ({
       ...current,
@@ -953,12 +976,68 @@ export default function PreviewPanel({
   const showAllSemanticLayers = useCallback(() => {
     setSemanticLayerVisibility({});
   }, []);
+  const toggleSourceLayer = useCallback((layer: keyof PreviewSourceLayerVisibility) => {
+    setSourceLayerVisibility((current) => ({ ...current, [layer]: !current[layer] }));
+  }, []);
+  const detectedExistingObjects = useMemo(
+    () => visibleCadObjects.filter(isDetectedExistingPlacement),
+    [visibleCadObjects],
+  );
+  const proposedDesignObjects = useMemo(
+    () => visibleCadObjects.filter((item) => !isDetectedExistingPlacement(item)),
+    [visibleCadObjects],
+  );
+  const technicalProposedVisible = sourceLayerVisibility.proposedDesign && !aiRealismEnabled;
+  const renderedCadObjects = useMemo(
+    () => [
+      ...detectedExistingObjects.filter((item) =>
+        isDetectedExistingPlacementVisible(item, sourceLayerVisibility),
+      ),
+      ...(technicalProposedVisible ? proposedDesignObjects : []),
+    ],
+    [detectedExistingObjects, proposedDesignObjects, sourceLayerVisibility, technicalProposedVisible],
+  );
+  const renderedSuggestedPlacements = useMemo(
+    () =>
+      suggestedPlacements.filter((item) =>
+        isDetectedExistingPlacementVisible(item, sourceLayerVisibility),
+      ),
+    [sourceLayerVisibility, suggestedPlacements],
+  );
+  const mapLayerPlacements = useMemo(() => {
+    const byId = new Map<string, BuildingPlacement>();
+    [...renderedCadObjects, ...renderedSuggestedPlacements]
+      .filter((item) =>
+        isPreviewSemanticLayerVisible(semanticLayerForPlacement(item), semanticLayerVisibility),
+      )
+      .forEach((item) => byId.set(item.id, item));
+    return [...byId.values()];
+  }, [renderedCadObjects, renderedSuggestedPlacements, semanticLayerVisibility]);
+  const sourceLayerCounts = useMemo(
+    () => ({
+      detectedExisting: new Set([
+        ...detectedExistingObjects.map((item) => item.id),
+        ...suggestedPlacements.map((item) => item.id),
+      ]).size,
+      proposedDesign: new Set(proposedDesignObjects.map((item) => item.id)).size,
+    }),
+    [detectedExistingObjects, proposedDesignObjects, suggestedPlacements],
+  );
   const filteredPreview3DItems = useMemo(
     () =>
-      preview3DEffectiveItems.filter((item) =>
-        isPreviewSemanticLayerVisible(semanticLayerFor3DItem(item), semanticLayerVisibility),
-      ),
-    [preview3DEffectiveItems, semanticLayerVisibility],
+      preview3DEffectiveItems.filter((item) => {
+        if (!isPreviewSemanticLayerVisible(semanticLayerFor3DItem(item), semanticLayerVisibility)) return false;
+        const layer = String(item.layer || "").toUpperCase();
+        if (layer === "TERRAIN") return true;
+        if (!isPreview3DItemDetectedExisting(item)) return sourceLayerVisibility.proposedDesign;
+        if (!sourceLayerVisibility.detectedExisting) return false;
+        const semanticLayer = semanticLayerFor3DItem(item);
+        if (semanticLayer === "buildings") return sourceLayerVisibility.detectedBuildings;
+        if (semanticLayer === "roads") return sourceLayerVisibility.detectedRoads;
+        if (semanticLayer === "lots") return sourceLayerVisibility.detectedParcels;
+        return sourceLayerVisibility.detectedOther;
+      }),
+    [preview3DEffectiveItems, semanticLayerVisibility, sourceLayerVisibility],
   );
 
   const canvasCompositionSignature = useMemo(
@@ -2227,6 +2306,31 @@ export default function PreviewPanel({
     [mapAnchor],
   );
 
+  const aiVisualFrameStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!showMap || !mapLoaded || !mapAnchor || !Number.isFinite(mapRevision)) return undefined;
+    const targetMap = previewFullscreenOpen ? fullscreenMapRef.current ?? mapRef.current : mapRef.current;
+    if (!targetMap) return undefined;
+    const topLeft = siteToMapLngLat({ x: 0, y: 0 }, mapAnchor);
+    const topRight = siteToMapLngLat({ x: lotWidth, y: 0 }, mapAnchor);
+    const bottomLeft = siteToMapLngLat({ x: 0, y: lotHeight }, mapAnchor);
+    if (!topLeft || !topRight || !bottomLeft) return undefined;
+    const origin = targetMap.project(topLeft);
+    const widthPoint = targetMap.project(topRight);
+    const heightPoint = targetMap.project(bottomLeft);
+    const width = Math.hypot(widthPoint.x - origin.x, widthPoint.y - origin.y);
+    const height = Math.hypot(heightPoint.x - origin.x, heightPoint.y - origin.y);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1) return undefined;
+    const angle = (Math.atan2(widthPoint.y - origin.y, widthPoint.x - origin.x) * 180) / Math.PI;
+    return {
+      left: origin.x,
+      top: origin.y,
+      width,
+      height,
+      transform: `rotate(${angle}deg)`,
+      transformOrigin: "0 0",
+    };
+  }, [fullscreenMapRef, lotHeight, lotWidth, mapAnchor, mapLoaded, mapRef, mapRevision, previewFullscreenOpen, showMap]);
+
   const latLngToSite = useCallback(
     (lat: number, lng: number) => {
       return mapLngLatToSitePoint(lat, lng, mapAnchor);
@@ -2385,13 +2489,14 @@ export default function PreviewPanel({
     geocodeLng: geocode?.lng,
     lotWidth,
     lotHeight,
-    buildingPlacements,
-    suggestedPlacementsLength: suggestedPlacements.length,
+    buildingPlacements: mapLayerPlacements,
+    suggestedPlacementsLength: renderedSuggestedPlacements.length,
+    showProposedDesign: technicalProposedVisible,
     analysisPaths,
     debugStatsEnabled: debugStats?.enabled,
     planPreviewUrl,
     resolveVisualKind,
-    showSiteBounds,
+    showSiteBounds: showSiteBounds && !aiRealismEnabled,
     surveyPoints,
     useLightHighQuality,
     waterFireFlow,
@@ -2485,13 +2590,15 @@ export default function PreviewPanel({
               allowEdits,
               drawMode,
               siteLocked,
-              showDrawTools: previewInteraction === "edit" && !showMobileDrawToolbar && !showQuickDrawPalette,
+              showDrawTools: previewInteraction === "edit" && !showMobileDrawToolbar && !showQuickDrawPalette && !aiRealismEnabled,
               isHighQuality,
               aiRealismEnabled,
               useLightHighQuality,
               busy,
               analysisHighlight,
               semanticLayerVisibility,
+              sourceLayerVisibility,
+              sourceLayerCounts,
               onSetPreviewQuality,
               onSetPreviewMode,
               onSetAiVisualizationOff: setAiVisualizationOff,
@@ -2510,6 +2617,7 @@ export default function PreviewPanel({
               onClearHighlights,
               onToggleSemanticLayer: toggleSemanticLayer,
               onShowAllSemanticLayers: showAllSemanticLayers,
+              onToggleSourceLayer: toggleSourceLayer,
             }}
             objectManagerProps={{
               visible: allowEdits && drawMode === "select" && Boolean(selectedObject),
@@ -2637,7 +2745,7 @@ export default function PreviewPanel({
               drawMode={drawMode}
               shellHandlers={preview2DShellHandlers}
               quickDrawPaletteProps={{
-                visible: previewMode === "2d" && showQuickDrawPalette,
+                visible: previewMode === "2d" && showQuickDrawPalette && !aiRealismEnabled,
                 drawMode,
                 siteLocked: Boolean(siteLocked),
                 hasDrawableSiteSize,
@@ -2657,13 +2765,14 @@ export default function PreviewPanel({
                       stale: Boolean(aiRealismDisplayArtifact?.stale),
                       hasTerrainSource,
                       showMap,
+                      visualFrameStyle: aiVisualFrameStyle,
                       watermark: AI_REALISM_WATERMARK,
                       onRegenerate: generateAiRealismArtifact,
                     }
                   : undefined
               }
               mobileDrawToolbarProps={
-                showMobileDrawToolbar
+                showMobileDrawToolbar && !aiRealismEnabled
                   ? {
                       drawModeButtons,
                       drawMode,
@@ -2787,6 +2896,7 @@ export default function PreviewPanel({
                   draftPointCount,
                   overlayPointerEvents,
                   viewportTransformStyle,
+                  presentationActive: aiRealismEnabled,
                   showMap,
                   mapLocked,
                   previewInteraction,
@@ -2805,8 +2915,8 @@ export default function PreviewPanel({
                     drawMode,
                     legendPalette,
                     viewportTransformStyle,
-                    buildingPlacements,
-                    suggestedPlacements,
+                    buildingPlacements: renderedCadObjects,
+                    suggestedPlacements: renderedSuggestedPlacements,
                     surveyPointCount: surveyPoints?.length ?? 0,
                     surveyPoints,
                     hasTerrainSurfaceEvidence: Boolean(hasSourceBackedSurfaceEvidence && hasGradingSurface),
@@ -2816,7 +2926,7 @@ export default function PreviewPanel({
                     lotWidth,
                     lotHeight,
                     planScaleBar,
-                    visibleCadObjects,
+                    visibleCadObjects: renderedCadObjects,
                     selectedBuildingId,
                     currentSiteSize,
                     sitePointToSvgPercent,
@@ -2838,6 +2948,7 @@ export default function PreviewPanel({
                     showEarthworkUx,
                     gradingEarthworkUx,
                     semanticLayerVisibility,
+                    presentationActive: aiRealismEnabled,
                   },
                   waterFireFlowHitTargetsProps: {
                     waterFireFlow,
@@ -2846,7 +2957,7 @@ export default function PreviewPanel({
                     setSelectedFireScenarioId,
                   },
                   editableObjectHitTargetsProps: {
-                    visibleCadObjects,
+                    visibleCadObjects: renderedCadObjects,
                     semanticLayerVisibility,
                     previewInteraction,
                     siteLocked: Boolean(siteLocked),
@@ -2903,7 +3014,7 @@ export default function PreviewPanel({
                     applyRectUndo,
                   },
                   suggestedObjectHitTargetsProps: {
-                    suggestedPlacements,
+                    suggestedPlacements: renderedSuggestedPlacements,
                     passiveOverlayPointerEvents,
                     drawingOwnsCanvasHits,
                     hoveredObjectId,

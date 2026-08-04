@@ -6,6 +6,7 @@ import mapboxgl from "mapbox-gl";
 
 import type { BuildingPlacement } from "../types";
 import { buildPreviewParkingMapModules } from "../utils/previewParkingMapModules";
+import { isDetectedExistingPlacement } from "../utils/previewSourceLayers";
 import type { buildWaterFireFlowViewModel } from "../utils/previewWaterFireFlow";
 import type { PreviewPanelProps } from "./previewPanelTypes";
 
@@ -23,6 +24,7 @@ export function usePreviewMapLayerSync({
   lotHeight,
   buildingPlacements,
   suggestedPlacementsLength,
+  showProposedDesign,
   analysisPaths,
   debugStatsEnabled,
   planPreviewUrl,
@@ -44,6 +46,7 @@ export function usePreviewMapLayerSync({
   lotHeight: number;
   buildingPlacements: BuildingPlacement[];
   suggestedPlacementsLength: number;
+  showProposedDesign: boolean;
   analysisPaths: PreviewPanelProps["analysisPaths"];
   debugStatsEnabled?: boolean;
   planPreviewUrl?: string | null;
@@ -161,6 +164,7 @@ export function usePreviewMapLayerSync({
               type: item.type || "building",
               label: item.label || item.type || "object",
               height: typeof item.h === "number" && Number.isFinite(item.h) ? item.h : 16,
+              sourceClass: isDetectedExistingPlacement(item) ? "existing" : "proposed",
             },
           };
         })
@@ -217,7 +221,9 @@ export function usePreviewMapLayerSync({
       .map((item) => ({ x: (item.x ?? 0) + item.w / 2, y: (item.y ?? 0) + item.d / 2 }));
     const sitePolygon = buildSitePolygon();
 
-    const parkingModules = parking.flatMap((item) => buildPreviewParkingMapModules(item, accessPoints));
+    const parkingModules = parking
+      .filter((item) => !isDetectedExistingPlacement(item))
+      .flatMap((item) => buildPreviewParkingMapModules(item, accessPoints));
     const visualLabelFeatureCollection = () => ({
       type: "FeatureCollection",
       features: placedObjects
@@ -358,7 +364,7 @@ export function usePreviewMapLayerSync({
       ensureSource("civora-basins", toFeatureCollection(basins, "Polygon"));
       ensureSource("civora-pressure-zones", {
         type: "FeatureCollection",
-        features: waterFireFlow.pressureZones
+        features: (showProposedDesign ? waterFireFlow.pressureZones : [])
           .filter((zone) => zone.geometry.length > 2)
           .map((zone) => {
             const coords = zone.geometry
@@ -379,7 +385,7 @@ export function usePreviewMapLayerSync({
       });
       ensureSource("civora-water-segments", {
         type: "FeatureCollection",
-        features: waterFireFlow.networkSegments
+        features: (showProposedDesign ? waterFireFlow.networkSegments : [])
           .filter((segment) => segment.geometry.length > 1)
           .map((segment) => {
             const coords = segment.geometry
@@ -401,7 +407,7 @@ export function usePreviewMapLayerSync({
       });
       ensureSource("civora-hydrants", {
         type: "FeatureCollection",
-        features: waterFireFlow.hydrants
+        features: (showProposedDesign ? waterFireFlow.hydrants : [])
           .map((hydrant) => {
             const coord = siteToLatLng(hydrant.x, hydrant.y);
             if (!coord) return null;
@@ -461,26 +467,28 @@ export function usePreviewMapLayerSync({
       ensureSource("civora-survey", surveyFeatureCollection());
 
       ensureExtrusion("civora-buildings-extrusion", "civora-buildings", {
-        "fill-extrusion-color": "#374151",
-        "fill-extrusion-height": ["get", "height"],
+        "fill-extrusion-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#94a3b8", "#374151"],
+        "fill-extrusion-height": ["case", ["==", ["get", "sourceClass"], "existing"], 0, ["get", "height"]],
         "fill-extrusion-base": 0,
         "fill-extrusion-opacity": useLightHighQuality ? 0.28 : 0.6,
       });
       ensureLayer("civora-buildings-fill", "civora-buildings", "fill", {
-        "fill-color": "#475569",
-        "fill-opacity": useLightHighQuality ? 0.18 : 0.26,
+        "fill-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#e2e8f0", "#475569"],
+        "fill-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.1, useLightHighQuality ? 0.18 : 0.26],
       });
       ensureLayer("civora-buildings-line", "civora-buildings", "line", {
-        "line-color": "#111827",
-        "line-width": useLightHighQuality ? 1.3 : 2,
+        "line-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#64748b", "#111827"],
+        "line-width": ["case", ["==", ["get", "sourceClass"], "existing"], 1.15, useLightHighQuality ? 1.3 : 2],
+        "line-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.78, 1],
       });
       ensureLayer("civora-roads-line", "civora-roads", "line", {
-        "line-color": "#1f2937",
-        "line-width": useLightHighQuality ? 2.1 : 3,
+        "line-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#94a3b8", "#1f2937"],
+        "line-width": ["case", ["==", ["get", "sourceClass"], "existing"], 1.4, useLightHighQuality ? 2.1 : 3],
+        "line-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.82, 1],
       });
       ensureLayer("civora-sidewalks-line", "civora-sidewalks", "line", {
-        "line-color": "#0f766e",
-        "line-width": useLightHighQuality ? 1.2 : 2,
+        "line-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#94a3b8", "#0f766e"],
+        "line-width": ["case", ["==", ["get", "sourceClass"], "existing"], 1, useLightHighQuality ? 1.2 : 2],
         "line-dasharray": [1, 1],
       });
       ensureLayer("civora-constraints-fill", "civora-constraints", "fill", {
@@ -522,6 +530,8 @@ export function usePreviewMapLayerSync({
       ensureLayer("civora-utilities-line", "civora-utilities", "line", {
         "line-color": [
           "case",
+          ["==", ["get", "sourceClass"], "existing"],
+          "#94a3b8",
           ["==", ["get", "type"], "hydrant"],
           "#dc2626",
           ["==", ["get", "type"], "inlet"],
@@ -532,8 +542,8 @@ export function usePreviewMapLayerSync({
         "line-dasharray": [3, 1],
       });
       ensureLayer("civora-parking-fill", "civora-parking", "fill", {
-        "fill-color": "#64748b",
-        "fill-opacity": 0.35,
+        "fill-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#cbd5e1", "#64748b"],
+        "fill-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.1, 0.35],
       });
       ensureLayer("civora-parking-stalls", "civora-parking-stalls", "fill", {
         "fill-color": [
@@ -566,7 +576,7 @@ export function usePreviewMapLayerSync({
         "line-color": "#334155",
         "line-width": 1.6,
       });
-      if (analysisPaths && analysisPaths.length) {
+      if (showProposedDesign && analysisPaths && analysisPaths.length) {
         ensureLayer("civora-parking-modules", "civora-parking-modules", "fill", {
           "fill-color": [
             "case",
@@ -586,8 +596,8 @@ export function usePreviewMapLayerSync({
         map.removeLayer("civora-parking-modules");
       }
       ensureLayer("civora-basins-fill", "civora-basins", "fill", {
-        "fill-color": "#0ea5e9",
-        "fill-opacity": 0.28,
+        "fill-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#94a3b8", "#0ea5e9"],
+        "fill-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.1, 0.28],
       });
       ensureLayer("civora-pressure-zones-fill", "civora-pressure-zones", "fill", {
         "fill-color": ["coalesce", ["get", "color"], "#0ea5e9"],
@@ -662,13 +672,15 @@ export function usePreviewMapLayerSync({
       } else if (map.getLayer("civora-site-line")) {
         map.removeLayer("civora-site-line");
       }
-      if (geocodeLat && geocodeLng) {
+      if (showProposedDesign && geocodeLat && geocodeLng) {
         ensureLayer("civora-center-crosshair", "civora-center", "circle", {
           "circle-color": "#f97316",
           "circle-radius": 4,
           "circle-stroke-color": "#fff",
           "circle-stroke-width": 1,
         });
+      } else if (map.getLayer("civora-center-crosshair")) {
+        map.removeLayer("civora-center-crosshair");
       }
       if (surveyPoints && surveyPoints.length) {
         ensureLayer("civora-survey-points", "civora-survey", "circle", {
@@ -700,6 +712,7 @@ export function usePreviewMapLayerSync({
     planPreviewUrl,
     resolveVisualKind,
     showMap,
+    showProposedDesign,
     showSiteBounds,
     suggestedPlacementsLength,
     surveyPoints,

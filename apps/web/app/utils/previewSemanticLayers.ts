@@ -38,7 +38,7 @@ export function semanticLayerForPlacement(item: BuildingPlacement): PreviewSeman
   if (type === "lot_block" || type.includes("parcel") || label.includes("parcel")) return "lots";
   if (type === "road" || type === "driveway" || label.includes("road") || label.includes("boulevard") || label.includes("drive")) return "roads";
   if (type.includes("building") || type === "pad" || label.includes("hall") || label.includes("library")) return "buildings";
-  if (type === "parking" || label.includes("parking")) return "parking";
+  if (type.includes("parking") || label.includes("parking")) return "parking";
   if (type === "open_space" || type === "landscape" || type === "amenity" || label.includes("park") || label.includes("tree") || label.includes("plaza")) return "landscape";
   if (
     type === "utility_corridor" ||

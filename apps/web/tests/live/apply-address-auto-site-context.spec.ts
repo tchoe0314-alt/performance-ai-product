@@ -813,7 +813,23 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect.poll(() => (lastVisionCorrectionPayload?.corrected_geometry as { type?: string } | undefined)?.type).toBe("Polygon");
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   const correctedVisionOverlay = page.locator('[data-object-overlay][data-cad-object-id="draft_image-building-1"]');
+  const detectedBuildingOverlay = page.locator('[data-object-overlay][data-cad-object-id="draft_building-1"]');
   await expect(correctedVisionOverlay).toBeVisible();
+  await expect(detectedBuildingOverlay).toBeVisible();
+  const previewLayerMenu = page.getByTestId("preview-layer-menu");
+  await previewLayerMenu.locator("summary").click();
+  await expect(page.getByTestId("preview-source-layer-existing")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("preview-source-layer-existing")).toContainText(/\d+ source object/i);
+  await page.getByTestId("preview-source-sublayer-buildings").click();
+  await expect(detectedBuildingOverlay).toHaveCount(0);
+  await expect(correctedVisionOverlay).toBeVisible();
+  await page.getByTestId("preview-source-sublayer-buildings").click();
+  await expect(detectedBuildingOverlay).toBeVisible();
+  await page.getByTestId("preview-source-layer-existing").click();
+  await expect(correctedVisionOverlay).toHaveCount(0);
+  await page.getByTestId("preview-source-layer-existing").click();
+  await expect(correctedVisionOverlay).toBeVisible();
+  await previewLayerMenu.locator("summary").click();
   const correctedVisionBounds = await correctedVisionOverlay.evaluate((element) => {
     const style = (element as HTMLElement).style;
     return {

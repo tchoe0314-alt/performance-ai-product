@@ -93,10 +93,10 @@ export function useAiRealismPreview({
 
   const generateAiRealismArtifact = useCallback(() => {
     if (!aiRealismSourceObjects.length) {
-      setAiRealismBlocker("Add or generate site objects before creating AI realism.");
+      setAiRealismBlocker("Add or generate proposed design objects before creating AI visualization.");
       onAiRealismChange?.({
         type: "blocked",
-        detail: "Add or generate site objects before creating AI realism.",
+        detail: "Add or generate proposed design objects before creating AI visualization.",
       });
       return;
     }

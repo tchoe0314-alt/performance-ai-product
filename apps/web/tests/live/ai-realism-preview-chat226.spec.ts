@@ -78,7 +78,7 @@ test.describe("Chat 226 AI realism preview", () => {
     await enableHighQuality(page);
     await page.getByTestId("ai-realism-on").click();
     await expect(page.getByTestId("ai-realism-blocker")).toContainText(
-      "Add or generate site objects before creating AI realism.",
+      "Add or generate proposed design objects before creating AI visualization.",
     );
 
     await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=none");
@@ -130,6 +130,7 @@ test.describe("Chat 226 AI realism preview", () => {
     await enableHighQuality(page);
     await page.getByTestId("ai-realism-on").click();
     await expect(page.getByTestId("ai-realism-image")).toBeVisible();
+    await page.getByTestId("ai-realism-off").click();
 
     await page.getByRole("button", { name: /^Draw$/ }).click();
     await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
@@ -139,6 +140,9 @@ test.describe("Chat 226 AI realism preview", () => {
     await clickExposedSurface(surface, 0.42, 0.34);
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("LINE created");
 
+    await page.keyboard.press("Escape");
+    await page.getByTestId("ai-realism-on").click();
+    await page.getByTestId("ai-realism-details-toggle").click();
     await expect(page.getByTestId("ai-realism-stale-warning")).toContainText(
       "AI visualization is stale. Regenerate from current layout.",
     );

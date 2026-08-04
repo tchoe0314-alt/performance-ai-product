@@ -12,6 +12,7 @@ type Preview2DOverlayStackProps = {
   draftPointCount: number;
   overlayPointerEvents: string;
   viewportTransformStyle: { transform: string };
+  presentationActive: boolean;
   showMap: boolean;
   mapLocked: boolean;
   previewInteraction: "static" | "edit";
@@ -34,6 +35,7 @@ export function Preview2DOverlayStack({
   draftPointCount,
   overlayPointerEvents,
   viewportTransformStyle,
+  presentationActive,
   showMap,
   mapLocked,
   previewInteraction,
@@ -53,55 +55,59 @@ export function Preview2DOverlayStack({
   return (
     <>
       <PreviewPlanCanvasLayers {...planCanvasLayersProps} />
-      <div
-        data-testid="preview-drawing-surface"
-        data-draw-mode={drawMode}
-        data-draft-point-count={draftPointCount}
-        aria-label="Drawing surface"
-        className={`absolute inset-0 ${drawMode !== "select" && drawMode !== "pan" ? "z-[35]" : "z-[14]"} ${
-          drawMode === "select"
-            ? "pointer-events-none"
-            : drawMode === "pan"
-              ? "pointer-events-auto cursor-grab active:cursor-grabbing"
-              : "pointer-events-auto cursor-crosshair"
-        }`}
-      />
-      <div
-        data-testid="preview-drawing-overlays"
-        className={`${overlayPointerEvents} absolute inset-0 z-[15]`}
-        style={{
-          transformOrigin: "top left",
-          transform: viewportTransformStyle.transform,
-        }}
-        onMouseDown={(event) => {
-          if (beginCadWindowSelect(event)) return;
-          if (!showMap || mapLocked) return;
-          if (previewInteraction !== "edit") return;
-          if (placementMode) return;
-          if ((event.target as HTMLElement)?.closest?.("[data-object-overlay]")) return;
-          mapDragActiveRef.current = true;
-          mapDragRef.current = { x: event.clientX, y: event.clientY };
-        }}
-        onWheel={(event) => {
-          if (!showMap || mapLocked) return;
-          if (previewInteraction !== "edit") return;
-          if (!mapRef.current) return;
-          event.preventDefault();
-          const map = mapRef.current;
-          const zoom = map.getZoom();
-          const nextZoom = zoom + (event.deltaY < 0 ? 0.4 : -0.4);
-          map.zoomTo(nextZoom, { animate: false });
-        }}
-        onClick={() => {
-          if (analysisFocusLocked) return;
-          onClearHighlights?.();
-        }}
-      >
-        <PreviewWaterFireFlowHitTargets {...waterFireFlowHitTargetsProps} />
-        <PreviewEditableObjectHitTargets {...editableObjectHitTargetsProps} />
-        <PreviewSuggestedObjectHitTargets {...suggestedObjectHitTargetsProps} />
-        <PreviewAnalysisPathsOverlay {...analysisPathsOverlayProps} />
-      </div>
+      {!presentationActive ? (
+        <>
+          <div
+            data-testid="preview-drawing-surface"
+            data-draw-mode={drawMode}
+            data-draft-point-count={draftPointCount}
+            aria-label="Drawing surface"
+            className={`absolute inset-0 ${drawMode !== "select" && drawMode !== "pan" ? "z-[35]" : "z-[14]"} ${
+              drawMode === "select"
+                ? "pointer-events-none"
+                : drawMode === "pan"
+                  ? "pointer-events-auto cursor-grab active:cursor-grabbing"
+                  : "pointer-events-auto cursor-crosshair"
+            }`}
+          />
+          <div
+            data-testid="preview-drawing-overlays"
+            className={`${overlayPointerEvents} absolute inset-0 z-[15]`}
+            style={{
+              transformOrigin: "top left",
+              transform: viewportTransformStyle.transform,
+            }}
+            onMouseDown={(event) => {
+              if (beginCadWindowSelect(event)) return;
+              if (!showMap || mapLocked) return;
+              if (previewInteraction !== "edit") return;
+              if (placementMode) return;
+              if ((event.target as HTMLElement)?.closest?.("[data-object-overlay]")) return;
+              mapDragActiveRef.current = true;
+              mapDragRef.current = { x: event.clientX, y: event.clientY };
+            }}
+            onWheel={(event) => {
+              if (!showMap || mapLocked) return;
+              if (previewInteraction !== "edit") return;
+              if (!mapRef.current) return;
+              event.preventDefault();
+              const map = mapRef.current;
+              const zoom = map.getZoom();
+              const nextZoom = zoom + (event.deltaY < 0 ? 0.4 : -0.4);
+              map.zoomTo(nextZoom, { animate: false });
+            }}
+            onClick={() => {
+              if (analysisFocusLocked) return;
+              onClearHighlights?.();
+            }}
+          >
+            <PreviewWaterFireFlowHitTargets {...waterFireFlowHitTargetsProps} />
+            <PreviewEditableObjectHitTargets {...editableObjectHitTargetsProps} />
+            <PreviewSuggestedObjectHitTargets {...suggestedObjectHitTargetsProps} />
+            <PreviewAnalysisPathsOverlay {...analysisPathsOverlayProps} />
+          </div>
+        </>
+      ) : null}
     </>
   );
 }

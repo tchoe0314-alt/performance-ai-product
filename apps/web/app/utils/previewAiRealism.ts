@@ -124,20 +124,19 @@ function buildAiRealismSvg({
   const visibleObjects = sourceObjects.filter((item) => item.type !== "site");
   const sourceW = Math.max(1, Number.isFinite(lotWidth) ? lotWidth : 1000);
   const sourceH = Math.max(1, Number.isFinite(lotHeight) ? lotHeight : 700);
-  const padX = 76;
-  const padY = 68;
-  const scale = Math.min((1200 - padX * 2) / sourceW, (760 - padY * 2) / sourceH);
-  const frameW = sourceW * scale;
-  const frameH = sourceH * scale;
-  const offsetX = (1200 - frameW) / 2;
-  const offsetY = (760 - frameH) / 2;
-  const sx = (x: number) => offsetX + x * scale;
-  const sy = (y: number) => offsetY + y * scale;
+  const scaleX = 1200 / sourceW;
+  const scaleY = 760 / sourceH;
+  const frameW = 1200;
+  const frameH = 760;
+  const offsetX = 0;
+  const offsetY = 0;
+  const sx = (x: number) => offsetX + x * scaleX;
+  const sy = (y: number) => offsetY + y * scaleY;
   const rect = (item: AiRealismSourceObject) => ({
     x: sx(item.x),
     y: sy(item.y),
-    w: Math.max(4, item.w * scale),
-    h: Math.max(4, item.d * scale),
+    w: Math.max(4, item.w * scaleX),
+    h: Math.max(4, item.d * scaleY),
   });
   const hasPolygon = (item: AiRealismSourceObject) =>
     item.geometryType === "polygon" && Array.isArray(item.geometry) && item.geometry.length >= 3;
@@ -202,12 +201,8 @@ function buildAiRealismSvg({
       return `<g ${objectAttrs}${transform}><defs><clipPath id="${clipId}">${clipShape}</clipPath></defs>${boundary}<g clip-path="url(#${clipId})">${stalls}<rect x="${r.x.toFixed(1)}" y="${(r.y + r.h * 0.42).toFixed(1)}" width="${r.w.toFixed(1)}" height="${Math.max(5, r.h * 0.16).toFixed(1)}" fill="#334155" fill-opacity="0.72"/></g><title>${svgEscape(item.label)} · ${item.stallCount || "layout"} stalls shown as a visual planning preview</title></g>`;
     }
     if (isBuildingType(type)) {
-      const roofColor = item.label.toLowerCase().includes("civic") ? "#111827" : "#4b5563";
       const footprint = polygonOrRect(item, r, 'fill="#d6c8a8" fill-opacity="0.9" stroke="#374151" stroke-width="3" filter="url(#softShadow)"');
-      const roofInset = hasPolygon(item)
-        ? `<polygon points="${pointList(item, scaleGeometry(item.geometry || [], 0.88))}" fill="none" stroke="${roofColor}" stroke-width="2" opacity="0.64"/>`
-        : `<rect x="${(r.x + r.w * 0.06).toFixed(1)}" y="${(r.y + r.h * 0.08).toFixed(1)}" width="${(r.w * 0.88).toFixed(1)}" height="${(r.h * 0.84).toFixed(1)}" fill="none" stroke="${roofColor}" stroke-width="2" opacity="0.64"/>`;
-      return `<g ${objectAttrs}${transform}>${footprint}${roofInset}<title>${svgEscape(item.label)} · ${Math.round(item.h || 0)} ft high · ${svgEscape(item.roofProfile)} roof</title></g>`;
+      return `<g ${objectAttrs}${transform}>${footprint}<title>${svgEscape(item.label)} · ${Math.round(item.h || 0)} ft high · ${svgEscape(item.roofProfile)} roof</title></g>`;
     }
     if (type === "basin" || type === "pond") {
       if (hasPolygon(item)) {
@@ -221,9 +216,9 @@ function buildAiRealismSvg({
     return `<g ${objectAttrs}${transform}>${polygonOrRect(item, r, 'fill="#94a3b8" fill-opacity="0.3" stroke="#475569" stroke-width="2"')}</g>`;
   }).join("");
   const siteFill = mapContextAvailable ? "#dff3db" : "url(#site)";
-  const siteFillOpacity = mapContextAvailable ? "0.10" : "0.94";
-  const hatchOpacity = mapContextAvailable ? "0.055" : "0.22";
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid meet" role="img" aria-label="AI preview generated from current site layout" data-map-grounded="${mapContextAvailable ? "true" : "false"}"><defs><linearGradient id="site" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f6f7ef"/><stop offset="0.62" stop-color="#dce8d2"/><stop offset="1" stop-color="#c8dbbd"/></linearGradient><filter id="softShadow"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#0f172a" flood-opacity="0.24"/></filter><pattern id="land" width="30" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)"><path d="M0 30 L30 0" stroke="#5f7f52" stroke-width="1" opacity="0.42"/></pattern></defs><rect width="1200" height="760" fill="transparent"/><rect data-ai-site-frame="true" x="${offsetX.toFixed(1)}" y="${offsetY.toFixed(1)}" width="${frameW.toFixed(1)}" height="${frameH.toFixed(1)}" rx="8" fill="${siteFill}" fill-opacity="${siteFillOpacity}" stroke="#334155" stroke-width="2"/><rect x="${offsetX.toFixed(1)}" y="${offsetY.toFixed(1)}" width="${frameW.toFixed(1)}" height="${frameH.toFixed(1)}" rx="8" fill="url(#land)" opacity="${hatchOpacity}"/><g data-ai-layout-preview="true">${objectSvg}</g><g><rect x="52" y="684" width="1096" height="30" rx="7" fill="#0f172a" fill-opacity="0.72"/><text x="70" y="704" fill="#fff" font-family="Arial, sans-serif" font-size="13" font-weight="700">PREVIEW · ${svgEscape(promptSummary).slice(0, 92)} · ${svgEscape(watermark).slice(0, 82)}</text></g></svg>`;
+  const siteFillOpacity = mapContextAvailable ? "0.06" : "0.94";
+  const hatchOpacity = mapContextAvailable ? "0.035" : "0.22";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 760" preserveAspectRatio="none" role="img" aria-label="AI preview generated from current site layout" data-map-grounded="${mapContextAvailable ? "true" : "false"}"><title>${svgEscape(promptSummary)} · ${svgEscape(watermark)}</title><defs><linearGradient id="site" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f6f7ef"/><stop offset="0.62" stop-color="#dce8d2"/><stop offset="1" stop-color="#c8dbbd"/></linearGradient><filter id="softShadow"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#0f172a" flood-opacity="0.24"/></filter><pattern id="land" width="30" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(-18)"><path d="M0 30 L30 0" stroke="#5f7f52" stroke-width="1" opacity="0.42"/></pattern></defs><rect width="1200" height="760" fill="transparent"/><rect data-ai-site-frame="true" x="${offsetX.toFixed(1)}" y="${offsetY.toFixed(1)}" width="${frameW.toFixed(1)}" height="${frameH.toFixed(1)}" fill="${siteFill}" fill-opacity="${siteFillOpacity}" stroke="#475569" stroke-opacity="0.45" stroke-width="1.25"/><rect x="${offsetX.toFixed(1)}" y="${offsetY.toFixed(1)}" width="${frameW.toFixed(1)}" height="${frameH.toFixed(1)}" fill="url(#land)" opacity="${hatchOpacity}"/><g data-ai-layout-preview="true">${objectSvg}</g></svg>`;
 }
 
 export function aiRealismMissingInputs({
