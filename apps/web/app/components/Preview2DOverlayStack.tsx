@@ -21,6 +21,7 @@ type Preview2DOverlayStackProps = {
   mapDragActiveRef: MutableRefObject<boolean>;
   mapDragRef: MutableRefObject<{ x: number; y: number } | null>;
   analysisFocusLocked?: boolean;
+  showProposedOverlays: boolean;
   onClearHighlights?: () => void;
   beginCadWindowSelect: (event: ReactMouseEvent<HTMLDivElement>) => boolean;
   planCanvasLayersProps: ComponentProps<typeof PreviewPlanCanvasLayers>;
@@ -44,6 +45,7 @@ export function Preview2DOverlayStack({
   mapDragActiveRef,
   mapDragRef,
   analysisFocusLocked,
+  showProposedOverlays,
   onClearHighlights,
   beginCadWindowSelect,
   planCanvasLayersProps,
@@ -101,10 +103,10 @@ export function Preview2DOverlayStack({
               onClearHighlights?.();
             }}
           >
-            <PreviewWaterFireFlowHitTargets {...waterFireFlowHitTargetsProps} />
+            {showProposedOverlays ? <PreviewWaterFireFlowHitTargets {...waterFireFlowHitTargetsProps} /> : null}
             <PreviewEditableObjectHitTargets {...editableObjectHitTargetsProps} />
             <PreviewSuggestedObjectHitTargets {...suggestedObjectHitTargetsProps} />
-            <PreviewAnalysisPathsOverlay {...analysisPathsOverlayProps} />
+            {showProposedOverlays ? <PreviewAnalysisPathsOverlay {...analysisPathsOverlayProps} /> : null}
           </div>
         </>
       ) : null}

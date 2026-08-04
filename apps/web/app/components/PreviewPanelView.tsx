@@ -2905,6 +2905,7 @@ export default function PreviewPanel({
                   mapDragActiveRef,
                   mapDragRef,
                   analysisFocusLocked,
+                  showProposedOverlays: technicalProposedVisible,
                   onClearHighlights,
                   beginCadWindowSelect,
                   planCanvasLayersProps: {

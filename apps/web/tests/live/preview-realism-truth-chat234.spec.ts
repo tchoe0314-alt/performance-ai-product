@@ -8,6 +8,21 @@ async function openDemoWorkspace(page: Page) {
 }
 
 test.describe("Chat 234 preview realism truth pass", () => {
+  test("source layer controls hide every proposed canvas overlay together", async ({ page }) => {
+    await openDemoWorkspace(page);
+    const canvas = page.getByTestId("workspace-canvas-shell");
+    await canvas.getByTestId("preview-quality-high").click();
+
+    const overlays = page.locator("[data-object-overlay]");
+    expect(await overlays.count()).toBeGreaterThan(0);
+    const layerMenu = page.getByTestId("preview-layer-menu");
+    await layerMenu.locator("summary").click();
+    await page.getByTestId("preview-source-layer-proposed").click();
+    await expect(overlays).toHaveCount(0);
+    await page.getByTestId("preview-source-layer-proposed").click();
+    expect(await overlays.count()).toBeGreaterThan(0);
+  });
+
   test("keeps the 2D review canvas professional without always-on source clutter", async ({ page }) => {
     const pageErrors: string[] = [];
     const consoleErrors: string[] = [];
