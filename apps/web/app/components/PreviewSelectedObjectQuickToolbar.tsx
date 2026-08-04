@@ -2,6 +2,7 @@ import type { BuildingPlacement } from "../types";
 
 type PreviewSelectedObjectQuickToolbarProps = {
   item: BuildingPlacement;
+  placement?: "left" | "right";
   canDelete: boolean;
   statusText: string;
   onMeasure: () => void;
@@ -13,6 +14,7 @@ type PreviewSelectedObjectQuickToolbarProps = {
 
 export function PreviewSelectedObjectQuickToolbar({
   item,
+  placement = "right",
   canDelete,
   statusText,
   onMeasure,
@@ -24,7 +26,11 @@ export function PreviewSelectedObjectQuickToolbar({
   return (
     <div
       data-testid="selected-object-quick-toolbar"
-      className="pointer-events-auto absolute right-0 top-0 z-[95] flex min-w-max translate-x-[calc(100%+8px)] flex-col gap-1 rounded-lg border border-slate-200 bg-white/90 p-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700 shadow-md backdrop-blur"
+      className={`pointer-events-auto absolute top-0 z-[95] flex min-w-max flex-col gap-1 rounded-lg border border-slate-200 bg-white/95 p-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700 shadow-md backdrop-blur ${
+        placement === "left"
+          ? "left-0 -translate-x-[calc(100%+8px)]"
+          : "right-0 translate-x-[calc(100%+8px)]"
+      }`}
       onMouseDown={(event) => {
         event.preventDefault();
         event.stopPropagation();

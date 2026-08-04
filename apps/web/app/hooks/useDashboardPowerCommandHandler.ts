@@ -348,6 +348,76 @@ export function useDashboardPowerCommandHandler({
     if (/\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/.test(normalized)) {
       return refuseUnsafeConstructionCommand(message);
     }
+    const heightCommand = normalized.match(
+      /^(?:set|make|change|update)\s+(?:the\s+)?(.+?)\s+(?:(?:height\s+)?to\s+)?(\d+(?:\.\d+)?)\s*(?:ft|feet|foot)\s*(?:tall|high)?$/,
+    );
+    if (heightCommand) {
+      const targetPhrase = heightCommand[1]
+        .replace(/\b(?:selected|object|the)\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const requestedHeight = Number(heightCommand[2]);
+      const isHeightCapable = (item: BuildingPlacement) =>
+        /building|office|structure/.test(`${item.type || ""} ${item.label || ""}`.toLowerCase());
+      const selectedTarget = activePlacementId
+        ? buildingPlacements.find((item) => item.id === activePlacementId && isHeightCapable(item))
+        : null;
+      const namedTarget = buildingPlacements.find((item) => {
+        if (!isHeightCapable(item)) return false;
+        const searchable = `${item.label || ""} ${item.type || ""}`.toLowerCase().replaceAll("_", " ");
+        return targetPhrase === "building" || targetPhrase === "" || searchable.includes(targetPhrase);
+      });
+      const target = selectedTarget ?? namedTarget;
+      appendChatMessage("user", message);
+      if (!target) {
+        appendChatMessage(
+          "assistant",
+          "Select a building first, or include its name, then give me the height in feet.",
+          "status",
+        );
+        return true;
+      }
+      if (!Number.isFinite(requestedHeight) || requestedHeight < 1 || requestedHeight > 500) {
+        appendChatMessage("assistant", "Building height must be between 1 ft and 500 ft.", "status");
+        return true;
+      }
+      setBuildingPlacements((previous) =>
+        previous.map((item) =>
+          item.id === target.id
+            ? {
+                ...item,
+                h: requestedHeight,
+                meta: {
+                  ...(item.meta ?? {}),
+                  height_ft: requestedHeight,
+                  height_source: "user_command",
+                },
+              }
+            : item,
+        ),
+      );
+      setActivePlacementId(target.id);
+      markSystemsStale(["grading", "drainage", "utilities"]);
+      recordRecentChange({
+        type: "object_style_changed",
+        label: `${target.label} height changed`,
+        detail: `Height set to ${requestedHeight} ft. Grading, drainage, and utilities need review for possible impacts.`,
+      });
+      setPreviewInteraction("static");
+      setPreviewMode("3d");
+      setActiveWorkspaceMode("canvas");
+      setActiveSidePanel(null);
+      setRenderedSidePanel(null);
+      setSidePanelVisible(false);
+      setRightRailCollapsed(true);
+      window.requestAnimationFrame(() => setPreviewMode("3d"));
+      appendChatMessage(
+        "assistant",
+        `${target.label} is now ${requestedHeight} ft tall. The canonical object and 3D preview use the same height; affected systems are marked for review.`,
+        "status",
+      );
+      return "panel";
+    }
     const directSiteSetup = parseDashboardDirectSiteSetupCommand(message, siteAddress.trim());
     if (directSiteSetup) {
       appendChatMessage("user", message);

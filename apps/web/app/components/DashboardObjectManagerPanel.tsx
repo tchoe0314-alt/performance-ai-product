@@ -274,6 +274,27 @@ export function DashboardObjectManagerPanel({
             },
           });
         },
+        onHeight: (item, heightFt) => {
+          const blocker = getObjectEditBlocker(item, "resize");
+          if (blocker) {
+            reportObjectActionBlocker(blocker);
+            return;
+          }
+          handleUpdateBuilding(item.id, { h: Math.max(1, Math.min(heightFt, 500)) });
+        },
+        onRoofProfile: (item, profile) => {
+          const blocker = getObjectEditBlocker(item, "style");
+          if (blocker) {
+            reportObjectActionBlocker(blocker);
+            return;
+          }
+          handleUpdateBuilding(item.id, {
+            meta: {
+              ...(item.meta ?? {}),
+              roof_profile: profile,
+            },
+          });
+        },
         onToggleVisibility: (item) => {
           const blocker = getObjectEditBlocker(item, "hide");
           if (blocker) {

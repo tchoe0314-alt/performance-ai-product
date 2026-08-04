@@ -19,6 +19,12 @@ export function PreviewRectObjectChrome({
   borderColor,
   outlineColor,
 }: PreviewRectObjectChromeProps) {
+  const selectionBorderRadius =
+    visualKind === "water"
+      ? "44% 56% 48% 52% / 38% 46% 54% 62%"
+      : visualKind === "road" || visualKind === "parking"
+        ? "4px"
+        : "8px";
   return (
     <>
       <div
@@ -30,12 +36,16 @@ export function PreviewRectObjectChrome({
         style={{
           backgroundColor: "transparent",
           borderColor: showBoxChrome ? outlineColor || undefined : "transparent",
+          borderRadius: selectionBorderRadius,
         }}
       />
       {selected && showBox ? (
         <>
-          <div className="pointer-events-none absolute inset-0 rounded-[8px] border border-amber-500/80" />
-          {[
+          <div
+            className="pointer-events-none absolute inset-0 border border-amber-500/70"
+            style={{ borderRadius: selectionBorderRadius }}
+          />
+          {visualKind !== "water" ? [
             "left-0 top-0 -translate-x-1/2 -translate-y-1/2",
             "right-0 top-0 translate-x-1/2 -translate-y-1/2",
             "bottom-0 right-0 translate-x-1/2 translate-y-1/2",
@@ -45,7 +55,7 @@ export function PreviewRectObjectChrome({
               key={`box-grip-${position}`}
               className={`pointer-events-none absolute h-2.5 w-2.5 rounded-sm border border-white bg-amber-400 shadow ${position}`}
             />
-          ))}
+          )) : null}
         </>
       ) : null}
       {showBox && highQuality && visualKind === "water" ? (

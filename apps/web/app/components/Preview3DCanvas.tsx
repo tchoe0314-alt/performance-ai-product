@@ -10,6 +10,7 @@ type PickedObject = {
   confidence: string;
   blockers: string[];
   source: string;
+  heightFt: number | null;
   x: number;
   y: number;
 };
@@ -30,7 +31,7 @@ const layerPalette: Record<string, { top: string; side: string; line: string }> 
   BUILDING: { top: "#dfe6ee", side: "#9aa8b8", line: "#334155" },
   STRUCTURE: { top: "#dcc79f", side: "#b58d4f", line: "#735426" },
   ROAD: { top: "#7f8a96", side: "#65717e", line: "#f8fafc" },
-  PARKING: { top: "#d9dee5", side: "#aeb8c4", line: "#f8fafc" },
+  PARKING: { top: "#aab4bf", side: "#8794a2", line: "#f8fafc" },
   LOT: { top: "#f8fafc", side: "#e2e8f0", line: "#94a3b8" },
   SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
   DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
@@ -106,16 +107,18 @@ const preview3DLayerText = (item: Preview3DItem) =>
   `${item.layer || ""} ${item.label || ""} ${item.entityType || ""} ${item.source || ""} ${String(item.meta?.cad_layer || "")} ${String(item.meta?.layer || "")}`;
 
 const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
+  const explicitHeight = Number(item.height);
+  const resolvedHeight = Number.isFinite(explicitHeight) && explicitHeight > 0 ? explicitHeight : null;
   if (layer === "ROAD" || layer === "PARKING") return 0.055;
   if (layer === "SIDEWALK") return 0.035;
   if (layer === "LOT") return 0.025;
   if (layer === "CONSTRAINT") return 0.06;
   if (layer === "LANDSCAPE") return 0.08;
-  if (layer === "DRAINAGE") return Math.max(2.8, Math.min(Math.abs(item.height || 4.2) * 1.35, 9));
+  if (layer === "DRAINAGE") return Math.max(1.2, Math.min(Math.abs(resolvedHeight || 3), 12));
   if (layer === "UTILITY") return Math.max(0.22, Math.min(Math.min(item.w, item.h) * 0.03, 0.7));
-  if (layer === "STRUCTURE") return Math.max(20, Math.min((item.height || Math.min(item.w, item.h) * 0.26) * 1.75, 88));
-  if (layer === "BUILDING") return Math.max(30, Math.min((item.height || Math.min(item.w, item.h) * 0.22) * 1.85, 104));
-  return Math.max(0.35, Math.min(item.height || 1, 8));
+  if (layer === "STRUCTURE") return Math.max(4, Math.min(resolvedHeight || 12, 300));
+  if (layer === "BUILDING") return Math.max(8, Math.min(resolvedHeight || 28, 500));
+  return Math.max(0.35, Math.min(resolvedHeight || 1, 16));
 };
 
 const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
@@ -127,10 +130,10 @@ const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
 
 const flatPlanOpacity = (layer: string, state: string) => {
   if (layer === "LOT") return 0.018;
-  if (layer === "PARKING") return state === "low" ? 0.13 : 0.12;
-  if (layer === "ROAD") return state === "low" ? 0.5 : 0.46;
-  if (layer === "SIDEWALK") return state === "low" ? 0.3 : 0.22;
-  if (layer === "LANDSCAPE") return state === "low" ? 0.24 : 0.3;
+  if (layer === "PARKING") return state === "low" ? 0.72 : 0.9;
+  if (layer === "ROAD") return state === "low" ? 0.62 : 0.8;
+  if (layer === "SIDEWALK") return state === "low" ? 0.58 : 0.82;
+  if (layer === "LANDSCAPE") return state === "low" ? 0.42 : 0.58;
   if (state === "low") return 0.5;
   if (state === "imported") return 0.58;
   if (state === "stale") return 0.5;
@@ -152,6 +155,100 @@ function stableUnitValue(seed: string, offset = 0) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0) / 4294967295;
+}
+
+function dedupePlanPoints(points: Array<[number, number]>) {
+  return points.filter(([x, y], index) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    if (index === 0) return true;
+    const [prevX, prevY] = points[index - 1];
+    return Math.hypot(x - prevX, y - prevY) > 0.01;
+  });
+}
+
+function scalePlanPoints(points: Array<[number, number]>, scale: number) {
+  if (!points.length) return [];
+  const center = points.reduce(
+    (acc, [x, y]) => ({ x: acc.x + x / points.length, y: acc.y + y / points.length }),
+    { x: 0, y: 0 },
+  );
+  return points.map(([x, y]) => [center.x + (x - center.x) * scale, center.y + (y - center.y) * scale] as [number, number]);
+}
+
+function organicRectPoints(item: Preview3DItem, inset = 0) {
+  const count = 36;
+  const centerX = item.x + item.w / 2;
+  const centerY = item.y + item.h / 2;
+  const radiusX = Math.max(item.w * (0.5 - inset), 0.5);
+  const radiusY = Math.max(item.h * (0.5 - inset), 0.5);
+  return Array.from({ length: count }, (_, index) => {
+    const angle = (Math.PI * 2 * index) / count;
+    const variation = 1 + Math.sin(angle * 3 + 0.7) * 0.028 + Math.sin(angle * 5 - 0.35) * 0.018;
+    return [centerX + Math.cos(angle) * radiusX * variation, centerY + Math.sin(angle) * radiusY * variation] as [number, number];
+  });
+}
+
+function shapeFromPlanPoints(points: Array<[number, number]>, centerX: number, centerY: number) {
+  const shape = new THREE.Shape();
+  points.forEach(([x, y], index) => {
+    const sceneX = x - centerX;
+    const sceneY = centerY - y;
+    if (index === 0) shape.moveTo(sceneX, sceneY);
+    else shape.lineTo(sceneX, sceneY);
+  });
+  shape.closePath();
+  return shape;
+}
+
+function corridorSurfaceGeometry(
+  rawPoints: Array<[number, number]>,
+  widthFt: number,
+  elevation: number,
+  centerX: number,
+  centerY: number,
+) {
+  const points = dedupePlanPoints(rawPoints);
+  if (points.length < 2) return null;
+  const halfWidth = Math.max(widthFt / 2, 0.2);
+  const pairs = points.map(([x, y], index) => {
+    const previous = points[Math.max(0, index - 1)];
+    const next = points[Math.min(points.length - 1, index + 1)];
+    const prevDx = x - previous[0];
+    const prevDy = y - previous[1];
+    const nextDx = next[0] - x;
+    const nextDy = next[1] - y;
+    const prevLength = Math.hypot(prevDx, prevDy) || 1;
+    const nextLength = Math.hypot(nextDx, nextDy) || 1;
+    const prevNormal = { x: -prevDy / prevLength, y: prevDx / prevLength };
+    const nextNormal = { x: -nextDy / nextLength, y: nextDx / nextLength };
+    const summed = { x: prevNormal.x + nextNormal.x, y: prevNormal.y + nextNormal.y };
+    const summedLength = Math.hypot(summed.x, summed.y);
+    const normal = summedLength > 0.001
+      ? { x: summed.x / summedLength, y: summed.y / summedLength }
+      : index === 0
+        ? nextNormal
+        : prevNormal;
+    const denominator = Math.max(Math.abs(normal.x * nextNormal.x + normal.y * nextNormal.y), 0.32);
+    const miter = Math.min(halfWidth / denominator, halfWidth * 2.2);
+    return {
+      left: [x + normal.x * miter - centerX, elevation, y + normal.y * miter - centerY] as [number, number, number],
+      right: [x - normal.x * miter - centerX, elevation, y - normal.y * miter - centerY] as [number, number, number],
+    };
+  });
+  const positions = pairs.flatMap((pair) => [...pair.left, ...pair.right]);
+  const indices: number[] = [];
+  for (let index = 0; index < pairs.length - 1; index += 1) {
+    const left = index * 2;
+    const right = left + 1;
+    const nextLeft = left + 2;
+    const nextRight = left + 3;
+    indices.push(left, right, nextLeft, right, nextRight, nextLeft);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 export default function Preview3DCanvas({
@@ -190,6 +287,9 @@ export default function Preview3DCanvas({
           confidence: describeConfidence(item.confidence),
           blockers: item.blockers || [],
           source: item.source || "preview object",
+          heightFt: normalizeLayer(preview3DLayerText(item)) === "BUILDING" || normalizeLayer(preview3DLayerText(item)) === "STRUCTURE"
+            ? displayHeightForLayer(item, normalizeLayer(preview3DLayerText(item)))
+            : null,
           priority:
             item.meta?.hero_massing
               ? -1
@@ -243,6 +343,7 @@ export default function Preview3DCanvas({
       confidence: object.confidence,
       blockers: object.blockers,
       source: object.source,
+      heightFt: object.heightFt,
       x: 22,
       y: 118,
     });
@@ -344,7 +445,7 @@ export default function Preview3DCanvas({
     const height = Math.max(mount.clientHeight, 320);
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(previewQuality === "high" ? "#f8fafc" : "#f3f6f8");
+    scene.background = new THREE.Color(previewQuality === "high" ? "#eef2f6" : "#e8edf1");
 
     const renderer = new THREE.WebGLRenderer({ antialias: previewQuality === "high", preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, previewQuality === "high" ? 2 : 1.35));
@@ -354,10 +455,16 @@ export default function Preview3DCanvas({
     rendererRef.current = renderer;
     mount.appendChild(renderer.domElement);
 
-    const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 5000);
+    const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 5000);
     const maxSpan = Math.max(modelBounds.spanX, modelBounds.spanY);
-    camera.position.set(maxSpan * 0.46, maxSpan * 0.34, maxSpan * 0.72);
-    camera.zoom = previewQuality === "high" ? 1.18 : 1.08;
+    const maxObjectHeight = Math.max(
+      12,
+      ...items
+        .filter((item) => !item.terrainSample)
+        .map((item) => displayHeightForLayer(item, normalizeLayer(preview3DLayerText(item)))),
+    );
+    camera.position.set(maxSpan * 0.9, Math.max(maxSpan * 0.75, maxObjectHeight * 3.1), maxSpan * 1.2);
+    camera.zoom = previewQuality === "high" ? 0.92 : 0.88;
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
 
@@ -367,17 +474,28 @@ export default function Preview3DCanvas({
     controls.enableZoom = true;
     controls.minDistance = Math.max(maxSpan * 0.14, 25);
     controls.maxDistance = Math.max(maxSpan * 2.6, 300);
-    controls.target.set(0, previewQuality === "high" ? maxSpan * 0.035 : 0, previewQuality === "high" ? maxSpan * 0.08 : 0);
+    controls.target.set(0, Math.min(maxObjectHeight * 0.18, maxSpan * 0.08), 0);
     controls.update();
     controlsRef.current = controls;
 
-    const ambient = new THREE.HemisphereLight("#ffffff", "#cfd8df", previewQuality === "high" ? 1.5 : 1.65);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = previewQuality === "high" ? 1.04 : 1;
+
+    const ambient = new THREE.HemisphereLight("#f8fbff", "#8f9f91", previewQuality === "high" ? 1.18 : 1.38);
     scene.add(ambient);
     const sun = new THREE.DirectionalLight("#fff7ed", previewQuality === "high" ? 2.6 : 1.65);
     sun.position.set(maxSpan * 0.42, maxSpan * 0.95, maxSpan * 0.52);
     sun.castShadow = previewQuality === "high";
     sun.shadow.mapSize.width = previewQuality === "high" ? 2048 : 1024;
     sun.shadow.mapSize.height = previewQuality === "high" ? 2048 : 1024;
+    sun.shadow.camera.left = -maxSpan * 0.75;
+    sun.shadow.camera.right = maxSpan * 0.75;
+    sun.shadow.camera.top = maxSpan * 0.75;
+    sun.shadow.camera.bottom = -maxSpan * 0.75;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = maxSpan * 3;
+    sun.shadow.bias = -0.0003;
     scene.add(sun);
 
     const root = new THREE.Group();
@@ -513,7 +631,7 @@ export default function Preview3DCanvas({
       terrainGeometry.computeVertexNormals();
     }
     const terrainMaterial = new THREE.MeshStandardMaterial({
-      color: terrainState.mode === "fallback" ? "#f3efe5" : "#e5efcf",
+      color: terrainState.mode === "fallback" ? "#dde4df" : "#cfdfc8",
       roughness: 0.9,
       metalness: 0,
       wireframe: previewQuality === "standard" && terrainState.mode === "terrain",
@@ -524,17 +642,30 @@ export default function Preview3DCanvas({
     terrain.receiveShadow = true;
     root.add(terrain);
 
-    if (previewQuality === "high") {
+    const siteBoundaryPoints = [
+      new THREE.Vector3(-modelBounds.spanX / 2, 0.12, -modelBounds.spanY / 2),
+      new THREE.Vector3(modelBounds.spanX / 2, 0.12, -modelBounds.spanY / 2),
+      new THREE.Vector3(modelBounds.spanX / 2, 0.12, modelBounds.spanY / 2),
+      new THREE.Vector3(-modelBounds.spanX / 2, 0.12, modelBounds.spanY / 2),
+    ];
+    const siteBoundary = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(siteBoundaryPoints),
+      new THREE.LineBasicMaterial({ color: "#334155", transparent: true, opacity: 0.72 }),
+    );
+    siteBoundary.name = "civil-3d-site-boundary";
+    root.add(siteBoundary);
+
+    if (previewQuality === "high" && terrainState.mode === "terrain") {
       const terrainLineMaterial = new THREE.LineBasicMaterial({
-        color: terrainState.mode === "fallback" ? "#cbd5d1" : "#6f8f54",
+        color: "#6f8f54",
         transparent: true,
-        opacity: terrainState.mode === "fallback" ? 0.12 : 0.24,
+        opacity: 0.24,
       });
-      const referenceCount = terrainState.mode === "fallback" ? 4 : 7;
+      const referenceCount = 7;
       for (let lineIndex = 1; lineIndex < referenceCount; lineIndex += 1) {
         const t = lineIndex / referenceCount;
         const y = modelBounds.minY + modelBounds.spanY * t;
-        const wave = terrainState.mode === "fallback" ? 0 : Math.sin(t * Math.PI * 2) * modelBounds.spanY * 0.018;
+        const wave = Math.sin(t * Math.PI * 2) * modelBounds.spanY * 0.018;
         const points = [
           toScene(modelBounds.minX, y + wave, 0.08),
           toScene(modelBounds.minX + modelBounds.spanX * 0.25, y - wave * 0.45, 0.1),
@@ -587,6 +718,7 @@ export default function Preview3DCanvas({
         source: item.source || (layer === "UTILITY" ? "utility evidence only where supplied" : "preview object"),
         linkedObjectId: item.linkedObjectId,
         sourceEntityId: item.sourceEntityId,
+        heightFt: layer === "BUILDING" || layer === "STRUCTURE" ? heightFt : null,
       };
 
       const isFlatPlanLayer = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK" || layer === "LANDSCAPE";
@@ -668,86 +800,102 @@ export default function Preview3DCanvas({
         Array.isArray(item.geometry) &&
         item.geometry.length >= 2
       ) {
-        const points = item.geometry.map(([x, y]) => toScene(x, y, baseY + 0.55));
+        const planPoints = dedupePlanPoints(item.geometry);
+        const points = planPoints.map(([x, y]) => toScene(x, y, baseY + 0.55));
         if (item.geometryType === "polygon" && points.length >= 3) {
-          const shape = new THREE.Shape();
-          item.geometry.forEach(([x, y], pointIndex) => {
-            const sx = x - centerX;
-            const sy = y - centerY;
-            if (pointIndex === 0) shape.moveTo(sx, sy);
-            else shape.lineTo(sx, sy);
-          });
-          shape.closePath();
           const displayDepth = surfaceExtrudeDepth(heightFt, layer);
-          const geometry = new THREE.ExtrudeGeometry(shape, {
-            depth: displayDepth,
-            bevelEnabled: layer === "BUILDING",
-            bevelSegments: layer === "BUILDING" ? 1 : 0,
-            bevelSize: layer === "BUILDING" ? 0.6 : 0,
-            bevelThickness: layer === "BUILDING" ? 0.4 : 0,
-          });
-          geometry.rotateX(-Math.PI / 2);
-          const mesh = new THREE.Mesh(geometry, cadMaterial);
-          mesh.userData = object.userData;
-          object.add(mesh);
-          if (layer === "LOT") {
-            addExactEdges(mesh, palette.line, 0.24);
-          } else if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK" && layer !== "LANDSCAPE") {
-            addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.42 : 0.58);
-          }
-          if (layer === "BUILDING" && previewQuality === "high") {
-            const roofY = baseY + displayDepth + 0.2;
-            addBuildingDetailCues(object, item, baseY, displayDepth);
-            const roofInset = Math.min(Math.max(Math.min(item.w, item.h) * 0.08, 1.4), 8);
-            const roofLines = new THREE.LineSegments(
-              new THREE.BufferGeometry().setFromPoints([
-                toScene(item.x + roofInset, item.y + roofInset, roofY),
-                toScene(item.x + item.w - roofInset, item.y + roofInset, roofY),
-                toScene(item.x + item.w - roofInset, item.y + roofInset, roofY),
-                toScene(item.x + item.w - roofInset, item.y + item.h - roofInset, roofY),
-                toScene(item.x + item.w - roofInset, item.y + item.h - roofInset, roofY),
-                toScene(item.x + roofInset, item.y + item.h - roofInset, roofY),
-                toScene(item.x + roofInset, item.y + item.h - roofInset, roofY),
-                toScene(item.x + roofInset, item.y + roofInset, roofY),
-              ]),
-              new THREE.LineBasicMaterial({ color: "#475569", transparent: true, opacity: 0.36 }),
+          if (layer === "DRAINAGE") {
+            const shelfPoints = scalePlanPoints(planPoints, 0.78);
+            const waterPoints = scalePlanPoints(planPoints, 0.54);
+            const outerGeometry = new THREE.ShapeGeometry(shapeFromPlanPoints(planPoints, centerX, centerY));
+            const shelfGeometry = new THREE.ShapeGeometry(shapeFromPlanPoints(shelfPoints, centerX, centerY));
+            const waterGeometry = new THREE.ShapeGeometry(shapeFromPlanPoints(waterPoints, centerX, centerY));
+            [outerGeometry, shelfGeometry, waterGeometry].forEach((geometry) => geometry.rotateX(-Math.PI / 2));
+            const outer = new THREE.Mesh(
+              outerGeometry,
+              new THREE.MeshStandardMaterial({ color: "#759463", roughness: 0.92, transparent: true, opacity: 0.96, side: THREE.DoubleSide }),
             );
-            object.add(roofLines);
-            const entry = new THREE.Mesh(
-              new THREE.BoxGeometry(Math.max(item.w * 0.14, 4), 0.28, Math.max(item.h * 0.08, 2.2)),
-              new THREE.MeshStandardMaterial({ color: "#e5e7eb", roughness: 0.86 }),
+            outer.position.y = baseY + 0.32;
+            outer.userData = object.userData;
+            outer.receiveShadow = true;
+            object.add(outer);
+            const shelf = new THREE.Mesh(
+              shelfGeometry,
+              new THREE.MeshStandardMaterial({ color: "#9bc47d", roughness: 0.9, transparent: true, opacity: 0.98, side: THREE.DoubleSide }),
             );
-            entry.position.copy(toScene(item.x + item.w / 2, item.y + item.h - Math.max(item.h * 0.04, 1.4), baseY + 0.24));
-            entry.userData = object.userData;
-            object.add(entry);
-            const roofUnitMaterial = new THREE.MeshStandardMaterial({ color: "#94a3b8", roughness: 0.78, metalness: 0.02 });
-            [
-              { x: item.x + item.w * 0.34, y: item.y + item.h * 0.42, w: 0.09, h: 0.08 },
-              { x: item.x + item.w * 0.62, y: item.y + item.h * 0.58, w: 0.11, h: 0.07 },
-            ].forEach((unit) => {
-              if (Math.min(item.w, item.h) < 22) return;
-              const roofUnit = new THREE.Mesh(
-                new THREE.BoxGeometry(Math.max(item.w * unit.w, 3.2), 1.15, Math.max(item.h * unit.h, 2.4)),
-                roofUnitMaterial,
-              );
-              roofUnit.position.copy(toScene(unit.x, unit.y, roofY + 0.72));
-              roofUnit.userData = object.userData;
-              object.add(roofUnit);
-            });
-          }
-          if (layer === "DRAINAGE" && previewQuality === "high") {
+            shelf.position.y = baseY + 0.46;
+            shelf.userData = object.userData;
+            object.add(shelf);
             const water = new THREE.Mesh(
-              new THREE.BoxGeometry(Math.max(item.w * 0.58, 1), 0.045, Math.max(item.h * 0.46, 1)),
-              new THREE.MeshStandardMaterial({ color: "#7dd3fc", roughness: 0.18, transparent: true, opacity: 0.48 }),
+              waterGeometry,
+              new THREE.MeshStandardMaterial({
+                color: "#24a9cf",
+                roughness: 0.28,
+                metalness: 0.02,
+                transparent: true,
+                opacity: 0.9,
+                side: THREE.DoubleSide,
+              }),
             );
-            water.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + displayDepth + 0.08));
+            water.position.y = baseY + 0.6;
             water.userData = object.userData;
             object.add(water);
+            [planPoints, shelfPoints, waterPoints].forEach((ringPoints, ringIndex) => {
+              const ring = new THREE.LineLoop(
+                new THREE.BufferGeometry().setFromPoints(
+                  ringPoints.map(([x, y]) => toScene(x, y, baseY + 0.36 + ringIndex * 0.14)),
+                ),
+                new THREE.LineBasicMaterial({ color: ringIndex === 2 ? "#0e7490" : "#4d7c5a", transparent: true, opacity: 0.58 }),
+              );
+              object.add(ring);
+            });
+          } else {
+            const shape = shapeFromPlanPoints(planPoints, centerX, centerY);
+            const geometry = new THREE.ExtrudeGeometry(shape, {
+              depth: displayDepth,
+              bevelEnabled: layer === "BUILDING",
+              bevelSegments: layer === "BUILDING" ? 1 : 0,
+              bevelSize: layer === "BUILDING" ? Math.min(0.35, displayDepth * 0.015) : 0,
+              bevelThickness: layer === "BUILDING" ? Math.min(0.25, displayDepth * 0.01) : 0,
+            });
+            geometry.rotateX(-Math.PI / 2);
+            const mesh = new THREE.Mesh(geometry, cadMaterial);
+            mesh.userData = object.userData;
+            mesh.castShadow = previewQuality === "high" && layer === "BUILDING";
+            mesh.receiveShadow = layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK";
+            object.add(mesh);
+            if (layer === "LOT") {
+              addExactEdges(mesh, palette.line, 0.24);
+            } else if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK" && layer !== "LANDSCAPE") {
+              addExactEdges(mesh, state === "blocked" ? "#fecaca" : palette.line, state === "low" ? 0.34 : 0.48);
+            }
+            if (layer === "BUILDING" && previewQuality === "high") {
+              const floorCount = Math.max(1, Math.min(30, Math.round(displayDepth / 12)));
+              for (let floor = 1; floor < floorCount; floor += 1) {
+                const band = new THREE.LineLoop(
+                  new THREE.BufferGeometry().setFromPoints(
+                    planPoints.map(([x, y]) => toScene(x, y, baseY + (displayDepth * floor) / floorCount)),
+                  ),
+                  new THREE.LineBasicMaterial({ color: "#475569", transparent: true, opacity: 0.22 }),
+                );
+                object.add(band);
+              }
+              const roofLine = new THREE.LineLoop(
+                new THREE.BufferGeometry().setFromPoints(
+                  scalePlanPoints(planPoints, 0.94).map(([x, y]) => toScene(x, y, baseY + displayDepth + 0.22)),
+                ),
+                new THREE.LineBasicMaterial({ color: "#475569", transparent: true, opacity: 0.42 }),
+              );
+              object.add(roofLine);
+            }
           }
           if (layer === "PARKING" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
             const stripeMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.34 });
-            const bounds = new THREE.Box3().setFromObject(mesh);
-            const stripeCount = Math.max(2, Math.min(7, Math.floor((bounds.max.x - bounds.min.x) / 18)));
+            const bounds = new THREE.Box3(
+              toScene(item.x, item.y, baseY),
+              toScene(item.x + item.w, item.y + item.h, baseY),
+            );
+            const stripeCount = Math.max(2, Math.min(12, Math.floor(Math.abs(bounds.max.x - bounds.min.x) / 9)));
             for (let stripeIndex = 1; stripeIndex < stripeCount; stripeIndex += 1) {
               const x = bounds.min.x + ((bounds.max.x - bounds.min.x) * stripeIndex) / stripeCount;
               const line = new THREE.Line(
@@ -771,37 +919,37 @@ export default function Preview3DCanvas({
             roughness: layer === "ROAD" ? 0.9 : 0.82,
             metalness: 0.01,
           });
-          const lineMaterial = new THREE.LineBasicMaterial({
+          const lineMaterial = new THREE.LineDashedMaterial({
             color: layer === "ROAD" ? "#f8fafc" : palette.line,
             transparent: true,
-            opacity: layer === "ROAD" ? 0.34 : 0.42,
+            opacity: layer === "ROAD" ? 0.62 : 0.42,
+            dashSize: layer === "ROAD" ? 8 : 2,
+            gapSize: layer === "ROAD" ? 6 : 2,
           });
-          item.geometry.slice(0, -1).forEach(([x1, y1], segmentIndex) => {
-            const [x2, y2] = item.geometry?.[segmentIndex + 1] ?? [x1, y1];
-            const dx = x2 - x1;
-            const dy = y2 - y1;
-            const length = Math.hypot(dx, dy);
-            if (length < 0.01) return;
-            const segment = new THREE.Mesh(
-              new THREE.BoxGeometry(length, slabDepth, corridorWidth),
-              slabMaterial,
+          const corridorGeometry = corridorSurfaceGeometry(
+            planPoints,
+            corridorWidth,
+            baseY + slabDepth + 0.05,
+            centerX,
+            centerY,
+          );
+          if (corridorGeometry) {
+            const corridor = new THREE.Mesh(corridorGeometry, slabMaterial);
+            corridor.userData = object.userData;
+            corridor.receiveShadow = true;
+            object.add(corridor);
+            addExactEdges(corridor, layer === "ROAD" ? "#475569" : palette.line, layer === "ROAD" ? 0.34 : 0.42);
+          }
+          if (layer === "ROAD") {
+            const centerline = new THREE.Line(
+              new THREE.BufferGeometry().setFromPoints(
+                planPoints.map(([x, y]) => toScene(x, y, baseY + slabDepth + 0.15)),
+              ),
+              lineMaterial,
             );
-            segment.position.copy(toScene((x1 + x2) / 2, (y1 + y2) / 2, baseY + slabDepth / 2 + 0.05));
-            segment.rotation.y = -Math.atan2(dy, dx);
-            segment.userData = object.userData;
-            object.add(segment);
-            addExactEdges(segment, layer === "ROAD" ? "#64748b" : palette.line, layer === "ROAD" ? 0.18 : 0.32);
-            if (layer === "ROAD") {
-              const centerline = new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([
-                  toScene(x1, y1, baseY + slabDepth + 0.12),
-                  toScene(x2, y2, baseY + slabDepth + 0.12),
-                ]),
-                lineMaterial,
-              );
-              object.add(centerline);
-            }
-          });
+            centerline.computeLineDistances();
+            object.add(centerline);
+          }
         } else {
           if (layer === "UTILITY") {
             const utilityPoints = item.geometry.map(([x, y]) => toScene(x, y, baseY + 0.18));
@@ -882,38 +1030,42 @@ export default function Preview3DCanvas({
           object.add(reviewRing);
         }
       } else if (layer === "DRAINAGE") {
-        const depth = Math.max(1.2, Math.abs(Math.min(baseY, 0)) || Math.min(heightFt, 4));
-        const basin = new THREE.Mesh(
-          new THREE.CylinderGeometry(1, 0.64, Math.max(depth, 0.75), 64),
-          new THREE.MeshStandardMaterial({ color: "#7fc6a4", roughness: 0.84, transparent: true, opacity: 0.72 }),
-        );
-        basin.scale.set(Math.max(item.w * 0.5, 1), 1, Math.max(item.h * 0.5, 1));
-        basin.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, -depth / 2));
-        basin.userData = object.userData;
-        object.add(basin);
-
-        const water = new THREE.Mesh(
-          new THREE.CylinderGeometry(1, 1, 0.08, 64),
-          new THREE.MeshStandardMaterial({ color: "#7dd3fc", roughness: 0.18, metalness: 0.02, transparent: true, opacity: 0.68 }),
-        );
-        water.scale.set(Math.max(item.w * 0.36, 1), 1, Math.max(item.h * 0.34, 1));
-        water.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, 0.05));
-        object.add(water);
-
-        const rimPoints = Array.from({ length: 96 }, (_, pointIndex) => {
-          const angle = (Math.PI * 2 * pointIndex) / 95;
-          return new THREE.Vector3(
-            Math.cos(angle) * Math.max(item.w * 0.52, 1),
-            0.16,
-            Math.sin(angle) * Math.max(item.h * 0.52, 1),
+        const outerPoints = organicRectPoints(item, 0.01);
+        const shelfPoints = scalePlanPoints(outerPoints, 0.76);
+        const waterPoints = scalePlanPoints(outerPoints, 0.52);
+        const layers = [
+          {
+            points: outerPoints,
+            y: baseY + 0.32,
+            material: new THREE.MeshStandardMaterial({ color: "#759463", roughness: 0.92, side: THREE.DoubleSide }),
+          },
+          {
+            points: shelfPoints,
+            y: baseY + 0.46,
+            material: new THREE.MeshStandardMaterial({ color: "#9bc47d", roughness: 0.9, side: THREE.DoubleSide }),
+          },
+          {
+            points: waterPoints,
+            y: baseY + 0.6,
+            material: new THREE.MeshStandardMaterial({ color: "#24a9cf", roughness: 0.28, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+          },
+        ];
+        layers.forEach((basinLayer, layerIndex) => {
+          const geometry = new THREE.ShapeGeometry(shapeFromPlanPoints(basinLayer.points, centerX, centerY));
+          geometry.rotateX(-Math.PI / 2);
+          const surface = new THREE.Mesh(geometry, basinLayer.material);
+          surface.position.y = basinLayer.y;
+          surface.userData = object.userData;
+          surface.receiveShadow = true;
+          object.add(surface);
+          const rim = new THREE.LineLoop(
+            new THREE.BufferGeometry().setFromPoints(
+              basinLayer.points.map(([x, y]) => toScene(x, y, basinLayer.y + 0.04)),
+            ),
+            new THREE.LineBasicMaterial({ color: layerIndex === 2 ? "#0e7490" : "#4d7c5a", transparent: true, opacity: 0.62 }),
           );
+          object.add(rim);
         });
-        const rim = new THREE.Line(
-          new THREE.BufferGeometry().setFromPoints(rimPoints),
-          new THREE.LineBasicMaterial({ color: "#236a7b", transparent: true, opacity: 0.7 }),
-        );
-        rim.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, 0));
-        object.add(rim);
       } else if (layer === "UTILITY") {
         const horizontal = item.w >= item.h;
         const geometry = new THREE.BoxGeometry(
@@ -1160,75 +1312,63 @@ export default function Preview3DCanvas({
           object.add(stripe);
         }
         if (layer === "PARKING" && previewQuality === "high" && item.w >= 70 && item.h >= 42) {
-          const metadata = item.meta ?? {};
-          const requestedStalls = Number(metadata.requested_stalls ?? metadata.parkingCapacity ?? 0);
-          const moduleCols = Math.max(
-            1,
-            Math.min(6, Number(metadata.parkingModuleCols) || Math.ceil(Math.sqrt(Math.max(requestedStalls, 24) / 16))),
-          );
-          const moduleRows = Math.max(
-            1,
-            Math.min(4, Number(metadata.parkingModuleRows) || Math.ceil(Math.max(requestedStalls, 24) / (moduleCols * 18))),
-          );
           const topY = baseY + visualLift + heightFt + 0.14;
-          const stallMaterial = new THREE.LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.48 });
-          const aisleMaterial = new THREE.LineBasicMaterial({ color: "#475569", transparent: true, opacity: 0.38 });
-          const moduleMaterial = new THREE.LineBasicMaterial({ color: "#1f2937", transparent: true, opacity: 0.22 });
-          const stallColumns = Math.min(18, Math.max(6, Math.floor(item.w / Math.max(moduleCols * 11, 1))));
-          const stallRows = Math.min(8, Math.max(3, moduleRows * 2));
+          const stallMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.78 });
+          const aisleMaterial = new THREE.LineBasicMaterial({ color: "#cbd5e1", transparent: true, opacity: 0.62 });
+          const longAxisIsX = item.w >= item.h;
+          const longLength = longAxisIsX ? item.w : item.h;
+          const shortLength = longAxisIsX ? item.h : item.w;
+          const margin = Math.max(4, Math.min(8, Math.min(item.w, item.h) * 0.08));
+          const stallWidth = 9;
+          const stallDepth = 18;
+          const aisleWidth = 24;
+          const moduleDepth = stallDepth * 2 + aisleWidth;
+          const moduleCount = Math.max(1, Math.min(3, Math.floor((shortLength - margin * 2) / moduleDepth) || 1));
+          const usedDepth = moduleCount * moduleDepth;
+          const depthStart = margin + Math.max(0, (shortLength - margin * 2 - usedDepth) / 2);
+          const stallCountAlong = Math.max(4, Math.min(30, Math.floor((longLength - margin * 2) / stallWidth)));
+          const linePoint = (long: number, short: number) =>
+            longAxisIsX
+              ? toScene(item.x + long, item.y + short, topY)
+              : toScene(item.x + short, item.y + long, topY);
 
-          for (let col = 1; col < stallColumns; col += 1) {
-            const x = item.x + (item.w * col) / stallColumns;
-            object.add(
-              new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([
-                  toScene(x, item.y + item.h * 0.08, topY),
-                  toScene(x, item.y + item.h * 0.92, topY),
-                ]),
-                stallMaterial,
-              ),
-            );
+          for (let moduleIndex = 0; moduleIndex < moduleCount; moduleIndex += 1) {
+            const moduleStart = depthStart + moduleIndex * moduleDepth;
+            const nearRowEnd = moduleStart + stallDepth;
+            const farRowStart = nearRowEnd + aisleWidth;
+            for (let stallIndex = 0; stallIndex <= stallCountAlong; stallIndex += 1) {
+              const long = margin + ((longLength - margin * 2) * stallIndex) / stallCountAlong;
+              object.add(
+                new THREE.Line(
+                  new THREE.BufferGeometry().setFromPoints([
+                    linePoint(long, moduleStart),
+                    linePoint(long, nearRowEnd),
+                  ]),
+                  stallMaterial,
+                ),
+              );
+              object.add(
+                new THREE.Line(
+                  new THREE.BufferGeometry().setFromPoints([
+                    linePoint(long, farRowStart),
+                    linePoint(long, farRowStart + stallDepth),
+                  ]),
+                  stallMaterial,
+                ),
+              );
+            }
+            [nearRowEnd, farRowStart].forEach((short) => {
+              object.add(
+                new THREE.Line(
+                  new THREE.BufferGeometry().setFromPoints([
+                    linePoint(margin, short),
+                    linePoint(longLength - margin, short),
+                  ]),
+                  aisleMaterial,
+                ),
+              );
+            });
           }
-          for (let row = 1; row < stallRows; row += 1) {
-            const y = item.y + (item.h * row) / stallRows;
-            const material = row % 2 === 0 ? aisleMaterial : stallMaterial;
-            object.add(
-              new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([
-                  toScene(item.x + item.w * 0.06, y, topY + 0.01),
-                  toScene(item.x + item.w * 0.94, y, topY + 0.01),
-                ]),
-                material,
-              ),
-            );
-          }
-          for (let col = 1; col < moduleCols; col += 1) {
-            const x = item.x + (item.w * col) / moduleCols;
-            object.add(
-              new THREE.Line(
-                new THREE.BufferGeometry().setFromPoints([
-                  toScene(x, item.y + item.h * 0.05, topY + 0.02),
-                  toScene(x, item.y + item.h * 0.95, topY + 0.02),
-                ]),
-                moduleMaterial,
-              ),
-            );
-          }
-          const accentPads = [
-            { color: "#10b981", x: item.x + item.w * 0.14, y: item.y + item.h * 0.18 },
-            { color: "#10b981", x: item.x + item.w * 0.22, y: item.y + item.h * 0.18 },
-            { color: "#a855f7", x: item.x + item.w * 0.74, y: item.y + item.h * 0.78 },
-            { color: "#a855f7", x: item.x + item.w * 0.82, y: item.y + item.h * 0.78 },
-          ];
-          accentPads.forEach((pad) => {
-            const padMesh = new THREE.Mesh(
-              new THREE.PlaneGeometry(Math.max(item.w * 0.045, 4), Math.max(item.h * 0.16, 8)),
-              new THREE.MeshStandardMaterial({ color: pad.color, transparent: true, opacity: 0.34, roughness: 0.78 }),
-            );
-            padMesh.rotation.x = -Math.PI / 2;
-            padMesh.position.copy(toScene(pad.x, pad.y, topY + 0.03));
-            object.add(padMesh);
-          });
         }
       }
 
@@ -1243,6 +1383,15 @@ export default function Preview3DCanvas({
         sprite.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 8));
         object.add(sprite);
         visibleLabelCount += 1;
+      }
+
+      const rotationDeg = Number(item.rotation || 0);
+      const usesRectangularPlacementGeometry = !item.geometryType || item.geometryType === "rect";
+      if (usesRectangularPlacementGeometry && Number.isFinite(rotationDeg) && Math.abs(rotationDeg) > 0.01) {
+        const pivot = toScene(item.x + item.w / 2, item.y + item.h / 2, 0);
+        object.children.forEach((child) => child.position.sub(pivot));
+        object.position.copy(pivot);
+        object.rotation.y = THREE.MathUtils.degToRad(-rotationDeg);
       }
 
       root.add(object);
@@ -1289,6 +1438,7 @@ export default function Preview3DCanvas({
         confidence: data.confidence,
         blockers: data.blockers,
         source: data.source,
+        heightFt: typeof data.heightFt === "number" ? data.heightFt : null,
         x: event.clientX - rect.left,
         y: event.clientY - rect.top,
       });
@@ -1374,7 +1524,9 @@ export default function Preview3DCanvas({
               }`}
             >
               <span className="block truncate">{object.label}</span>
-              <span className="block truncate text-[10px] uppercase tracking-[0.12em] text-slate-400">{object.layer} | {object.confidence}</span>
+              <span className="block truncate text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                {object.layer}{object.heightFt ? ` | ${Math.round(object.heightFt)} ft` : ""} | {object.confidence}
+              </span>
             </button>
           ))}
         </div>
@@ -1390,6 +1542,11 @@ export default function Preview3DCanvas({
         >
           <p className="font-semibold text-slate-900">{picked.label}</p>
           <p className="mt-1 uppercase tracking-[0.12em] text-slate-400">{picked.layer} | {picked.confidence}</p>
+          {picked.heightFt ? (
+            <p className="mt-2 font-semibold text-slate-700" data-testid="civil-3d-selected-height">
+              Height {Math.round(picked.heightFt)} ft
+            </p>
+          ) : null}
           <p className="mt-2 text-slate-500">{picked.blockers[0] || picked.source}</p>
         </div>
       ) : null}

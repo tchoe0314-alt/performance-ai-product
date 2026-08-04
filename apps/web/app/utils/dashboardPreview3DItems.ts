@@ -575,6 +575,7 @@ export function buildPlacementPreview3DItems({
                     : isLotBlock || isConstraint
                       ? 0.08
                   : 6,
+        rotation: Number.isFinite(Number(item.rotation)) ? Number(item.rotation) : 0,
         z: isDrainage ? -1 : 0,
         geometryType: item.geometryType,
         geometry: item.geometry,

@@ -130,6 +130,31 @@ export function PreviewBasePlanGrid({
           {planScaleBar.lengthFt} FT
         </text>
       </g>
+      {showMap && siteLocked ? (
+        <g data-testid="map-site-boundary" pointerEvents="none">
+          <rect
+            x={0.7}
+            y={0.7}
+            width={98.6}
+            height={98.6}
+            rx={0.18}
+            fill="rgba(255,255,255,0.015)"
+            stroke="rgba(15,23,42,0.88)"
+            strokeWidth={0.2}
+          />
+          <rect
+            x={1.05}
+            y={1.05}
+            width={97.9}
+            height={97.9}
+            rx={0.12}
+            fill="none"
+            stroke="rgba(255,255,255,0.9)"
+            strokeWidth={0.07}
+          />
+          <title>Locked site boundary at the current map scale.</title>
+        </g>
+      ) : null}
       {isHighQuality && !showMap && siteLocked && hasSourceElevations ? (
         <g data-testid="plan-grading-context-lines" opacity={0.2} pointerEvents="none">
           {sourceSurveySpots.map((spot) => (

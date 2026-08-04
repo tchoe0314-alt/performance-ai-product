@@ -1,4 +1,5 @@
 import type { BuildingPlacement } from "../types";
+import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 
 type ObjectConfidenceSummary = {
   confidence_band?: string;
@@ -71,6 +72,10 @@ export function SelectedObjectInspectorPanel({
   onTransform,
   onDelete,
 }: SelectedObjectInspectorPanelProps) {
+  const supportsHeight = Boolean(
+    selectedBuilding &&
+      ((SITE_OBJECT_CATALOG[selectedBuilding.type ?? "custom"]?.defaultH ?? 0) > 0 || (selectedBuilding.h ?? 0) > 0),
+  );
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="selected-object-inspector">
       <div className="flex items-start justify-between gap-3">
@@ -236,6 +241,23 @@ export function SelectedObjectInspectorPanel({
                 className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
               />
             </label>
+            {supportsHeight ? (
+              <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Height (ft)
+                <input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={Math.round(selectedBuilding.h ?? SITE_OBJECT_CATALOG[selectedBuilding.type ?? "custom"]?.defaultH ?? 1)}
+                  aria-label="Selected object height"
+                  data-testid="selected-object-height-input-details"
+                  onChange={(event) => onUpdateObject(selectedBuilding, {
+                    h: Math.max(1, Math.min(parsePositiveNumber(event.target.value) ?? selectedBuilding.h ?? 1, 500)),
+                  })}
+                  className="rounded-md border border-slate-200 px-2 py-1 normal-case tracking-normal text-slate-700"
+                />
+              </label>
+            ) : null}
             <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
               Source
               <input

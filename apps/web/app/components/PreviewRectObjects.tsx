@@ -5,7 +5,6 @@ import {
   sourceStateLabel,
 } from "../utils/previewGeometryTruth";
 import {
-  architecturalFootprintPath,
   cadHatchPatternForPreviewItem,
   rectCorridorAxis,
   resolvePreviewSvgVisualStyle,
@@ -55,10 +54,6 @@ export function PreviewRectObjects({
             ? roundedSiteShapePath(rect, visualKind as "water" | "landscape" | "road" | "sidewalk")
             : null;
           const corridorAxis = visualKind === "road" ? rectCorridorAxis(rect) : null;
-          const buildingFootprintPath =
-            isHighQuality && visualKind === "building" && !isFallbackBounds
-              ? architecturalFootprintPath(rect)
-              : null;
           const isTreeSymbol = String(item.meta?.landscape_symbol || "").toLowerCase() === "tree";
           const isAmenitySurface = item.type === "amenity";
           const cornerRadius =
@@ -69,7 +64,16 @@ export function PreviewRectObjects({
                 : 0.7;
 
           return (
-            <g key={`rect-plan-${item.id}`} data-testid="plan-rect-object" data-semantic-layer={semanticLayerForPlacement(item)}>
+            <g
+              key={`rect-plan-${item.id}`}
+              data-testid="plan-rect-object"
+              data-semantic-layer={semanticLayerForPlacement(item)}
+              transform={
+                item.rotation
+                  ? `rotate(${item.rotation} ${rect.left + rect.width / 2} ${rect.top + rect.height / 2})`
+                  : undefined
+              }
+            >
               {corridorAxis ? (
                 <>
                   <polyline
@@ -155,24 +159,6 @@ export function PreviewRectObjects({
                       stroke="none"
                       opacity={0.72}
                     >
-                      <title>Draft hatch fill, review required.</title>
-                    </path>
-                  ) : null}
-                </>
-              ) : buildingFootprintPath ? (
-                <>
-                  <path
-                    data-testid="professional-building-footprint"
-                    d={buildingFootprintPath}
-                    fill={visualStyle.fill}
-                    stroke={visualStyle.stroke}
-                    strokeWidth={visualStyle.strokeWidth}
-                    strokeLinejoin="round"
-                  >
-                    <title>{sourceStateLabel(sourceState)}</title>
-                  </path>
-                  {hatchFill ? (
-                    <path data-testid="cad-hatch-fill" d={buildingFootprintPath} fill={hatchFill} stroke="none" opacity={0.72}>
                       <title>Draft hatch fill, review required.</title>
                     </path>
                   ) : null}

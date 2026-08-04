@@ -2394,6 +2394,7 @@ export type Preview3DItem = {
   w: number;
   h: number;
   height: number;
+  rotation?: number;
   z?: number;
   color: string;
   label: string;

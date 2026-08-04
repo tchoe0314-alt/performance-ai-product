@@ -356,6 +356,7 @@ export function PreviewEditableObjectHitTargets({
               {showQuickSelectionActions ? (
                 <PreviewSelectedObjectQuickToolbar
                   item={item}
+                  placement={rectPct.left + rectPct.width > 72 ? "left" : "right"}
                   canDelete={Boolean(selectedDeletableObject && selectedDeletableObject.id === item.id)}
                   statusText={cadCommandStatusDisplay}
                   onMeasure={() => runCadCommand("DIST")}

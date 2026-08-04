@@ -1,4 +1,5 @@
 import type { BuildingPlacement, SiteObjectType } from "../types";
+import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 
 type SelectedObjectCardProps = {
   selectedObject: BuildingPlacement | null;
@@ -9,6 +10,8 @@ type SelectedObjectCardProps = {
   onRename: (item: BuildingPlacement, value: string) => void;
   onColor: (item: BuildingPlacement, value: string) => void;
   onType: (item: BuildingPlacement, type: SiteObjectType) => void;
+  onHeight: (item: BuildingPlacement, heightFt: number) => void;
+  onRoofProfile: (item: BuildingPlacement, profile: "flat" | "gable" | "dome" | "tower") => void;
   onToggleVisibility: (item: BuildingPlacement) => void;
   onMove: (item: BuildingPlacement) => void;
   onFocus: (item: BuildingPlacement) => void;
@@ -27,6 +30,8 @@ export function SelectedObjectCard({
   onRename,
   onColor,
   onType,
+  onHeight,
+  onRoofProfile,
   onToggleVisibility,
   onMove,
   onFocus,
@@ -35,6 +40,13 @@ export function SelectedObjectCard({
   onFlipHorizontal,
   onDelete,
 }: SelectedObjectCardProps) {
+  const supportsHeight = Boolean(
+    selectedObject &&
+      ((SITE_OBJECT_CATALOG[selectedObject.type ?? "custom"]?.defaultH ?? 0) > 0 || (selectedObject.h ?? 0) > 0),
+  );
+  const supportsRoofProfile = Boolean(
+    selectedObject && /building/.test(String(selectedObject.type || "")),
+  );
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="draw-selected-object-card">
       <div className="flex items-start justify-between gap-3">
@@ -97,6 +109,44 @@ export function SelectedObjectCard({
                   className="h-9 w-12 rounded-lg border border-slate-200 bg-white"
                 />
               </label>
+              {supportsHeight ? (
+                <div className="col-span-2 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2" data-testid="selected-object-3d-properties">
+                  <label className={`flex flex-col gap-1 font-medium text-slate-500 ${supportsRoofProfile ? "" : "col-span-2"}`}>
+                    Height (ft)
+                    <input
+                      type="number"
+                      min={1}
+                      max={500}
+                      step={1}
+                      value={selectedObject.h ?? SITE_OBJECT_CATALOG[selectedObject.type ?? "custom"]?.defaultH ?? ""}
+                      aria-label={`Height selected object ${selectedObject.label}`}
+                      data-testid="selected-object-height-input"
+                      onChange={(event) => {
+                        const heightFt = Number(event.target.value);
+                        if (Number.isFinite(heightFt) && heightFt > 0) onHeight(selectedObject, heightFt);
+                      }}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold text-slate-900"
+                    />
+                  </label>
+                  {supportsRoofProfile ? (
+                    <label className="flex flex-col gap-1 font-medium text-slate-500">
+                      Roof
+                      <select
+                        value={String(selectedObject.meta?.roof_profile || "flat")}
+                        aria-label={`Roof selected object ${selectedObject.label}`}
+                        data-testid="selected-object-roof-select"
+                        onChange={(event) => onRoofProfile(selectedObject, event.target.value as "flat" | "gable" | "dome" | "tower")}
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold text-slate-900"
+                      >
+                        <option value="flat">Flat</option>
+                        <option value="gable">Gable</option>
+                        <option value="dome">Dome</option>
+                        <option value="tower">Tower</option>
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
           <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">

@@ -24,6 +24,7 @@ export function FloatingObjectInspector({
   onFocus,
   onOpenDetails,
 }: FloatingObjectInspectorProps) {
+  const hasHeight = typeof selectedBuilding.h === "number" && selectedBuilding.h > 0;
   const confidenceBadgeTone =
     selectedObjectConfidence?.confidence_band === "higher"
       ? "bg-emerald-50 text-emerald-700"
@@ -47,10 +48,11 @@ export function FloatingObjectInspector({
           {selectedObjectConfidence?.visible_badge || selectedBuilding.source || "draft"}
         </span>
       </div>
-      <div className="pointer-events-auto mt-3 grid grid-cols-3 gap-2">
+      <div className={`pointer-events-auto mt-3 grid ${hasHeight ? "grid-cols-4" : "grid-cols-3"} gap-2`}>
         {[
           ["W", `${Math.round(selectedBuilding.w)} ft`],
           ["D", `${Math.round(selectedBuilding.d)} ft`],
+          ...(hasHeight ? [["H", `${Math.round(selectedBuilding.h ?? 0)} ft`]] : []),
           ["Rot", `${Math.round(selectedBuilding.rotation ?? 0)}°`],
         ].map(([label, value]) => (
           <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
