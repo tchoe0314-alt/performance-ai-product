@@ -52,21 +52,35 @@ const layoutContextScore = (item: BuildingPlacement) => {
   return value;
 };
 
+const SEMANTIC_SITE_OBJECT_TYPES = new Set([
+  "office_building",
+  "building",
+  "retail_building",
+  "multifamily_building",
+  "industrial_building",
+  "pad",
+  "parking",
+  "basin",
+  "outfall",
+  "road",
+  "driveway",
+  "entrance",
+  "sidewalk",
+  "utility_corridor",
+  "hydrant",
+  "inlet",
+  "manhole",
+]);
+
+export function isSemanticEngineeringPlacement(item: BuildingPlacement): boolean {
+  return Boolean(
+    item.meta?.semantic_object_model ||
+    item.meta?.semantic_geometry_state ||
+    SEMANTIC_SITE_OBJECT_TYPES.has(String(item.type || "").toLowerCase()),
+  );
+}
+
 export function buildGenerateLayoutContext(buildingPlacements: BuildingPlacement[]): GenerateLayoutContext | null {
-  const siteProgramTypes = new Set([
-    "office_building",
-    "building",
-    "parking",
-    "basin",
-    "outfall",
-    "road",
-    "driveway",
-    "sidewalk",
-    "utility_corridor",
-    "hydrant",
-    "inlet",
-    "manhole",
-  ]);
   const userLayoutContext = buildingPlacements.filter((item) => {
     if (!item.placed || item.type === "site" || item.meta?.generated_review_concept) return false;
     const source = String(item.source || item.meta?.source || "").toLowerCase();
@@ -75,13 +89,13 @@ export function buildGenerateLayoutContext(buildingPlacements: BuildingPlacement
       item.meta?.semantic_object_model ||
       item.meta?.semantic_geometry_state ||
       item.meta?.command_created ||
-      siteProgramTypes.has(type) ||
+      SEMANTIC_SITE_OBJECT_TYPES.has(type) ||
       ["user", "user_confirmed", "manual_drawn", "generated"].includes(source),
     );
   });
   if (!userLayoutContext.length) return null;
   const rankedUserLayoutContext = [...userLayoutContext].sort((a, b) => layoutContextScore(b) - layoutContextScore(a));
-  const semanticLayoutCount = userLayoutContext.filter((item) => Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state)).length;
+  const semanticLayoutCount = userLayoutContext.filter(isSemanticEngineeringPlacement).length;
   return {
     count: userLayoutContext.length,
     semantic_count: semanticLayoutCount,

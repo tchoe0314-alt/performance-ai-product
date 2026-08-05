@@ -202,6 +202,7 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   const request = await runGenerateAndCapture(page, captured);
   await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/Office Building - 28,000 sf/i);
   await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/Custom Line|Command Line/i);
+  await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/[1-9]\d* semantic objects?/i);
   await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/review context only/i);
   const manualFields = request.manual_fields as Record<string, unknown>;
   const siteObjects = manualFields.site_objects as Array<Record<string, unknown>>;

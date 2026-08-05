@@ -65,6 +65,7 @@ test.describe("Generate and Deliver product flow", () => {
     );
     await expect(page.getByTestId("deliver-package-context")).toContainText(/Package includes/i);
     await expect(page.getByTestId("deliver-package-context")).toContainText(/draft object|source candidate|review package only/i);
+    await expect(page.getByTestId("deliver-package-context")).toContainText(/[1-9]\d* semantic objects?/i);
     await expect(page.getByTestId("plan-sheet-editor")).toContainText(/Review-required/i);
     await expect(page.getByTestId("plan-sheet-editor")).not.toContainText(/construction-ready|Civora approved|stamped by Civora|sealed by Civora|signed by Civora/i);
 

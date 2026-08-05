@@ -1,4 +1,5 @@
 import type { BuildingPlacement, SmartFixRecommendation } from "../types";
+import { isSemanticEngineeringPlacement } from "../utils/dashboardGenerateLayoutContext";
 import CivilReviewSheet from "./CivilReviewSheet";
 import PlanSheetEditor, {
   type PlanSheetReference,
@@ -172,9 +173,7 @@ export function DeliverPanel({
       return score(b) - score(a);
     });
   const packageContextLabels = packageContextObjects.slice(0, 5).map((item) => item.label);
-  const packageSemanticCount = packageContextObjects.filter((item) =>
-    Boolean(item.meta?.semantic_object_model || item.meta?.semantic_geometry_state),
-  ).length;
+  const packageSemanticCount = packageContextObjects.filter(isSemanticEngineeringPlacement).length;
   const packageDraftCount = packageContextObjects.filter((item) => {
     const source = String(item.source || item.meta?.source || "").toLowerCase();
     return Boolean(item.meta?.command_created || ["user", "user_confirmed", "manual_drawn"].includes(source));
