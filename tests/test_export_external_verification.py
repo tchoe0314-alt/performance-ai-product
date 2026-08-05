@@ -212,6 +212,21 @@ class ExportExternalVerificationTests(unittest.TestCase):
             self.assertFalse(mismatch_result["sidecar_metadata"]["artifact_path_matches"])
             self.assertIn("sidecar_artifact_path_mismatch", mismatch_result["failures"])
 
+    def test_dxf_sidecar_keeps_relative_export_path_portable(self) -> None:
+        plan = _plan()
+
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as tmpdir:
+            artifact_path = Path(tmpdir).relative_to(Path.cwd()) / "relative-portable.dxf"
+            save_dxf(plan, filename=str(artifact_path))
+
+            sidecar_path = artifact_path.with_suffix(".dxf.metadata.json")
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            result = verify_dxf_export(artifact_path, plan=plan)
+
+        self.assertEqual(sidecar["artifact_path"], "relative-portable.dxf")
+        self.assertTrue(result["sidecar_metadata"]["artifact_path_matches"])
+        self.assertTrue(result["local_contract_verified"])
+
     def test_landxml_contract_roundtrips_with_canonical_ids_but_keeps_civil3d_not_verified(self) -> None:
         plan = _plan()
         xml_text = build_landxml_pipe_network(plan, network_name="External Verification")

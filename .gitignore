@@ -31,6 +31,7 @@ debug_trace.txt
 reports/benchmarks/*_local.json
 reports/benchmarks/golden_load_benchmark_report.json
 reports/validation/*.json
+reports/validation/external-verification/
 
 # Rights-cleared vision source assets and generated model weights stay outside git.
 private/vision/

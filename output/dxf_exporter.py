@@ -331,7 +331,9 @@ def _write_export_sidecar(plan: Dict[str, Any], filename: str) -> Path:
     report = safe_dict(meta.get("export_package_report_v1")) or build_export_package_report_v1(plan, export_type="dxf")
     sidecar = {
         "source": "civora_export_sidecar_v1",
-        "artifact_path": str(Path(filename)),
+        # Keep the sidecar portable when the export directory is moved or the
+        # caller supplied a path relative to its working directory.
+        "artifact_path": Path(filename).name,
         "artifact_format": "dxf",
         "source_project_id": safe_text(report.get("source_project_id") or meta.get("project_id")),
         "source_canonical_revision": safe_text(report.get("source_canonical_revision")),
