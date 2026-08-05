@@ -61,7 +61,7 @@ test.describe("Chat 220 preview fidelity", () => {
             (summary.featureCounts.roads ?? 0) > 0 &&
             (summary.featureCounts.parking ?? 0) > 0 &&
             (summary.featureCounts.basins ?? 0) > 0 &&
-            (summary.featureCounts.rectangles ?? 0) > 0 &&
+            (summary.featureCounts.polygons ?? 0) > 0 &&
             (summary.featureCounts.polylines ?? 0) > 0 &&
             summary.layersReady.buildings === true &&
             summary.layersReady.roads === true &&

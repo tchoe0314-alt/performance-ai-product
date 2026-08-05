@@ -753,6 +753,7 @@ export function usePreviewMapLayerSync({
             customAreas: customAreas.length,
             customLines: customLines.length,
             rectangles: placedObjects.filter((item) => item.geometryType === "rect").length,
+            polygons: placedObjects.filter((item) => item.geometryType === "polygon").length,
             polylines: placedObjects.filter((item) => item.geometryType === "polyline").length,
           },
           hatchFeatureCount,
