@@ -165,6 +165,8 @@ export function usePreviewMapLayerSync({
               label: item.label || item.type || "object",
               height: typeof item.h === "number" && Number.isFinite(item.h) ? item.h : 16,
               sourceClass: isDetectedExistingPlacement(item) ? "existing" : "proposed",
+              hatchEnabled: Boolean(item.meta?.cad_hatch_enabled),
+              hatchPattern: String(item.meta?.cad_hatch_pattern || "diagonal"),
             },
           };
         })
@@ -266,12 +268,52 @@ export function usePreviewMapLayerSync({
       ) => {
         if (!map.getLayer(id)) {
           map.addLayer({ id, type, source, paint });
+          return;
         }
+        Object.entries(paint).forEach(([property, value]) => {
+          map.setPaintProperty(
+            id,
+            property as Parameters<mapboxgl.Map["setPaintProperty"]>[1],
+            value,
+          );
+        });
       };
       const ensureExtrusion = (id: string, source: string, paint: mapboxgl.AnyPaint) => {
         if (!map.getLayer(id)) {
           map.addLayer({ id, type: "fill-extrusion", source, paint });
+          return;
         }
+        Object.entries(paint).forEach(([property, value]) => {
+          map.setPaintProperty(
+            id,
+            property as Parameters<mapboxgl.Map["setPaintProperty"]>[1],
+            value,
+          );
+        });
+      };
+      const ensureDiagonalHatchImage = () => {
+        const id = "civora-hatch-diagonal";
+        if (map.hasImage(id)) return;
+        const size = 8;
+        const data = new Uint8Array(size * size * 4);
+        for (let y = 0; y < size; y += 1) {
+          for (let x = 0; x < size; x += 1) {
+            if ((x + y) % 6 > 1) continue;
+            const offset = (y * size + x) * 4;
+            data[offset] = 15;
+            data[offset + 1] = 23;
+            data[offset + 2] = 42;
+            data[offset + 3] = 175;
+          }
+        }
+        map.addImage(id, { width: size, height: size, data }, { pixelRatio: 1 });
+      };
+      const ensureHatchLayer = (id: string, source: string) => {
+        ensureDiagonalHatchImage();
+        ensureLayer(id, source, "fill", {
+          "fill-pattern": "civora-hatch-diagonal",
+          "fill-opacity": ["case", ["==", ["get", "hatchEnabled"], true], 0.72, 0],
+        });
       };
 
       ensureSource("civora-buildings", toFeatureCollection(buildings, "Polygon"));
@@ -476,6 +518,7 @@ export function usePreviewMapLayerSync({
         "fill-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#e2e8f0", "#475569"],
         "fill-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.1, useLightHighQuality ? 0.18 : 0.26],
       });
+      ensureHatchLayer("civora-buildings-hatch", "civora-buildings");
       ensureLayer("civora-buildings-line", "civora-buildings", "line", {
         "line-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#64748b", "#111827"],
         "line-width": ["case", ["==", ["get", "sourceClass"], "existing"], 1.15, useLightHighQuality ? 1.3 : 2],
@@ -523,6 +566,7 @@ export function usePreviewMapLayerSync({
         ],
         "fill-opacity": useLightHighQuality ? 0.16 : 0.26,
       });
+      ensureHatchLayer("civora-landscape-hatch", "civora-landscape");
       ensureLayer("civora-landscape-line", "civora-landscape", "line", {
         "line-color": "#16a34a",
         "line-width": useLightHighQuality ? 0.8 : 1.2,
@@ -545,6 +589,7 @@ export function usePreviewMapLayerSync({
         "fill-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#cbd5e1", "#64748b"],
         "fill-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.1, 0.35],
       });
+      ensureHatchLayer("civora-parking-hatch", "civora-parking");
       ensureLayer("civora-parking-stalls", "civora-parking-stalls", "fill", {
         "fill-color": [
           "case",
@@ -599,6 +644,7 @@ export function usePreviewMapLayerSync({
         "fill-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#94a3b8", "#0ea5e9"],
         "fill-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.1, 0.28],
       });
+      ensureHatchLayer("civora-basins-hatch", "civora-basins");
       ensureLayer("civora-pressure-zones-fill", "civora-pressure-zones", "fill", {
         "fill-color": ["coalesce", ["get", "color"], "#0ea5e9"],
         "fill-opacity": 0.12,
@@ -649,6 +695,7 @@ export function usePreviewMapLayerSync({
           0.16,
         ],
       });
+      ensureHatchLayer("civora-custom-areas-hatch", "civora-custom-areas");
       ensureLayer("civora-custom-areas-line", "civora-custom-areas", "line", {
         "line-color": "#0284c7",
         "line-width": 1.4,
@@ -693,6 +740,35 @@ export function usePreviewMapLayerSync({
       }
       if (map.getLayer("civora-visual-labels")) {
         map.removeLayer("civora-visual-labels");
+      }
+      if (debugStatsEnabled && typeof window !== "undefined") {
+        const hatchFeatureCount = placedObjects.filter((item) => Boolean(item.meta?.cad_hatch_enabled)).length;
+        const summary = {
+          featureCounts: {
+            buildings: buildings.length,
+            roads: roads.length,
+            parking: parking.length,
+            basins: basins.length,
+            utilities: utilities.length,
+            customAreas: customAreas.length,
+            customLines: customLines.length,
+            rectangles: placedObjects.filter((item) => item.geometryType === "rect").length,
+            polylines: placedObjects.filter((item) => item.geometryType === "polyline").length,
+          },
+          hatchFeatureCount,
+          layersReady: {
+            buildings: Boolean(map.getLayer("civora-buildings-line")),
+            roads: Boolean(map.getLayer("civora-roads-line")),
+            parking: Boolean(map.getLayer("civora-parking-fill")),
+            basins: Boolean(map.getLayer("civora-basins-fill")),
+            hatches: Boolean(map.getLayer("civora-custom-areas-hatch")),
+          },
+        };
+        (
+          window as Window & {
+            __civoraMapLayerSummary?: typeof summary;
+          }
+        ).__civoraMapLayerSummary = summary;
       }
     };
 

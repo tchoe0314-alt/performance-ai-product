@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page) {
-  await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
+  await page.goto("/demo/workspace?debugPreview=1&mapDebug=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
   await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Detention Basin A", { timeout: 30_000 });
@@ -41,6 +41,37 @@ test.describe("Chat 220 preview fidelity", () => {
     await openDemoWorkspace(page);
     const canvas = page.getByTestId("workspace-canvas-shell");
     await canvas.getByTestId("preview-quality-high").click();
+
+    const visibleMapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
+    if ((await visibleMapCanvas.count()) === 1) {
+      await expect(visibleMapCanvas).toBeVisible();
+      const mapGeometryReady = async () =>
+        page.evaluate(() => {
+          const summary = (
+            window as Window & {
+              __civoraMapLayerSummary?: {
+                featureCounts?: Record<string, number>;
+                layersReady?: Record<string, boolean>;
+              };
+            }
+          ).__civoraMapLayerSummary;
+          if (!summary?.featureCounts || !summary.layersReady) return false;
+          return (
+            (summary.featureCounts.buildings ?? 0) > 0 &&
+            (summary.featureCounts.roads ?? 0) > 0 &&
+            (summary.featureCounts.parking ?? 0) > 0 &&
+            (summary.featureCounts.basins ?? 0) > 0 &&
+            (summary.featureCounts.rectangles ?? 0) > 0 &&
+            (summary.featureCounts.polylines ?? 0) > 0 &&
+            summary.layersReady.buildings === true &&
+            summary.layersReady.roads === true &&
+            summary.layersReady.parking === true &&
+            summary.layersReady.basins === true
+          );
+        });
+      await expect.poll(mapGeometryReady).toBe(true);
+      return;
+    }
 
     await expect(page.getByTestId("plan-polyline-object").first()).toBeVisible();
     await expect(page.getByTestId("plan-rect-object").first()).toBeVisible();

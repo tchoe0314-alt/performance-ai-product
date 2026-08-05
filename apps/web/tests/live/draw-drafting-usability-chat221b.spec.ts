@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { openCadPrecisionTools } from "./testUiHelpers";
 
 async function openDemoWorkspace(page: Page) {
-  await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
+  await page.goto("/demo/workspace?debugPreview=1&mapDebug=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
 }
@@ -492,14 +492,38 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(areaRow).toBeVisible();
     await areaRow.getByTestId("object-manager-inspect").click();
 
+    const visibleMapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
+    const mapMode = (await visibleMapCanvas.count()) === 1;
+    const mapHatchCount = async () =>
+      page.evaluate(() => {
+        const summary = (
+          window as Window & {
+            __civoraMapLayerSummary?: { hatchFeatureCount?: number };
+          }
+        ).__civoraMapLayerSummary;
+        return summary?.hatchFeatureCount ?? -1;
+      });
+    if (mapMode) {
+      await expect.poll(mapHatchCount).toBeGreaterThanOrEqual(0);
+    }
+    const hatchCountBefore = mapMode ? await mapHatchCount() : 0;
+
     await showCadTools(page);
     await (await revealCadTool(page, "hatch")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/HATCH applied as draft review fill/);
-    await expect(page.getByTestId("cad-hatch-fill").first()).toBeVisible();
+    if (mapMode) {
+      await expect.poll(mapHatchCount).toBe(hatchCountBefore + 1);
+    } else {
+      await expect(page.getByTestId("cad-hatch-fill").first()).toBeVisible();
+    }
 
     await showCadTools(page);
     await (await revealCadTool(page, "hatch")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/HATCH removed from selected draft area/);
-    await expect(page.getByTestId("cad-hatch-fill")).toHaveCount(0);
+    if (mapMode) {
+      await expect.poll(mapHatchCount).toBe(hatchCountBefore);
+    } else {
+      await expect(page.getByTestId("cad-hatch-fill")).toHaveCount(0);
+    }
   });
 });
