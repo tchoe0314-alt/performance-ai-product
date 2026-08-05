@@ -57,7 +57,7 @@ async function clickExposedSurface(surface: Locator, xRatio: number, yRatio: num
   await surface.page().mouse.click(point.x, point.y);
 }
 
-test.describe("Chat 226 AI realism preview", () => {
+test.describe("Chat 226 AI visualization preview", () => {
   test("keeps Standard technical preview and High Quality geometry mode working", async ({ page }) => {
     await openDemoWorkspace(page);
     const canvas = page.getByTestId("workspace-canvas-shell");
@@ -84,7 +84,7 @@ test.describe("Chat 226 AI realism preview", () => {
     await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=none");
     await enableHighQuality(page);
     await page.getByTestId("ai-realism-on").click();
-    await expect(page.getByTestId("ai-realism-blocker")).toContainText("AI realism provider is not configured.");
+    await expect(page.getByTestId("ai-realism-blocker")).toContainText("AI visualization provider is not configured.");
   });
 
   test("creates a review-only mock artifact with visible watermark and source summary", async ({ page }) => {

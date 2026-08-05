@@ -89,7 +89,7 @@ test.describe("Chat 231B undo recovery and change history", () => {
     expect(errors).toEqual([]);
   });
 
-  test("generate, review package, and AI realism record truthful recent changes without fake undo", async ({ page }) => {
+  test("generate, review package, and AI visualization record truthful recent changes without fake undo", async ({ page }) => {
     await openDemoWorkspace(page);
 
     await openDrawPanel(page);
@@ -105,18 +105,18 @@ test.describe("Chat 231B undo recovery and change history", () => {
     await openDrawPanel(page);
     await expect(page.getByTestId("recent-changes-section")).toContainText(/Review package/);
 
-    await runCommand(page, "create AI realism");
+    await runCommand(page, "create AI visualization");
     await page.getByRole("button", { name: "Minimize" }).click();
     await page.getByTestId("ai-realism-on").first().click();
     await expect(page.getByTestId("ai-realism-image")).toBeVisible({ timeout: 10_000 });
     await openDrawPanel(page);
-    await expect(page.getByTestId("recent-changes-section")).toContainText("AI realism visualization regenerated");
+    await expect(page.getByTestId("recent-changes-section")).toContainText("AI visualization regenerated");
 
     const precisionTools = await openCadPrecisionTools(page);
     await precisionTools.getByLabel("Draft command input").fill("LINE 20,20 90,20");
     await precisionTools.getByLabel("Draft command input").press("Enter");
     await openDrawPanel(page);
-    await expect(page.getByTestId("recent-changes-section")).toContainText(/AI realism visualization is stale|AI realism stale/i);
+    await expect(page.getByTestId("recent-changes-section")).toContainText(/AI visualization is stale|AI visualization stale/i);
 
     await openRecentChanges(page);
     await page.getByTestId("recent-change-row-undo").filter({ hasText: /Why unavailable/i }).first().click();

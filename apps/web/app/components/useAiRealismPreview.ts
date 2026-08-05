@@ -216,7 +216,7 @@ export function useAiRealismPreview({
       return;
     }
     if (providerMode === "disabled") {
-      setBlocked("AI realism provider is not configured.", "unavailable");
+      setBlocked("AI visualization provider is not configured.", "unavailable");
       return;
     }
     stopActiveRequest();

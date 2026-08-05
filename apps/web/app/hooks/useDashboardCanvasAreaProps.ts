@@ -213,14 +213,14 @@ export function useDashboardCanvasAreaProps({
       type: "ai_realism_recorded",
       label:
         event.type === "generated"
-          ? "AI realism regenerated"
+          ? "AI visualization regenerated"
           : event.type === "stale"
-            ? "AI realism stale"
-            : "AI realism blocked",
+            ? "AI visualization stale"
+            : "AI visualization blocked",
       detail: event.detail,
-      undoBlockedReason: "AI realism is a visual preview record. Regenerate from the current review layout instead of undoing it.",
+      undoBlockedReason: "AI visualization is a visual preview record. Regenerate from the current review layout instead of undoing it.",
     });
-    onPushRecoveryMessage(`${event.detail} AI realism remains visual preview only.`);
+    onPushRecoveryMessage(`${event.detail} AI visualization remains visual preview only.`);
   };
 
   return {

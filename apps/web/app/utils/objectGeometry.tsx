@@ -648,7 +648,7 @@ export const getObjectLayerLabel = (item: BuildingPlacement) => {
 };
 
 export const getObjectSourceLabel = (item: BuildingPlacement) => {
-  if (item.meta?.ai_realism_artifact) return "AI realism visualization only";
+  if (item.meta?.ai_realism_artifact) return "AI visualization only";
   if (item.source === "manual_drawn") return "manual drawn";
   if (item.source === "generated" || item.generated) return "generated draft";
   if (item.source === "detected_from_gis") return "GIS review candidate";
@@ -684,7 +684,7 @@ export const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" |
     return `${action} needs input: locked site boundary is controlled from Setup.`;
   }
   if (item.meta?.ai_realism_artifact) {
-    return `${action} needs input: AI realism artifacts are visualization only, not editable site evidence.`;
+    return `${action} needs input: AI visualization artifacts are not editable site evidence.`;
   }
   if (action === "delete" && item.capabilities?.deletable === false) {
     return `Delete needs input: ${item.label} is source-only or required project evidence.`;

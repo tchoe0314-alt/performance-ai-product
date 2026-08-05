@@ -276,7 +276,7 @@ export function AiRealismPreviewOverlay({
           className="pointer-events-auto absolute left-1/2 top-1/2 mx-4 max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-lg"
         >
           <p className="font-semibold">
-            {blocker || "AI realism provider is not configured."}
+            {blocker || "AI visualization provider is not configured."}
           </p>
           <button
             type="button"

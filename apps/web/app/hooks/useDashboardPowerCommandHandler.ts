@@ -753,18 +753,18 @@ export function useDashboardPowerCommandHandler({
       appendChatMessage("assistant", `Next action: ${next} Current status: ${projectStatusDisplayLabel[projectStatusSummary.state]}.`, "status");
       return true;
     }
-    if (/^create ai realism$/.test(normalized)) {
+    if (/^create ai (?:realism|visualization)$/.test(normalized)) {
       appendChatMessage("user", message);
       handleSetPreviewQuality("high");
       handleSetPreviewMode("2d");
       handleOpenSidePanel("model");
-      appendChatMessage("assistant", "Opened high-quality preview mode. Use the AI Realism toggle there; provider/layout needs will be shown exactly in the preview panel.", "status");
+      appendChatMessage("assistant", "Opened high-quality preview mode. Use the AI Visualization toggle there; provider/layout needs will be shown exactly in the preview panel.", "status");
       return true;
     }
-    if (/^turn ai realism off$/.test(normalized)) {
+    if (/^turn ai (?:realism|visualization) off$/.test(normalized)) {
       appendChatMessage("user", message);
       handleSetPreviewQuality("standard");
-      appendChatMessage("assistant", "Turned presentation/AI realism preview mode off by returning to Standard preview quality.", "status");
+      appendChatMessage("assistant", "Turned AI Visualization off by returning to Standard preview quality.", "status");
       return true;
     }
     return false;

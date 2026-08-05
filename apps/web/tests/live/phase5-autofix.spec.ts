@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 
 const APP_BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
 const API_BASE_URL =
@@ -236,12 +236,32 @@ async function createProject(
 }
 
 async function fetchProjectResult(request: APIRequestContext, token: string, projectId: string) {
-  const response = await request.get(`${API_BASE_URL}/api/projects/${projectId}/result`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  expect(response.ok()).toBeTruthy();
-  const payload = (await response.json()) as { latest_result?: Record<string, unknown> };
-  return payload.latest_result ?? {};
+  const url = `${API_BASE_URL}/api/projects/${projectId}/result`;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    let response: APIResponse;
+    try {
+      response = await request.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt === 4) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+      continue;
+    }
+    if (response.ok()) {
+      const payload = (await response.json()) as { latest_result?: Record<string, unknown> };
+      return payload.latest_result ?? {};
+    }
+    const retryable = [429, 502, 503, 504].includes(response.status());
+    if (!retryable || attempt === 4) {
+      throw new Error(`Project result request failed with status ${response.status()}.`);
+    }
+    lastError = new Error(`Project result request returned retryable status ${response.status()}.`);
+    await new Promise((resolve) => setTimeout(resolve, attempt * 750));
+  }
+  throw lastError instanceof Error ? lastError : new Error("Project result request failed after retries.");
 }
 
 function parseDrainageCounts(result: Record<string, unknown>): DrainageCounts {

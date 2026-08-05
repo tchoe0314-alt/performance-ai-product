@@ -238,7 +238,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     await expect(page.getByTestId("floating-command-bar")).toContainText(/can't stamp, seal, sign, certify/i);
   });
 
-  test("AI realism and project persistence show truthful loading, success, or blocker state", async ({ page }) => {
+  test("AI visualization and project persistence show truthful loading, success, or blocker state", async ({ page }) => {
     await mockSignedInProjectShell(page);
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
@@ -258,7 +258,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     await expect(page.getByTestId("project-status-summary")).toContainText(/Project deleted|Deleting project/i, { timeout: 10_000 });
 
     await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock");
-    await runCommand(page, "create AI realism");
+    await runCommand(page, "create AI visualization");
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText("High Quality", { timeout: 5_000 });
     await expect(page.getByTestId("project-status-summary")).toContainText(/Ready: Plan Sheet view on/i);
     await expect(page.getByTestId("ai-realism-off").first()).toHaveAttribute("aria-pressed", "true");
@@ -266,7 +266,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     await page.getByTestId("ai-realism-on").first().click();
     await expect(page.getByTestId("ai-realism-image")).toBeVisible({ timeout: 10_000 });
 
-    await runCommand(page, "turn AI realism off");
+    await runCommand(page, "turn AI visualization off");
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Standard", { timeout: 5_000 });
   });
 });

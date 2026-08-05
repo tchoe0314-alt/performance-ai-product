@@ -76,7 +76,12 @@ test.describe("Chat 232 naming and trust copy", () => {
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Visual preview only");
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Canonical geometry unchanged");
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Not engineering evidence");
-    await expect(canvas).toContainText("AI Visualization");
+    await expect(canvas.getByTestId("ai-realism-toggle")).toHaveAttribute(
+      "aria-label",
+      "AI Visualization toggle",
+    );
+    await expect(canvas.getByTestId("ai-realism-toggle")).toContainText("Plan");
+    await expect(canvas.getByTestId("ai-realism-toggle")).toContainText("Visual");
 
     await page.getByRole("button", { name: /^Deliver$/ }).first().click();
     await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/review package/i);
