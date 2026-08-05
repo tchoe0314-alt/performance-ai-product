@@ -512,16 +512,19 @@ export function usePreviewMapLayerSync({
         "fill-extrusion-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#94a3b8", "#374151"],
         "fill-extrusion-height": ["case", ["==", ["get", "sourceClass"], "existing"], 0, ["get", "height"]],
         "fill-extrusion-base": 0,
-        "fill-extrusion-opacity": useLightHighQuality ? 0.28 : 0.6,
+        // The map viewport is intentionally plan-view only. A fill extrusion at
+        // zero pitch stacks over the footprint and reads as a second dark box.
+        // Building height is rendered in the dedicated Three.js 3D view.
+        "fill-extrusion-opacity": 0,
       });
       ensureLayer("civora-buildings-fill", "civora-buildings", "fill", {
         "fill-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#e2e8f0", "#475569"],
-        "fill-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.1, useLightHighQuality ? 0.18 : 0.26],
+        "fill-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.08, useLightHighQuality ? 0.1 : 0.16],
       });
       ensureHatchLayer("civora-buildings-hatch", "civora-buildings");
       ensureLayer("civora-buildings-line", "civora-buildings", "line", {
         "line-color": ["case", ["==", ["get", "sourceClass"], "existing"], "#64748b", "#111827"],
-        "line-width": ["case", ["==", ["get", "sourceClass"], "existing"], 1.15, useLightHighQuality ? 1.3 : 2],
+        "line-width": ["case", ["==", ["get", "sourceClass"], "existing"], 1.05, useLightHighQuality ? 1.2 : 1.45],
         "line-opacity": ["case", ["==", ["get", "sourceClass"], "existing"], 0.78, 1],
       });
       ensureLayer("civora-roads-line", "civora-roads", "line", {
