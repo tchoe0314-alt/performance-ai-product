@@ -48,6 +48,9 @@ export function Preview3DShell({
   const hasReviewContourSurface = items.some(
     (item) => item.terrainSample && /review contour/i.test(String(item.source || "")),
   );
+  const hasSourceDemSurface = items.some(
+    (item) => item.terrainSample && item.meta?.source_surface_ready === true,
+  );
 
   if (!items.length) {
     return (
@@ -115,7 +118,7 @@ export function Preview3DShell({
             Open Fullscreen
           </button>
         )}
-        {!hasGradingSurface && !hasReviewContourSurface ? (
+        {!hasGradingSurface && !hasReviewContourSurface && !hasSourceDemSurface ? (
           <div className="pointer-events-none rounded-full border border-white/40 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-white shadow-sm">
             Flat preview surface
           </div>

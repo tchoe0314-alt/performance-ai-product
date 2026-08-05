@@ -785,6 +785,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("civil-3d-terrain-state")).toContainText("Public DEM terrain surface");
   await expect(page.getByTestId("civil-3d-viewer")).not.toContainText("terrain source missing");
+  await expect(page.getByTestId("workspace-canvas-shell")).not.toContainText("Flat preview surface");
   await page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-2d").click();
   await expect(page.getByTestId("preview-plan-canvas-svg")).toBeVisible();
 
