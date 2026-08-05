@@ -105,6 +105,13 @@ export function useDashboardChatSendHandlers({
     const trimmed = prompt.trim();
     if (!trimmed && !imageName) return;
     const keepChatVisible = () => window.requestAnimationFrame(onOpenChatPanel);
+    const clearStaleClarificationStatus = () => {
+      setStatusMessage((current) =>
+        /asking for a little more detail|site type or land use/i.test(current)
+          ? "Ready. Civora answered from the current project state."
+          : current,
+      );
+    };
     onOpenChatPanel();
     if (trimmed && /\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/i.test(trimmed)) {
       refuseUnsafeConstructionCommand(trimmed);
@@ -299,6 +306,7 @@ export function useDashboardChatSendHandlers({
     if (trimmed) {
       const handledPowerCommand = tryHandlePowerCommand(trimmed);
       if (handledPowerCommand) {
+        clearStaleClarificationStatus();
         setPrompt("");
         if (handledPowerCommand !== "panel") {
           keepChatVisible();
@@ -309,24 +317,28 @@ export function useDashboardChatSendHandlers({
       if (!routeToOrchestrator) {
         const handled = tryHandleObjectIntent(trimmed);
         if (handled) {
+          clearStaleClarificationStatus();
           setPrompt("");
           keepChatVisible();
           return;
         }
         const handledSheet = tryHandleSheetIntent(trimmed);
         if (handledSheet) {
+          clearStaleClarificationStatus();
           setPrompt("");
           keepChatVisible();
           return;
         }
         const handledInfo = tryHandleInfoIntent(trimmed);
         if (handledInfo) {
+          clearStaleClarificationStatus();
           setPrompt("");
           keepChatVisible();
           return;
         }
         const handledAction = tryHandleActionIntent(trimmed);
         if (handledAction) {
+          clearStaleClarificationStatus();
           setPrompt("");
           keepChatVisible();
           return;
