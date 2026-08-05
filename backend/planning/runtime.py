@@ -295,6 +295,7 @@ _DISCIPLINE_KEYS = {
         "checks",
         "low_points",
         "flow_samples",
+        "surface_model",
         "surface_controls",
         "road_crown_controls",
         "curb_gutter_controls",

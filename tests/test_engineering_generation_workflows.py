@@ -43,6 +43,29 @@ def _blocker_inputs(plan: dict, name: str) -> set[str]:
 
 
 class EngineeringGenerationWorkflowTests(unittest.TestCase):
+    def test_final_plan_preserves_truth_labeled_grading_preview_samples(self) -> None:
+        plan = planner.build_plan(_supported_minimal_payload())
+
+        surface_model = plan["meta"]["grading"]["surface_model"]
+        spot_elevations = surface_model["spot_elevations"]
+
+        self.assertEqual(surface_model["model"], "grid")
+        self.assertEqual(surface_model["source_type"], "assumed")
+        self.assertFalse(surface_model["control_verified"])
+        self.assertIn("not_survey_backed_reason", surface_model["confidence"])
+        self.assertGreaterEqual(len(spot_elevations), 3)
+        self.assertEqual(min(point["x"] for point in spot_elevations), surface_model["bounds"][0])
+        self.assertEqual(max(point["x"] for point in spot_elevations), surface_model["bounds"][2])
+        self.assertEqual(min(point["y"] for point in spot_elevations), surface_model["bounds"][1])
+        self.assertEqual(max(point["y"] for point in spot_elevations), surface_model["bounds"][3])
+        self.assertTrue(
+            all(
+                isinstance(point.get(axis), (int, float))
+                for point in spot_elevations
+                for axis in ("x", "y", "z")
+            )
+        )
+
     def test_runtime_resume_advances_past_user_approved_partial_stage(self) -> None:
         payload = _supported_minimal_payload()
         checkpoint = planner.build_plan(deepcopy(payload))

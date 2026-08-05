@@ -350,6 +350,65 @@ def surface_extreme_points(
     return output
 
 
+def surface_preview_points(
+    surface: Optional[GridSurface],
+    *,
+    axis_samples: int = 3,
+    include_extremes: bool = True,
+) -> List[Dict[str, Any]]:
+    """Return a bounded, spatially distributed surface sample for previews."""
+
+    if surface is None or not getattr(surface, "values", None):
+        return []
+    row_count = max(1, safe_int(getattr(surface, "nrows", 0), 0))
+    col_count = max(1, safe_int(getattr(surface, "ncols", 0), 0))
+    sample_count = max(2, min(axis_samples, 5))
+
+    def sample_indexes(count: int) -> List[int]:
+        if count <= 1:
+            return [0]
+        return sorted(
+            {
+                min(count - 1, max(0, round(index * (count - 1) / (sample_count - 1))))
+                for index in range(sample_count)
+            }
+        )
+
+    output: List[Dict[str, Any]] = []
+    seen: set[Tuple[int, int]] = set()
+
+    def append_point(row_index: int, col_index: int, z: Any) -> None:
+        key = (row_index, col_index)
+        if key in seen:
+            return
+        seen.add(key)
+        output.append(
+            {
+                "x": round(safe_float(surface.x_at(col_index), 0.0), 3),
+                "y": round(safe_float(surface.y_at(row_index), 0.0), 3),
+                "z": round(safe_float(z, 0.0), 3),
+                "row": row_index,
+                "col": col_index,
+            }
+        )
+
+    values = getattr(surface, "values", []) or []
+    for row_index in sample_indexes(row_count):
+        row = values[row_index] if row_index < len(values) else []
+        for col_index in sample_indexes(col_count):
+            if col_index < len(row):
+                append_point(row_index, col_index, row[col_index])
+
+    if include_extremes:
+        for point in surface_extreme_points(surface, highest=True, limit=1) + surface_extreme_points(
+            surface,
+            highest=False,
+            limit=1,
+        ):
+            append_point(safe_int(point.get("row"), 0), safe_int(point.get("col"), 0), point.get("z"))
+    return output[:27]
+
+
 def surface_actions_from_grid(surface: Optional[GridSurface], *, layer: str, note_prefix: str, sample_lines: int = 6) -> List[Dict[str, Any]]:
     if surface is None or not all(hasattr(surface, attr) for attr in ("nrows", "ncols", "x_at", "y_at", "values")):
         return []
@@ -814,7 +873,7 @@ def canonical_grading_payload(
                 round(safe_float(getattr(existing_surface, "y_max", 0.0), 0.0), 3),
             ],
             "contours": [],
-            "spot_elevations": existing_high_points[:3] + existing_low_points[:3],
+            "spot_elevations": surface_preview_points(existing_surface),
             "slope_arrows": [],
             "flow_paths": [],
             "confidence": {

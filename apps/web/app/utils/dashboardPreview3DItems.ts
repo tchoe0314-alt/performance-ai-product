@@ -213,15 +213,11 @@ export function buildBackendPreview3DItems({
     gradingMeta && typeof gradingMeta === "object"
       ? ((gradingMeta as { surface_controls?: Record<string, unknown> }).surface_controls ?? {})
       : {};
-  const surfaceGuidance =
-    gradingMeta && typeof gradingMeta === "object"
-      ? ((gradingMeta as { surface_guidance?: Record<string, unknown> }).surface_guidance ?? {})
-      : {};
   const rawSurfaceModel =
     gradingMeta && typeof gradingMeta === "object"
       ? ((gradingMeta as { surface_model?: Record<string, unknown> }).surface_model ?? {})
       : {};
-  const previewElevationSamples = Array.isArray(rawSurfaceModel.spot_elevations)
+  const rawPreviewElevationSamples = Array.isArray(rawSurfaceModel.spot_elevations)
     ? rawSurfaceModel.spot_elevations
         .map((item) => {
           const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
@@ -233,9 +229,14 @@ export function buildBackendPreview3DItems({
         .filter((item): item is { x: number; y: number; z: number } => Boolean(item))
         .slice(0, 72)
     : [];
+  const elevationBaseline = rawPreviewElevationSamples.length
+    ? Math.min(...rawPreviewElevationSamples.map((sample) => sample.z))
+    : 0;
+  const previewElevationSamples = rawPreviewElevationSamples.map((sample) => ({
+    ...sample,
+    z: sample.z - elevationBaseline,
+  }));
   const gradeRangeFt = Number((surfaceControls as { grade_range_ft?: number }).grade_range_ft ?? 0);
-  const downhillVector =
-    (surfaceGuidance as { downhill_vector?: { x?: number; y?: number; dx?: number; dy?: number } }).downhill_vector ?? null;
   const baseTerrain = {
     minX: Number.POSITIVE_INFINITY,
     minY: Number.POSITIVE_INFINITY,
@@ -248,19 +249,6 @@ export function buildBackendPreview3DItems({
     baseTerrain.maxX = Math.max(baseTerrain.maxX, bounds[2]);
     baseTerrain.maxY = Math.max(baseTerrain.maxY, bounds[3]);
   };
-  const elevationAt = (x: number, y: number) => {
-    if (!gradeRangeFt) return 0;
-    const spanX = Math.max(baseTerrain.maxX - baseTerrain.minX, 1);
-    const spanY = Math.max(baseTerrain.maxY - baseTerrain.minY, 1);
-    const nx = (x - baseTerrain.minX) / spanX - 0.5;
-    const ny = (y - baseTerrain.minY) / spanY - 0.5;
-    const dirX = Number(downhillVector?.x ?? downhillVector?.dx ?? 0);
-    const dirY = Number(downhillVector?.y ?? downhillVector?.dy ?? -1);
-    const norm = Math.hypot(dirX, dirY) || 1;
-    const dot = (nx * dirX + ny * dirY) / norm;
-    return dot * gradeRangeFt;
-  };
-
   for (const action of actions) {
     if (!action || typeof action !== "object") continue;
     const actionRecord = action as Record<string, unknown>;
@@ -297,8 +285,6 @@ export function buildBackendPreview3DItems({
     const [x1, y1, x2, y2] = bounds;
     const w = Math.max(1, x2 - x1);
     const h = Math.max(1, y2 - y1);
-    const centerX = x1 + w / 2;
-    const centerY = y1 + h / 2;
     const label = String(actionRecord.label || normalizedLayer);
     const system = String(meta?.system || "");
     const isBuilding = normalizedLayer === "BUILDING";
@@ -326,7 +312,6 @@ export function buildBackendPreview3DItems({
               ? "#c7d2fe"
               : "#dbeafe";
     const heightFt = isBuilding ? 28 : isStructure ? 10 : isDrainage ? 4 : isRoad ? 2 : isParking ? 1.5 : 1;
-    const elevationOffset = previewElevationSamples.length ? elevationAt(centerX, centerY) : 0;
     const pondAdjustment = normalizedLayer === "POND" ? Math.max(1.5, gradeRangeFt * 0.12) : 0;
     items.push({
       id: String(actionRecord.id || meta?.site_object_id || `${normalizedLayer.toLowerCase()}-${items.length + 1}`),
@@ -335,7 +320,7 @@ export function buildBackendPreview3DItems({
       w,
       h,
       height: heightFt,
-      z: elevationOffset - (isDrainage ? pondAdjustment : 0),
+      z: isDrainage ? -pondAdjustment : 0,
       color,
       label: label || normalizedLayer,
       layer: isBuilding

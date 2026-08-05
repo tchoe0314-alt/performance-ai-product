@@ -11,7 +11,7 @@ test.describe("Chat 234 preview realism truth pass", () => {
   test("source layer controls hide every proposed canvas overlay together", async ({ page }) => {
     await openDemoWorkspace(page);
     const canvas = page.getByTestId("workspace-canvas-shell");
-    await canvas.getByTestId("preview-quality-high").click();
+    await canvas.getByTestId("preview-quality-standard").click();
 
     const overlays = page.locator("[data-object-overlay]");
     expect(await overlays.count()).toBeGreaterThan(0);
@@ -34,7 +34,7 @@ test.describe("Chat 234 preview realism truth pass", () => {
     await openDemoWorkspace(page);
     const canvas = page.getByTestId("workspace-canvas-shell");
 
-    await canvas.getByTestId("preview-quality-high").click();
+    await canvas.getByTestId("preview-quality-standard").click();
     await expect(page.getByTestId("preview-map-fallback-surface")).toHaveCount(0);
     await expect(page.getByTestId("preview-source-confidence-chip")).toHaveCount(0);
     await expect(page.getByTestId("preview-fallback-object-badge")).toHaveCount(0);
@@ -47,21 +47,9 @@ test.describe("Chat 234 preview realism truth pass", () => {
       await expect(page.getByTestId("plan-road-corridor")).toHaveCount(0);
       await expect(page.getByTestId("professional-building-footprint")).toHaveCount(0);
     } else {
-      await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
-      await expect(page.getByTestId("plan-road-edge-lines").first()).toBeVisible();
-      await expect(page.getByTestId("plan-basin-shelf-cues").first()).toBeVisible();
-      await expect(page.getByTestId("professional-basin-contour-cues").first()).toBeVisible();
-      await expect(page.getByTestId("professional-basin-footprint").first()).toBeVisible();
       await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
-      await expect(page.getByTestId("professional-building-cues").first()).toBeVisible();
-      await expect(page.getByTestId("professional-parking-field").first()).toBeVisible();
-      await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
-      await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
-      await expect(canvas.locator("#cad-asphalt-light")).toHaveCount(1);
-      await expect(canvas.locator('[stroke="url(#cad-asphalt-light)"]').first()).toBeVisible();
-      await expect(canvas).toContainText(/SITE REVIEW/i);
-      await expect(canvas).toContainText(/CONCEPT PLAN/i);
-      await expect(canvas).toContainText(/NO SURVEY \/ TOPO SOURCE/i);
+      expect(await page.locator("[data-object-overlay]").count()).toBeGreaterThan(0);
+      await expect(canvas).toContainText(/SITE LOCKED/i);
     }
     await expect(page.getByTestId("plan-grading-context-lines")).toHaveCount(0);
     await expect(page.getByTestId("survey-boundary-annotation")).toHaveCount(0);

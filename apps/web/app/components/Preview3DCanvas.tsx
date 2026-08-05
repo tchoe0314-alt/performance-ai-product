@@ -554,6 +554,27 @@ export default function Preview3DCanvas({
 
     const centerX = modelBounds.minX + modelBounds.spanX / 2;
     const centerY = modelBounds.minY + modelBounds.spanY / 2;
+    const terrainSamples = items
+      .filter((item) => item.terrainSample && typeof item.z === "number" && Number.isFinite(item.z))
+      .map((item) => ({
+        x: item.x + item.w / 2,
+        y: item.y + item.h / 2,
+        z: Number(item.z),
+      }));
+    const terrainElevationAt = (x: number, y: number) => {
+      if (terrainState.mode !== "terrain" || !terrainSamples.length) return 0;
+      const exactSample = terrainSamples.find((sample) => Math.hypot(sample.x - x, sample.y - y) < 0.01);
+      if (exactSample) return exactSample.z;
+      let weighted = 0;
+      let weight = 0;
+      terrainSamples.forEach((sample) => {
+        const distance = Math.hypot(sample.x - x, sample.y - y);
+        const nextWeight = 1 / Math.max(distance * distance, 1);
+        weighted += sample.z * nextWeight;
+        weight += nextWeight;
+      });
+      return weight ? weighted / weight : 0;
+    };
     const toScene = (x: number, y: number, z = 0) =>
       new THREE.Vector3(x - centerX, z, y - centerY);
       const addBuildingDetailCues = (
@@ -657,25 +678,10 @@ export default function Preview3DCanvas({
     terrainGeometry.rotateX(-Math.PI / 2);
     if (terrainState.mode === "terrain") {
       const positions = terrainGeometry.attributes.position;
-      const samples = items
-        .filter((item) => item.terrainSample && typeof item.z === "number" && Number.isFinite(item.z))
-        .map((item) => ({
-          x: item.x + item.w / 2 - centerX,
-          z: item.y + item.h / 2 - centerY,
-          y: Number(item.z),
-        }));
       for (let i = 0; i < positions.count; i += 1) {
         const vx = positions.getX(i);
         const vz = positions.getZ(i);
-        let weighted = 0;
-        let weight = 0;
-        samples.forEach((sample) => {
-          const distance = Math.max(Math.hypot(sample.x - vx, sample.z - vz), 1);
-          const nextWeight = 1 / distance;
-          weighted += sample.y * nextWeight;
-          weight += nextWeight;
-        });
-        positions.setY(i, weight ? weighted / weight : 0);
+        positions.setY(i, terrainElevationAt(vx + centerX, vz + centerY));
       }
       positions.needsUpdate = true;
       terrainGeometry.computeVertexNormals();
@@ -693,10 +699,10 @@ export default function Preview3DCanvas({
     root.add(terrain);
 
     const siteBoundaryPoints = [
-      new THREE.Vector3(-modelBounds.spanX / 2, 0.12, -modelBounds.spanY / 2),
-      new THREE.Vector3(modelBounds.spanX / 2, 0.12, -modelBounds.spanY / 2),
-      new THREE.Vector3(modelBounds.spanX / 2, 0.12, modelBounds.spanY / 2),
-      new THREE.Vector3(-modelBounds.spanX / 2, 0.12, modelBounds.spanY / 2),
+      toScene(modelBounds.minX, modelBounds.minY, terrainElevationAt(modelBounds.minX, modelBounds.minY) + 0.12),
+      toScene(modelBounds.maxX, modelBounds.minY, terrainElevationAt(modelBounds.maxX, modelBounds.minY) + 0.12),
+      toScene(modelBounds.maxX, modelBounds.maxY, terrainElevationAt(modelBounds.maxX, modelBounds.maxY) + 0.12),
+      toScene(modelBounds.minX, modelBounds.maxY, terrainElevationAt(modelBounds.minX, modelBounds.maxY) + 0.12),
     ];
     const siteBoundary = new THREE.LineLoop(
       new THREE.BufferGeometry().setFromPoints(siteBoundaryPoints),
@@ -717,11 +723,13 @@ export default function Preview3DCanvas({
         const y = modelBounds.minY + modelBounds.spanY * t;
         const wave = Math.sin(t * Math.PI * 2) * modelBounds.spanY * 0.018;
         const points = [
-          toScene(modelBounds.minX, y + wave, 0.08),
-          toScene(modelBounds.minX + modelBounds.spanX * 0.25, y - wave * 0.45, 0.1),
-          toScene(modelBounds.minX + modelBounds.spanX * 0.55, y + wave * 0.75, 0.1),
-          toScene(modelBounds.maxX, y - wave, 0.08),
-        ];
+          [modelBounds.minX, y + wave],
+          [modelBounds.minX + modelBounds.spanX * 0.25, y - wave * 0.45],
+          [modelBounds.minX + modelBounds.spanX * 0.55, y + wave * 0.75],
+          [modelBounds.maxX, y - wave],
+        ].map(([x, pointY]) =>
+          toScene(x, pointY, terrainElevationAt(x, pointY) + 0.1),
+        );
         const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.06);
         root.add(
           new THREE.Line(
@@ -741,7 +749,8 @@ export default function Preview3DCanvas({
       const id = getItemId(item, index);
       const palette = layerPalette[layer] || { top: item.color || "#cbd5e1", side: item.color || "#94a3b8", line: "#f8fafc" };
       const heightFt = displayHeightForLayer(item, layer);
-      const baseY = typeof item.z === "number" && Number.isFinite(item.z) ? item.z : 0;
+      const itemOffset = typeof item.z === "number" && Number.isFinite(item.z) ? item.z : 0;
+      const baseY = terrainElevationAt(item.x + item.w / 2, item.y + item.h / 2) + itemOffset;
       const state = confidenceState(item);
       const minPlanDimension = Math.min(Math.max(item.w, 0), Math.max(item.h, 0));
       const maxPlanDimension = Math.max(Math.max(item.w, 0), Math.max(item.h, 0));
