@@ -11,9 +11,9 @@ export const DASHBOARD_CAD_TOOL_GROUPS: DrawCadToolGroup[] = [
       { label: "Area", tool: "area", hint: "Closed polygon" },
       { label: "Box", tool: "box", hint: "Rectangle" },
       { label: "Point", tool: "point", hint: "Marker" },
-      { label: "Circle", tool: "circle", hint: "Command loaded" },
-      { label: "Arc", tool: "arc", hint: "Command loaded" },
-      { label: "Text", tool: "text", hint: "Command loaded" },
+      { label: "Circle", tool: "circle", hint: "Center + radius" },
+      { label: "Arc", tool: "arc", hint: "Center + angles" },
+      { label: "Text", tool: "text", hint: "Point + note" },
     ],
   },
   {

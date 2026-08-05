@@ -1,6 +1,6 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import {
   CornerUpLeft,
   CornerUpRight,
@@ -85,6 +85,7 @@ type TopologyIssue = {
 
 type CadPrecisionDockProps = {
   visible: boolean;
+  openRequestToken?: string;
   selectedCadObject: BuildingPlacement | null;
   selectedCadIds: string[];
   selectedBuildingId: string | null;
@@ -143,6 +144,7 @@ type CadPrecisionDockProps = {
 
 export function CadPrecisionDock({
   visible,
+  openRequestToken = "",
   selectedCadObject,
   selectedCadIds,
   selectedBuildingId,
@@ -198,6 +200,14 @@ export function CadPrecisionDock({
   insertCadSymbol,
   applyCadProperties,
 }: CadPrecisionDockProps) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    if (openRequestToken.trim() && detailsRef.current) {
+      detailsRef.current.open = true;
+    }
+  }, [openRequestToken]);
+
   if (!visible) return null;
   const classificationOptions = Object.entries(SITE_OBJECT_CATALOG)
     .filter(([type]) => type !== "site")
@@ -208,6 +218,7 @@ export function CadPrecisionDock({
 
   return (
     <details
+      ref={detailsRef}
       className="civora-cad-dock group relative z-20 mb-3 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-sm"
       data-testid="cad-precision-tools"
     >

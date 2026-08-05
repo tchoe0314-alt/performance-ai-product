@@ -217,6 +217,38 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom|Box|Rectangle/ }).first()).toBeVisible();
   });
 
+  test("advanced draw tools reveal their required command controls and create objects", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const precision = page.getByTestId("cad-precision-tools");
+    const commandInput = precision.getByRole("textbox", { name: "Draft command input" });
+    const run = precision.getByRole("button", { name: "Run", exact: true });
+    const feedback = page.getByTestId("cad-command-feedback-panel");
+
+    await (await revealCadTool(page, "circle")).click();
+    await expect(precision).toHaveAttribute("open", "");
+    await expect(commandInput).toHaveValue(/^CIRCLE /);
+    await run.click();
+    await expect(feedback).toContainText(/CIRCLE created/i);
+
+    await (await revealCadTool(page, "arc")).click();
+    await expect(precision).toHaveAttribute("open", "");
+    await expect(commandInput).toHaveValue(/^ARC /);
+    await run.click();
+    await expect(feedback).toContainText(/ARC created/i);
+
+    await (await revealCadTool(page, "text")).click();
+    await expect(precision).toHaveAttribute("open", "");
+    await expect(commandInput).toHaveValue(/^TEXT /);
+    await run.click();
+    await expect(feedback).toContainText(/TEXT created/i);
+
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Circle/ }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Arc/ }).first()).toBeVisible();
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /note/i }).first()).toBeVisible();
+  });
+
   test("draft precision HUD supports keyboard finish and cancel", async ({ page }) => {
     await startBlankSite(page);
     const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();

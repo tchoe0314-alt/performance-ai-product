@@ -152,19 +152,19 @@ export function handlePreviewCadToolRequest({
       clearDraftDrawState();
       setDrawMode("select");
       setCadCommandDraft(`CIRCLE ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} 25`);
-      pushCadCommandFeedback("CIRCLE", "info", "CIRCLE command loaded. Adjust center/radius in the command line, then press Run.");
+      pushCadCommandFeedback("CIRCLE", "info", "CIRCLE ready. Adjust center and radius in Precision & commands, then press Run.");
       break;
     case "arc":
       clearDraftDrawState();
       setDrawMode("select");
       setCadCommandDraft(`ARC ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} 40 0 90`);
-      pushCadCommandFeedback("ARC", "info", "ARC command loaded. Adjust center/radius/start/end in the command line, then press Run.");
+      pushCadCommandFeedback("ARC", "info", "ARC ready. Adjust center, radius, start, and end in Precision & commands, then press Run.");
       break;
     case "text":
       clearDraftDrawState();
       setDrawMode("select");
       setCadCommandDraft(`TEXT ${(lotWidth / 2).toFixed(0)},${(lotHeight / 2).toFixed(0)} note`);
-      pushCadCommandFeedback("TEXT", "info", "TEXT command loaded. Edit the point and note text, then press Run.");
+      pushCadCommandFeedback("TEXT", "info", "TEXT ready. Edit the point and note in Precision & commands, then press Run.");
       break;
     case "move":
       transformSelectedCadObjects("move");
