@@ -151,15 +151,11 @@ export function useDashboardCommandUtilityActions({
       "I can't stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record. I can help prepare review-only draft materials and call out needs for a qualified professional to review.",
       "status",
     );
-    updateProjectStatus({
-      state: "blocked",
-      area: "chat",
-      title: "Command refused",
-      detail: "Construction authorization refused. Civora stays review-only.",
-      nextAction: "Ask for review-only draft materials, blocker review, or a review package instead.",
-    });
+    setStatusMessage(
+      "Civora kept the request within review-only boundaries. Ask for draft analysis or a review package instead.",
+    );
     return true;
-  }, [appendChatMessage, updateProjectStatus]);
+  }, [appendChatMessage, setStatusMessage]);
 
   const cancelActiveCommandState = useCallback(() => {
     commandFocusRequestRef.current += 1;

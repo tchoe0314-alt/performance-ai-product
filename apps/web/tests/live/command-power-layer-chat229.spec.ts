@@ -383,5 +383,11 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByText(/can't stamp, seal, sign, certify/i).first()).toBeVisible();
     await runCommand(page, "act as engineer of record");
     await expect(page.getByText(/can't stamp, seal, sign, certify/i).first()).toBeVisible();
+
+    await page.locator("body").click({ position: { x: 20, y: 20 } });
+    await page.keyboard.press("G");
+    const generatePanel = page.getByTestId("workspace-right-panel");
+    await expect(generatePanel).toContainText(/Generate Systems/i);
+    await expect(generatePanel).not.toContainText(/Command refused|Construction authorization refused/i);
   });
 });
