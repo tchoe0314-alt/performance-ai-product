@@ -299,6 +299,10 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByText(/140-space parking target/i).first()).toBeVisible();
     await expect(page.getByText(/site at site at/i)).toHaveCount(0);
 
+    await page.getByRole("button", { name: "Setup" }).first().click();
+    await expect(page.getByTestId("setup-address-truth")).toContainText(/20525 Margo St/i);
+    await expect(page.getByTestId("setup-address-truth")).not.toContainText(/for a 28,000|objects already drawn/i);
+
     await openDrawPanel(page);
     const afterRows = await page.getByTestId("object-manager-row").allTextContents();
     expect(afterRows.slice(1)).toEqual(beforeRows.slice(1));

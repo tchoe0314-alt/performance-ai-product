@@ -143,6 +143,7 @@ export function parseDashboardDirectSiteSetupCommand(
       .replace(/^.*?\baddress\b\s*(?:is|as|to be|to|=|:)?\s*/i, "")
       .replace(/^\b(?:with|using|at|site\s+(?:at|around|centered\s+(?:at|on))|centered\s+(?:at|on)|centred\s+(?:at|on))\b\s*/i, "")
       .replace(/^(?:is|it'?s|it is|gonna|going to be|will be|should be)\b\s*/i, "")
+      .replace(/\s+\bfor\s+(?=(?:an?\s+)?(?:\d|office|building|commercial|residential|project))[^]*$/i, "")
       .replace(/\b(?:as|for|with)?\s*(?:the\s+)?(?:center|centre)(?:\s+point)?\b.*$/i, "")
       .replace(/\b(?:and\s+)?(?:it'?s|it is|its|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
       .replace(/\b(?:and|with|that|it'?s|it is|site|lot|gonna|going to be|will be|should be)\s*$/i, "")
