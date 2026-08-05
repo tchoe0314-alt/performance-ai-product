@@ -559,7 +559,7 @@ export function buildPlacementPreview3DItems({
                     ? 0.35
                     : isLotBlock || isConstraint
                       ? 0.08
-                  : 6,
+                      : 0.1,
         rotation: Number.isFinite(Number(item.rotation)) ? Number(item.rotation) : 0,
         z: isDrainage ? -1 : 0,
         geometryType: item.geometryType,
@@ -603,7 +603,7 @@ export function buildPlacementPreview3DItems({
                       ? "LOT"
                       : isConstraint
                         ? "CONSTRAINT"
-                    : "ROAD",
+                        : "OBJECT",
         source: confidenceEntry?.source_name || item.source || "workspace object",
         confidence: confidenceEntry?.confidence_band || item.confidence || metaConfidence,
         blockers: [

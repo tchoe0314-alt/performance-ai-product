@@ -55,6 +55,7 @@ const normalizeLayer = (layer: string) => {
   if (key.includes("LANDSCAPE") || key.includes("OPEN") || key.includes("GREEN")) return "LANDSCAPE";
   if (key.includes("TERRAIN") || key.includes("SITE")) return "TERRAIN";
   if (key.includes("ROAD") || key.includes("DRIVE")) return "ROAD";
+  if (key.includes("OBJECT") || key.includes("CUSTOM") || key.includes("C-DRAFT") || key.includes("NOTE") || key.includes("TEXT")) return "OBJECT";
   return key || "OBJECT";
 };
 

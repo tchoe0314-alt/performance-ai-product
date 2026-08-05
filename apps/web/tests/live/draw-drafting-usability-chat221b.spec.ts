@@ -247,6 +247,10 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Circle/ }).first()).toBeVisible();
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Arc/ }).first()).toBeVisible();
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /note/i }).first()).toBeVisible();
+
+    await page.getByRole("button", { name: "3D", exact: true }).click();
+    await expect(page.getByRole("button", { name: /note OBJECT \| review/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /note ROAD \| review/i })).toHaveCount(0);
   });
 
   test("draft precision HUD supports keyboard finish and cancel", async ({ page }) => {
