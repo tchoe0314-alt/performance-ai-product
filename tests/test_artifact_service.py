@@ -5,10 +5,28 @@ from pathlib import Path
 from unittest.mock import patch
 
 from backend.services.artifact_service import ArtifactService, HeavyExportBlockedError
-from output.dxf_exporter import mark_heavy_export_timeout
+from output.dxf_exporter import _prepare_modelspace_actions, get_layer, mark_heavy_export_timeout
 
 
 class ArtifactServiceTest(unittest.TestCase):
+    def test_review_dxf_modelspace_keeps_all_available_disciplines(self):
+        actions = [
+            {"task": "rectangle", "layer": "SITE", "origin": [0, 0], "width": 100, "height": 100, "canonical_source_id": "site-1"},
+            {"task": "rectangle", "layer": "BUILDING", "origin": [20, 20], "width": 20, "height": 20, "canonical_source_id": "building-1"},
+            {"task": "polyline", "layer": "PIPE", "points": [[0, 10], [100, 10]], "canonical_source_id": "storm-1"},
+            {"task": "polyline", "layer": "WATER", "points": [[0, 20], [100, 20]], "canonical_source_id": "water-1"},
+            {"task": "polyline", "layer": "SAN", "points": [[0, 30], [100, 30]], "canonical_source_id": "sanitary-1"},
+        ]
+        plan = {
+            "actions": actions,
+            "meta": {"review_export_include_all_systems": True},
+        }
+
+        prepared = _prepare_modelspace_actions(plan, actions)
+        layers = {get_layer(action, "SITE") for action in prepared}
+
+        self.assertTrue({"SITE", "BUILDING", "PIPE", "WATER", "SAN"}.issubset(layers))
+
     def test_build_preview_png_reuses_cached_render(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             service = ArtifactService(Path(tmpdir))
@@ -242,6 +260,37 @@ class ArtifactServiceTest(unittest.TestCase):
             self.assertTrue(sidecar["report_line_items"])
             self.assertIn("report-storm-1", sidecar["report_line_items"][0]["canonical_ids"])
             self.assertEqual(sidecar["quantity_line_items"][0]["canonical_ids"], ["report-storm-1"])
+
+    def test_export_report_json_compacts_recursive_runtime_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ArtifactService(Path(tmpdir))
+            final_plan = {
+                "project_name": "Compact Report",
+                "actions": [{"task": "polyline", "layer": "LOT", "points": [[0, 0], [1, 0]]}],
+                "meta": {},
+            }
+            artifact_path = service.export_report_json(
+                user_id="user-1",
+                result_data={
+                    "final_plan": final_plan,
+                    "metadata": {
+                        "workflow": "review",
+                        "recommended_option_name": "Option A",
+                        "backend_result": {"payload": "x" * 1_000_000},
+                    },
+                    "request_metadata": {
+                        "release_review": {"release_status": "review"},
+                        "latest_result": {"payload": "y" * 1_000_000},
+                    },
+                },
+                stem="compact-report",
+            )
+            report = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+            self.assertLess(artifact_path.stat().st_size, 1_000_000)
+            self.assertEqual(report["metadata"]["orchestrator_metadata"]["workflow"], "review")
+            self.assertNotIn("backend_result", report["metadata"]["orchestrator_metadata"])
+            self.assertNotIn("latest_result", report["metadata"]["request_metadata"])
 
     def test_export_review_pdf_creates_real_pdf_with_sidecar(self):
         from io import BytesIO

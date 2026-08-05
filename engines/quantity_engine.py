@@ -237,6 +237,8 @@ def _classify_action(action: Dict[str, Any]) -> Dict[str, str]:
     layer = _safe_str(action.get("layer"), "SITE").upper()
     label = _safe_str(action.get("label"), "").upper()
     text = _safe_str(action.get("text"), "").upper()
+    canonical_type = _safe_str(action.get("canonical_source_type"), "").upper()
+    identity = " ".join((label, text, canonical_type))
     task = _lower(action.get("task"))
 
     out = {
@@ -246,7 +248,23 @@ def _classify_action(action: Dict[str, Any]) -> Dict[str, str]:
         "subcategory": "generic",
     }
 
-    if layer in {"BUILDING", "STRUCTURE"} or "BLDG" in label or "BUILDING" in label:
+    if (
+        "MANHOLE" in identity
+        or canonical_type in {"SANITARY_MANHOLE", "STORM_MANHOLE"}
+        or label.startswith("SMH-")
+    ):
+        out["discipline"] = "utility"
+        out["subcategory"] = "manhole"
+    elif "INLET" in identity or canonical_type in {"INLET", "DRAINAGE_INLET"}:
+        out["discipline"] = "drainage"
+        out["subcategory"] = "inlet"
+    elif "OUTFALL" in identity or canonical_type in {"OUTFALL", "DRAINAGE_OUTFALL"}:
+        out["discipline"] = "drainage"
+        out["subcategory"] = "outfall"
+    elif "HYDRANT" in identity or canonical_type in {"HYDRANT", "FIRE_HYDRANT"}:
+        out["discipline"] = "utility"
+        out["subcategory"] = "hydrant"
+    elif layer == "BUILDING" or "BLDG" in label or "BUILDING" in label or canonical_type == "BUILDING":
         out["discipline"] = "building"
         out["subcategory"] = "building"
     elif layer in {"BRIDGE"} or "BRIDGE" in label:

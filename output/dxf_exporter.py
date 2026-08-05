@@ -1171,12 +1171,13 @@ def _surface_contour_polylines(surface: Dict[str, Any], max_levels: int = 6) -> 
 
 def _surface_contour_actions(plan: Dict[str, Any], *, engineering_profile: str = "layout") -> List[Dict[str, Any]]:
     grading = safe_dict(safe_dict(plan.get("meta")).get("grading"))
+    include_all_review_systems = bool(safe_dict(plan.get("meta")).get("review_export_include_all_systems"))
     actions: List[Dict[str, Any]] = []
     surface_specs = [
         ("existing_surface", "EG_CONTOUR", "grading_existing_surface"),
         ("proposed_surface", "FG_CONTOUR", "grading_proposed_surface"),
     ]
-    if safe_text(engineering_profile, "").lower() in {"storm", "utilities", "complete"}:
+    if safe_text(engineering_profile, "").lower() in {"storm", "utilities", "complete"} and not include_all_review_systems:
         surface_specs = [
             ("proposed_surface", "FG_CONTOUR", "grading_proposed_surface"),
         ]
@@ -1211,6 +1212,8 @@ def _surface_contour_actions(plan: Dict[str, Any], *, engineering_profile: str =
 def _modelspace_engineering_profile(plan: Dict[str, Any]) -> str:
     engineering_profile = "layout"
     meta = safe_dict(plan.get("meta"))
+    if bool(meta.get("review_export_include_all_systems")):
+        return "complete"
     phase_checkpoints = safe_dict(meta.get("phase_checkpoints"))
     combined_view = safe_dict(phase_checkpoints.get("combined_view"))
     completed_phases = safe_num(combined_view.get("completed_phase_count"), 0.0)
@@ -1332,6 +1335,7 @@ def _release_truth_blockers(plan: Dict[str, Any], meta: Dict[str, Any], release_
 def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     prepared: List[Dict[str, Any]] = []
     engineering_profile = _modelspace_engineering_profile(plan)
+    include_all_review_systems = bool(safe_dict(plan.get("meta")).get("review_export_include_all_systems"))
     try:
         from output.preview import (
             _dedupe_primary_layout_records,
@@ -1382,20 +1386,26 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         if (
             layout_first_modelspace
             and layer in MODELSPACE_DETAIL_LAYERS
+            and not include_all_review_systems
             and repr(rec) not in curated_engineering_overlay_keys
             and not (engineering_profile == "storm" and layer in {"PIPE", "STORM", "STRUCTURE", "BASIN_BOUNDARY", "DRAIN_FLOW"})
         ):
             continue
-        if layout_first_modelspace and layer == "ROUTE":
+        if layout_first_modelspace and layer == "ROUTE" and not include_all_review_systems:
             continue
         if (
             layout_first_modelspace
             and layer in {"PIPE", "STORM", "SAN", "UTILITY", "WATER", "STRUCTURE", "BASIN_BOUNDARY"}
+            and not include_all_review_systems
             and repr(rec) not in curated_engineering_overlay_keys
             and not (engineering_profile == "storm" and layer in {"PIPE", "STORM", "STRUCTURE", "BASIN_BOUNDARY"})
         ):
             continue
-        if engineering_profile in {"storm", "utilities", "complete"} and layer in {"EG_CONTOUR", "SPOT_EG"}:
+        if (
+            engineering_profile in {"storm", "utilities", "complete"}
+            and layer in {"EG_CONTOUR", "SPOT_EG"}
+            and not include_all_review_systems
+        ):
             continue
         # TODO: Identify wrapper parcels upstream instead of heuristic bounding.
         if layout_first_modelspace and _is_wrapper_layout_shape(rec, building_bounds):
@@ -1403,17 +1413,22 @@ def _prepare_modelspace_actions(plan: Dict[str, Any], actions: List[Dict[str, An
         # TODO: Mark access schematics upstream so exporter doesn't guess.
         if layout_first_modelspace and _is_schematic_access_shape(rec, building_bounds):
             continue
-        if layout_first_modelspace and layer == "SITE" and safe_text(rec.get("task"), "").lower() in {"rectangle", "polygon"}:
+        if (
+            layout_first_modelspace
+            and layer == "SITE"
+            and safe_text(rec.get("task"), "").lower() in {"rectangle", "polygon"}
+            and not include_all_review_systems
+        ):
             continue
-        if layout_first_modelspace and layer == "SETBACK":
+        if layout_first_modelspace and layer == "SETBACK" and not include_all_review_systems:
             continue
         if use_surface_contours and layer in {"EG_CONTOUR", "FG_CONTOUR"}:
             continue
         if rec.get("canonical_source_type") in {"storm_pipe_segment", "sanitary_segment", "drainage_structure", "drainage_basin"} and safe_text(rec.get("task"), "").lower() == "text_note":
             continue
-        if layout_first_modelspace and safe_text(rec.get("task"), "").lower() == "point":
+        if layout_first_modelspace and safe_text(rec.get("task"), "").lower() == "point" and not include_all_review_systems:
             continue
-        if layout_first_modelspace and safe_text(rec.get("task"), "").lower() == "text_note":
+        if layout_first_modelspace and safe_text(rec.get("task"), "").lower() == "text_note" and not include_all_review_systems:
             continue
         prepared.append(rec)
     if use_surface_contours:

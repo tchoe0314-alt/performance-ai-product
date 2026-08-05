@@ -1365,6 +1365,10 @@ def export_dxf_artifact(
     if normalized_export_scope == "review":
         final_meta["review_only"] = True
         final_meta["construction_release_allowed"] = False
+        # A review exchange should contain every available discipline. The
+        # normal phase profile is useful for focused previews, but applying it
+        # to a DXF silently drops valid systems from the review model.
+        final_meta["review_export_include_all_systems"] = True
     final_plan["meta"] = final_meta
     if normalized_export_scope == "construction" and final_plan_requires_construction_release(final_plan):
         construction_blockers = construction_release_blockers_from_meta(

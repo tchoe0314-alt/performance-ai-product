@@ -1990,6 +1990,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
 
         self.assertEqual(path.name, "unit-plan.dxf")
         exported_meta = service.dxf_export["final_plan"]["meta"]
+        self.assertTrue(exported_meta["review_export_include_all_systems"])
         audit = exported_meta["export_audit"]
         self.assertEqual(audit["export_scope"], "review")
         self.assertTrue(audit["review_only"])

@@ -16,6 +16,47 @@ from backend.planning.dwg_compatibility import DWG_UNSUPPORTED_STATUS
 PREVIEW_RENDER_VERSION = "2026-04-17-preview-modes-v1"
 DEFAULT_HEAVY_EXPORT_TIMEOUT_SECONDS = 30.0
 
+_REPORT_METADATA_EXCLUDED_KEYS = {
+    "artifact_payload",
+    "backend_result",
+    "final_plan",
+    "latest_result",
+    "orchestrator_metadata",
+    "project_input",
+    "project_record",
+    "request_metadata",
+    "response_metadata",
+    "session_state",
+}
+
+
+def _compact_report_metadata(value: Any, *, depth: int = 0) -> Any:
+    """Keep report provenance useful without embedding recursive runtime state."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value if len(value) <= 4000 else f"{value[:3997]}..."
+    if depth >= 6:
+        return "[additional metadata omitted]"
+    if isinstance(value, dict):
+        compact: Dict[str, Any] = {}
+        for index, (key, child) in enumerate(value.items()):
+            if index >= 150:
+                compact["_additional_fields_omitted"] = len(value) - index
+                break
+            key_text = str(key)
+            if key_text.lower() in _REPORT_METADATA_EXCLUDED_KEYS:
+                continue
+            compact[key_text] = _compact_report_metadata(child, depth=depth + 1)
+        return compact
+    if isinstance(value, (list, tuple)):
+        items = list(value)
+        compact_items = [_compact_report_metadata(item, depth=depth + 1) for item in items[:100]]
+        if len(items) > 100:
+            compact_items.append({"_additional_items_omitted": len(items) - 100})
+        return compact_items
+    return str(value)
+
 
 class HeavyExportBlockedError(RuntimeError):
     def __init__(self, *, code: str, detail: str, metadata: Optional[Dict[str, Any]] = None) -> None:
@@ -575,16 +616,20 @@ class ArtifactService:
 
         final_plan = dict(result_data.get("final_plan") or {})
         package_report = self._ensure_export_package_report(final_plan, export_type="report")
+        orchestrator_metadata = _compact_report_metadata(dict(result_data.get("metadata") or {}))
+        request_metadata = _compact_report_metadata(
+            {
+                "parsed_payload": dict(result_data.get("parsed_payload") or {}),
+                **dict(result_data.get("request_metadata") or {}),
+            }
+        )
         report = report_builder.build_report(
             final_plan=final_plan,
-            orchestrator_metadata=dict(result_data.get("metadata") or {}),
+            orchestrator_metadata=orchestrator_metadata,
             assumptions=list(result_data.get("assumptions") or []),
             warnings=list(result_data.get("warnings") or []),
             errors=list(result_data.get("errors") or []),
-            request_metadata={
-                "parsed_payload": dict(result_data.get("parsed_payload") or {}),
-                **dict(result_data.get("request_metadata") or {}),
-            },
+            request_metadata=request_metadata,
         )
         report["export_package_report_v1"] = deepcopy(package_report)
 

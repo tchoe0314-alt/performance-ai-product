@@ -308,10 +308,10 @@ export function useDashboardJobLoader({
             );
             appendChatMessage(
               "assistant",
-              `${toReadableLabel(String(artifact.kind || "export"))} review export is ready and downloaded. Field use is outside Civora and requires independent licensed-professional review.`,
+              `${toReadableLabel(String(artifact.kind || "export"))} review export is ready and downloaded.`,
               "status",
             );
-            setStatusMessage("Review export downloaded. Field use remains outside Civora.");
+            setStatusMessage("Review export downloaded.");
             updateProjectStatus({
               state: "ready",
               area: "deliver",
