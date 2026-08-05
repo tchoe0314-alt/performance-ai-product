@@ -189,6 +189,29 @@ class ExportExternalVerificationTests(unittest.TestCase):
         self.assertIn("stale_export_blocked", result["failures"])
         self.assertIn("sidecar_canonical_reference_mismatch", result["failures"])
 
+    def test_dxf_sidecar_path_accepts_filesystem_alias_but_rejects_different_artifact(self) -> None:
+        plan = _plan()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            real_dir = root / "real"
+            real_dir.mkdir()
+            alias_dir = root / "alias"
+            alias_dir.symlink_to(real_dir, target_is_directory=True)
+            alias_artifact = alias_dir / "portable.dxf"
+            save_dxf(plan, filename=str(alias_artifact))
+
+            alias_result = verify_dxf_export(real_dir / "portable.dxf", plan=plan)
+            self.assertTrue(alias_result["sidecar_metadata"]["artifact_path_matches"])
+
+            sidecar_path = real_dir / "portable.dxf.metadata.json"
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            sidecar["artifact_path"] = str(root / "different.dxf")
+            sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+            mismatch_result = verify_dxf_export(real_dir / "portable.dxf", plan=plan)
+            self.assertFalse(mismatch_result["sidecar_metadata"]["artifact_path_matches"])
+            self.assertIn("sidecar_artifact_path_mismatch", mismatch_result["failures"])
+
     def test_landxml_contract_roundtrips_with_canonical_ids_but_keeps_civil3d_not_verified(self) -> None:
         plan = _plan()
         xml_text = build_landxml_pipe_network(plan, network_name="External Verification")

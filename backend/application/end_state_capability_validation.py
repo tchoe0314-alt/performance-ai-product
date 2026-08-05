@@ -9,6 +9,11 @@ import subprocess
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
+from backend.application.internal_assurance import (
+    REQUIRED_INTERNAL_GATE_IDS,
+    build_internal_calculation_crosschecks,
+)
+
 
 END_STATE_VALIDATION_VERSION = "civora_end_state_validation_v1"
 ROOT = Path(__file__).resolve().parents[2]
@@ -302,6 +307,14 @@ def run_end_state_capability_validation(
         )
 
     failed_gate_ids = [result["gate_id"] for result in results if result["status"] != "passed"]
+    passed_gate_ids = {result["gate_id"] for result in results if result["status"] == "passed"}
+    calculation_crosschecks = build_internal_calculation_crosschecks()
+    missing_internal_gate_ids = sorted(REQUIRED_INTERNAL_GATE_IDS - passed_gate_ids)
+    internal_software_assurance_complete = bool(
+        not failed_gate_ids
+        and not missing_internal_gate_ids
+        and calculation_crosschecks.get("passed") is True
+    )
     report = {
         "version": END_STATE_VALIDATION_VERSION,
         "generated_at": _now_iso(),
@@ -311,6 +324,9 @@ def run_end_state_capability_validation(
         "passed_gate_count": len(results) - len(failed_gate_ids),
         "failed_gate_ids": failed_gate_ids,
         "gates": results,
+        "internal_calculation_crosschecks": calculation_crosschecks,
+        "missing_internal_gate_ids": missing_internal_gate_ids,
+        "internal_software_assurance_complete": internal_software_assurance_complete,
         "external_evidence_requirements": deepcopy(EXTERNAL_EVIDENCE_REQUIREMENTS),
         "external_evidence_complete": False,
         "construction_release_allowed": False,
