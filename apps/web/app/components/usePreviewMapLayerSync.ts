@@ -250,7 +250,7 @@ export function usePreviewMapLayerSync({
     });
 
     const updateMap = (map: mapboxgl.Map | null) => {
-      if (!map || !map.isStyleLoaded()) return;
+      if (!map || !map.isStyleLoaded()) return false;
       const ensureSource = (id: string, data: unknown) => {
         const sourceData = data as Parameters<mapboxgl.GeoJSONSource["setData"]>[0];
         if (!map.getSource(id)) {
@@ -770,10 +770,33 @@ export function usePreviewMapLayerSync({
           }
         ).__civoraMapLayerSummary = summary;
       }
+      return true;
     };
 
-    updateMap(mapRef.current);
-    updateMap(fullscreenMapRef.current);
+    const maps: mapboxgl.Map[] = [];
+    if (mapRef.current) maps.push(mapRef.current);
+    if (fullscreenMapRef.current && fullscreenMapRef.current !== mapRef.current) {
+      maps.push(fullscreenMapRef.current);
+    }
+    const cleanups = maps.map((map) => {
+      if (updateMap(map)) return () => undefined;
+      const detach = () => {
+        map.off("styledata", synchronize);
+        map.off("style.load", synchronize);
+        map.off("load", synchronize);
+        map.off("idle", synchronize);
+      };
+      const synchronize = () => {
+        if (!updateMap(map)) return;
+        detach();
+      };
+      map.on("styledata", synchronize);
+      map.on("style.load", synchronize);
+      map.on("load", synchronize);
+      map.on("idle", synchronize);
+      return detach;
+    });
+    return () => cleanups.forEach((cleanup) => cleanup());
   }, [
     buildingPlacements,
     analysisPaths,
