@@ -1465,7 +1465,10 @@ def export_report_artifact(
         user_id=user_id,
         project_id=project_id,
     )
-    final_plan = dict(result_data.get("final_plan") or {})
+    final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
+    saved_project_name = str(dict(result_data.get("request_metadata") or {}).get("project_name") or "").strip()
+    if saved_project_name:
+        final_plan["project_name"] = saved_project_name
     final_plan.setdefault("meta", {})
     if project_id and isinstance(final_plan["meta"], dict):
         final_plan["meta"]["project_id"] = project_id

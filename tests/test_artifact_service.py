@@ -277,6 +277,7 @@ class ArtifactServiceTest(unittest.TestCase):
                         "workflow": "review",
                         "recommended_option_name": "Option A",
                         "backend_result": {"payload": "x" * 1_000_000},
+                        "final_plan_meta": {"payload": "z" * 1_000_000},
                     },
                     "request_metadata": {
                         "release_review": {"release_status": "review"},
@@ -290,6 +291,7 @@ class ArtifactServiceTest(unittest.TestCase):
             self.assertLess(artifact_path.stat().st_size, 1_000_000)
             self.assertEqual(report["metadata"]["orchestrator_metadata"]["workflow"], "review")
             self.assertNotIn("backend_result", report["metadata"]["orchestrator_metadata"])
+            self.assertNotIn("final_plan_meta", report["metadata"]["orchestrator_metadata"])
             self.assertNotIn("latest_result", report["metadata"]["request_metadata"])
 
     def test_export_review_pdf_creates_real_pdf_with_sidecar(self):

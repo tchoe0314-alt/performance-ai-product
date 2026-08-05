@@ -20,6 +20,7 @@ _REPORT_METADATA_EXCLUDED_KEYS = {
     "artifact_payload",
     "backend_result",
     "final_plan",
+    "final_plan_meta",
     "latest_result",
     "orchestrator_metadata",
     "project_input",
