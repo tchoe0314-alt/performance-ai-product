@@ -3,6 +3,10 @@ import type { PlanSheetSet } from "../components/PlanSheetEditor";
 import type { ChatMessage, JobSummary, PlanMeta, ProjectRecord } from "../types";
 import type { AutoSiteContextFlowSummary, ReviewPackageFlowSummary } from "./dashboardDataTypes";
 import { panelErrorMessage } from "./dashboardStatus";
+import {
+  normalizeReviewPackageSummary,
+  normalizeReviewSheetSetForProject,
+} from "./reviewPackagePresentation";
 import type { QuantityReviewRow } from "./workflowConstants";
 import type { SidePanelKey, WorkspaceMode } from "./workspaceShell";
 
@@ -121,7 +125,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
   };
 
   const handleExportQuantityReviewReport = () => {
-    const safeProjectName = (siteName || currentProject?.name || "civora-project")
+    const safeProjectName = (currentProject?.name || siteName || "civora-project")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
@@ -131,7 +135,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
       generated_at: new Date().toISOString(),
       project: {
         project_id: currentProject?.project_id || projectId || "",
-        name: siteName || currentProject?.name || "Untitled Project",
+        name: currentProject?.name || siteName || "Untitled Project",
       },
       review_only: true,
       engineer_review_required: true,
@@ -261,19 +265,21 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
       exportScope: "review",
     });
 
-  const handleExportReviewPdf = () =>
-    queueExportJob({
+  const handleExportReviewPdf = () => {
+    const projectName = currentProject?.name || siteName || "Untitled Project";
+    return queueExportJob({
       endpoint: "/api/jobs/export/review-pdf",
       failureLabel: "Review PDF export",
       queuedLabel: "Review PDF",
       chatLabel: "review PDF",
       exportScope: "review",
       extraPayload: {
-        review_sheet_set: reviewSheetSet,
-        review_package_summary: reviewPackageSummary ?? {},
+        review_sheet_set: normalizeReviewSheetSetForProject(reviewSheetSet, projectName),
+        review_package_summary: normalizeReviewPackageSummary(reviewPackageSummary) ?? {},
         auto_site_context_summary: autoSiteContextSummary,
       },
     });
+  };
 
   const handleExportReport = () =>
     queueExportJob({

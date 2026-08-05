@@ -12,11 +12,34 @@ from output.preview import (
     _preview_figure_size,
     _preview_draw_priority,
     _preview_engineering_profile,
+    _preview_scene,
     preview_label,
 )
 
 
 class PreviewRenderTests(unittest.TestCase):
+    def test_explicit_engineering_layers_are_rendered_and_fitted_together(self):
+        layers = {"C-BOUNDARY", "C-BUILDING", "C-PARKING", "C-POND", "C-WATR"}
+        profile, actions, bounds, audit = _preview_scene(
+            {
+                "actions": [
+                    {"task": "rectangle", "layer": "C-BOUNDARY", "origin": [0, 0], "width": 1000, "height": 1000, "meta": {"preview_role": "final"}},
+                    {"task": "rectangle", "layer": "C-BUILDING", "origin": [300, 250], "width": 200, "height": 150, "meta": {"preview_role": "final"}},
+                    {"task": "rectangle", "layer": "C-PARKING", "origin": [220, 450], "width": 400, "height": 180, "meta": {"preview_role": "final"}},
+                    {"task": "polygon", "layer": "C-POND", "points": [[700, 680], [850, 660], [870, 830], [710, 850]], "meta": {"preview_role": "final"}},
+                    {"task": "polyline", "layer": "C-WATR", "points": [[100, 900], [450, 650], [470, 400]], "meta": {"preview_role": "final"}},
+                ],
+                "meta": {},
+            },
+            include_layers=layers,
+            preview_mode="engineering",
+        )
+
+        self.assertEqual(profile, "layout")
+        self.assertEqual({action["layer"] for action in actions}, layers)
+        self.assertEqual(bounds, (0.0, 0.0, 1000.0, 1000.0))
+        self.assertEqual(audit["hidden_incomplete_phase_count"], 0)
+
     def test_expand_bounds_reduces_vertical_padding_for_wide_layouts(self):
         expanded = _expand_bounds((0, 0, 260, 80))
         self.assertEqual(expanded, (-15.6, -5.2, 275.6, 82.5))

@@ -1174,6 +1174,9 @@ def _rectangle_visual_style(action, w, h):
                 stripe_spacing = max(18.0, min(24.0, w / 5.0))
                 stripe_alpha = 0.1 if preview_profile == "grading" else 0.14
                 stripe_gap = 0.0
+        if str(action.get("canonical_source_id") or "").strip():
+            fill_alpha = max(fill_alpha, 0.025)
+            edge_alpha = max(edge_alpha, 0.55)
     elif layer == "C-SIDEWALK":
         fill_alpha = 0.03 if preview_profile == "grading" else 0.045
         facecolor = get_color(action)
@@ -2282,6 +2285,7 @@ def _filtered_preview_actions(
         if (
             preview_mode in {"production", "engineering"}
             and layer not in profile_layers
+            and (not include_layers or layer not in include_layers)
             and repr(action) not in engineering_overlay_keys
         ):
             audit["hidden_incomplete_phase_count"] += 1
@@ -2292,7 +2296,11 @@ def _filtered_preview_actions(
             audit["filtered_reasons"]["non_engineering_role"] = audit["filtered_reasons"].get("non_engineering_role", 0) + 1
             continue
         if allow_heuristics:
-            if has_primary_site_geometry and layer == "C-BOUNDARY":
+            if (
+                has_primary_site_geometry
+                and layer == "C-BOUNDARY"
+                and (not include_layers or layer not in include_layers)
+            ):
                 audit["filtered_reasons"]["heuristic_boundary"] = audit["filtered_reasons"].get("heuristic_boundary", 0) + 1
                 continue
             if has_layout_scene and _is_wrapper_layout_shape(action, building_bounds):
@@ -2989,10 +2997,19 @@ def _preview_scene(
         layer = get_layer(action, "C-TEXT")
         drawn_items.append((layer, str(action.get("task") or "").lower(), bounds))
 
-    selected_bounds = _choose_view_bounds(
-        drawn_items,
-        engineering_profile=engineering_profile,
-    )
+    if normalized_layers and resolved_preview_mode in {"engineering", "debug"}:
+        selected_bounds = _merge_bounds(
+            [
+                bounds
+                for layer, _task, bounds in drawn_items
+                if layer in normalized_layers
+            ]
+        )
+    else:
+        selected_bounds = _choose_view_bounds(
+            drawn_items,
+            engineering_profile=engineering_profile,
+        )
     return engineering_profile, actions, selected_bounds, audit
 
 

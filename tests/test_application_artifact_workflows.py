@@ -5,6 +5,7 @@ from pathlib import Path
 from backend.application.artifact_workflows import (
     build_preview_response,
     export_dxf_artifact,
+    export_review_pdf_artifact,
     export_report_artifact,
 )
 from backend.application.design_workflows import final_plan_from_result
@@ -16,6 +17,7 @@ class FakeArtifactService:
     def __init__(self):
         self.preview_plan = None
         self.dxf_export = None
+        self.pdf_export = None
         self.report_export = None
 
     def build_preview_png(self, final_plan):
@@ -38,6 +40,28 @@ class FakeArtifactService:
         self.report_export = {"user_id": user_id, "result_data": dict(result_data), "stem": stem}
         path = Path(tempfile.gettempdir()) / "unit-report.json"
         path.write_text("{}")
+        return path
+
+    def export_review_pdf(
+        self,
+        *,
+        user_id,
+        result_data,
+        sheet_set,
+        auto_site_context_summary=None,
+        review_package_summary=None,
+        stem=None,
+    ):
+        self.pdf_export = {
+            "user_id": user_id,
+            "result_data": dict(result_data),
+            "sheet_set": dict(sheet_set),
+            "auto_site_context_summary": dict(auto_site_context_summary or {}),
+            "review_package_summary": dict(review_package_summary or {}),
+            "stem": stem,
+        }
+        path = Path(tempfile.gettempdir()) / "unit-review.pdf"
+        path.write_bytes(b"%PDF-unit")
         return path
 
 
@@ -84,6 +108,103 @@ class FakeProjectStore:
 
 
 class ApplicationArtifactWorkflowsTest(unittest.TestCase):
+    @staticmethod
+    def _full_site_objects():
+        return [
+            {"id": "site-1", "label": "Site Boundary", "type": "site", "x": 0, "y": 0, "w": 1000, "d": 1000, "placed": True},
+            {"id": "building-1", "label": "Margo Office", "type": "office_building", "x": 330, "y": 260, "w": 190, "d": 150, "rotation": 12, "placed": True},
+            {"id": "parking-1", "label": "Office Parking", "type": "parking", "x": 240, "y": 470, "w": 380, "d": 180, "placed": True},
+            {"id": "basin-1", "label": "Detention Basin", "type": "basin", "geometry_type": "polygon", "geometry": [[680, 670], [850, 650], [880, 810], [700, 850]], "placed": True},
+            {"id": "drive-1", "label": "Main Driveway", "type": "driveway", "geometry_type": "polyline", "geometry": [[500, 1000], [500, 700], [430, 620]], "placed": True},
+            {"id": "walk-1", "label": "ADA Sidewalk", "type": "sidewalk", "geometry_type": "polyline", "geometry": [[420, 620], [420, 430], [360, 410]], "placed": True},
+            {"id": "storm-1", "label": "Storm Sewer", "type": "custom", "geometry_type": "polyline", "geometry": [[420, 600], [610, 650], [720, 720]], "placed": True},
+            {"id": "water-1", "label": "Public Water Main", "type": "custom", "geometry_type": "polyline", "geometry": [[100, 900], [450, 680], [470, 420]], "placed": True},
+            {"id": "san-1", "label": "Sanitary Sewer", "type": "custom", "geometry_type": "polyline", "geometry": [[170, 930], [380, 710], [410, 410]], "placed": True},
+            {"id": "inlet-1", "label": "Inlet A", "type": "inlet", "x": 590, "y": 620, "w": 8, "d": 8, "placed": True},
+            {"id": "outfall-1", "label": "Outfall A", "type": "outfall", "x": 760, "y": 760, "w": 8, "d": 8, "placed": True},
+            {"id": "hydrant-1", "label": "Hydrant A", "type": "hydrant", "x": 450, "y": 520, "w": 8, "d": 8, "placed": True},
+        ]
+
+    def test_build_preview_response_merges_all_persisted_site_objects(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        store.project["name"] = "Margo Office Development"
+        store.project["project_input"] = {
+            "manual_fields": {
+                "lot": {"w": 1000.0, "h": 1000.0},
+                "site_objects": self._full_site_objects(),
+            }
+        }
+        response = build_preview_response(
+            artifact_service=service,
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            result_data={
+                "final_plan": {
+                    "project_name": "Stale Thin Result",
+                    "actions": [{"task": "rectangle", "layer": "SITE", "origin": [0, 0], "width": 1000, "height": 1000}],
+                    "meta": {},
+                }
+            },
+        )
+
+        self.assertTrue(response["preview_image_data_url"].startswith("data:image/png;base64,"))
+        actions = service.preview_plan["actions"]
+        canonical_ids = {str(action.get("canonical_source_id") or "") for action in actions}
+        self.assertTrue({item["id"] for item in self._full_site_objects()[1:]}.issubset(canonical_ids))
+        layers = {str(action.get("layer") or "") for action in actions}
+        self.assertTrue(
+            {"C-BUILDING", "C-PARKING", "C-POND", "C-DRIVEWAY", "C-SIDEWALK", "C-STRM-PIPE", "C-WATR", "C-SAN", "C-STRM-INLET", "C-STRM-MH", "C-HYDRANT"}.issubset(layers)
+        )
+
+    def test_export_review_pdf_uses_saved_project_name_and_full_display_plan(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        store.project["name"] = "Margo Office Development"
+        store.project["project_input"] = {
+            "manual_fields": {
+                "lot": {"w": 1000.0, "h": 1000.0},
+                "site_objects": self._full_site_objects(),
+            }
+        }
+        path = export_review_pdf_artifact(
+            artifact_service=service,
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            result_data={"final_plan": {"project_name": "Stale Result", "actions": [], "meta": {}}},
+            review_sheet_set={
+                "name": "Untitled Project Review Package",
+                "plotStyles": {"reviewWatermark": "REVIEW ONLY - NOT FOR CONSTRUCTION"},
+                "blockers": ["construction readiness blocked", "Survey control is missing."],
+                "sheets": [
+                    {
+                        "id": "sheet-1",
+                        "titleBlock": {"projectName": "Untitled Project", "sheetTitle": "Review Site Plan", "sheetNumber": "R-01"},
+                    }
+                ],
+            },
+            review_package_summary={
+                "missing": ["construction release blocked", "Terrain source is missing."],
+            },
+        )
+
+        self.assertEqual(path.name, "unit-review.pdf")
+        export = service.pdf_export
+        self.assertEqual(export["sheet_set"]["name"], "Margo Office Development Review Package")
+        self.assertEqual(export["sheet_set"]["sheets"][0]["titleBlock"]["projectName"], "Margo Office Development")
+        self.assertEqual(export["sheet_set"]["plotStyles"]["reviewWatermark"], "REVIEW ONLY")
+        self.assertEqual(export["sheet_set"]["blockers"], ["Survey control is missing."])
+        self.assertEqual(export["review_package_summary"]["missing"], ["Terrain source is missing."])
+        exported_ids = {
+            str(action.get("canonical_source_id") or "")
+            for action in export["result_data"]["final_plan"]["actions"]
+        }
+        self.assertIn("parking-1", exported_ids)
+        self.assertIn("basin-1", exported_ids)
+        self.assertIn("water-1", exported_ids)
+
     def test_build_preview_response_rebuilds_legacy_frontage_scene_from_parsed_payload(self):
         service = FakeArtifactService()
         response = build_preview_response(

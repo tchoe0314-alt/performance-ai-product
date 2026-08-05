@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from base64 import b64encode
+from math import cos, radians, sin
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol
 
@@ -43,6 +44,262 @@ class ProjectStoreProtocol(Protocol):
 
 DISPLAY_LAYOUT_LAYERS = {"BUILDING", "PARKING", "PAVEMENT", "ROAD", "WALK", "FIRE", "SITE", "SETBACK", "PAD"}
 
+_SITE_OBJECT_LAYER_MAP = {
+    "site": "C-BOUNDARY",
+    "setback_zone": "C-SETBACK",
+    "no_build_zone": "C-SETBACK",
+    "building": "C-BUILDING",
+    "retail_building": "C-BUILDING",
+    "multifamily_building": "C-BUILDING",
+    "industrial_building": "C-BUILDING",
+    "office_building": "C-BUILDING",
+    "lot_block": "C-BUILDING",
+    "pad": "C-GRADING",
+    "parking": "C-PARKING",
+    "basin": "C-POND",
+    "driveway": "C-DRIVEWAY",
+    "entrance": "C-DRIVEWAY",
+    "road": "C-ROAD",
+    "sidewalk": "C-SIDEWALK",
+    "utility_corridor": "C-UTIL",
+    "inlet": "C-STRM-INLET",
+    "outfall": "C-STRM-MH",
+    "manhole": "C-STRM-MH",
+    "hydrant": "C-HYDRANT",
+    "pool": "C-PAVEMENT",
+    "amenity": "C-PAVEMENT",
+    "open_space": "C-PAVEMENT",
+    "landscape": "C-PAVEMENT",
+}
+
+_INTERNAL_AUTHORITY_NOTE_TOKENS = (
+    "construction release",
+    "construction readiness",
+    "not for construction",
+    "stamp",
+    "seal",
+    "certif",
+    "approve construction",
+    "engineer of record",
+)
+
+
+def _customer_facing_review_notes(values: Any) -> list[str]:
+    notes: list[str] = []
+    for value in list(values or []):
+        note = str(value or "").strip()
+        lowered = note.lower()
+        if not note or any(token in lowered for token in _INTERNAL_AUTHORITY_NOTE_TOKENS):
+            continue
+        if note not in notes:
+            notes.append(note)
+    return notes
+
+
+def _finite_float(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number in {float("inf"), float("-inf")}:
+        return None
+    return number
+
+
+def _site_object_geometry_points(raw: Any) -> list[list[float]]:
+    points: list[list[float]] = []
+    for point in list(raw or []):
+        if isinstance(point, dict):
+            x = _finite_float(point.get("x"))
+            y = _finite_float(point.get("y"))
+        elif isinstance(point, (list, tuple)) and len(point) >= 2:
+            x = _finite_float(point[0])
+            y = _finite_float(point[1])
+        else:
+            continue
+        if x is not None and y is not None:
+            points.append([x, y])
+    return points
+
+
+def _rotated_rectangle_points(x: float, y: float, width: float, depth: float, rotation: float) -> list[list[float]]:
+    center_x = x + width / 2.0
+    center_y = y + depth / 2.0
+    angle = radians(rotation)
+    cosine = cos(angle)
+    sine = sin(angle)
+    points: list[list[float]] = []
+    for point_x, point_y in ((x, y), (x + width, y), (x + width, y + depth), (x, y + depth)):
+        delta_x = point_x - center_x
+        delta_y = point_y - center_y
+        points.append(
+            [
+                center_x + delta_x * cosine - delta_y * sine,
+                center_y + delta_x * sine + delta_y * cosine,
+            ]
+        )
+    return points
+
+
+def _site_object_layer(item: Dict[str, Any]) -> str:
+    meta = dict(item.get("meta") or {})
+    object_type = str(
+        item.get("type")
+        or meta.get("canonical_type")
+        or meta.get("entity_type")
+        or "custom"
+    ).strip().lower().replace("-", "_").replace(" ", "_")
+    label = str(item.get("label") or item.get("name") or "").strip().lower()
+    if object_type in _SITE_OBJECT_LAYER_MAP:
+        return _SITE_OBJECT_LAYER_MAP[object_type]
+    combined = f"{object_type} {label}"
+    if "storm" in combined:
+        return "C-STRM-PIPE"
+    if "sanitary" in combined or "sewer" in combined:
+        return "C-SAN"
+    if "water" in combined:
+        return "C-WATR"
+    if "hydrant" in combined:
+        return "C-HYDRANT"
+    if "inlet" in combined:
+        return "C-STRM-INLET"
+    if "outfall" in combined or "manhole" in combined:
+        return "C-STRM-MH"
+    return "C-PAVEMENT"
+
+
+def _site_object_actions_from_payload(payload: Dict[str, Any]) -> list[Dict[str, Any]]:
+    site_objects = [item for item in list(payload.get("site_objects") or []) if isinstance(item, dict)]
+    actions: list[Dict[str, Any]] = []
+    point_types = {"inlet", "outfall", "manhole", "hydrant"}
+    utility_layers = {"C-STRM-PIPE", "C-WATR", "C-SAN", "C-UTIL"}
+    for index, item in enumerate(site_objects):
+        if item.get("placed") is False:
+            continue
+        meta = dict(item.get("meta") or {})
+        object_id = str(item.get("id") or meta.get("entity_id") or "").strip() or f"site-object-{index + 1}"
+        object_type = str(item.get("type") or meta.get("canonical_type") or "custom").strip().lower()
+        label = str(item.get("label") or item.get("name") or object_type or f"Object {index + 1}").strip()
+        layer = _site_object_layer(item)
+        geometry_type = str(item.get("geometry_type") or item.get("geometryType") or "").strip().lower()
+        points = _site_object_geometry_points(item.get("geometry"))
+        x = _finite_float(item.get("x"))
+        y = _finite_float(item.get("y"))
+        width = _finite_float(item.get("w") if item.get("w") is not None else item.get("width"))
+        depth = _finite_float(
+            item.get("d")
+            if item.get("d") is not None
+            else item.get("h")
+            if item.get("h") is not None
+            else item.get("height")
+        )
+        rotation = _finite_float(item.get("rotation")) or 0.0
+        action: Dict[str, Any]
+        if geometry_type == "polygon" and len(points) >= 3:
+            action = {"task": "polygon", "layer": layer, "points": points}
+        elif geometry_type == "polyline" and len(points) >= 2:
+            action = {"task": "polyline", "layer": layer, "points": points}
+        elif geometry_type == "point" or object_type in point_types:
+            if x is None or y is None:
+                continue
+            radius = max(2.5, min(abs(width or 8.0), abs(depth or 8.0)) / 2.0)
+            action = {"task": "circle", "layer": layer, "x": x, "y": y, "radius": radius}
+        elif x is not None and y is not None and width is not None and depth is not None:
+            if layer in utility_layers:
+                if abs(width) >= abs(depth):
+                    points = [[x, y + depth / 2.0], [x + width, y + depth / 2.0]]
+                else:
+                    points = [[x + width / 2.0, y], [x + width / 2.0, y + depth]]
+                action = {"task": "polyline", "layer": layer, "points": points}
+            elif rotation:
+                action = {
+                    "task": "polygon",
+                    "layer": layer,
+                    "points": _rotated_rectangle_points(x, y, width, depth, rotation),
+                }
+            else:
+                action = {
+                    "task": "rectangle",
+                    "layer": layer,
+                    "origin": [x, y],
+                    "width": width,
+                    "height": depth,
+                }
+        else:
+            continue
+        source = str(item.get("source") or meta.get("source") or "user").strip()
+        action.update(
+            {
+                "label": label,
+                "canonical_source_id": object_id,
+                "canonical_source_type": object_type,
+                "meta": {
+                    "preview_role": "final",
+                    "system": "layout" if layer in {"C-BOUNDARY", "C-SETBACK", "C-BUILDING", "C-PARKING", "C-PAVEMENT", "C-DRIVEWAY", "C-ROAD", "C-SIDEWALK"} else "utilities",
+                    "entity_id": object_id,
+                    "entity_type": object_type,
+                    "source": source,
+                    "source_confidence": meta.get("source_confidence") or source,
+                    "review_required": True,
+                },
+            }
+        )
+        actions.append(action)
+    return actions
+
+
+def _normalized_action_layer(action: Dict[str, Any]) -> str:
+    layer = str(action.get("layer") or "").strip().upper()
+    return {
+        "SITE": "C-BOUNDARY",
+        "LOT": "C-BOUNDARY",
+        "SETBACK": "C-SETBACK",
+        "BUILDING": "C-BUILDING",
+        "PARKING": "C-PARKING",
+        "PAVEMENT": "C-PAVEMENT",
+        "ROAD": "C-ROAD",
+        "WALK": "C-SIDEWALK",
+    }.get(layer, layer)
+
+
+def _merge_site_object_actions(plan: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    additions = _site_object_actions_from_payload(payload)
+    if not additions:
+        return plan
+    merged = dict(plan)
+    actions = [dict(action) for action in list(plan.get("actions") or []) if isinstance(action, dict)]
+    existing_ids = {
+        str(action.get("canonical_source_id") or dict(action.get("meta") or {}).get("entity_id") or "").strip()
+        for action in actions
+    }
+    existing_keys = {
+        (_normalized_action_layer(action), str(action.get("label") or "").strip().lower())
+        for action in actions
+        if str(action.get("label") or "").strip()
+    }
+    existing_layers = {_normalized_action_layer(action) for action in actions}
+    added_count = 0
+    for action in additions:
+        object_id = str(action.get("canonical_source_id") or "").strip()
+        key = (_normalized_action_layer(action), str(action.get("label") or "").strip().lower())
+        if object_id and object_id in existing_ids:
+            continue
+        if key[1] and key in existing_keys:
+            continue
+        if key[0] == "C-BOUNDARY" and "C-BOUNDARY" in existing_layers:
+            continue
+        actions.append(action)
+        existing_ids.add(object_id)
+        existing_keys.add(key)
+        existing_layers.add(key[0])
+        added_count += 1
+    merged["actions"] = actions
+    merged_meta = dict(merged.get("meta") or {})
+    merged_meta["display_site_object_count"] = len(additions)
+    merged_meta["display_site_objects_added"] = added_count
+    merged["meta"] = merged_meta
+    return merged
+
 
 def _minimal_plan_from_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
     lot = parsed.get("lot") if isinstance(parsed.get("lot"), dict) else {}
@@ -54,10 +311,9 @@ def _minimal_plan_from_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
             {
                 "task": "rectangle",
                 "layer": "C-BOUNDARY",
-                "x": float(lot.get("x") or 0),
-                "y": float(lot.get("y") or 0),
-                "w": float(lot.get("w") or 0),
-                "h": float(lot.get("h") or 0),
+                "origin": [float(lot.get("x") or 0), float(lot.get("y") or 0)],
+                "width": float(lot.get("w") or 0),
+                "height": float(lot.get("h") or 0),
                 "meta": {
                     "preview_role": "final",
                     "system": "layout",
@@ -83,10 +339,9 @@ def _minimal_plan_from_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
             {
                 "task": "rectangle",
                 "layer": "C-BUILDING",
-                "x": float(x),
-                "y": float(y),
-                "w": float(w),
-                "h": float(d),
+                "origin": [float(x), float(y)],
+                "width": float(w),
+                "height": float(d),
                 "meta": {
                     "preview_role": "final",
                     "system": "layout",
@@ -307,6 +562,9 @@ def _enrich_result_data_from_project(
         return dict(result_data or {})
 
     enriched = dict(result_data or {})
+    request_metadata = dict(enriched.get("request_metadata") or {})
+    request_metadata["project_name"] = str(project.get("name") or "").strip()
+    enriched["request_metadata"] = request_metadata
     current_best = _best_display_payload(enriched)
     current_building_count = _payload_building_count(current_best)
     current_actions = [
@@ -355,7 +613,7 @@ def _enrich_result_data_from_project(
         or project.get("request_payload")
     )
 
-    if project_input and (current_building_count < 2 or legacy_display):
+    if project_input:
         enriched["project_input"] = project_input
         request_metadata = dict(enriched.get("request_metadata") or {})
         request_metadata["project_input"] = project_input
@@ -405,6 +663,8 @@ def _payload_building_count(payload: Dict[str, Any]) -> int:
 
 def _payload_display_richness(payload: Dict[str, Any]) -> int:
     score = _payload_building_count(payload) * 100
+    site_objects = [item for item in list(payload.get("site_objects") or []) if isinstance(item, dict)]
+    score += len(site_objects) * 30
     if isinstance(payload.get("lot"), dict) and payload.get("lot"):
         score += 20
     for key in (
@@ -463,6 +723,14 @@ def _best_display_payload(result_data: Dict[str, Any]) -> Dict[str, Any]:
             merged["site_type"] = candidate.get("site_type")
         if not merged.get("street_edge") and candidate.get("street_edge"):
             merged["street_edge"] = candidate.get("street_edge")
+        candidate_site_objects = [
+            item for item in list(candidate.get("site_objects") or []) if isinstance(item, dict)
+        ]
+        merged_site_objects = [
+            item for item in list(merged.get("site_objects") or []) if isinstance(item, dict)
+        ]
+        if len(candidate_site_objects) > len(merged_site_objects):
+            merged["site_objects"] = candidate_site_objects
     return merged
 
 
@@ -487,26 +755,33 @@ def _should_rebuild_display_plan(actions: list[dict[str, Any]], parsed_building_
 
 
 def _display_plan_from_result(result_data: Dict[str, Any], *, enforce_export_guards: bool = False) -> Dict[str, Any]:
-    final_plan = final_plan_from_result(result_data, enforce_export_guards=enforce_export_guards)
     parsed_payload = _best_display_payload(result_data)
+    try:
+        final_plan = final_plan_from_result(result_data, enforce_export_guards=enforce_export_guards)
+    except HTTPException:
+        manual_plan = _minimal_plan_from_payload(parsed_payload) if parsed_payload else {}
+        manual_plan = _merge_site_object_actions(manual_plan, parsed_payload) if manual_plan else {}
+        if not manual_plan.get("actions"):
+            raise
+        final_plan = manual_plan
     raw_buildings = parsed_payload.get("buildings")
     parsed_buildings = [item for item in raw_buildings if isinstance(item, dict)] if isinstance(raw_buildings, list) else []
     actions = [action for action in list(final_plan.get("actions") or []) if isinstance(action, dict)]
     if not actions and parsed_payload:
         minimal = _minimal_plan_from_payload(parsed_payload)
         if minimal.get("actions"):
-            return minimal
+            return _merge_site_object_actions(minimal, parsed_payload)
     if len(parsed_buildings) < 2:
-        return final_plan
+        return _merge_site_object_actions(final_plan, parsed_payload)
 
     if not _should_rebuild_display_plan(actions, len(parsed_buildings)):
-        return final_plan
+        return _merge_site_object_actions(final_plan, parsed_payload)
 
     rebuilt = _build_expanded_plan(parsed_payload)
     rebuilt_actions = [action for action in list(rebuilt.get("actions") or []) if isinstance(action, dict)]
     rebuilt_building_count = _count_building_shapes(rebuilt_actions)
     if rebuilt_building_count < len(parsed_buildings):
-        return final_plan
+        return _merge_site_object_actions(final_plan, parsed_payload)
 
     preserved_actions = [
         dict(action)
@@ -518,7 +793,7 @@ def _display_plan_from_result(result_data: Dict[str, Any], *, enforce_export_gua
     display_meta = dict(display_plan.get("meta") or {})
     display_meta["display_rebuilt_from_parsed_payload"] = True
     display_plan["meta"] = display_meta
-    return display_plan
+    return _merge_site_object_actions(display_plan, parsed_payload)
 
 
 def _preview_review_summary(result_data: Dict[str, Any], final_plan: Dict[str, Any]) -> Dict[str, Any]:
@@ -1238,19 +1513,44 @@ def export_review_pdf_artifact(
         user_id=user_id,
         project_id=project_id,
     )
-    final_plan = dict(result_data.get("final_plan") or {})
+    final_plan = _display_plan_from_result(result_data, enforce_export_guards=False)
     final_plan.setdefault("meta", {})
     if project_id and isinstance(final_plan["meta"], dict):
         final_plan["meta"]["project_id"] = project_id
     enriched_result_data = dict(result_data)
     enriched_result_data["final_plan"] = final_plan
-    stem = filename_stem or str(final_plan.get("project_name") or "civora-review-package")
+    project_name = str(
+        dict(result_data.get("request_metadata") or {}).get("project_name")
+        or final_plan.get("project_name")
+        or "Civora Project"
+    ).strip()
+    normalized_sheet_set = dict(review_sheet_set or {})
+    normalized_sheets = []
+    for raw_sheet in list(normalized_sheet_set.get("sheets") or []):
+        if not isinstance(raw_sheet, dict):
+            continue
+        sheet = dict(raw_sheet)
+        title_block = dict(sheet.get("titleBlock") or {})
+        title_block["projectName"] = project_name
+        sheet["titleBlock"] = title_block
+        normalized_sheets.append(sheet)
+    normalized_sheet_set["name"] = f"{project_name} Review Package"
+    normalized_sheet_set["sheets"] = normalized_sheets
+    normalized_sheet_set["blockers"] = _customer_facing_review_notes(normalized_sheet_set.get("blockers"))
+    normalized_plot_styles = dict(normalized_sheet_set.get("plotStyles") or {})
+    normalized_plot_styles["reviewWatermark"] = "REVIEW ONLY"
+    normalized_sheet_set["plotStyles"] = normalized_plot_styles
+    normalized_package_summary = dict(review_package_summary or {})
+    normalized_package_summary["missing"] = _customer_facing_review_notes(
+        normalized_package_summary.get("missing")
+    )
+    stem = filename_stem or project_name or "civora-review-package"
     path = artifact_service.export_review_pdf(
         user_id=user_id,
         result_data=enriched_result_data,
-        sheet_set=dict(review_sheet_set or {}),
+        sheet_set=normalized_sheet_set,
         auto_site_context_summary=dict(auto_site_context_summary or {}),
-        review_package_summary=dict(review_package_summary or {}),
+        review_package_summary=normalized_package_summary,
         stem=stem,
     )
     if project_id:

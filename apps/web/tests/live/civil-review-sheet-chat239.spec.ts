@@ -40,7 +40,7 @@ test.describe("Civil review sheet deliverable", () => {
     const sheet = page.getByTestId("civil-review-sheet-preview");
     await expect(sheet).toBeVisible({ timeout: 10_000 });
     await expect(sheet).toContainText(/Civil Review Sheet/i);
-    await expect(sheet).toContainText(/not for construction/i);
+    await expect(sheet).toContainText(/review only/i);
     await expect(page.getByTestId("civil-review-sheet-title-block")).toBeVisible();
     await expect(page.getByTestId("civil-review-sheet-legend")).toBeVisible();
     await expect(page.getByTestId("civil-review-sheet-plan")).toBeVisible();

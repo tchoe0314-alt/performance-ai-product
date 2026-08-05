@@ -546,7 +546,7 @@ export default function CivilReviewSheet({
 
             <g data-testid="civil-review-sheet-profile">
               <rect x="70" y="696" width="850" height="28" fill="#fff" stroke="#111" strokeWidth="1.2" />
-              <text x="84" y="714" fontSize="8" fontWeight="800" fill="#111">REVIEW ONLY - NOT FOR CONSTRUCTION</text>
+              <text x="84" y="714" fontSize="8" fontWeight="800" fill="#111">REVIEW ONLY</text>
               <g data-testid="civil-review-sheet-source-summary">
                 <text x="318" y="714" fontSize="8" fill="#111">Source candidates: {sourceCandidateCount}</text>
                 <text x="470" y="714" fontSize="8" fill="#111">Missing: {missingSources.slice(0, 2).join(", ") || "none reported"}</text>

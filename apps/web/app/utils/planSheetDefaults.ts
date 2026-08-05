@@ -89,7 +89,7 @@ export const createDefaultPlanSheetSet = (projectName = "Untitled Project"): Pla
         { layer: "C-ANNO", color: "black", lineweight: "0.18mm", linetype: "CONTINUOUS" },
       ],
       grayscale: false,
-      reviewWatermark: "REVIEW ONLY - NOT FOR CONSTRUCTION",
+      reviewWatermark: "REVIEW ONLY",
     },
     revisions: [
       {

@@ -370,13 +370,37 @@ class ArtifactService:
         self._ensure_export_package_report(final_plan, export_type="pdf")
         preview_bytes: Optional[bytes]
         try:
+            review_layers = [
+                "C-BOUNDARY",
+                "C-SETBACK",
+                "C-BUILDING",
+                "C-PAVEMENT",
+                "C-PARKING",
+                "C-DRIVEWAY",
+                "C-ROAD",
+                "C-SIDEWALK",
+                "C-CONTOUR",
+                "C-SPOT-ELEV",
+                "C-GRADING",
+                "C-STRM-PIPE",
+                "C-STRM-INLET",
+                "C-STRM-MH",
+                "C-DRAIN-FLOW",
+                "C-LOW-POINT",
+                "C-POND",
+                "C-WATR",
+                "C-SAN",
+                "C-UTIL",
+                "C-HYDRANT",
+            ]
             preview_bytes = self.build_preview_png(
                 final_plan,
                 render_labels=True,
                 quality="high",
                 preview_style="professional_plan",
                 label_density="standard",
-                preview_mode="production",
+                include_layers=review_layers,
+                preview_mode="engineering",
             )
         except Exception:
             preview_bytes = None

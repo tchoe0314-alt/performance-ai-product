@@ -12,6 +12,10 @@ import type { AutoSiteContextFlowSummary, ReviewPackageFlowSummary } from "./das
 import type { RecentChange } from "./dashboardTypes";
 import { toReadableLabel } from "./formatting";
 import { createDefaultPlanSheet } from "./planSheetDefaults";
+import {
+  customerFacingReviewNotes,
+  normalizeReviewSheetSetForProject,
+} from "./reviewPackagePresentation";
 import { uniqueStrings } from "./workflowConstants";
 import type { ProjectStatusSummary, SidePanelKey, WorkspaceMode } from "./workspaceShell";
 
@@ -79,7 +83,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
     const activeSheet =
       sheetSetOverride.sheets.find((sheet) => sheet.id === sheetSetOverride.activeSheetId) ??
       sheetSetOverride.sheets[0];
-    const blockers = new Set<string>(sheetSetOverride.blockers);
+    const blockers = new Set<string>(customerFacingReviewNotes(sheetSetOverride.blockers));
     if (!activeSheet) {
       blockers.add("Add at least one review sheet.");
       return Array.from(blockers);
@@ -94,7 +98,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
     if (!planPreviewUrl && !backendResult) blockers.add("Link a generated model preview or source package.");
     if (issues.length || analysisIssues.length) blockers.add("Resolve or acknowledge current model review issues.");
     if (previewBlockedReasons.length) blockers.add(previewBlockedReasons[0]);
-    return Array.from(blockers).filter(Boolean);
+    return customerFacingReviewNotes(blockers);
   };
 
   const refreshPlanSheet = (updater: (sheet: PlanSheet) => PlanSheet) => {
@@ -325,7 +329,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
 
   const handleCreateReviewSheet = () => {
     setPlanSheetSet((current) => {
-      const projectName = siteName || currentProject?.name || "Untitled Project";
+      const projectName = currentProject?.name || siteName || "Untitled Project";
       const nextSheet = createDefaultPlanSheet(current.sheets.length, projectName);
       const sheets = [...current.sheets, nextSheet];
       return {
@@ -355,12 +359,12 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
       nextAction: "Wait for the package summary to show created items or exact needs.",
     });
     const blockers = getPlanSheetBlockers();
-    const missing = uniqueStrings([
+    const missing = customerFacingReviewNotes(uniqueStrings([
       ...blockers,
       !backendResult ? "generated system result is missing" : "",
       !planPreviewUrl ? "model preview is missing" : "",
       ...autoSiteContextFlowSummary.missingLabels.map((item) => `Auto Site Context source missing: ${item}`),
-    ]);
+    ]));
     const outputsCreated = uniqueStrings([
       "review sheet package",
       planSheetSet.sheets.length ? "sheet index" : "",
@@ -380,8 +384,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
       auto_site_context: autoSiteContextFlowSummary,
       review_only: true,
       engineer_review_required: true,
-      safety_wording:
-        "Review package output is review-only and engineer-review-required. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+      safety_wording: "Review package output is prepared for qualified professional review.",
     };
     setReviewPackageFlowSummary(summary);
     recordRecentChange({
@@ -394,20 +397,23 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
     });
     void persistFlowMetadata({ review_package_flow_summary_v1: summary });
     setPlanSheetSet((current) => {
-      const projectName = siteName || currentProject?.name || "Untitled Project";
+      const projectName = currentProject?.name || siteName || "Untitled Project";
       const sheets = current.sheets.length ? current.sheets : [createDefaultPlanSheet(0, projectName)];
       const activeSheetId = current.activeSheetId || sheets[0]?.id || "";
       const activeSheet = sheets.find((sheet) => sheet.id === activeSheetId) ?? sheets[0];
       const sourceNote = autoSiteContextFlowSummary.candidateCount
         ? `Auto Site Context: ${autoSiteContextFlowSummary.candidateCount} review-required source candidate(s). Missing: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`
         : `Auto Site Context: no accepted source candidates. Missing: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`;
-      const existingSourceNote = activeSheet?.annotations.some((item) => item.text.startsWith("Auto Site Context:"));
       const nextSheets = sheets.map((sheet) =>
-        sheet.id === activeSheet?.id && !existingSourceNote
+        sheet.id === activeSheet?.id
           ? {
               ...sheet,
+              titleBlock: {
+                ...sheet.titleBlock,
+                projectName,
+              },
               annotations: [
-                ...sheet.annotations,
+                ...sheet.annotations.filter((item) => !item.text.startsWith("Auto Site Context:")),
                 {
                   id: `auto-site-context-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                   type: "note" as const,
@@ -417,7 +423,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
                 },
               ],
               detailBlocks: [
-                ...sheet.detailBlocks,
+                ...sheet.detailBlocks.filter((item) => !item.id.startsWith("review-package-")),
                 {
                   id: `review-package-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
                   title: "Review Package Source Summary",
@@ -431,7 +437,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
             }
           : sheet,
       );
-      return {
+      return normalizeReviewSheetSetForProject({
         ...current,
         name: `${projectName} Review Package`,
         status: "review",
@@ -455,14 +461,14 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
             ],
         blockers: missing,
         updatedAt: summary.generated_at,
-      };
+      }, projectName);
     });
     appendChatMessage(
       "assistant",
       [
         `Made a review-only package from what exists: ${summary.outputs_created.join(", ")}.`,
         summary.missing.length ? `Missing: ${summary.missing.slice(0, 5).join("; ")}.` : "Missing: none currently recorded.",
-        "Engineer review is required; Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.",
+        "Prepared for qualified professional review.",
       ].join(" "),
       "status",
     );
@@ -478,7 +484,7 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
   };
 
   const handlePlanSheetExportJson = () => {
-    const projectName = siteName || currentProject?.name || "civora-project";
+    const projectName = currentProject?.name || siteName || "civora-project";
     const safeProjectName = projectName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")

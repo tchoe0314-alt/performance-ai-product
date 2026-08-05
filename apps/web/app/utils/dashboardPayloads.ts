@@ -70,7 +70,7 @@ export function buildDashboardArtifactPayload({
 }): PreviewRequestPayload {
   const payload: PreviewRequestPayload = {
     project_id: projectId || currentProject?.project_id || null,
-    filename_stem: fileName || siteName,
+    filename_stem: currentProject?.name || fileName || siteName,
   };
   if (backendResult && typeof backendResult === "object" && Object.keys(backendResult).length) {
     payload.result = backendResult;
