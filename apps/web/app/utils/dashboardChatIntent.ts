@@ -8,6 +8,16 @@ const WORD_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bblockd\b/g, "blocked"],
   [/\bblok(?:ed|d)\b/g, "blocked"],
   [/\bchnged\b/g, "changed"],
+  [/\bchang+e+d\b/g, "changed"],
+  [/\bchaged\b/g, "changed"],
+  [/\bbuldings\b/g, "buildings"],
+  [/\bbulding\b/g, "building"],
+  [/\badress\b/g, "address"],
+  [/\bboundry\b/g, "boundary"],
+  [/\bdrveway\b/g, "driveway"],
+  [/\bsanatary\b/g, "sanitary"],
+  [/\bparkng\b/g, "parking"],
+  [/\bdeten(?:ion|tion)\b/g, "detention"],
   [/\bshud\b/g, "should"],
   [/\bnex\b/g, "next"],
   [/\brn\b/g, "right now"],
@@ -26,7 +36,11 @@ export function normalizeDashboardChatIntent(message: string) {
   for (const [pattern, replacement] of WORD_REPLACEMENTS) {
     normalized = normalized.replace(pattern, replacement);
   }
-  return normalized.replace(/\s+/g, " ").trim();
+  return normalized
+    .replace(/\bwhat is changed\b/g, "what changed")
+    .replace(/\bwhat is next\b/g, "what next")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function userFacingWorkflowNeeds(values: Array<string | null | undefined>) {

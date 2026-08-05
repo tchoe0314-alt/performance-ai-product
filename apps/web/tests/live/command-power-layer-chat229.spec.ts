@@ -191,6 +191,16 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(panel).not.toContainText(/Before I move forward, I still need|site type or land use/i);
   });
 
+  test("state questions tolerate ordinary spelling and grammar mistakes", async ({ page }) => {
+    await openDemoWorkspace(page);
+
+    await runCommand(page, "whats changeed?");
+    await page.getByRole("button", { name: "Open Civora chat history" }).click();
+    const panel = page.getByTestId("workspace-right-panel");
+    await expect(panel).toContainText(/What changed|Changed\/stale systems|Last Generate|No stale generated systems|Project status/i, { timeout: 5_000 });
+    await expect(panel).not.toContainText(/Before I move forward, I still need|site type or land use/i);
+  });
+
   test("chat explains recent UI performance timings instead of guessing about lag", async ({ page }) => {
     await openDemoWorkspace(page);
 
