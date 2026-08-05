@@ -170,6 +170,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
     production_requirements = safe_list(validation.get("production_requirements"))
     importer_matrix = safe_list(validation.get("import_matrix") or validation.get("importer_production_matrix"))
     terrain_confidence = safe_dict(validation.get("terrain_source_confidence")) or safe_dict(safe_dict(canonical_model.get("terrain")).get("confidence"))
+    dem_lidar = safe_dict(meta.get("dem_lidar"))
     source_registration_audit = safe_dict(validation.get("source_registration_audit_v1"))
     survey_control_package = (
         safe_dict(validation.get("survey_control_package"))
@@ -210,6 +211,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
             "coordinate_system": deepcopy(meta.get("coordinate_system")),
             "surfaces": deepcopy(meta.get("surfaces")),
             "point_clouds": deepcopy(meta.get("point_clouds")),
+            "dem_lidar": deepcopy(dem_lidar),
             "sources": deepcopy(meta.get("sources") or safe_dict(meta.get("existing_conditions_import")).get("sources")),
             "online_existing_conditions_discovery_v1": deepcopy(meta.get("online_existing_conditions_discovery_v1")),
             "model": deepcopy(canonical_model),
@@ -224,6 +226,7 @@ def build_existing_conditions_package(plan_or_meta: Dict[str, Any], *, accepted_
         "importer_production_matrix": deepcopy(importer_matrix),
         "canonical_vs_metadata_only": deepcopy(validation.get("canonical_vs_metadata_only")),
         "terrain_source_confidence": deepcopy(terrain_confidence),
+        "dem_lidar": deepcopy(dem_lidar),
         "source_registration_audit_v1": deepcopy(source_registration_audit),
         "survey_control_package": deepcopy(survey_control_package),
         "source_confidence_map_v1": deepcopy(source_confidence_map),

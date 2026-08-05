@@ -159,6 +159,37 @@ class ExistingConditionsPackageTests(unittest.TestCase):
         self.assertFalse(package["production_requirements"][0]["ready"])
         self.assertTrue(package["importer_production_matrix"][0]["metadata_only"])
 
+    def test_public_dem_surface_grid_is_preserved_for_review_visualization(self) -> None:
+        meta = _complete_meta(accepted=True)
+        meta["dem_lidar"] = {
+            "ready": True,
+            "surface_ready": True,
+            "source_type": "usgs_3dep_elevation_grid",
+            "provider": "USGS 3DEP Elevation ImageServer",
+            "approved_for_production": False,
+            "surface_grid": {
+                "surface_ready": True,
+                "rows": 2,
+                "cols": 2,
+                "samples": [
+                    {"row": 0, "col": 0, "x_ratio": 0.0, "y_ratio": 0.0, "elevation_ft": 100.0},
+                    {"row": 0, "col": 1, "x_ratio": 1.0, "y_ratio": 0.0, "elevation_ft": 101.0},
+                    {"row": 1, "col": 0, "x_ratio": 0.0, "y_ratio": 1.0, "elevation_ft": 102.0},
+                    {"row": 1, "col": 1, "x_ratio": 1.0, "y_ratio": 1.0, "elevation_ft": 103.0},
+                ],
+            },
+        }
+
+        package = build_existing_conditions_package({"meta": meta})
+
+        self.assertTrue(package["dem_lidar"]["surface_ready"])
+        self.assertFalse(package["dem_lidar"]["approved_for_production"])
+        self.assertEqual(package["dem_lidar"]["surface_grid"]["samples"][3]["elevation_ft"], 103.0)
+        self.assertEqual(
+            package["canonical_existing_conditions"]["dem_lidar"],
+            package["dem_lidar"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

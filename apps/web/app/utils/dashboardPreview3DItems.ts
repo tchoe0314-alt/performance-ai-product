@@ -2,6 +2,7 @@ import type {
   BuildingPlacement,
   PlanResponse,
   Preview3DItem,
+  SiteInputs,
   SourceConfidenceEntry,
 } from "../types";
 import type { CadEntityPreview } from "./cadEntityPreview";
@@ -17,6 +18,54 @@ type PreviewLayerFlags = {
 };
 
 type LotBounds = { w: number; h: number };
+
+function buildSourceTerrainPreview3DItems(siteInputs: SiteInputs | undefined, lot: LotBounds): Preview3DItem[] {
+  const existingPackage = siteInputs?.existing_conditions_package as Record<string, unknown> | undefined;
+  const canonical = existingPackage?.canonical_existing_conditions as Record<string, unknown> | undefined;
+  const dem = (
+    (existingPackage?.dem_lidar as Record<string, unknown> | undefined) ??
+    (canonical?.dem_lidar as Record<string, unknown> | undefined)
+  );
+  const surfaceGrid = dem?.surface_grid as Record<string, unknown> | undefined;
+  const rawSamples = Array.isArray(surfaceGrid?.samples) ? surfaceGrid.samples : [];
+  const parsed = rawSamples
+    .map((raw) => {
+      const sample = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+      const xRatio = Number(sample.x_ratio);
+      const yRatio = Number(sample.y_ratio);
+      const elevationFt = Number(sample.elevation_ft);
+      return Number.isFinite(xRatio) && Number.isFinite(yRatio) && Number.isFinite(elevationFt)
+        ? { xRatio, yRatio, elevationFt }
+        : null;
+    })
+    .filter((sample): sample is { xRatio: number; yRatio: number; elevationFt: number } => Boolean(sample));
+  if (!surfaceGrid?.surface_ready || parsed.length < 4 || lot.w <= 0 || lot.h <= 0) return [];
+  const baseline = Math.min(...parsed.map((sample) => sample.elevationFt));
+  return parsed.slice(0, 121).map((sample, index) => ({
+    id: `source-terrain-${index + 1}`,
+    x: sample.xRatio * lot.w,
+    y: sample.yRatio * lot.h,
+    w: 0.5,
+    h: 0.5,
+    height: 0.1,
+    z: sample.elevationFt - baseline,
+    color: "#c9d9bf",
+    label: `Public DEM ${sample.elevationFt.toFixed(1)} ft`,
+    layer: "TERRAIN",
+    source: String(surfaceGrid.provider || dem?.provider || "public DEM surface"),
+    confidence: "source-backed review context",
+    blockers: ["not project survey/control"],
+    terrainSample: true,
+    meta: {
+      source_surface_ready: true,
+      absolute_elevation_ft: sample.elevationFt,
+      vertical_datum: dem?.vertical_datum ?? surfaceGrid.vertical_datum,
+      horizontal_resolution: dem?.horizontal_resolution ?? surfaceGrid.horizontal_resolution,
+      survey_backed: false,
+      review_required: true,
+    },
+  }));
+}
 
 function contourElevationForPlacement(item: BuildingPlacement, fallbackIndex: number) {
   const metaElevation = Number((item.meta as { contour_elevation_ft?: number | string } | undefined)?.contour_elevation_ft);
@@ -153,6 +202,7 @@ export function buildDashboardPreview3DView({
   planPreviewAnnotations,
   previewLayersEffective,
   sourceConfidenceByObjectId,
+  siteInputs,
 }: {
   backendResult: PlanResponse | null | undefined;
   buildingPlacements: BuildingPlacement[];
@@ -161,6 +211,7 @@ export function buildDashboardPreview3DView({
   planPreviewAnnotations: { labels?: Array<Record<string, unknown>> } | null | undefined;
   previewLayersEffective: PreviewLayerFlags;
   sourceConfidenceByObjectId: Map<string, SourceConfidenceEntry>;
+  siteInputs?: SiteInputs;
 }) {
   const hasGradingSurface = hasDashboardGradingSurface(backendResult);
   const preview3DItems = buildBackendPreview3DItems({
@@ -172,16 +223,24 @@ export function buildDashboardPreview3DView({
     planPreviewAnnotations,
     previewLayersEffective,
   });
-  const preview3DPlacementItems = buildPlacementPreview3DItems({
+  const placementItems = buildPlacementPreview3DItems({
     lot,
     buildingPlacements,
     cadEntityPreviewItems3D: cadEntityPreview.items3D,
     sourceConfidenceByObjectId,
   });
+  const sourceTerrainItems = buildSourceTerrainPreview3DItems(siteInputs, lot);
+  const backendHasTerrainSamples = preview3DItems.some((item) => item.terrainSample);
+  const preview3DPlacementItems = [
+    ...(sourceTerrainItems.length
+      ? placementItems.filter((item) => !item.terrainSample)
+      : placementItems),
+    ...(backendHasTerrainSamples ? [] : sourceTerrainItems),
+  ];
   const preview3DEffectiveItems = preview3DItems.length
     ? mergePlacementLedPreview3DItems(preview3DItems, preview3DPlacementItems)
     : preview3DAnnotationItems.length
-      ? preview3DAnnotationItems
+      ? mergePlacementLedPreview3DItems(preview3DAnnotationItems, preview3DPlacementItems)
       : preview3DPlacementItems;
   const usingAnnotation3D = preview3DItems.length === 0 && preview3DAnnotationItems.length > 0;
 

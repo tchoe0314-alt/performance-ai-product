@@ -3,6 +3,7 @@ import unittest
 from backend.planning.existing_conditions_online import fetch_online_existing_conditions
 from backend.planning.gis_provider_registry import build_arcgis_provider_record, build_provider_registry
 from backend.planning.worldwide_source_discovery import (
+    fetch_global_elevation_grid,
     fetch_global_elevation_point,
     fetch_openstreetmap_site_context,
 )
@@ -167,6 +168,25 @@ class _FailedWorldwideSession(_WorldwideSession):
 
 
 class WorldwideSourceDiscoveryTests(unittest.TestCase):
+    def test_global_elevation_grid_returns_review_surface_samples(self) -> None:
+        class _GridSession:
+            def get(self, url, params=None, timeout=None, headers=None):
+                count = len(str((params or {}).get("latitude", "")).split(","))
+                return _Response({"elevation": [10.0 + index for index in range(count)]})
+
+        result = fetch_global_elevation_grid(
+            {"west": -0.126, "south": 51.499, "east": -0.124, "north": 51.501},
+            rows=3,
+            cols=3,
+            session=_GridSession(),
+        )
+
+        self.assertTrue(result["surface_ready"])
+        self.assertEqual(result["sample_count"], 9)
+        self.assertGreater(result["elevation_range_ft"], 20)
+        self.assertEqual(result["source_tier"], "global_public_context")
+        self.assertFalse(result["survey_backed"])
+
     def test_openstreetmap_fetch_classifies_bounded_site_features(self) -> None:
         session = _WorldwideSession()
 
@@ -318,7 +338,9 @@ class WorldwideSourceDiscoveryTests(unittest.TestCase):
         providers = {provider["key"]: provider for provider in result["online_existing_conditions_discovery_v1"]["supported_live_providers"]}
         self.assertIn("supplied_geocode", providers)
         self.assertEqual(providers["global_dem_point_elevation"]["status"], "ready")
-        self.assertEqual(providers["usgs_3dep_epqs"]["status"], "available_in_us")
+        self.assertEqual(providers["usgs_3dep_elevation_grid"]["status"], "available_in_us")
+        source_rows = {source["key"]: source for source in result["online_existing_conditions_discovery_v1"]["sources"]}
+        self.assertGreater(source_rows["worldwide_mapped_context"]["candidate_count"], 0)
 
     def test_direct_us_address_uses_worldwide_context_without_frontend_geocode_context(self) -> None:
         session = _UsAddressAndWorldwideSession()

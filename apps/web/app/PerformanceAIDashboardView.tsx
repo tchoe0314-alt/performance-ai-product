@@ -4315,6 +4315,7 @@ function PerformanceAIDashboardView({
         planPreviewAnnotations,
         previewLayersEffective,
         sourceConfidenceByObjectId,
+        siteInputs,
       }),
     [
       backendResult,
@@ -4324,6 +4325,7 @@ function PerformanceAIDashboardView({
       planPreviewAnnotations,
       previewLayersEffective,
       sourceConfidenceByObjectId,
+      siteInputs,
     ],
   );
   const {

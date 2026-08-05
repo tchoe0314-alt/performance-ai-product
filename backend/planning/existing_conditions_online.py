@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import math
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
@@ -21,6 +23,7 @@ from .standards_discovery import discover_standards_sources
 from .worldwide_source_discovery import (
     DEFAULT_GLOBAL_ELEVATION_URL,
     DEFAULT_OVERPASS_URL,
+    fetch_global_elevation_grid,
     fetch_global_elevation_point,
     fetch_openstreetmap_site_context,
 )
@@ -28,6 +31,8 @@ from .worldwide_source_discovery import (
 
 CENSUS_GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress"
 USGS_EPQS_URL = "https://epqs.nationalmap.gov/v1/json"
+USGS_3DEP_IMAGE_SERVER_URL = "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer"
+USGS_3DEP_GET_SAMPLES_URL = f"{USGS_3DEP_IMAGE_SERVER_URL}/getSamples"
 FEMA_NFHL_MAPSERVER_URL = "https://hazards.fema.gov/arcgis/rest/services/public/NFHL/MapServer"
 USFWS_WETLANDS_MAPSERVER_URL = "https://fwspublicservices.wim.usgs.gov/wetlandsmapservice/rest/services/Wetlands/MapServer"
 ONLINE_DISCOVERY_VERSION = "online_existing_conditions_discovery_v1"
@@ -61,7 +66,7 @@ DISCOVERY_SOURCE_SPECS = {
     },
     "terrain_dem_lidar": {
         "label": "terrain/DEM/LiDAR",
-        "result_keys": ("elevation", "terrain_breaklines", "lidar_index"),
+        "result_keys": ("terrain_grid", "elevation", "terrain_breaklines", "lidar_index"),
         "layer_keys": ("terrain_breaklines", "lidar_coverage"),
     },
     "floodplain_wetlands_environmental": {
@@ -151,6 +156,286 @@ def fetch_usgs_elevation_point(lat: float, lng: float, *, units: str = "Feet", s
         "units": units,
         "source_date": safe_str(safe_dict(payload.get("attributes")).get("AcquisitionDate") or value.get("date")),
         "truth_label": "Public DEM point elevation; not a topographic survey.",
+    }
+
+
+def fetch_usgs_elevation_grid(
+    bbox: Dict[str, Any],
+    *,
+    rows: int = 7,
+    cols: int = 7,
+    session: Any = requests,
+) -> Dict[str, Any]:
+    west, south, east, north = _bbox_bounds(safe_dict(bbox))
+    rows = min(max(safe_int(rows, 7), 2), 11)
+    cols = min(max(safe_int(cols, 7), 2), 11)
+    if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
+        return {
+            "success": False,
+            "status": "blocked",
+            "source": USGS_3DEP_GET_SAMPLES_URL,
+            "source_type": "usgs_3dep_elevation_grid",
+            "source_tier": "national_public_context",
+            "warnings": ["USGS 3DEP terrain-grid lookup needs a valid WGS84 site bounding box."],
+            "review_required": True,
+            "authoritative": False,
+            "survey_backed": False,
+        }
+    requested = [
+        {
+            "row": row,
+            "col": col,
+            "lat": north - (north - south) * row / (rows - 1),
+            "lng": west + (east - west) * col / (cols - 1),
+            "x_ratio": col / (cols - 1),
+            "y_ratio": row / (rows - 1),
+        }
+        for row in range(rows)
+        for col in range(cols)
+    ]
+    params = {
+        "f": "json",
+        "geometry": json.dumps({
+            "points": [[item["lng"], item["lat"]] for item in requested],
+            "spatialReference": {"wkid": 4326},
+        }),
+        "geometryType": "esriGeometryMultipoint",
+        "returnFirstValueOnly": "true",
+        "outFields": "*",
+    }
+    try:
+        response = session.get(USGS_3DEP_GET_SAMPLES_URL, params=params, timeout=18)
+        response.raise_for_status()
+        payload = safe_dict(response.json())
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "fetch_failed",
+            "source": USGS_3DEP_GET_SAMPLES_URL,
+            "source_type": "usgs_3dep_elevation_grid",
+            "source_tier": "national_public_context",
+            "warnings": [safe_str(exc, "USGS 3DEP terrain-grid request failed.")],
+            "review_required": True,
+            "authoritative": False,
+            "survey_backed": False,
+        }
+    samples: List[Dict[str, Any]] = []
+    source_attributes: Dict[str, Any] = {}
+    resolution_values: List[float] = []
+    for fallback_index, raw_sample in enumerate(safe_list(payload.get("samples"))):
+        sample = safe_dict(raw_sample)
+        raw_value = sample.get("value")
+        if raw_value in (None, "", "NoData"):
+            continue
+        location_id = safe_int(sample.get("locationId"), fallback_index)
+        if location_id < 0 or location_id >= len(requested):
+            location_id = fallback_index
+        if location_id >= len(requested):
+            continue
+        elevation_m = safe_float(raw_value)
+        attributes = safe_dict(sample.get("attributes"))
+        if attributes and not source_attributes:
+            source_attributes = attributes
+        resolution = safe_float(sample.get("resolution"))
+        if resolution > 0:
+            resolution_values.append(resolution)
+        samples.append(
+            {
+                **requested[location_id],
+                "elevation_m": elevation_m,
+                "elevation_ft": elevation_m * 3.280839895,
+            }
+        )
+    if len(samples) < 4:
+        return {
+            "success": False,
+            "status": "no_elevation",
+            "source": USGS_3DEP_GET_SAMPLES_URL,
+            "source_type": "usgs_3dep_elevation_grid",
+            "source_tier": "national_public_context",
+            "sample_count": len(samples),
+            "warnings": ["USGS 3DEP returned too few usable samples for a terrain surface."],
+            "review_required": True,
+            "authoritative": False,
+            "survey_backed": False,
+        }
+    elevations_ft = [safe_float(item.get("elevation_ft")) for item in samples]
+    vertical_datum = safe_str(
+        source_attributes.get("VerticalDatum")
+        or source_attributes.get("Vertical_Datum")
+        or source_attributes.get("verticalDatum")
+    )
+    source_date = safe_str(
+        source_attributes.get("AcquisitionDate")
+        or source_attributes.get("SourceDataDate")
+        or source_attributes.get("Date")
+    )
+    return {
+        "success": True,
+        "status": "ready",
+        "source": USGS_3DEP_GET_SAMPLES_URL,
+        "source_type": "usgs_3dep_elevation_grid",
+        "source_tier": "national_public_context",
+        "provider": "USGS 3DEP Elevation ImageServer",
+        "rows": rows,
+        "cols": cols,
+        "sample_count": len(samples),
+        "missing_sample_count": rows * cols - len(samples),
+        "samples": samples,
+        "min_elevation_ft": min(elevations_ft),
+        "max_elevation_ft": max(elevations_ft),
+        "elevation_range_ft": max(elevations_ft) - min(elevations_ft),
+        "units": "feet",
+        "horizontal_resolution": f"{min(resolution_values):g} meter service sample" if resolution_values else "USGS service-selected 3DEP resolution",
+        "vertical_datum": vertical_datum,
+        "source_date": source_date,
+        "surface_ready": True,
+        "review_required": True,
+        "authoritative": False,
+        "survey_backed": False,
+        "truth_label": "USGS 3DEP elevation grid is public terrain context; it is not project survey/control or an accepted grading surface.",
+    }
+
+
+def _contour_interval_ft(elevation_range_ft: float) -> float:
+    if elevation_range_ft <= 2:
+        return 0.5
+    if elevation_range_ft <= 8:
+        return 1.0
+    if elevation_range_ft <= 30:
+        return 2.0
+    if elevation_range_ft <= 75:
+        return 5.0
+    if elevation_range_ft <= 160:
+        return 10.0
+    return 20.0
+
+
+def _contour_edge_intersection(
+    first: Dict[str, Any],
+    second: Dict[str, Any],
+    level_ft: float,
+) -> Optional[List[float]]:
+    first_z = safe_float(first.get("elevation_ft"))
+    second_z = safe_float(second.get("elevation_ft"))
+    if first_z == second_z or not (min(first_z, second_z) <= level_ft <= max(first_z, second_z)):
+        return None
+    ratio = (level_ft - first_z) / (second_z - first_z)
+    if ratio < 0 or ratio > 1:
+        return None
+    return [
+        safe_float(first.get("lng")) + (safe_float(second.get("lng")) - safe_float(first.get("lng"))) * ratio,
+        safe_float(first.get("lat")) + (safe_float(second.get("lat")) - safe_float(first.get("lat"))) * ratio,
+    ]
+
+
+def derive_review_contours_from_terrain_grid(terrain_grid: Dict[str, Any]) -> Dict[str, Any]:
+    grid = safe_dict(terrain_grid)
+    rows = safe_int(grid.get("rows"))
+    cols = safe_int(grid.get("cols"))
+    samples = {
+        (safe_int(item.get("row")), safe_int(item.get("col"))): safe_dict(item)
+        for item in (safe_dict(raw) for raw in safe_list(grid.get("samples")))
+        if item
+    }
+    if not grid.get("success") or rows < 2 or cols < 2 or len(samples) < 4:
+        return {
+            "success": False,
+            "status": "terrain_grid_unavailable",
+            "source_type": "derived_public_dem_contours",
+            "layer_name": "contours",
+            "geojson": {"type": "FeatureCollection", "features": []},
+            "warnings": ["Review contours need a usable terrain elevation grid."],
+            "review_required": True,
+        }
+    min_elevation = safe_float(grid.get("min_elevation_ft"))
+    max_elevation = safe_float(grid.get("max_elevation_ft"))
+    elevation_range = max_elevation - min_elevation
+    if elevation_range < 0.1:
+        return {
+            "success": True,
+            "status": "ready_flat",
+            "source": safe_str(grid.get("source")),
+            "source_type": "derived_public_dem_contours",
+            "source_tier": safe_str(grid.get("source_tier")),
+            "provider": safe_str(grid.get("provider")),
+            "layer_name": "contours",
+            "feature_count": 0,
+            "geojson": {"type": "FeatureCollection", "features": []},
+            "warnings": ["The sampled public DEM surface is effectively flat at this scale; no review contour lines were derived."],
+            "review_required": True,
+            "authoritative": False,
+            "survey_backed": False,
+            "truth_label": "No contours were invented from an effectively flat public DEM sample grid.",
+        }
+    interval = _contour_interval_ft(elevation_range)
+    first_level = math.ceil(min_elevation / interval) * interval
+    levels: List[float] = []
+    level = first_level
+    while level < max_elevation and len(levels) < 18:
+        if level > min_elevation + 0.0001:
+            levels.append(level)
+        level += interval
+    features: List[Dict[str, Any]] = []
+    for level_ft in levels:
+        segments: List[List[List[float]]] = []
+        for row in range(rows - 1):
+            for col in range(cols - 1):
+                nw = samples.get((row, col))
+                ne = samples.get((row, col + 1))
+                se = samples.get((row + 1, col + 1))
+                sw = samples.get((row + 1, col))
+                if not all((nw, ne, se, sw)):
+                    continue
+                intersections = [
+                    point
+                    for point in (
+                        _contour_edge_intersection(nw, ne, level_ft),
+                        _contour_edge_intersection(ne, se, level_ft),
+                        _contour_edge_intersection(se, sw, level_ft),
+                        _contour_edge_intersection(sw, nw, level_ft),
+                    )
+                    if point is not None
+                ]
+                deduped: List[List[float]] = []
+                for point in intersections:
+                    if not any(abs(point[0] - seen[0]) < 1e-10 and abs(point[1] - seen[1]) < 1e-10 for seen in deduped):
+                        deduped.append(point)
+                if len(deduped) == 2:
+                    segments.append([deduped[0], deduped[1]])
+                elif len(deduped) == 4:
+                    segments.extend([[deduped[0], deduped[1]], [deduped[2], deduped[3]]])
+        if segments:
+            features.append(
+                {
+                    "type": "Feature",
+                    "id": f"public-dem-contour-{level_ft:g}",
+                    "geometry": {"type": "MultiLineString", "coordinates": segments},
+                    "properties": {
+                        "contour_elevation_ft": level_ft,
+                        "contour_interval_ft": interval,
+                        "derived_from": safe_str(grid.get("source_type")),
+                        "review_required": True,
+                        "survey_backed": False,
+                    },
+                }
+            )
+    return {
+        "success": True,
+        "status": "ready" if features else "ready_empty",
+        "source": safe_str(grid.get("source")),
+        "source_type": "derived_public_dem_contours",
+        "source_tier": safe_str(grid.get("source_tier")),
+        "provider": safe_str(grid.get("provider")),
+        "layer_name": "contours",
+        "feature_count": len(features),
+        "contour_interval_ft": interval,
+        "geojson": {"type": "FeatureCollection", "features": features},
+        "warnings": ["Contour lines were derived from a sampled public DEM grid and are review visualization, not surveyed contours."],
+        "review_required": True,
+        "authoritative": False,
+        "survey_backed": False,
+        "truth_label": "Derived public-DEM contours are review context only; they are not survey/control or accepted grading evidence.",
     }
 
 
@@ -715,6 +1000,8 @@ def _source_blockers(*, label: str, result_records: List[Dict[str, Any]], candid
         blockers.append(f"{label} includes community-mapped context whose coverage, currency, and positional accuracy can vary.")
     if any(safe_str(result.get("source_tier")) == "global_public_context" for result in result_records):
         blockers.append(f"{label} includes approximate global public context, not a surveyed project surface or control source.")
+    if any(safe_str(result.get("source_tier")) == "national_public_context" for result in result_records):
+        blockers.append(f"{label} includes national public elevation context, not project survey/control or an accepted grading surface.")
     if not result_records:
         blockers.append(f"{label} source is missing/unavailable.")
     if not candidate_count and any(result.get("success") for result in result_records):
@@ -843,16 +1130,21 @@ def build_online_existing_conditions_discovery_report(
         result_records = [safe_dict(results.get(item)) for item in spec.get("result_keys", ()) if safe_dict(results.get(item))]
         if key == "imagery_object_detection":
             count = sum(safe_int(result.get("detection_count")) for result in result_records)
+        elif key == "worldwide_mapped_context":
+            count = sum(_result_feature_count(result) for result in result_records)
         elif key == "terrain_dem_lidar":
             count = sum(len(safe_list(layers.get(layer_key))) for layer_key in spec.get("layer_keys", ()))
+            terrain_grid_result = safe_dict(results.get("terrain_grid"))
             elevation_result = safe_dict(results.get("elevation"))
-            if elevation_result.get("success"):
+            if terrain_grid_result.get("success"):
+                count += max(1, safe_int(terrain_grid_result.get("sample_count")))
+            elif elevation_result.get("success"):
                 count += 1
         else:
             layer_keys = tuple(spec.get("layer_keys", ()))
             count = sum(len(safe_list(layers.get(layer_key))) for layer_key in layer_keys)
             if not count:
-                count = sum(len(safe_list(safe_dict(result.get("geojson")).get("features"))) for result in result_records)
+                count = sum(_result_feature_count(result) for result in result_records)
         blockers = _source_blockers(label=label, result_records=result_records, candidate_count=count)
         record = _source_record(key=key, label=label, result_records=result_records, candidate_count=count, blockers=blockers)
         for gap in known_gaps:
@@ -890,6 +1182,7 @@ def build_online_existing_conditions_discovery_report(
     else:
         status = "candidates_found"
     geocode_result = safe_dict(results.get("geocode"))
+    terrain_grid_result = safe_dict(results.get("terrain_grid"))
     elevation_result = safe_dict(results.get("elevation"))
     geocode_source_type = safe_str(geocode_result.get("source_type"), "census_geocoder")
     elevation_source_type = safe_str(elevation_result.get("source_type"), "usgs_3dep_epqs")
@@ -902,11 +1195,15 @@ def build_online_existing_conditions_discovery_report(
             "status": safe_str(geocode_result.get("status"), "available"),
         },
         {
-            "key": "usgs_3dep_epqs",
-            "provider": "USGS 3DEP EPQS",
-            "source_url": USGS_EPQS_URL,
-            "supports": ["terrain/DEM point elevation"],
-            "status": safe_str(elevation_result.get("status"), "available") if elevation_source_type == "usgs_3dep_epqs" else "available_in_us",
+            "key": "usgs_3dep_elevation_grid",
+            "provider": "USGS 3DEP Elevation ImageServer",
+            "source_url": USGS_3DEP_GET_SAMPLES_URL,
+            "supports": ["terrain/DEM elevation grid", "review contour derivation"],
+            "status": (
+                safe_str(terrain_grid_result.get("status"), "available_in_us")
+                if safe_str(terrain_grid_result.get("source_type")) == "usgs_3dep_elevation_grid"
+                else "available_in_us"
+            ),
         },
         {
             "key": "fema_nfhl_arcgis",
@@ -1056,7 +1353,15 @@ def _resolve_standards_jurisdiction(
 
 
 def _result_feature_count(result: Dict[str, Any]) -> int:
-    return len(safe_list(safe_dict(safe_dict(result).get("geojson")).get("features")))
+    rec = safe_dict(result)
+    geojson_count = len(safe_list(safe_dict(rec.get("geojson")).get("features")))
+    if geojson_count:
+        return geojson_count
+    explicit_count = safe_int(rec.get("feature_count"))
+    if explicit_count:
+        return explicit_count
+    nested_layers = safe_dict(rec.get("layer_results"))
+    return sum(_result_feature_count(safe_dict(item)) for item in nested_layers.values())
 
 
 def _source_not_applicable(*, source_type: str, label: str, country_code: str) -> Dict[str, Any]:
@@ -1126,7 +1431,7 @@ def _location_source_strategy(
     ):
         result = safe_dict(source_results.get(key))
         source_tier = safe_str(result.get("source_tier"))
-        if _result_feature_count(result) <= 0 or source_tier == "community_global":
+        if _result_feature_count(result) <= 0 or source_tier in {"community_global", "global_public_context", "national_public_context"}:
             authoritative_gaps.append(label)
     authoritative_gaps.extend(["boundary/topographic survey", "benchmark/datum and project control"])
     return {
@@ -1274,20 +1579,53 @@ def fetch_online_existing_conditions(
     center_lat, center_lng = bbox_center(working_bbox)
     if include_elevation:
         if include_worldwide_context and supplied_geocode and not is_us_location:
+            terrain_grid = fetch_global_elevation_grid(working_bbox, session=session)
             elevation = fetch_global_elevation_point(center_lat, center_lng, session=session)
         else:
-            elevation = fetch_usgs_elevation_point(center_lat, center_lng, session=session)
-            if include_worldwide_context and supplied_geocode and not elevation.get("success"):
-                usgs_elevation = elevation
+            terrain_grid = fetch_usgs_elevation_grid(working_bbox, session=session)
+            if terrain_grid.get("success"):
+                center_sample = min(
+                    safe_list(terrain_grid.get("samples")),
+                    key=lambda item: abs(safe_float(safe_dict(item).get("x_ratio")) - 0.5)
+                    + abs(safe_float(safe_dict(item).get("y_ratio")) - 0.5),
+                )
+                elevation = {
+                    "success": True,
+                    "status": "ready",
+                    "source": terrain_grid.get("source"),
+                    "source_type": terrain_grid.get("source_type"),
+                    "source_tier": terrain_grid.get("source_tier"),
+                    "provider": terrain_grid.get("provider"),
+                    "lat": safe_float(safe_dict(center_sample).get("lat"), center_lat),
+                    "lng": safe_float(safe_dict(center_sample).get("lng"), center_lng),
+                    "elevation": safe_float(safe_dict(center_sample).get("elevation_ft")),
+                    "units": "Feet",
+                    "source_date": terrain_grid.get("source_date"),
+                    "horizontal_resolution": terrain_grid.get("horizontal_resolution"),
+                    "vertical_datum": terrain_grid.get("vertical_datum"),
+                    "truth_label": terrain_grid.get("truth_label"),
+                }
+            else:
+                elevation = fetch_usgs_elevation_point(center_lat, center_lng, session=session)
+            if include_worldwide_context and supplied_geocode and not terrain_grid.get("success") and not elevation.get("success"):
+                source_results["usgs_terrain_grid_attempt"] = terrain_grid
+                source_results["usgs_elevation_attempt"] = elevation
+                terrain_grid = fetch_global_elevation_grid(working_bbox, session=session)
                 elevation = fetch_global_elevation_point(center_lat, center_lng, session=session)
-                source_results["usgs_elevation_attempt"] = usgs_elevation
     else:
+        terrain_grid = {
+            "success": False,
+            "source_type": "usgs_3dep_elevation_grid",
+            "status": "skipped",
+            "warnings": ["Terrain-grid fetch skipped by request."],
+        }
         elevation = {
             "success": False,
             "source_type": "usgs_3dep_epqs",
             "status": "skipped",
             "warnings": ["Elevation fetch skipped by request."],
         }
+    source_results["terrain_grid"] = terrain_grid
     source_results["elevation"] = elevation
 
     layer_imports: List[Dict[str, Any]] = []
@@ -1475,6 +1813,9 @@ def fetch_online_existing_conditions(
             )
         else:
             contours = _missing_configured_source(registry=registry, source_type="contours", result_source_type="configured_contours_arcgis", label="contour")
+        if not _result_feature_count(contours) and terrain_grid.get("success"):
+            source_results["authoritative_contours_attempt"] = contours
+            contours = derive_review_contours_from_terrain_grid(terrain_grid)
         source_results["contours"] = contours
         layer_imports.append(contours)
     if include_terrain_context:
@@ -1569,13 +1910,14 @@ def fetch_online_existing_conditions(
         source_results=source_results,
     )
     dem_lidar = {
-        "ready": bool(elevation.get("success")),
-        "source": safe_str(elevation.get("source"), "missing"),
-        "source_type": safe_str(elevation.get("source_type"), "usgs_3dep_epqs"),
-        "source_tier": safe_str(elevation.get("source_tier")),
-        "provider": safe_str(elevation.get("provider")),
-        "horizontal_resolution": safe_str(elevation.get("horizontal_resolution")),
-        "attribution": safe_str(elevation.get("attribution")),
+        "ready": bool(terrain_grid.get("success") or elevation.get("success")),
+        "source": safe_str(terrain_grid.get("source") or elevation.get("source"), "missing"),
+        "source_type": safe_str(terrain_grid.get("source_type") or elevation.get("source_type"), "usgs_3dep_elevation_grid"),
+        "source_tier": safe_str(terrain_grid.get("source_tier") or elevation.get("source_tier")),
+        "provider": safe_str(terrain_grid.get("provider") or elevation.get("provider")),
+        "horizontal_resolution": safe_str(terrain_grid.get("horizontal_resolution") or elevation.get("horizontal_resolution")),
+        "vertical_datum": safe_str(terrain_grid.get("vertical_datum") or elevation.get("vertical_datum")),
+        "attribution": safe_str(terrain_grid.get("attribution") or elevation.get("attribution")),
         "sample_elevation": {
             "lat": center_lat,
             "lng": center_lng,
@@ -1583,10 +1925,15 @@ def fetch_online_existing_conditions(
             "units": elevation.get("units"),
         } if elevation.get("success") else {},
         "approved_for_production": False,
+        "surface_grid": terrain_grid if terrain_grid.get("success") else {},
+        "surface_sample_count": safe_int(terrain_grid.get("sample_count")),
+        "min_elevation_ft": terrain_grid.get("min_elevation_ft"),
+        "max_elevation_ft": terrain_grid.get("max_elevation_ft"),
+        "elevation_range_ft": terrain_grid.get("elevation_range_ft"),
         "terrain_breakline_count": len(safe_list(safe_dict(online_layers.get("gis_layers")).get("terrain_breaklines"))),
         "lidar_coverage_count": len(safe_list(safe_dict(online_layers.get("gis_layers")).get("lidar_coverage"))),
-        "surface_ready": False,
-        "truth_label": "Public DEM context only; production grading still needs survey/control or approved DEM source.",
+        "surface_ready": bool(terrain_grid.get("success") and terrain_grid.get("surface_ready")),
+        "truth_label": "Public DEM surface context only; project grading still needs accepted source review and survey/control where required.",
     }
     canonical = {
         "survey": {"source": "missing", "point_count": 0, "points": []},
@@ -1652,6 +1999,7 @@ def build_online_source_urls(address: str = "", bbox: Optional[Dict[str, Any]] =
     return {
         "census_geocoder": f"{CENSUS_GEOCODER_URL}?{urlencode(params)}" if address else CENSUS_GEOCODER_URL,
         "usgs_elevation": USGS_EPQS_URL,
+        "usgs_3dep_surface_grid": USGS_3DEP_GET_SAMPLES_URL,
         "fema_nfhl": FEMA_NFHL_MAPSERVER_URL,
         "usfws_wetlands": USFWS_WETLANDS_MAPSERVER_URL,
         "worldwide_mapped_context": DEFAULT_OVERPASS_URL,
@@ -1672,6 +2020,8 @@ __all__ = [
     "ONLINE_DISCOVERY_VERSION",
     "USFWS_WETLANDS_MAPSERVER_URL",
     "USGS_EPQS_URL",
+    "USGS_3DEP_GET_SAMPLES_URL",
+    "USGS_3DEP_IMAGE_SERVER_URL",
     "build_online_existing_conditions_discovery_report",
     "build_online_source_urls",
     "bbox_around_point",
@@ -1683,6 +2033,8 @@ __all__ = [
     "fetch_online_existing_conditions",
     "fetch_usfws_wetlands",
     "fetch_usgs_elevation_point",
+    "fetch_usgs_elevation_grid",
+    "derive_review_contours_from_terrain_grid",
     "geocode_address_census",
     "online_import_to_gis_layers",
 ]

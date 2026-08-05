@@ -11,6 +11,44 @@ import { requestedProgramToPendingPlacements, SITE_OBJECT_CATALOG } from "./site
 const numberFrom = (value: unknown) =>
   typeof value === "number" ? value : value !== undefined ? Number(value) : NaN;
 
+const sourceBuildingHeight = (value: unknown) => {
+  const properties = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const osmTags = properties.osm_tags && typeof properties.osm_tags === "object"
+    ? (properties.osm_tags as Record<string, unknown>)
+    : {};
+  const parseHeight = (raw: unknown, defaultMeters = false) => {
+    if (raw === null || raw === undefined || raw === "") return null;
+    const text = String(raw).trim().toLowerCase();
+    const numeric = Number.parseFloat(text.replace(/,/g, ""));
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    const isMeters = /(?:^|\s)m(?:eters?)?$/.test(text) || text.includes("meter") || defaultMeters;
+    const isFeet = text.includes("ft") || text.includes("feet") || text.includes("foot") || text.includes("'");
+    return isMeters && !isFeet ? numeric * 3.280839895 : numeric;
+  };
+  const candidates: Array<{ value: unknown; defaultMeters?: boolean; source: string }> = [
+    { value: properties.height_ft, source: "height_ft" },
+    { value: properties.HEIGHT_FT, source: "HEIGHT_FT" },
+    { value: properties.BLDGHEIGHT, source: "BLDGHEIGHT" },
+    { value: properties.BUILDING_HEIGHT, source: "BUILDING_HEIGHT" },
+    { value: osmTags.height, defaultMeters: true, source: "osm_tags.height" },
+    { value: properties.height, source: "height" },
+    { value: properties.HEIGHT, source: "HEIGHT" },
+  ];
+  for (const candidate of candidates) {
+    const heightFt = parseHeight(candidate.value, candidate.defaultMeters);
+    if (heightFt !== null) {
+      return { heightFt: Math.max(8, Math.min(heightFt, 500)), source: candidate.source };
+    }
+  }
+  const levels = Number(
+    osmTags["building:levels"] ?? properties["building:levels"] ?? properties.NUMSTORIES ?? properties.STORIES ?? properties.FLOORS,
+  );
+  if (Number.isFinite(levels) && levels > 0) {
+    return { heightFt: Math.max(8, Math.min(levels * 10, 500)), source: "levels_estimate" };
+  }
+  return { heightFt: null, source: "" };
+};
+
 const isSupportedPlacementSource = (value: unknown) =>
   value === "generated" ||
   value === "manual_drawn" ||
@@ -188,6 +226,12 @@ export const buildAcceptedCandidatePlacements = ({
           : null;
       const sourceCandidateId = String(record.source_candidate_id ?? record.candidate_id ?? `accepted-${index + 1}`);
       const sourceType = String(record.source_type ?? "");
+      const sourceProperties = record.source_properties && typeof record.source_properties === "object"
+        ? (record.source_properties as Record<string, unknown>)
+        : record.properties && typeof record.properties === "object"
+          ? (record.properties as Record<string, unknown>)
+          : {};
+      const sourceHeight = type === "building" ? sourceBuildingHeight(sourceProperties) : { heightFt: null, source: "" };
       const source =
         sourceType.includes("image") || sourceType.includes("imagery")
           ? "detected_from_image"
@@ -200,7 +244,7 @@ export const buildAcceptedCandidatePlacements = ({
         y: geometry?.y,
         w: geometry?.w ?? defaults.defaultW,
         d: geometry?.d ?? defaults.defaultD,
-        h: defaults.defaultH,
+        h: sourceHeight.heightFt ?? defaults.defaultH,
         placed: Boolean(geometry),
         source,
         confidence:
@@ -216,6 +260,9 @@ export const buildAcceptedCandidatePlacements = ({
           source_url: record.source_url,
           source_name: record.source_name,
           source_geometry: record.geometry,
+          source_properties: sourceProperties,
+          source_height_ft: sourceHeight.heightFt,
+          source_height_method: sourceHeight.source,
           review_required: true,
           acceptance_status: "accepted",
         },

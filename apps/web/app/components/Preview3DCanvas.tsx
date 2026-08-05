@@ -423,6 +423,7 @@ export default function Preview3DCanvas({
     const terrainZValues = sourceSamples.map((item) => Number(item.z));
     const terrainZRange = terrainZValues.length ? Math.max(...terrainZValues) - Math.min(...terrainZValues) : 0;
     const hasReviewContourSamples = sourceSamples.some((item) => /review contour/i.test(String(item.source || "")));
+    const hasSourceDemSamples = sourceSamples.some((item) => item.meta?.source_surface_ready === true);
     if (!sourceSamples.length) {
       if (hasTerrainSource) {
         return {
@@ -446,6 +447,22 @@ export default function Preview3DCanvas({
         label: "Review contour surface - not survey control",
         detail: `${sourceSamples.length} contour-derived visual sample(s); use for review visualization only.`,
         mode: "terrain" as const,
+      };
+    }
+    if (hasSourceDemSamples && terrainZRange >= 0.25) {
+      const firstSourceSample = sourceSamples.find((item) => item.meta?.source_surface_ready === true);
+      const resolution = String(firstSourceSample?.meta?.horizontal_resolution || "public DEM resolution");
+      return {
+        label: "Public DEM terrain surface - not survey control",
+        detail: `${sourceSamples.length} source elevation sample(s); ${resolution}.`,
+        mode: "terrain" as const,
+      };
+    }
+    if (hasSourceDemSamples) {
+      return {
+        label: "Public DEM loaded - sampled surface is nearly flat",
+        detail: `${sourceSamples.length} source elevation sample(s); no vertical shape was invented.`,
+        mode: "flat-source" as const,
       };
     }
     if (!hasTerrainSource || !hasGradingSurface || terrainZRange < 0.5) {

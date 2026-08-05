@@ -374,6 +374,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
         source_type: "official_gis",
         source_name: "Test Buildings",
         confidence: 0.88,
+        source_properties: { BLDGHEIGHT: 36, NUMSTORIES: 3 },
         geometry: {
           type: "Polygon",
           coordinates: [[
@@ -536,7 +537,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
             },
             { key: "building_footprints", label: "building footprints", provider: "Test Buildings", candidate_count: 1, review_required: true, blockers: ["review-required"] },
             { key: "imagery_object_detection", label: "imagery/object detection", provider: "Test Imagery Detector", candidate_count: 1, review_required: true, blockers: ["visual review only"] },
-            { key: "terrain_dem_lidar", label: "terrain/DEM/LiDAR", provider: "USGS 3DEP EPQS", candidate_count: 1, review_required: true, blockers: ["not survey"] },
+            { key: "terrain_dem_lidar", label: "terrain/DEM/LiDAR", provider: "USGS 3DEP Elevation ImageServer", candidate_count: 25, review_required: true, blockers: ["not survey/control"] },
             {
               key: "public_utilities",
               label: "public utility layers",
@@ -568,11 +569,11 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
               { feature_type: "parcel_or_site_boundary", label: "parcel/site boundary", count: 1, confidence: "source-backed" },
             ],
             missing: [{ source_type: "existing_utilities", label: "public utility layers", status: "missing_source" }],
-            assumed: [{ key: "terrain_direction", label: "Terrain/drainage direction", status: "single_point_context" }],
+            assumed: [{ key: "terrain_direction", label: "Terrain/drainage context", status: "public_dem_surface_context" }],
             outside_site: [{ candidate_id: "offsite-building", label: "building footprint" }],
             road_frontage: { status: "candidate", likely_frontage_side: "west", message: "Likely road frontage is on the west side based on source candidates." },
             driveway_suggestions: [{ status: "candidate", frontage_side: "west", message: "Use this as a starting suggestion only; confirm access spacing, sight distance, and jurisdiction standards." }],
-            grading_context: { status: "single_point_elevation", message: "Public point elevation gives vertical context, not a grading surface or drainage direction." },
+            grading_context: { status: "public_dem_surface_context", message: "Public DEM samples support terrain visualization and preliminary drainage context, not survey-controlled grading." },
             review_required: true,
             survey_control_satisfied: false,
             construction_release_allowed: false,
@@ -600,7 +601,31 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
         },
         candidate_review_inbox_v1: candidateInbox(),
         civora_vision_review_workspace_v1: visionReviewWorkspace(),
-        existing_conditions_package: { status: "review_required", production_ready: false },
+        existing_conditions_package: {
+          status: "review_required",
+          production_ready: false,
+          dem_lidar: {
+            ready: true,
+            surface_ready: true,
+            source_type: "usgs_3dep_elevation_grid",
+            provider: "USGS 3DEP Elevation ImageServer",
+            horizontal_resolution: "1 meter service sample",
+            vertical_datum: "NAVD 88",
+            surface_grid: {
+              surface_ready: true,
+              provider: "USGS 3DEP Elevation ImageServer",
+              rows: 3,
+              cols: 3,
+              samples: Array.from({ length: 9 }, (_, index) => ({
+                row: Math.floor(index / 3),
+                col: index % 3,
+                x_ratio: (index % 3) / 2,
+                y_ratio: Math.floor(index / 3) / 2,
+                elevation_ft: 640 + Math.floor(index / 3) * 2 + (index % 3) * 0.5,
+              })),
+            },
+          },
+        },
         existing_conditions_summary: { production_ready: false },
       }),
     });
@@ -754,11 +779,11 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(page.getByTestId("site-intelligence-outside-count")).toContainText("Outside 1");
   await expect(page.getByTestId("site-intelligence-frontage")).toContainText("west side");
   await expect(page.getByTestId("site-intelligence-driveway")).toContainText("starting suggestion");
-  await expect(page.getByTestId("site-intelligence-grading")).toContainText("not a grading surface");
+  await expect(page.getByTestId("site-intelligence-grading")).toContainText("not survey-controlled grading");
 
   await page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-3d").click();
   await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
-  await expect(page.getByTestId("civil-3d-viewer")).toContainText(/Terrain context found|Terrain source loaded/i);
+  await expect(page.getByTestId("civil-3d-terrain-state")).toContainText("Public DEM terrain surface");
   await expect(page.getByTestId("civil-3d-viewer")).not.toContainText("terrain source missing");
   await page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-2d").click();
   await expect(page.getByTestId("preview-plan-canvas-svg")).toBeVisible();
@@ -878,6 +903,10 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(
     page.getByTestId("object-manager-row").filter({ hasText: "Test Buildings" }).first(),
   ).toContainText(/Building|GIS review candidate/i);
+  await page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-3d").click();
+  await page.getByTestId("civil-3d-object-strip").getByRole("button", { name: /Test Buildings/i }).click();
+  await expect(page.getByTestId("civil-3d-selected-height")).toContainText("36 ft");
+  await page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-2d").click();
 
   await page.getByTestId("header-chat-button").click();
   const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");

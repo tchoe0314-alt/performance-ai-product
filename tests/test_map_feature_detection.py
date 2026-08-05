@@ -257,6 +257,28 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertFalse(draft["construction_release_allowed"])
         self.assertEqual(draft["audit_trail"][0]["action"], "accepted_candidate_as_draft")
 
+    def test_accepted_source_building_preserves_height_and_source_properties(self) -> None:
+        report = build_map_feature_detection_report(
+            gis_layers={
+                "building_footprints": [
+                    {
+                        "id": "building-source-1",
+                        "geometry": {
+                            "type": "Polygon",
+                            "coordinates": [[[-96.24, 41.18], [-96.239, 41.18], [-96.239, 41.181], [-96.24, 41.18]]],
+                        },
+                        "properties": {"BLDGHEIGHT": 36, "NUMSTORIES": 3},
+                        "source_name": "county_buildings",
+                    }
+                ]
+            }
+        )
+
+        draft = accept_feature_candidate_as_draft_object(report["feature_candidates"][0])
+
+        self.assertEqual(draft["source_properties"]["BLDGHEIGHT"], 36)
+        self.assertEqual(draft["source_properties"]["NUMSTORIES"], 3)
+
     def test_rejected_candidate_is_preserved_with_audit_trail(self) -> None:
         report = build_map_feature_detection_report(
             gis_layers={

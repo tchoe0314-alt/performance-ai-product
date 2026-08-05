@@ -71,6 +71,7 @@ GIS_LAYER_FEATURE_TYPES = {
     "utilities": "utility",
     "zoning": "constraint_area",
     "constraints": "constraint_area",
+    "terrain_breaklines": "terrain",
 }
 
 IMAGE_KIND_FEATURE_TYPES = {
@@ -248,11 +249,19 @@ def build_map_feature_detection_report(
             source_tier = safe_str(rec.get("source_tier") or properties.get("source_tier") or safe_dict(raw_layer).get("source_tier"))
             accepted = _official_source_accepted(rec) or _official_source_accepted(safe_dict(raw_layer))
             community_mapped = source_tier == "community_global" or "openstreetmap" in source_name.lower()
+            public_dem = source_tier in {"national_public_context", "global_public_context"}
             if community_mapped:
                 candidate_source_type = "community_mapped"
                 candidate_confidence = 0.76
                 candidate_blockers = [
                     "Community-mapped context can be incomplete or outdated and must be checked against authoritative records and project survey before reliance."
+                ]
+                acceptance_status = "pending"
+            elif public_dem:
+                candidate_source_type = "public_dem"
+                candidate_confidence = 0.72 if source_tier == "national_public_context" else 0.58
+                candidate_blockers = [
+                    "Public DEM-derived terrain context is not project survey/control or an accepted grading surface."
                 ]
                 acceptance_status = "pending"
             else:
@@ -279,7 +288,11 @@ def build_map_feature_detection_report(
 
     elevation = safe_dict(safe_dict(source_results).get("elevation"))
     if elevation.get("success"):
-        terrain_source_type = "public_dem" if safe_str(elevation.get("source_tier")) == "global_public_context" else "official_gis"
+        terrain_source_type = (
+            "public_dem"
+            if safe_str(elevation.get("source_tier")) in {"global_public_context", "national_public_context"}
+            else "official_gis"
+        )
         add_candidate(
             _candidate(
                 feature_type="terrain",
@@ -474,6 +487,7 @@ def accept_feature_candidate_as_draft_object(candidate: Dict[str, Any], *, accep
         "source_candidate_id": safe_str(rec.get("candidate_id")),
         "feature_type": feature_type,
         "geometry": rec.get("geometry"),
+        "source_properties": deepcopy(safe_dict(rec.get("properties"))),
         "source_type": safe_str(rec.get("source_type")),
         "source_url": safe_str(rec.get("source_url")),
         "source_name": safe_str(rec.get("source_name") or rec.get("evidence_source")),
@@ -795,8 +809,21 @@ def _site_intelligence_summary(
         for candidate in outside_site_candidates[:12]
     ]
     assumed: List[Dict[str, Any]] = []
+    terrain_grid = safe_dict(source_results.get("terrain_grid"))
     elevation = safe_dict(source_results.get("elevation"))
-    if elevation.get("success"):
+    if terrain_grid.get("success"):
+        assumed.append(
+            {
+                "key": "terrain_direction",
+                "label": "Terrain/drainage context",
+                "status": "public_dem_surface_context",
+                "value": f"{safe_int(terrain_grid.get('sample_count'))} samples; {safe_float(terrain_grid.get('elevation_range_ft')):.1f} ft range",
+                "confidence": "source-backed-review-context",
+                "review_required": True,
+                "message": "A public DEM surface grid is available for terrain visualization and early review; it is not project survey/control.",
+            }
+        )
+    elif elevation.get("success"):
         assumed.append(
             {
                 "key": "terrain_direction",
@@ -831,7 +858,7 @@ def _site_intelligence_summary(
     road_frontage = _road_frontage_hint(road_candidates=road_candidates, boundary_bbox=boundary_bbox)
     suggested_site_box = _suggested_site_box_hint(boundary_bbox=boundary_bbox, parcel_candidates=parcel_candidates, location_context=location_context)
     driveway_suggestions = _driveway_suggestion_hints(road_candidates=road_candidates, boundary_bbox=boundary_bbox)
-    grading_context = _grading_context_hint(elevation=elevation, boundary_bbox=boundary_bbox)
+    grading_context = _grading_context_hint(terrain_grid=terrain_grid, elevation=elevation, boundary_bbox=boundary_bbox)
     confidence_labels = _confidence_labels(found=found, missing=missing, assumed=assumed, outside=outside)
     one_sentence = _site_intelligence_sentence(
         found=found,
@@ -969,7 +996,28 @@ def _suggested_site_box_hint(
     }
 
 
-def _grading_context_hint(*, elevation: Dict[str, Any], boundary_bbox: Optional[tuple[float, float, float, float]]) -> Dict[str, Any]:
+def _grading_context_hint(
+    *,
+    terrain_grid: Dict[str, Any],
+    elevation: Dict[str, Any],
+    boundary_bbox: Optional[tuple[float, float, float, float]],
+) -> Dict[str, Any]:
+    if terrain_grid.get("success"):
+        return {
+            "status": "public_dem_surface_context",
+            "source": safe_str(terrain_grid.get("source_type"), "public_dem_elevation_grid"),
+            "sample_count": safe_int(terrain_grid.get("sample_count")),
+            "min_elevation_ft": terrain_grid.get("min_elevation_ft"),
+            "max_elevation_ft": terrain_grid.get("max_elevation_ft"),
+            "elevation_range_ft": terrain_grid.get("elevation_range_ft"),
+            "horizontal_resolution": terrain_grid.get("horizontal_resolution"),
+            "vertical_datum": terrain_grid.get("vertical_datum"),
+            "confidence": "source-backed-review-context",
+            "message": "Public DEM samples support terrain visualization and preliminary drainage context, not survey-controlled grading.",
+            "next_action": "Review the DEM source and replace or confirm it with project survey/control before production grading reliance.",
+            "review_required": True,
+            "site_boundary_present": bool(boundary_bbox),
+        }
     if elevation.get("success"):
         return {
             "status": "single_point_elevation",

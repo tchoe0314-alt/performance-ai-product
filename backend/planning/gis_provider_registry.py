@@ -395,15 +395,6 @@ def provider_packs_for_location(*, address: str = "", lat: Any = None, lng: Any 
             jurisdiction_level="utility",
             notes="Public storm discharge-point context only; outfall availability and tailwater assumptions require review.",
         ),
-        build_arcgis_provider_record(
-            source_type="utilities",
-            service_url="https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer",
-            layer_id=46,
-            name="Sarpy County waterlines",
-            jurisdiction=sarpy,
-            jurisdiction_level="utility",
-            notes="Public waterline context only; does not replace utility-owner records, hydrant flow testing, locates, or material/pressure confirmation.",
-        ),
         ]
         gaps = [
             {
@@ -425,6 +416,15 @@ def provider_packs_for_location(*, address: str = "", lat: Any = None, lng: Any 
                     "Import DEM/LiDAR/contours or configure a raster/tile elevation pipeline before treating terrain as a surface."
                 ),
                 "source_url": "https://gis.ne.gov/portal/home/item.html?id=4aeda92955de4a388588f523e4fe1f28",
+            },
+            {
+                "source_type": "utilities",
+                "label": "public potable water distribution",
+                "status": "source_not_verified",
+                "message": (
+                    "No verified queryable potable-water distribution source is configured for Gretna/Sarpy County. "
+                    "The similarly named LandRecords Waterlines layer is hydrography and is intentionally excluded from utility candidates."
+                ),
             }
         ]
         packs.append(_pack_record("gretna_ne_sarpy_county", "Gretna/Sarpy County, NE provider pack", sarpy, providers, gaps))

@@ -493,6 +493,120 @@ def fetch_global_elevation_point(
     }
 
 
+def fetch_global_elevation_grid(
+    bbox: Dict[str, Any],
+    *,
+    rows: int = 5,
+    cols: int = 5,
+    session: Any = requests,
+    endpoint: str = "",
+) -> Dict[str, Any]:
+    resolved_endpoint = safe_str(endpoint or os.getenv("CIVORA_GLOBAL_ELEVATION_URL"), DEFAULT_GLOBAL_ELEVATION_URL)
+    west, south, east, north = _bbox_bounds(safe_dict(bbox))
+    rows = min(max(safe_int(rows, 5), 2), 9)
+    cols = min(max(safe_int(cols, 5), 2), 9)
+    if not (-180 <= west < east <= 180 and -90 <= south < north <= 90):
+        return {
+            "success": False,
+            "status": "blocked",
+            "source": resolved_endpoint,
+            "source_type": "global_dem_elevation_grid",
+            "source_tier": "global_public_context",
+            "warnings": ["Global terrain-grid lookup needs a valid WGS84 site bounding box."],
+            "review_required": True,
+            "authoritative": False,
+            "survey_backed": False,
+        }
+    requested = [
+        {
+            "row": row,
+            "col": col,
+            "lat": north - (north - south) * row / (rows - 1),
+            "lng": west + (east - west) * col / (cols - 1),
+            "x_ratio": col / (cols - 1),
+            "y_ratio": row / (rows - 1),
+        }
+        for row in range(rows)
+        for col in range(cols)
+    ]
+    try:
+        payload = _get_json(
+            session,
+            resolved_endpoint,
+            params={
+                "latitude": ",".join(f"{item['lat']:.7f}" for item in requested),
+                "longitude": ",".join(f"{item['lng']:.7f}" for item in requested),
+            },
+            timeout=15.0,
+            headers={"User-Agent": "CivoraAI/0.1 (source-context; contact: support@civora.ai)"},
+        )
+    except Exception as exc:
+        return {
+            "success": False,
+            "status": "fetch_failed",
+            "source": resolved_endpoint,
+            "source_type": "global_dem_elevation_grid",
+            "source_tier": "global_public_context",
+            "warnings": [safe_str(exc, "Global terrain-grid request failed.")],
+            "review_required": True,
+            "authoritative": False,
+            "survey_backed": False,
+            "attribution": GLOBAL_ELEVATION_ATTRIBUTION,
+        }
+    elevations = safe_list(payload.get("elevation"))
+    samples: List[Dict[str, Any]] = []
+    for index, item in enumerate(requested):
+        if index >= len(elevations) or elevations[index] in (None, ""):
+            continue
+        elevation_m = safe_float(elevations[index])
+        samples.append(
+            {
+                **item,
+                "elevation_m": elevation_m,
+                "elevation_ft": elevation_m * 3.280839895,
+            }
+        )
+    if len(samples) < 4:
+        return {
+            "success": False,
+            "status": "no_elevation",
+            "source": resolved_endpoint,
+            "source_type": "global_dem_elevation_grid",
+            "source_tier": "global_public_context",
+            "sample_count": len(samples),
+            "warnings": ["Global elevation provider returned too few usable samples for a terrain surface."],
+            "review_required": True,
+            "authoritative": False,
+            "survey_backed": False,
+            "attribution": GLOBAL_ELEVATION_ATTRIBUTION,
+        }
+    elevations_ft = [safe_float(item.get("elevation_ft")) for item in samples]
+    return {
+        "success": True,
+        "status": "ready",
+        "source": resolved_endpoint,
+        "source_type": "global_dem_elevation_grid",
+        "source_tier": "global_public_context",
+        "provider": "Open-Meteo elevation",
+        "rows": rows,
+        "cols": cols,
+        "sample_count": len(samples),
+        "missing_sample_count": rows * cols - len(samples),
+        "samples": samples,
+        "min_elevation_ft": min(elevations_ft),
+        "max_elevation_ft": max(elevations_ft),
+        "elevation_range_ft": max(elevations_ft) - min(elevations_ft),
+        "units": "feet",
+        "horizontal_resolution": "approximately 90 meters",
+        "surface_ready": True,
+        "review_required": True,
+        "authoritative": False,
+        "survey_backed": False,
+        "attribution": GLOBAL_ELEVATION_ATTRIBUTION,
+        "truth_label": "Global DEM grid is approximate terrain context only; it is not survey/control or an accepted grading surface.",
+    }
+
+
 __all__ = [
     "DEFAULT_GLOBAL_ELEVATION_URL",
     "DEFAULT_OVERPASS_FALLBACK_URL",
@@ -500,6 +614,7 @@ __all__ = [
     "GLOBAL_ELEVATION_ATTRIBUTION",
     "OPENSTREETMAP_ATTRIBUTION",
     "WORLDWIDE_SOURCE_VERSION",
+    "fetch_global_elevation_grid",
     "fetch_global_elevation_point",
     "fetch_openstreetmap_site_context",
 ]

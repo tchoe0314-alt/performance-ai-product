@@ -2,12 +2,14 @@ import unittest
 
 from backend.planning.existing_conditions_online import (
     ONLINE_DISCOVERY_VERSION,
+    derive_review_contours_from_terrain_grid,
     fetch_arcgis_layer_geojson,
     fetch_configured_parcels,
     fetch_online_existing_conditions,
     fetch_fema_floodplain,
     fetch_usfws_wetlands,
     fetch_usgs_elevation_point,
+    fetch_usgs_elevation_grid,
     geocode_address_census,
     online_import_to_gis_layers,
 )
@@ -168,7 +170,57 @@ class _FailingSession:
         raise TimeoutError(f"timeout fetching {url}")
 
 
+class _TerrainGridSession:
+    def get(self, url, params=None, timeout=None):
+        samples = []
+        for index in range(9):
+            samples.append(
+                {
+                    "locationId": index,
+                    "value": 390.0 + index * 0.35,
+                    "resolution": 1,
+                    "attributes": {
+                        "VerticalDatum": "North American Vertical Datum of 1988 (NAVD 88)",
+                        "AcquisitionDate": "2024-01-02",
+                    },
+                }
+            )
+        return _Response({"samples": samples})
+
+
 class ExistingConditionsOnlineTests(unittest.TestCase):
+    def test_usgs_surface_grid_preserves_source_truth_and_elevation_shape(self) -> None:
+        result = fetch_usgs_elevation_grid(
+            {"west": -96.24, "south": 41.18, "east": -96.23, "north": 41.19},
+            rows=3,
+            cols=3,
+            session=_TerrainGridSession(),
+        )
+
+        self.assertTrue(result["success"])
+        self.assertTrue(result["surface_ready"])
+        self.assertEqual(result["sample_count"], 9)
+        self.assertEqual(result["vertical_datum"], "North American Vertical Datum of 1988 (NAVD 88)")
+        self.assertGreater(result["elevation_range_ft"], 8)
+        self.assertFalse(result["survey_backed"])
+        self.assertIn("not project survey/control", result["truth_label"])
+
+    def test_public_dem_grid_derives_review_contours_without_claiming_survey(self) -> None:
+        grid = fetch_usgs_elevation_grid(
+            {"west": -96.24, "south": 41.18, "east": -96.23, "north": 41.19},
+            rows=3,
+            cols=3,
+            session=_TerrainGridSession(),
+        )
+
+        contours = derive_review_contours_from_terrain_grid(grid)
+
+        self.assertTrue(contours["success"])
+        self.assertGreater(contours["feature_count"], 0)
+        self.assertEqual(contours["geojson"]["features"][0]["geometry"]["type"], "MultiLineString")
+        self.assertFalse(contours["survey_backed"])
+        self.assertIn("review context only", contours["truth_label"])
+
     def test_census_geocoder_normalizes_first_match(self) -> None:
         session = _Session(
             {
@@ -450,12 +502,13 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/StormwaterNetwork/MapServer/7/query", urls)
         self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/StormwaterNetwork/MapServer/3/query", urls)
         self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/PublicWorks/StormwaterNetwork/MapServer/4/query", urls)
-        self.assertIn("https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer/46/query", urls)
+        self.assertNotIn("https://geodata.sarpy.gov/arcgis/rest/services/Cadastral/LandRecordsDynamic/MapServer/46/query", urls)
         utility_children = result["source_results"]["existing_utilities"]["child_sources"]
-        self.assertEqual(len(utility_children), 5)
+        self.assertEqual(len(utility_children), 4)
         self.assertTrue(any(item["provider"] == "Sarpy County stormwater gravity mains" for item in utility_children))
-        self.assertTrue(any(item["provider"] == "Sarpy County waterlines" for item in utility_children))
-        self.assertEqual(report["configured_provider_count"], 12)
+        self.assertFalse(any(item["provider"] == "Sarpy County waterlines" for item in utility_children))
+        self.assertEqual(report["configured_provider_count"], 11)
+        self.assertTrue(any("hydrography" in item.get("message", "") for item in report["local_gis_provider_registry_v1"]["known_gaps"]))
         self.assertTrue(all(item["review_required"] for item in report["sources"]))
 
     def test_austin_provider_pack_selects_local_queryable_sources(self) -> None:
