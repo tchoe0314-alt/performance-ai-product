@@ -2198,6 +2198,38 @@ def _canonical_drainage_payload(
             continue
 
         rec = safe_dict(record)
+        boundary_points = [
+            [safe_float(point[0], 0.0), safe_float(point[1], 0.0)]
+            for point in safe_list(rec.get("boundary_points") or rec.get("geometry"))
+            if isinstance(point, (list, tuple)) and len(point) >= 2
+        ]
+        if len(boundary_points) < 3:
+            x = safe_float(rec.get("x"), 0.0)
+            y = safe_float(rec.get("y"), 0.0)
+            width = max(0.0, safe_float(rec.get("w"), 0.0))
+            depth = max(0.0, safe_float(rec.get("d"), 0.0))
+            if width > 0.0 and depth > 0.0:
+                boundary_points = [
+                    [x, y],
+                    [x + width, y],
+                    [x + width, y + depth],
+                    [x, y + depth],
+                ]
+        centroid_xy = safe_list(rec.get("centroid_xy"))
+        if len(centroid_xy) < 2 and boundary_points:
+            centroid_xy = [
+                sum(point[0] for point in boundary_points) / len(boundary_points),
+                sum(point[1] for point in boundary_points) / len(boundary_points),
+            ]
+        polygon_area_sf = 0.0
+        if len(boundary_points) >= 3:
+            polygon_area_sf = abs(
+                sum(
+                    point[0] * boundary_points[(index + 1) % len(boundary_points)][1]
+                    - boundary_points[(index + 1) % len(boundary_points)][0] * point[1]
+                    for index, point in enumerate(boundary_points)
+                )
+            ) / 2.0
         basins.append({
             "id": safe_str(rec.get("id") or rec.get("sink_name") or rec.get("name") or rec.get("label"), f"BASIN-{index}"),
             "name": safe_str(rec.get("sink_name") or rec.get("name") or rec.get("label"), f"BASIN-{index}"),
@@ -2206,14 +2238,25 @@ def _canonical_drainage_payload(
             "layer": safe_str(rec.get("layer"), "BASIN_BOUNDARY").upper(),
             "sink": safe_list(rec.get("sink")),
             "sink_name": safe_str(rec.get("sink_name") or rec.get("name") or rec.get("label"), f"BASIN-{index}"),
-            "centroid_xy": safe_list(rec.get("centroid_xy")),
-            "area_sf": safe_float(rec.get("area_sf"), 0.0),
+            "centroid_xy": centroid_xy,
+            "boundary_points": boundary_points,
+            "area_sf": safe_float(rec.get("area_sf"), polygon_area_sf),
+            "bottom_area_sf": safe_float(rec.get("bottom_area_sf"), 0.0),
+            "top_of_bank_area_sf": safe_float(rec.get("top_of_bank_area_sf"), safe_float(rec.get("area_sf"), polygon_area_sf)),
             "contributing_cells": safe_int(rec.get("contributing_cells"), 0),
             "target_name": safe_str(rec.get("target_name"), "") or None,
             "average_z": safe_float(rec.get("average_z"), 0.0),
             "estimated_runoff_cfs": safe_float(rec.get("estimated_runoff_cfs"), 0.0),
             "runoff_c": safe_float(rec.get("runoff_c"), 0.0),
             "intensity_in_hr": safe_float(rec.get("intensity_in_hr"), 0.0),
+            "detention_design": deepcopy(safe_dict(rec.get("detention_design"))),
+            "overflow_spillway": deepcopy(safe_dict(rec.get("overflow_spillway"))),
+            "geometry_quality": deepcopy(safe_dict(rec.get("geometry_quality"))),
+            "exportable": bool(rec.get("exportable")),
+            "source": safe_str(rec.get("source"), source),
+            "source_confidence": safe_str(rec.get("source_confidence"), "review_required"),
+            "review_required": bool(rec.get("review_required", True)),
+            "construction_release_allowed": False,
         })
 
     for index, run in enumerate(pipe_runs or [], start=1):
@@ -2236,7 +2279,7 @@ def _canonical_drainage_payload(
             continue
 
         rec = safe_dict(run)
-        path = safe_list(rec.get("path"))
+        path = safe_list(rec.get("path") or rec.get("points"))
         length = safe_float(rec.get("length_ft"), polyline_length(path))
         total_pipe_length += length
         pipes.append({
@@ -2250,6 +2293,10 @@ def _canonical_drainage_payload(
             "flow_cfs": rec.get("flow_cfs"),
             "slope": rec.get("slope"),
             "warnings": [safe_str(w) for w in safe_list(rec.get("warnings")) if safe_str(w)],
+            "source": safe_str(rec.get("source"), source),
+            "source_confidence": safe_str(rec.get("source_confidence"), "review_required"),
+            "review_required": bool(rec.get("review_required", True)),
+            "construction_release_allowed": False,
         })
 
     for index, record in enumerate(low_point_records or [], start=1):

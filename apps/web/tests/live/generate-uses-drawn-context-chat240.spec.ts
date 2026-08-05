@@ -208,6 +208,10 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   const buildings = manualFields.buildings as Array<Record<string, unknown>>;
   const ponds = manualFields.ponds as Array<Record<string, unknown>>;
   const sitePlan = manualFields.site_plan as Record<string, unknown> | undefined;
+  const utilityNetwork = manualFields.utility_network as Array<Record<string, unknown>>;
+  const pipeNetwork = manualFields.pipe_network as Array<Record<string, unknown>>;
+  const drainageStructures = manualFields.drainage_structures as Array<Record<string, unknown>>;
+  const disciplines = manualFields.disciplines as string[];
 
   expect(Array.isArray(siteObjects)).toBeTruthy();
   expect(siteObjects.some((item) => String(item.label).includes("Office Building - 28,000 sf") && item.placed === true)).toBeTruthy();
@@ -219,6 +223,12 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   expect(buildings.some((item) => String(item.label).includes("Office Building - 28,000 sf"))).toBeTruthy();
   expect(ponds.some((item) => /Basin|Detention/i.test(String(item.name)))).toBeTruthy();
   expect(sitePlan?.parking_count ?? null).toBe(140);
+  expect(utilityNetwork.some((item) => item.utility_type === "water" && Array.isArray(item.points))).toBeTruthy();
+  expect(utilityNetwork.some((item) => item.utility_type === "sanitary" && Array.isArray(item.points))).toBeTruthy();
+  expect(pipeNetwork.some((item) => item.utility_type === "storm" && Array.isArray(item.points))).toBeTruthy();
+  expect(drainageStructures.some((item) => item.structure_type === "inlet")).toBeTruthy();
+  expect(disciplines).toEqual(expect.arrayContaining(["sanitary", "storm", "water"]));
+  expect(JSON.stringify(utilityNetwork)).toContain('"construction_release_allowed":false');
 
   const meta = request.meta as Record<string, unknown>;
   expect(meta.requested_system).toBe("full");

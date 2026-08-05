@@ -1804,10 +1804,49 @@ export type ManualFields = {
   drainage?: {
     min_pipe_slope_pct?: number;
     forced_inlets?: Array<Record<string, unknown>>;
+    preferred_outfall?: Record<string, unknown>;
+    outfalls?: Array<Record<string, unknown>>;
+    coordination?: {
+      preferred_outfall?: Record<string, unknown>;
+    };
     connect_orphans?: boolean;
     allow_slope_adjustment?: boolean;
     max_slope_adjust?: number;
   };
+  drainage_structures?: Array<{
+    id?: string;
+    name?: string;
+    x: number;
+    y: number;
+    structure_type?: string;
+    source?: string;
+    source_confidence?: string;
+    review_required?: boolean;
+    construction_release_allowed?: false;
+  }>;
+  pipe_network?: Array<{
+    id?: string;
+    label?: string;
+    points: Array<[number, number]>;
+    path?: Array<[number, number]>;
+    utility_type?: string;
+    layer?: string;
+    source?: string;
+    source_confidence?: string;
+    review_required?: boolean;
+    construction_release_allowed?: false;
+  }>;
+  utility_network?: Array<{
+    id?: string;
+    label?: string;
+    points: Array<[number, number]>;
+    utility_type?: string;
+    layer?: string;
+    source?: string;
+    source_confidence?: string;
+    review_required?: boolean;
+    construction_release_allowed?: false;
+  }>;
   ponds?: Array<{
     id?: string;
     name?: string;
@@ -1821,6 +1860,13 @@ export type ManualFields = {
     generated?: boolean;
     geometry_type?: "polygon" | "polyline" | "rect" | "point";
     geometry?: Array<[number, number]>;
+    boundary_points?: Array<[number, number]>;
+    centroid_xy?: [number, number];
+    area_sf?: number;
+    canonical_type?: "detention_basin";
+    source_confidence?: string;
+    review_required?: boolean;
+    construction_release_allowed?: false;
     meta?: Record<string, unknown>;
     systemDependencies?: string[];
   }>;

@@ -125,6 +125,107 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
             self.assertTrue(plan["meta"][key]["engineer_review_required"], key)
             self.assertFalse(plan["meta"][key]["production_usable"], key)
 
+    def test_drawn_semantic_civil_objects_reach_native_engine_stages(self) -> None:
+        payload = _supported_minimal_payload()
+        payload["disciplines"] = ["grading", "drainage", "storm", "sanitary", "water", "utility"]
+        payload["buildings"] = [{"id": "BLDG-1", "name": "Office", "x": 40, "y": 50, "w": 80, "d": 60}]
+        payload["ponds"] = [{
+            "id": "BASIN-1",
+            "name": "Detention Basin",
+            "boundary_points": [[170, 20], [220, 20], [215, 55], [175, 60]],
+            "geometry": [[170, 20], [220, 20], [215, 55], [175, 60]],
+            "centroid_xy": [195, 39],
+            "area_sf": 1700,
+            "source": "manual_drawn",
+            "source_confidence": "user_drawn_review_required",
+            "review_required": True,
+            "construction_release_allowed": False,
+        }]
+        payload["drainage"] = {
+            **payload["drainage"],
+            "preferred_outfall": {
+                "id": "OUT-1",
+                "target_name": "Basin Outfall",
+                "x": 215,
+                "y": 35,
+                "source": "manual_drawn",
+                "review_required": True,
+                "construction_release_allowed": False,
+            },
+        }
+        payload["drainage_structures"] = [{
+            "id": "INLET-1",
+            "name": "Parking Inlet",
+            "x": 80,
+            "y": 90,
+            "structure_type": "inlet",
+            "source": "manual_drawn",
+            "source_confidence": "user_drawn_review_required",
+            "review_required": True,
+            "construction_release_allowed": False,
+        }]
+        payload["pipe_network"] = [{
+            "id": "STORM-1",
+            "label": "Storm Trunk",
+            "points": [[80, 90], [180, 40]],
+            "path": [[80, 90], [180, 40]],
+            "utility_type": "storm",
+            "source": "manual_drawn",
+            "source_confidence": "user_drawn_review_required",
+            "review_required": True,
+            "construction_release_allowed": False,
+        }]
+        payload["utility_network"] = [
+            {
+                "id": "WATER-1",
+                "label": "Public Water Main",
+                "points": [[0, 80], [140, 80]],
+                "utility_type": "water",
+                "source": "manual_drawn",
+                "source_confidence": "user_drawn_review_required",
+                "review_required": True,
+                "construction_release_allowed": False,
+            },
+            {
+                "id": "SAN-1",
+                "label": "Public Sanitary Main",
+                "points": [[0, 60], [140, 60]],
+                "utility_type": "sanitary",
+                "source": "manual_drawn",
+                "source_confidence": "user_drawn_review_required",
+                "review_required": True,
+                "construction_release_allowed": False,
+            },
+        ]
+
+        plan = planner.build_plan(payload)
+        messages = {
+            row.get("stage_name"): row.get("message")
+            for row in plan["meta"].get("stage_results", [])
+        }
+
+        self.assertEqual(messages["drainage"], "Drainage stage accepted user-supplied geometry.")
+        self.assertEqual(messages["storm_pipes"], "Storm pipe stage completed.")
+        self.assertEqual(messages["sanitary"], "Sanitary stage accepted user-supplied sanitary geometry.")
+        self.assertEqual(messages["utility_network"], "Utility stage accepted user-supplied geometry.")
+        self.assertGreaterEqual(len(plan["meta"]["drainage"]["structures"]), 1)
+        self.assertEqual(len(plan["meta"]["drainage"]["basins"]), 1)
+        self.assertGreaterEqual(len(plan["meta"]["storm_pipes"]["segments"]), 1)
+        self.assertEqual(len(plan["meta"]["utilities"]["segments"]), 2)
+        self.assertEqual(
+            plan["meta"]["drainage"]["coordination"]["preferred_outfall"]["target_name"],
+            "Basin Outfall",
+        )
+        for system in ("drainage", "storm", "sanitary", "water", "utilities"):
+            row = _system(plan, system)
+            self.assertEqual(row["status"], "review_required", system)
+            self.assertTrue(row["canonical_output_present"], system)
+            self.assertTrue(row["engineer_review_required"], system)
+            self.assertFalse(row["production_usable"], system)
+        self.assertTrue(
+            all(segment["construction_release_allowed"] is False for segment in plan["meta"]["utilities"]["segments"])
+        )
+
     def test_missing_terrain_blocks_grading_and_downstream_without_fake_success(self) -> None:
         payload = _supported_minimal_payload()
         payload.pop("terrain")

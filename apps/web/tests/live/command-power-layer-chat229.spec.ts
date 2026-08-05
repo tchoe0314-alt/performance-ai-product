@@ -282,6 +282,28 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Storm Sewer");
   });
 
+  test("explicitly reuses drawn objects without creating a duplicate program", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await openDrawPanel(page);
+
+    const beforeRows = await page.getByTestId("object-manager-row").allTextContents();
+    expect(beforeRows.length).toBeGreaterThan(5);
+
+    await runCommand(
+      page,
+      "Use this locked 1000 ft by 1000 ft site at 20525 Margo St for a 28,000 SF office with 140 parking spaces, detention, public water, public sanitary, storm sewer, a driveway, sidewalks, and ADA access. Keep the objects already drawn and do not create duplicates.",
+    );
+
+    await expect(page.getByText(/kept \d+ existing drawn objects/i).first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText(/did not create duplicate concept geometry/i).first()).toBeVisible();
+    await expect(page.getByText(/140-space parking target/i).first()).toBeVisible();
+
+    await openDrawPanel(page);
+    const afterRows = await page.getByTestId("object-manager-row").allTextContents();
+    expect(afterRows.slice(1)).toEqual(beforeRows.slice(1));
+    expect(afterRows[0]).toContain("1000 ft x 1000 ft");
+  });
+
   test("commands open generate, deliver, blocker view, layers, and AI realism mode", async ({ page }) => {
     await openDemoWorkspace(page);
 

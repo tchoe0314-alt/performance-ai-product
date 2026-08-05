@@ -111,8 +111,25 @@ def _has_basin_outfall(parsed: Dict[str, Any], meta: Dict[str, Any]) -> bool:
     for pond in safe_list(parsed.get("ponds")):
         if _valid_rect(pond, require_position=True):
             return True
+        rec = safe_dict(pond)
+        boundary = safe_list(rec.get("boundary_points") or rec.get("geometry"))
+        valid_points = [
+            point
+            for point in boundary
+            if isinstance(point, (list, tuple))
+            and len(point) >= 2
+            and _float_or_none(point[0]) is not None
+            and _float_or_none(point[1]) is not None
+        ]
+        if len(valid_points) >= 3 and (_float_or_none(rec.get("area_sf")) or 0.0) > 0.0:
+            return True
     drainage = safe_dict(parsed.get("drainage"))
-    if safe_dict(drainage.get("preferred_outfall")) or safe_dict(drainage.get("outfall")):
+    coordination = safe_dict(drainage.get("coordination"))
+    if (
+        safe_dict(drainage.get("preferred_outfall"))
+        or safe_dict(drainage.get("outfall"))
+        or safe_dict(coordination.get("preferred_outfall"))
+    ):
         return True
     if safe_list(drainage.get("basins")) or safe_list(drainage.get("outfalls")):
         return True

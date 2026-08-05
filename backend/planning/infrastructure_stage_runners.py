@@ -641,10 +641,37 @@ def run_utility_stage(
 
         execution_payload = unwrap_fields_for_execution(parsed)
         if user_supplied_geometry_available(parsed, "utility_network"):
-            user_utility_actions = actions_from_linear_features(safe_list(execution_payload.get("utility_network")), "UTILITY", text_height=0.8)
+            direct_features = [
+                safe_dict(feature)
+                for feature in safe_list(execution_payload.get("utility_network"))
+                if safe_dict(feature)
+            ]
+            user_utility_actions = actions_from_linear_features(direct_features, "UTILITY", text_height=0.8)
             merge_actions_into_expanded_plan(project, user_utility_actions, utility_direct_input=True)
-            total_length = sum(polyline_length(safe_list(f.get("points"))) for f in safe_list(execution_payload.get("utility_network")) if isinstance(f, dict))
-            route_count = len([f for f in safe_list(execution_payload.get("utility_network")) if isinstance(f, dict)])
+            direct_segments = []
+            for index, feature in enumerate(direct_features, start=1):
+                points = safe_list(feature.get("points") or feature.get("path"))
+                if len(points) < 2:
+                    continue
+                direct_segments.append({
+                    "id": safe_str(feature.get("id"), f"UTILITY-{index}"),
+                    "name": safe_str(feature.get("label") or feature.get("name"), f"UTILITY-{index}"),
+                    "utility_type": lower_text(feature.get("utility_type")) or "utility",
+                    "layer": safe_str(feature.get("layer"), "UTILITY").upper(),
+                    "points": deepcopy(points),
+                    "path": deepcopy(points),
+                    "length_ft": round(polyline_length(points), 3),
+                    "source": safe_str(feature.get("source"), "user_input"),
+                    "source_confidence": safe_str(feature.get("source_confidence"), "review_required"),
+                    "review_required": True,
+                    "construction_release_allowed": False,
+                })
+            total_length = sum(safe_float(segment.get("length_ft"), 0.0) for segment in direct_segments)
+            route_count = len(direct_segments)
+            system_counts: Dict[str, int] = {}
+            for segment in direct_segments:
+                utility_type = safe_str(segment.get("utility_type"), "utility")
+                system_counts[utility_type] = system_counts.get(utility_type, 0) + 1
             manager.set_metric("utility_route_count", route_count, category="utilities")
             manager.set_metric("utility_total_length_ft", total_length, units="ft", category="utilities")
             utility_summary = {
@@ -655,6 +682,11 @@ def run_utility_stage(
                 "warning_count": 0,
                 "fallback_used": False,
                 "source": "user_input",
+                "segments": direct_segments,
+                "system_counts": system_counts,
+                "conflict_hooks": {"utility_segments": deepcopy(direct_segments)},
+                "review_required": True,
+                "construction_release_allowed": False,
             }
             manager.latest_outputs["utilities"] = deepcopy(utility_summary)
             project.meta["utility_summary"] = deepcopy(utility_summary)

@@ -191,6 +191,120 @@ export function buildDashboardManualFields({
     const buildingOverrides = placementOverrides.filter((placement) =>
       buildingTypes.has(placement.type as SiteObjectType),
     );
+    const placementRoutePoints = (placement: (typeof placementOverrides)[number]): Array<[number, number]> =>
+      (Array.isArray(placement.geometry) ? placement.geometry : [])
+        .filter(
+          (point): point is [number, number] =>
+            Array.isArray(point) &&
+            point.length >= 2 &&
+            Number.isFinite(Number(point[0])) &&
+            Number.isFinite(Number(point[1])),
+        )
+        .map((point) => [Number(point[0]), Number(point[1])]);
+    const polygonArea = (points: Array<[number, number]>) => {
+      if (points.length < 3) return 0;
+      return Math.abs(
+        points.reduce((sum, point, index) => {
+          const next = points[(index + 1) % points.length];
+          return sum + point[0] * next[1] - next[0] * point[1];
+        }, 0) / 2,
+      );
+    };
+    const inferUtilityType = (placement: (typeof placementOverrides)[number]) => {
+      const hint = `${String(placement.meta?.network ?? "")} ${placement.label}`.toLowerCase();
+      if (/sanitary|sewer|\bsan\b/.test(hint)) return "sanitary";
+      if (/storm|drain/.test(hint)) return "storm";
+      if (/water|hydrant/.test(hint)) return "water";
+      return "utility";
+    };
+    const utilityNetwork = placementOverrides
+      .filter((placement) => placement.type === "utility_corridor")
+      .map((placement) => {
+        const points = placementRoutePoints(placement);
+        if (points.length < 2) return null;
+        const utilityType = inferUtilityType(placement);
+        return {
+          id: placement.id,
+          label: placement.label,
+          points,
+          utility_type: utilityType,
+          layer:
+            utilityType === "sanitary"
+              ? "SAN"
+              : utilityType === "storm"
+                ? "STORM"
+                : utilityType === "water"
+                  ? "WATER"
+                  : "UTILITY",
+          source: placement.source ?? "manual_drawn",
+          source_confidence: String(placement.meta?.source_confidence ?? "user_drawn_review_required"),
+          review_required: true,
+          construction_release_allowed: false as const,
+        };
+      })
+      .filter((feature): feature is NonNullable<typeof feature> => Boolean(feature));
+    const inferredDrainageInlets = placementOverrides
+      .filter((placement) => placement.type === "inlet")
+      .map((placement) => {
+        const point = placementRoutePoints(placement)[0];
+        const x = point?.[0] ?? Number(placement.x);
+        const y = point?.[1] ?? Number(placement.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return {
+          id: placement.id,
+          name: placement.label,
+          x,
+          y,
+          structure_type: "inlet",
+          source: placement.source ?? "manual_drawn",
+          source_confidence: String(placement.meta?.source_confidence ?? "user_drawn_review_required"),
+          review_required: true,
+          construction_release_allowed: false as const,
+        };
+      })
+      .filter((feature): feature is NonNullable<typeof feature> => Boolean(feature));
+    const inferredOutfalls = placementOverrides
+      .filter((placement) => placement.type === "outfall")
+      .map((placement) => {
+        const point = placementRoutePoints(placement)[0];
+        const x = point?.[0] ?? Number(placement.x);
+        const y = point?.[1] ?? Number(placement.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        return {
+          id: placement.id,
+          name: placement.label,
+          target_name: placement.label,
+          x,
+          y,
+          source: placement.source ?? "manual_drawn",
+          source_confidence: String(placement.meta?.source_confidence ?? "user_drawn_review_required"),
+          review_required: true,
+          construction_release_allowed: false as const,
+        };
+      })
+      .filter((feature): feature is NonNullable<typeof feature> => Boolean(feature));
+
+    if (utilityNetwork.length) {
+      manualFields.utility_network = utilityNetwork;
+      const inferredDisciplines = utilityNetwork.map((feature) => feature.utility_type);
+      manualFields.disciplines = Array.from(new Set([...(manualFields.disciplines ?? []), ...inferredDisciplines]));
+    }
+    const stormPipeNetwork = utilityNetwork.filter((feature) => feature.utility_type === "storm");
+    if (stormPipeNetwork.length) {
+      manualFields.pipe_network = stormPipeNetwork.map((feature) => ({
+        ...feature,
+        path: feature.points,
+      }));
+    }
+    if (inferredDrainageInlets.length) manualFields.drainage_structures = inferredDrainageInlets;
+    if (inferredOutfalls.length) {
+      manualFields.drainage = {
+        ...(manualFields.drainage ?? {}),
+        preferred_outfall: inferredOutfalls[0],
+        outfalls: inferredOutfalls,
+        coordination: { preferred_outfall: inferredOutfalls[0] },
+      };
+    }
 
     if (buildingOverrides.length) {
       manualFields.buildings = buildingOverrides.map((placement) => ({
@@ -199,19 +313,39 @@ export function buildDashboardManualFields({
       }));
     }
     if (basinOverrides.length) {
-      manualFields.ponds = basinOverrides.map((placement) => ({
-        id: placement.id,
-        name: placement.label,
-        x: placement.x,
-        y: placement.y,
-        w: placement.w,
-        d: placement.d,
-        rotation: placement.rotation,
-        locked: placement.locked,
-        source: placement.source,
-        generated: placement.generated,
-        systemDependencies: placement.systemDependencies,
-      }));
+      manualFields.ponds = basinOverrides.map((placement) => {
+        const boundaryPoints = placementRoutePoints(placement);
+        const areaSf = polygonArea(boundaryPoints) || Math.max(0, Number(placement.w) * Number(placement.d));
+        const centroidX = boundaryPoints.length
+          ? boundaryPoints.reduce((sum, point) => sum + point[0], 0) / boundaryPoints.length
+          : Number(placement.x) + Number(placement.w) / 2;
+        const centroidY = boundaryPoints.length
+          ? boundaryPoints.reduce((sum, point) => sum + point[1], 0) / boundaryPoints.length
+          : Number(placement.y) + Number(placement.d) / 2;
+        return {
+          id: placement.id,
+          name: placement.label,
+          x: placement.x,
+          y: placement.y,
+          w: placement.w,
+          d: placement.d,
+          rotation: placement.rotation,
+          locked: placement.locked,
+          source: placement.source ?? "manual_drawn",
+          generated: placement.generated,
+          geometry_type: placement.geometry_type,
+          geometry: placement.geometry,
+          boundary_points: boundaryPoints,
+          centroid_xy: [centroidX, centroidY] as [number, number],
+          area_sf: areaSf,
+          canonical_type: "detention_basin" as const,
+          source_confidence: String(placement.meta?.source_confidence ?? "user_drawn_review_required"),
+          review_required: true,
+          construction_release_allowed: false as const,
+          meta: placement.meta,
+          systemDependencies: placement.systemDependencies,
+        };
+      });
     }
     if (entranceOverrides.length) {
       manualFields.access_points = entranceOverrides.map((placement) => ({
@@ -328,10 +462,14 @@ export function buildDashboardManualFields({
         min_pipe_slope_pct: pipeMinSlopeValue,
       };
     }
-    if (drainageForcedInlets.length) {
+    const combinedForcedInlets = [...drainageForcedInlets, ...inferredDrainageInlets].filter(
+      (item, index, items) =>
+        items.findIndex((candidate) => String(candidate.id ?? candidate.name) === String(item.id ?? item.name)) === index,
+    );
+    if (combinedForcedInlets.length) {
       manualFields.drainage = {
         ...(manualFields.drainage ?? {}),
-        forced_inlets: drainageForcedInlets,
+        forced_inlets: combinedForcedInlets,
       };
     }
     if (drainageConnectOrphans) {

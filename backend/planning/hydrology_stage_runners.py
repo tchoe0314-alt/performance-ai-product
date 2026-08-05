@@ -381,6 +381,24 @@ def run_drainage_stage(
                 success=True,
                 message="Drainage stage accepted user-supplied geometry.",
             )
+            direct_outfalls = [
+                safe_dict(item)
+                for item in safe_list(drainage_profile.get("outfalls"))
+                if safe_dict(item)
+            ]
+            preferred_outfall = (
+                safe_dict(drainage_profile.get("preferred_outfall"))
+                or safe_dict(safe_dict(drainage_profile.get("coordination")).get("preferred_outfall"))
+                or (direct_outfalls[0] if direct_outfalls else {})
+            )
+            if direct_outfalls:
+                canonical_drainage["outfalls"] = deepcopy(direct_outfalls)
+            if preferred_outfall:
+                canonical_drainage["coordination"] = {
+                    **safe_dict(canonical_drainage.get("coordination")),
+                    "preferred_outfall": deepcopy(preferred_outfall),
+                    "preferred_targets": [deepcopy(preferred_outfall)],
+                }
             canonical_drainage = enrich_drainage_production_depth(canonical_drainage)
             canonical_drainage = _apply_verified_overflow_input(canonical_drainage, execution_payload)
             canonical_drainage["export_validation"] = drainage_export_validation(

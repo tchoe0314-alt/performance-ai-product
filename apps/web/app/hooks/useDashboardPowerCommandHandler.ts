@@ -425,6 +425,17 @@ export function useDashboardPowerCommandHandler({
       const wantsProgramAfterSiteSetup =
         /\b(office|building|parking|spaces|stalls|basin|detention|pond|storm|water|sanitary|sewer|sidewalk|ada|driveway|road|grading|drainage|utilities|utility)\b/i.test(message) &&
         /\b(add|include|create|make|generate|design|layout|put|place|with)\b/i.test(message);
+      const explicitlyPreserveExistingProgram =
+        /\b(?:keep|reuse|preserve|use)\b[^.]{0,100}\b(?:existing|drawn|current|already)\b/i.test(message) ||
+        /\b(?:do not|don't|dont|without|no)\s+(?:create\s+)?duplicates?\b/i.test(message);
+      const existingProgramObjectCount = buildingPlacements.filter(
+        (item) => item.type !== "site" && !item.meta?.source_candidate && !item.meta?.candidate,
+      ).length;
+      const reuseExistingProgram =
+        wantsProgramAfterSiteSetup && explicitlyPreserveExistingProgram && existingProgramObjectCount > 0;
+      const requestedParkingCount = message.match(
+        /\b(\d{1,4})\s*(?:parking\s+)?(?:spaces?|stalls?)\b/i,
+      )?.[1];
       const wantsSubdivisionCadPlan =
         /\b(recreate|copy|like the image|like this image|subdivision|master plan|lots?|parcels?|contours?|cad screenshot|as many)\b/i.test(message) &&
         /\b(image|plan|site|cad|subdivision|lots?|parcels?|contours?|dense|stuff)\b/i.test(message);
@@ -442,7 +453,7 @@ export function useDashboardPowerCommandHandler({
         true,
         true,
       );
-      if (wantsProgramAfterSiteSetup) {
+      if (wantsProgramAfterSiteSetup && !reuseExistingProgram) {
         const conceptObjects = (wantsUrbanizationCampusPlan
           ? createUrbanizationCampusPlanPlacements({
               w: directSiteSetup.width,
@@ -469,7 +480,7 @@ export function useDashboardPowerCommandHandler({
                 : "site_setup_program_command",
           },
         }));
-        setParkingCount("140");
+        setParkingCount(requestedParkingCount ?? "140");
         setBuildingPlacements((prev) => [
           ...prev.filter((item) => item.type === "site" || !item.meta?.dense_concept_generated),
           ...conceptObjects,
@@ -483,6 +494,14 @@ export function useDashboardPowerCommandHandler({
             : wantsSubdivisionCadPlan
             ? "Lots, roads, contours, amenity/drainage core, hatches, utility spines, ponds, and plan symbols were placed from one natural-language command."
             : "Office, parking, basin, driveway, sidewalks, water, sanitary, storm, inlet, outfall, hydrant, and manhole draft objects were placed from one natural-language command.",
+        });
+      } else if (reuseExistingProgram) {
+        if (requestedParkingCount) setParkingCount(requestedParkingCount);
+        markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
+        recordRecentChange({
+          type: "object_style_changed",
+          label: "Existing site program reused from chat",
+          detail: `${existingProgramObjectCount} existing non-site objects were preserved; no replacement concept geometry was created.`,
         });
       }
       setShowSiteBounds(false);
@@ -505,7 +524,9 @@ export function useDashboardPowerCommandHandler({
       });
       setAutoExistingConditionsStatus({
         status: "running",
-        message: wantsProgramAfterSiteSetup
+        message: reuseExistingProgram
+          ? `Applying ${directSiteSetup.address}, preserving ${existingProgramObjectCount} existing project objects without duplicates, and checking available source context inside a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft locked site.`
+          : wantsProgramAfterSiteSetup
           ? `Applying ${directSiteSetup.address}, placing the requested draft site program, and checking available source context inside a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft locked site.`
           : `Applying ${directSiteSetup.address} and checking available source context inside a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft locked site.`,
         candidateCount: 0,
@@ -513,7 +534,9 @@ export function useDashboardPowerCommandHandler({
       });
       appendChatMessage(
         "assistant",
-        wantsProgramAfterSiteSetup
+        reuseExistingProgram
+          ? `Got it. I kept ${existingProgramObjectCount} existing drawn objects for the ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft site at ${directSiteSetup.address} and did not create duplicate concept geometry. I am refreshing source context; Generate will use the existing canonical objects${requestedParkingCount ? ` with a ${requestedParkingCount}-space parking target` : ""}.`
+          : wantsProgramAfterSiteSetup
           ? `Got it. I set up a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft review site centered on ${directSiteSetup.address}, placed an editable office/parking/drainage/utility/sidewalk draft concept, and started source context detection. You can move, rename, delete, or redraw the objects before Generate.`
           : `Got it. I set up a ${Math.round(directSiteSetup.width)} ft by ${Math.round(directSiteSetup.height)} ft review site centered on ${directSiteSetup.address}, locked the site frame, and started source context detection. Any roads, buildings, terrain, utilities, or constraints found from configured sources stay review-required.`,
         "status",
