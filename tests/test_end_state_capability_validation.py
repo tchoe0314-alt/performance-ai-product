@@ -61,6 +61,8 @@ def test_runner_stops_each_failed_gate_and_keeps_external_truth_separate(tmp_pat
     assert report["failed_gate_ids"] == ["semantic_project_lifecycle"]
     assert report["external_evidence_complete"] is False
     assert report["construction_release_allowed"] is False
+    assert report["internal_calculation_crosschecks"]["passed"] is True
+    assert report["internal_software_assurance_complete"] is False
     assert output.exists()
     assert len(seen) == 2
 
@@ -100,3 +102,21 @@ def test_unknown_gate_name_fails_instead_of_returning_empty_success(tmp_path: Pa
     assert report["success"] is False
     assert report["failed_gate_ids"] == ["validation_configuration"]
     assert report["gates"][0]["errors"] == ["Unknown validation gate: semantic_project_lifecyle"]
+
+
+def test_full_internal_gate_manifest_can_complete_software_assurance() -> None:
+    report = run_end_state_capability_validation(
+        include_frontend=True,
+        include_browser=True,
+        executor=lambda command, cwd, env: {
+            "exit_code": 0,
+            "elapsed_seconds": 0.0,
+            "stdout": "passed",
+            "stderr": "",
+        },
+    )
+
+    assert report["success"] is True
+    assert report["internal_software_assurance_complete"] is True
+    assert report["missing_internal_gate_ids"] == []
+    assert report["external_evidence_complete"] is False

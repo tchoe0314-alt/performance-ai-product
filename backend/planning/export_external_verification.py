@@ -207,6 +207,19 @@ def _load_sidecar(sidecar_path: Optional[Path]) -> Dict[str, Any]:
         return {}
 
 
+def _resolved_artifact_path(value: Any, *, relative_to: Optional[Path] = None) -> Optional[Path]:
+    text = safe_str(value)
+    if not text:
+        return None
+    path = Path(text).expanduser()
+    if not path.is_absolute() and relative_to is not None:
+        path = relative_to / path
+    try:
+        return path.resolve(strict=False)
+    except OSError:
+        return path.absolute()
+
+
 def _package_report_from_plan_or_sidecar(plan: Dict[str, Any], sidecar: Dict[str, Any]) -> Dict[str, Any]:
     return safe_dict(
         safe_dict(plan.get("meta")).get("export_package_report_v1")
@@ -218,10 +231,23 @@ def _sidecar_metadata_check(artifact_path: Path, sidecar_path: Optional[Path], s
     present = bool(sidecar_path and sidecar_path.exists() and sidecar)
     report = safe_dict(sidecar.get("export_package_report_v1"))
     stale = safe_list(sidecar.get("stale_outputs_detected") or report.get("stale_outputs_detected"))
+    recorded_artifact_path = _resolved_artifact_path(
+        sidecar.get("artifact_path"),
+        relative_to=sidecar_path.parent if sidecar_path else None,
+    )
+    actual_artifact_path = _resolved_artifact_path(artifact_path)
     return {
         "present": present,
         "path": str(sidecar_path) if sidecar_path else "",
-        "artifact_path_matches": bool(present and safe_str(sidecar.get("artifact_path")) == str(artifact_path)),
+        "artifact_path_matches": bool(
+            present
+            and recorded_artifact_path is not None
+            and actual_artifact_path is not None
+            and recorded_artifact_path == actual_artifact_path
+        ),
+        "recorded_artifact_path": safe_str(sidecar.get("artifact_path")),
+        "resolved_recorded_artifact_path": str(recorded_artifact_path) if recorded_artifact_path else "",
+        "resolved_actual_artifact_path": str(actual_artifact_path) if actual_artifact_path else "",
         "export_package_report_present": bool(present and safe_dict(sidecar.get("export_package_report_v1"))),
         "source_canonical_revision": safe_str(sidecar.get("source_canonical_revision") or report.get("source_canonical_revision")),
         "source_canonical_hash": safe_str(sidecar.get("source_canonical_hash") or report.get("source_canonical_hash")),
