@@ -106,8 +106,12 @@ export function useDashboardProjectLoad({
       resolvedProjectIdRef.current = project.project_id;
       setCurrentProject(project);
       setProjectId(project.project_id);
-      setSiteName(project.name ?? "");
       applyProjectInput(project.project_input ?? {});
+      // The project record owns identity. A duplicated record intentionally
+      // keeps copied input history, whose embedded project_name may still be
+      // the source name, so apply that input first and then restore the new
+      // record name.
+      setSiteName(project.name ?? "");
       setBackendResult(null);
       setIssues([]);
       setPlanPreviewUrl("");

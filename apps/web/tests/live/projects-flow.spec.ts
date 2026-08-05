@@ -213,6 +213,32 @@ async function mockShell(page: Page, store: Map<string, SavedProject>) {
       return;
     }
 
+    const duplicateMatch = path.match(/^\/api\/projects\/([^/]+)\/duplicate$/);
+    if (duplicateMatch && method === "POST") {
+      const source = store.get(duplicateMatch[1]);
+      if (!source) {
+        await route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: JSON.stringify({ detail: "Project not found." }),
+        });
+        return;
+      }
+      const project: SavedProject = {
+        ...structuredClone(source),
+        project_id: `pw-project-${nextProjectNumber++}`,
+        name: `${source.name} Copy`,
+        updated_at: Math.floor(Date.now() / 1000),
+      };
+      store.set(project.project_id, project);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, project }),
+      });
+      return;
+    }
+
     if (detailMatch && method === "DELETE") {
       const deleted = store.delete(detailMatch[1]);
       await route.fulfill({
@@ -356,6 +382,34 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("setup-site-box-controls")).toContainText(/locked/i);
     await page.getByRole("button", { name: /^Generate$/ }).first().click();
     await expect(page.getByTestId("generate-flow-summary")).toHaveCount(0);
+  });
+
+  test("keeps the backend-assigned name when a project copy opens", async ({ page }) => {
+    const store = new Map<string, SavedProject>();
+    store.set("source-project", {
+      project_id: "source-project",
+      name: "Original Site",
+      updated_at: Math.floor(Date.now() / 1000),
+      project_input: {
+        meta: { site_inputs: { site_alignment_locked: true } },
+        manual_fields: {
+          project_name: "Original Site",
+          lot: { x: 0, y: 0, w: 800, h: 600 },
+        },
+      },
+      latest_result: null,
+    });
+    await mockShell(page, store);
+    await openApp(page);
+    await openProjects(page);
+
+    await page.getByRole("button", { name: "Duplicate project Original Site" }).click();
+    await expect(page.getByTestId("project-status-summary")).toContainText("Ready: Project duplicated");
+    await page.waitForTimeout(1_200);
+
+    await expect(page.getByTestId("projects-drawer")).toContainText("Original Site Copy");
+    await expect(page.getByTestId("projects-drawer").getByText("Original Site", { exact: true })).toHaveCount(1);
+    expect(Array.from(store.values()).find((item) => item.project_id !== "source-project")?.name).toBe("Original Site Copy");
   });
 
   test("keeps a new workspace clean when an older save finishes late", async ({ page }) => {
