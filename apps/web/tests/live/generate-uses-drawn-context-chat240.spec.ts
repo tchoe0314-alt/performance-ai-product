@@ -269,6 +269,8 @@ test("Generate immediately sees newly combined semantic objects", async ({ page 
   const request = await runGenerateAndCapture(page, captured);
   await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/Combined Site Program/i);
   await expect(page.getByTestId("generate-used-drawing-context")).toContainText(/semantic object/i);
+  await expect(page.getByTestId("generate-roadway")).not.toContainText(/Add at least one building/i);
+  await expect(page.getByTestId("generate-sanitary")).not.toContainText(/Add buildings or service/i);
   const manualFields = request.manual_fields as Record<string, unknown>;
   const siteObjects = manualFields.site_objects as Array<Record<string, unknown>>;
   const buildings = manualFields.buildings as Array<Record<string, unknown>>;

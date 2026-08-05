@@ -297,6 +297,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByText(/kept \d+ existing drawn objects/i).first()).toBeVisible({ timeout: 8_000 });
     await expect(page.getByText(/did not create duplicate concept geometry/i).first()).toBeVisible();
     await expect(page.getByText(/140-space parking target/i).first()).toBeVisible();
+    await expect(page.getByText(/site at site at/i)).toHaveCount(0);
 
     await openDrawPanel(page);
     const afterRows = await page.getByTestId("object-manager-row").allTextContents();

@@ -141,7 +141,7 @@ export function parseDashboardDirectSiteSetupCommand(
   const cleanAddressCandidate = (value: string) =>
     value
       .replace(/^.*?\baddress\b\s*(?:is|as|to be|to|=|:)?\s*/i, "")
-      .replace(/^\b(?:with|using|at|centered\s+(?:at|on)|centred\s+(?:at|on))\b\s*/i, "")
+      .replace(/^\b(?:with|using|at|site\s+(?:at|around|centered\s+(?:at|on))|centered\s+(?:at|on)|centred\s+(?:at|on))\b\s*/i, "")
       .replace(/^(?:is|it'?s|it is|gonna|going to be|will be|should be)\b\s*/i, "")
       .replace(/\b(?:as|for|with)?\s*(?:the\s+)?(?:center|centre)(?:\s+point)?\b.*$/i, "")
       .replace(/\b(?:and\s+)?(?:it'?s|it is|its|site|lot|gonna|going to be|will be|should be)\s*$/i, "")

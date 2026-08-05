@@ -108,6 +108,87 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
         self.assertEqual(runtime_checkpoint["stage_name"], "sanitary")
         self.assertTrue(runtime_checkpoint["yielded"])
 
+    def test_runtime_checkpoints_preserve_drawn_drainage_for_storm_generation(self) -> None:
+        payload = _supported_minimal_payload()
+        payload["disciplines"] = ["grading", "drainage", "storm", "sanitary", "water", "utility"]
+        payload["drainage_structures"] = [
+            {
+                "id": "INLET-1",
+                "name": "Parking Inlet",
+                "x": 80,
+                "y": 90,
+                "structure_type": "inlet",
+                "source": "manual_drawn",
+                "review_required": True,
+                "construction_release_allowed": False,
+            }
+        ]
+        payload["pipe_network"] = [
+            {
+                "id": "STORM-1",
+                "label": "Storm Trunk",
+                "points": [[80, 90], [180, 40]],
+                "path": [[80, 90], [180, 40]],
+                "utility_type": "storm",
+                "source": "manual_drawn",
+                "review_required": True,
+                "construction_release_allowed": False,
+            }
+        ]
+        payload["utility_network"] = [
+            {
+                "id": "WATER-1",
+                "label": "Public Water Main",
+                "points": [[0, 80], [140, 80]],
+                "utility_type": "water",
+                "source": "manual_drawn",
+                "review_required": True,
+                "construction_release_allowed": False,
+            },
+            {
+                "id": "SAN-1",
+                "label": "Public Sanitary Main",
+                "points": [[0, 60], [140, 60]],
+                "utility_type": "sanitary",
+                "source": "manual_drawn",
+                "review_required": True,
+                "construction_release_allowed": False,
+            },
+        ]
+
+        checkpoint = None
+        approved_stages: list[str] = []
+        stage_messages: dict[str, str] = {}
+        for _ in range(4):
+            resumed_payload = deepcopy(payload)
+            orchestrator_meta = {
+                "runtime_phase_batch_limit": 1,
+                "runtime_approved_stages": list(approved_stages),
+            }
+            if checkpoint is not None:
+                checkpoint_meta = checkpoint.get("meta", {})
+                orchestrator_meta["runtime_resume"] = {
+                    "final_plan": checkpoint,
+                    "stage_statuses": checkpoint_meta.get("stage_completeness", {}).get("statuses", {}),
+                }
+            resumed_payload["meta"] = {
+                "orchestrator_meta": orchestrator_meta,
+                "runtime_phase_batch_limit": 1,
+                "runtime_approved_stages": list(approved_stages),
+            }
+            checkpoint = planner.build_plan(resumed_payload)
+            checkpoint_meta = checkpoint["meta"]
+            runtime_checkpoint = checkpoint_meta["runtime_phase_checkpoint"]
+            stage_name = runtime_checkpoint["stage_name"]
+            stage_messages[stage_name] = runtime_checkpoint["message"]
+            approved_stages.append(stage_name)
+
+        self.assertEqual(stage_messages["drainage"], "Drainage stage accepted user-supplied geometry.")
+        self.assertEqual(stage_messages["storm_pipes"], "Storm pipe stage completed.")
+        self.assertGreaterEqual(len(checkpoint["meta"]["drainage"]["structures"]), 1)
+        self.assertGreaterEqual(len(checkpoint["meta"]["drainage"]["pipes"]), 1)
+        self.assertGreaterEqual(len(checkpoint["meta"]["storm_pipes"]["segments"]), 1)
+
     def test_supported_minimal_site_outputs_are_canonical_and_review_required(self) -> None:
         plan = planner.build_plan(_supported_minimal_payload())
         review = _review(plan)

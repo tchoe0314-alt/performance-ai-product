@@ -9841,7 +9841,13 @@ def _run_model_first_workflow(
         rec = safe_dict(value)
         if not rec:
             return {}
-        return {
+        # Runtime checkpoints are resumable engineering state, not display-only
+        # summaries. Keep a bounded canonical copy so downstream phases retain
+        # structures, geometry, and relationships after a user approval.
+        checkpoint_state = safe_dict(
+            _bounded_state_copy(rec, max_depth=10, max_items=600)
+        )
+        checkpoint_state["checkpoint_summary"] = {
             "success": rec.get("success"),
             "source": rec.get("source") or rec.get("source_quality") or rec.get("hydraulic_source"),
             "source_detail": rec.get("source_detail"),
@@ -9851,6 +9857,7 @@ def _run_model_first_workflow(
             "issue_count": len(safe_list(rec.get("issues"))),
             "missing_data_count": len(safe_list(rec.get("missing_data_segments"))),
         }
+        return checkpoint_state
 
     def _build_runtime_checkpoint_plan(stage_name: str, message: str) -> Dict[str, Any]:
         checkpoint_plan = sanitize_plan(

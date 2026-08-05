@@ -17,7 +17,9 @@ const ACCESS_TYPES = new Set(["road", "entrance", "parking", "sidewalk", "drivew
 
 export function buildDashboardConfirmedObjectCounts(buildingPlacements: BuildingPlacement[]): DashboardConfirmedObjectCounts {
   const confirmed = buildingPlacements.filter(
-    (item) => item.placed && (item.source === "user" || item.source === "user_confirmed"),
+    (item) =>
+      item.placed &&
+      (item.source === "user" || item.source === "user_confirmed" || item.source === "manual_drawn"),
   );
   return {
     buildings: confirmed.filter((item) => BUILDING_TYPES.has(String(item.type))).length,
