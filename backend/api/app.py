@@ -36,6 +36,7 @@ from backend.application.artifact_workflows import (
     build_preview_response as application_build_preview_response,
     export_dxf_artifact as application_export_dxf_artifact,
     export_report_artifact as application_export_report_artifact,
+    export_review_pdf_artifact as application_export_review_pdf_artifact,
 )
 from backend.application.auth_workflows import (
     auth_status as application_auth_status,
@@ -475,6 +476,9 @@ class ArtifactPayload(BaseModel):
     preview_layers: Optional[List[str]] = None
     preview_mode: Optional[str] = None
     export_scope: str = "construction"
+    review_sheet_set: Dict[str, Any] = Field(default_factory=dict)
+    review_package_summary: Dict[str, Any] = Field(default_factory=dict)
+    auto_site_context_summary: Dict[str, Any] = Field(default_factory=dict)
 
 
 class QueueArtifactExportPayload(ArtifactPayload):
@@ -1147,6 +1151,19 @@ def register_job_handlers() -> None:
             export_dxf_artifact=application_export_dxf_artifact,
             export_report_artifact=application_export_report_artifact,
             export_kind="report",
+        ),
+    )
+    _register_job_handler(
+        "export_pdf",
+        application_build_artifact_export_job_runner(
+            artifact_service=ARTIFACTS,
+            project_store=PROJECT_STORE,
+            update_job_progress=JOB_QUEUE.update_job_progress,
+            result_from_payload=_result_from_job_payload,
+            export_dxf_artifact=application_export_dxf_artifact,
+            export_report_artifact=application_export_report_artifact,
+            export_review_pdf_artifact=application_export_review_pdf_artifact,
+            export_kind="pdf",
         ),
     )
     _register_job_handler(
@@ -2743,6 +2760,24 @@ def queue_export_report_job(
     return response
 
 
+@app.post("/api/jobs/export/review-pdf")
+def queue_export_review_pdf_job(
+    payload: QueueArtifactExportPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("export")),
+) -> Dict[str, Any]:
+    response = application_queue_artifact_export_job(
+        project_store=PROJECT_STORE,
+        job_queue=JOB_QUEUE,
+        user_id=current_user["user_id"],
+        project_id=payload.project_id,
+        request_payload=_model_to_dict(payload),
+        export_kind="pdf",
+    )
+    response["billing_usage_gate_v1"] = usage_gate(action="queue_export_review_pdf_job", user=current_user)
+    return response
+
+
 @app.get("/api/ai-visualization/status")
 def ai_visualization_status(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -2868,6 +2903,31 @@ def export_report(
     return FileResponse(
         path,
         media_type="application/json",
+        filename=path.name,
+    )
+
+
+@app.post("/api/export/review-pdf")
+def export_review_pdf(
+    payload: ArtifactPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("export")),
+) -> FileResponse:
+    result_data = _result_from_payload(current_user, payload)
+    path = application_export_review_pdf_artifact(
+        artifact_service=ARTIFACTS,
+        project_store=PROJECT_STORE,
+        user_id=current_user["user_id"],
+        project_id=payload.project_id,
+        result_data=result_data,
+        review_sheet_set=payload.review_sheet_set,
+        auto_site_context_summary=payload.auto_site_context_summary,
+        review_package_summary=payload.review_package_summary,
+        filename_stem=payload.filename_stem,
+    )
+    return FileResponse(
+        path,
+        media_type="application/pdf",
         filename=path.name,
     )
 

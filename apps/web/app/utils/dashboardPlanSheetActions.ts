@@ -51,14 +51,6 @@ function clampSheetPercent(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 export function createDashboardPlanSheetActions(config: DashboardPlanSheetActionsConfig) {
   const {
     analysisIssues,
@@ -540,112 +532,6 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
     setStatusMessage("Review sheet JSON exported.");
   };
 
-  const handlePlanSheetExportPdf = () => {
-    const blockers = getPlanSheetBlockers();
-    const activeSheet =
-      planSheetSet.sheets.find((sheet) => sheet.id === planSheetSet.activeSheetId) ??
-      planSheetSet.sheets[0];
-    if (!activeSheet) {
-      setStatusMessage("Add a review sheet before exporting PDF.");
-      return;
-    }
-    const popup = window.open("", "_blank", "noopener,noreferrer,width=1200,height=900");
-    if (!popup) {
-      setStatusMessage("Browser blocked the review PDF window.");
-      return;
-    }
-    popup.document.write(`<!doctype html>
-<html>
-<head>
-  <title>${escapeHtml(activeSheet.titleBlock.sheetNumber)} review sheet</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
-    .sheet { border: 2px solid #0f172a; min-height: 720px; padding: 24px; position: relative; }
-    .title { border-top: 2px solid #0f172a; margin-top: 24px; padding-top: 12px; display: grid; grid-template-columns: 1fr 140px; gap: 12px; }
-    .notice { border: 1px solid #f59e0b; background: #fffbeb; color: #92400e; padding: 10px; margin: 12px 0; font-weight: 700; }
-    .viewport { border: 2px solid #334155; background: #f8fafc; padding: 12px; margin: 12px 0; min-height: 180px; position: relative; }
-    .watermark { position: absolute; inset: 45% 8%; transform: rotate(-18deg); color: rgba(180,83,9,.16); font-size: 48px; font-weight: 900; text-align: center; pointer-events: none; }
-    .north { position: absolute; right: 16px; top: 16px; border: 1px solid #334155; border-radius: 999px; width: 42px; height: 42px; display: grid; place-items: center; font-weight: 800; }
-    .scale { position: absolute; left: 16px; bottom: 16px; font-weight: 700; }
-    .bar { width: 120px; height: 10px; border-left: 2px solid #0f172a; border-right: 2px solid #0f172a; border-bottom: 2px solid #0f172a; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    h1, h2, p { margin: 0; }
-    h1 { font-size: 22px; }
-    h2 { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #64748b; margin-top: 18px; }
-    p, li { font-size: 12px; line-height: 1.5; }
-    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    td { border: 1px solid #cbd5e1; padding: 6px; font-size: 12px; }
-    @media print { button { display: none; } body { margin: 0.25in; } }
-  </style>
-</head>
-<body>
-  <button onclick="window.print()">Print review PDF</button>
-  <div class="sheet">
-    <div class="watermark">${escapeHtml(planSheetSet.plotStyles.reviewWatermark)}</div>
-    <h1>${escapeHtml(activeSheet.titleBlock.sheetTitle)}</h1>
-    <p>${escapeHtml(planSheetSet.name)} · ${escapeHtml(activeSheet.size)} · Review package only</p>
-    <div class="notice">Review-required plan-production aid only. Not an approved construction document. Civora does not stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record.</div>
-    <h2>Viewports</h2>
-    ${activeSheet.viewports
-      .map(
-        (viewport) =>
-          `<div class="viewport"><strong>${escapeHtml(viewport.label)}</strong><p>${escapeHtml(viewport.source)}</p><p>Target: ${escapeHtml(viewport.target || "Review viewport target")}</p><p>Scale ${escapeHtml(viewport.scale)} · ${viewport.scaleLocked ? "Locked scale" : "Scale editable"} · Position ${Math.round(viewport.x)}%, ${Math.round(viewport.y)}% · Size ${Math.round(viewport.w)}% x ${Math.round(viewport.h)}%</p><p>Visible layers: ${escapeHtml(Object.entries(viewport.layerVisibility).filter(([, visible]) => visible).map(([layer]) => layer).join(", ") || "none")}</p><div class="north">N</div><div class="scale"><div class="bar"></div><p>Scale ${escapeHtml(viewport.scale)}</p></div></div>`,
-      )
-      .join("")}
-    <h2>Sheet Index</h2>
-    <table>${planSheetSet.sheetIndex.map((item) => `<tr><td>${escapeHtml(item.sheetNumber)}</td><td>${escapeHtml(item.title)}</td></tr>`).join("")}</table>
-    <h2>Auto Site Context</h2>
-    <table>
-      <tr><td>Review candidates</td><td>${autoSiteContextFlowSummary.candidateCount}</td></tr>
-      <tr><td>Candidate sources</td><td>${escapeHtml(autoSiteContextFlowSummary.candidateLabels.join(", ") || "None recorded")}</td></tr>
-      <tr><td>Missing sources</td><td>${escapeHtml(autoSiteContextFlowSummary.missingLabels.join(", ") || "Source evidence not available yet")}</td></tr>
-      <tr><td>Status</td><td>${escapeHtml(autoSiteContextFlowSummary.status)}</td></tr>
-    </table>
-    <h2>Plot Styles</h2>
-    <table>${planSheetSet.plotStyles.mappings
-      .map((item) => `<tr><td>${escapeHtml(item.layer)}</td><td>${escapeHtml(item.color)}</td><td>${escapeHtml(item.lineweight)}</td><td>${escapeHtml(item.linetype)}</td></tr>`)
-      .join("")}<tr><td>Grayscale</td><td colspan="3">${planSheetSet.plotStyles.grayscale ? "Enabled" : "Optional"}</td></tr></table>
-    <h2>Revision History</h2>
-    <ul>${planSheetSet.revisions.map((item) => `<li>${escapeHtml(item.revision)} ${escapeHtml(item.date)}: ${escapeHtml(item.note)} (${escapeHtml(item.reviewer)})</li>`).join("")}</ul>
-    <div class="grid">
-      <div>
-        <h2>Notes and Callouts</h2>
-        <ul>${activeSheet.annotations.map((item) => `<li>${escapeHtml(item.type)}: ${escapeHtml(item.text)}</li>`).join("")}</ul>
-      </div>
-      <div>
-        <h2>References</h2>
-        <ul>${activeSheet.references.map((item) => `<li>${escapeHtml(item.kind)}: ${escapeHtml(item.target)}</li>`).join("")}</ul>
-      </div>
-    </div>
-    <h2>Legends and Details</h2>
-    ${[...activeSheet.legends, ...activeSheet.detailBlocks]
-      .map(
-        (table) =>
-          `<table><caption>${escapeHtml(table.title)}</caption>${table.rows
-            .map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${escapeHtml(value)}</td></tr>`)
-            .join("")}</table>`,
-      )
-      .join("")}
-    <h2>Sheet Blockers</h2>
-    <ul>${(blockers.length ? blockers : ["No sheet blockers recorded."]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-    <div class="title">
-      <div>
-        <p><strong>Project:</strong> ${escapeHtml(activeSheet.titleBlock.projectName)}</p>
-        <p><strong>Stage:</strong> ${escapeHtml(activeSheet.titleBlock.reviewStage)}</p>
-        <p><strong>By:</strong> ${escapeHtml(activeSheet.titleBlock.preparedBy)} · <strong>Check:</strong> ${escapeHtml(activeSheet.titleBlock.checkedBy)}</p>
-      </div>
-      <div>
-        <p><strong>${escapeHtml(activeSheet.titleBlock.sheetNumber)}</strong></p>
-        <p>${escapeHtml(activeSheet.titleBlock.date)}</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`);
-    popup.document.close();
-    setStatusMessage("Opened review PDF print view.");
-  };
-
   return {
     addPlanSheetAnnotation,
     getPlanSheetBlockers,
@@ -658,7 +544,6 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
     handlePlanSheetAddTable,
     handlePlanSheetAddViewport,
     handlePlanSheetExportJson,
-    handlePlanSheetExportPdf,
     handlePlanSheetGrayscaleToggle,
     handlePlanSheetScaleChange,
     handlePlanSheetTitleBlockUpdate,

@@ -1218,3 +1218,51 @@ def export_report_artifact(
             ),
         )
     return path
+
+
+def export_review_pdf_artifact(
+    *,
+    artifact_service: ArtifactServiceProtocol,
+    project_store: ProjectStoreProtocol,
+    user_id: str,
+    project_id: Optional[str],
+    result_data: Dict[str, Any],
+    review_sheet_set: Dict[str, Any],
+    auto_site_context_summary: Optional[Dict[str, Any]] = None,
+    review_package_summary: Optional[Dict[str, Any]] = None,
+    filename_stem: Optional[str] = None,
+) -> Path:
+    result_data = _enrich_result_data_from_project(
+        result_data,
+        project_store=project_store,
+        user_id=user_id,
+        project_id=project_id,
+    )
+    final_plan = dict(result_data.get("final_plan") or {})
+    final_plan.setdefault("meta", {})
+    if project_id and isinstance(final_plan["meta"], dict):
+        final_plan["meta"]["project_id"] = project_id
+    enriched_result_data = dict(result_data)
+    enriched_result_data["final_plan"] = final_plan
+    stem = filename_stem or str(final_plan.get("project_name") or "civora-review-package")
+    path = artifact_service.export_review_pdf(
+        user_id=user_id,
+        result_data=enriched_result_data,
+        sheet_set=dict(review_sheet_set or {}),
+        auto_site_context_summary=dict(auto_site_context_summary or {}),
+        review_package_summary=dict(review_package_summary or {}),
+        stem=stem,
+    )
+    if project_id:
+        save_project_workflow_update(
+            project_store=project_store,
+            user_id=user_id,
+            project_id=project_id,
+            artifact_summary=artifact_summary(
+                path=path,
+                artifact_kind="review_pdf",
+                project_id=project_id,
+                result_data=enriched_result_data,
+            ),
+        )
+    return path

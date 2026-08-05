@@ -1,5 +1,7 @@
 import { postJson, toApiUrl } from "../../lib/api";
+import type { PlanSheetSet } from "../components/PlanSheetEditor";
 import type { ChatMessage, JobSummary, PlanMeta, ProjectRecord } from "../types";
+import type { AutoSiteContextFlowSummary, ReviewPackageFlowSummary } from "./dashboardDataTypes";
 import { panelErrorMessage } from "./dashboardStatus";
 import type { QuantityReviewRow } from "./workflowConstants";
 import type { SidePanelKey, WorkspaceMode } from "./workspaceShell";
@@ -16,7 +18,7 @@ export type DashboardExportActionsConfig = {
   appendChatMessage: AppendChatMessage;
   artifactPayload: Record<string, unknown>;
   backendResultPresent: boolean;
-  busy: boolean;
+  autoSiteContextSummary: AutoSiteContextFlowSummary;
   costEstimate: {
     explain?: {
       cost_estimate_reference?: Record<string, unknown>;
@@ -33,6 +35,8 @@ export type DashboardExportActionsConfig = {
     trace_gaps?: Record<string, unknown>;
   };
   quantityRows: QuantityReviewRow[];
+  reviewPackageSummary: ReviewPackageFlowSummary | null;
+  reviewSheetSet: PlanSheetSet;
   setActiveJobId: StateSetter<string>;
   setActiveSidePanel: StateSetter<SidePanelKey | null>;
   setActiveWorkspaceMode: StateSetter<WorkspaceMode>;
@@ -49,13 +53,15 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     appendChatMessage,
     artifactPayload,
     backendResultPresent,
-    busy,
+    autoSiteContextSummary,
     costEstimate,
     currentPlanMeta,
     currentProject,
     projectId,
     quantityExplain,
     quantityRows,
+    reviewPackageSummary,
+    reviewSheetSet,
     setActiveJobId,
     setActiveSidePanel,
     setActiveWorkspaceMode,
@@ -183,9 +189,6 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     if (!token) {
       return "authenticate with a backend session before exporting review packages";
     }
-    if (busy) {
-      return "wait for the current operation to finish";
-    }
     if (!backendResultPresent) {
       return projectId
         ? "run systems or load a generated review package before exporting"
@@ -200,12 +203,14 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     queuedLabel,
     chatLabel,
     exportScope,
+    extraPayload,
   }: {
     endpoint: string;
     failureLabel: string;
     queuedLabel: string;
     chatLabel: string;
     exportScope?: "review" | "construction";
+    extraPayload?: Record<string, unknown>;
   }) => {
     const blockReason = getExportBlockReason();
     if (blockReason) {
@@ -223,7 +228,11 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     try {
       const queued = await postJson<{ job: JobSummary }>(
         endpoint,
-        exportScope ? { ...artifactPayload, export_scope: exportScope } : artifactPayload,
+        {
+          ...artifactPayload,
+          ...(extraPayload ?? {}),
+          ...(exportScope ? { export_scope: exportScope } : {}),
+        },
         { token },
       );
       setActiveJobId(queued.job.job_id);
@@ -252,6 +261,20 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
       exportScope: "review",
     });
 
+  const handleExportReviewPdf = () =>
+    queueExportJob({
+      endpoint: "/api/jobs/export/review-pdf",
+      failureLabel: "Review PDF export",
+      queuedLabel: "Review PDF",
+      chatLabel: "review PDF",
+      exportScope: "review",
+      extraPayload: {
+        review_sheet_set: reviewSheetSet,
+        review_package_summary: reviewPackageSummary ?? {},
+        auto_site_context_summary: autoSiteContextSummary,
+      },
+    });
+
   const handleExportReport = () =>
     queueExportJob({
       endpoint: "/api/jobs/export/report",
@@ -266,6 +289,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     getExportBlockReason,
     handleArtifactDownload,
     handleExportDxf,
+    handleExportReviewPdf,
     handleExportQuantityReviewReport,
     handleExportReport,
   };

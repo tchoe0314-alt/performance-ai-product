@@ -38,5 +38,17 @@ class ArtifactServiceProtocol(Protocol):
     ) -> Path:
         ...
 
+    def export_review_pdf(
+        self,
+        *,
+        user_id: str,
+        result_data: Dict[str, Any],
+        sheet_set: Dict[str, Any],
+        auto_site_context_summary: Optional[Dict[str, Any]] = None,
+        review_package_summary: Optional[Dict[str, Any]] = None,
+        stem: Optional[str] = None,
+    ) -> Path:
+        ...
+
     def delete_preview_cache_for_project(self, *, user_id: str, project_id: str) -> int:
         ...

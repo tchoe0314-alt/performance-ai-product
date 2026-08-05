@@ -395,6 +395,53 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertTrue(result["artifact"]["review_only"])
         self.assertFalse(result["artifact"]["construction_release_allowed"])
 
+    def test_review_pdf_export_job_runner_passes_sheet_payload(self):
+        captured = {}
+
+        def result_from_payload(**kwargs):
+            return {"final_plan": {"project_name": "Review PDF", "meta": {}}}
+
+        class ArtifactService:
+            pass
+
+        class PathLike:
+            name = "review-package.pdf"
+
+        def export_review_pdf_artifact(**kwargs):
+            captured.update(kwargs)
+            return PathLike()
+
+        runner = build_artifact_export_job_runner(
+            artifact_service=ArtifactService(),
+            project_store=FakeProjectStore(),
+            update_job_progress=lambda *args, **kwargs: None,
+            result_from_payload=result_from_payload,
+            export_dxf_artifact=lambda **kwargs: PathLike(),
+            export_report_artifact=lambda **kwargs: PathLike(),
+            export_review_pdf_artifact=export_review_pdf_artifact,
+            export_kind="pdf",
+        )
+
+        result = runner(
+            {
+                "job_id": "job_review_pdf",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {
+                    "filename_stem": "review-package",
+                    "review_sheet_set": {"name": "Review Set", "sheets": [{"id": "sheet-1"}]},
+                    "auto_site_context_summary": {"candidateCount": 9},
+                    "review_package_summary": {"missing": ["utility source"]},
+                },
+            }
+        )
+
+        self.assertEqual(captured["review_sheet_set"]["name"], "Review Set")
+        self.assertEqual(captured["auto_site_context_summary"]["candidateCount"], 9)
+        self.assertEqual(captured["review_package_summary"]["missing"], ["utility source"])
+        self.assertEqual(result["artifact"]["kind"], "pdf")
+        self.assertEqual(result["artifact"]["download_path"], "/api/artifacts/review-package.pdf")
+
     def test_retry_existing_job_requeues_from_failed_job(self):
         queue = FakeJobQueue()
         response = retry_existing_job(

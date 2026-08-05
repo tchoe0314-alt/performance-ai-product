@@ -11,6 +11,7 @@ from collections.abc import Mapping
 EXTERNAL_JOB_TYPES = (
     "drainage_only",
     "export_dxf",
+    "export_pdf",
     "export_report",
     "orchestrate",
     "plan_pdf_analysis",

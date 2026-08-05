@@ -69,6 +69,12 @@ test.describe("Generate and Deliver product flow", () => {
     await expect(page.getByTestId("plan-sheet-editor")).toContainText(/Review-required/i);
     await expect(page.getByTestId("plan-sheet-editor")).not.toContainText(/construction-ready|Civora approved|stamped by Civora|sealed by Civora|signed by Civora/i);
 
+    await page.getByRole("button", { name: "Review PDF", exact: true }).first().click();
+    await expect(page.getByTestId("deliver-export-status")).toContainText(
+      /authenticate with a backend session before exporting review packages|Export needs input/i,
+    );
+    await expect(page.getByTestId("deliver-export-status")).not.toContainText(/popup|browser blocked/i);
+
     await page.getByTestId("workspace-right-panel").getByRole("button", { name: "Export DXF" }).click();
     await expect(page.getByTestId("deliver-export-status")).toContainText(/authenticate with a backend session before exporting review packages|Export needs input/i);
 

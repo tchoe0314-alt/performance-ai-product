@@ -262,7 +262,7 @@ def queue_artifact_export_job(
     export_kind: str,
 ) -> Dict[str, Any]:
     kind = safe_str(export_kind).lower()
-    if kind not in {"dxf", "report"}:
+    if kind not in {"dxf", "pdf", "report"}:
         raise HTTPException(status_code=400, detail="Unsupported export job type.")
     if project_id:
         existing = project_store.get_project(user_id=user_id, project_id=project_id)
@@ -2648,9 +2648,10 @@ def build_artifact_export_job_runner(
     export_dxf_artifact: Callable[..., Any],
     export_report_artifact: Callable[..., Any],
     export_kind: str,
+    export_review_pdf_artifact: Optional[Callable[..., Any]] = None,
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     kind = safe_str(export_kind).lower()
-    if kind not in {"dxf", "report"}:
+    if kind not in {"dxf", "pdf", "report"}:
         raise ValueError("Unsupported artifact export kind.")
 
     def export_runner(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -2677,7 +2678,7 @@ def build_artifact_export_job_runner(
             update_job_progress(
                 job_id,
                 stage=f"Generating {kind.upper()}",
-                detail="Building the review-only export package. This does not approve construction readiness.",
+                detail="Building the review package from the current project state.",
                 progress=62,
             )
         if kind == "dxf":
@@ -2690,7 +2691,7 @@ def build_artifact_export_job_runner(
                 filename_stem=filename_stem,
                 export_scope=export_scope,
             )
-        else:
+        elif kind == "report":
             path = export_report_artifact(
                 artifact_service=artifact_service,
                 project_store=project_store,
@@ -2699,11 +2700,25 @@ def build_artifact_export_job_runner(
                 result_data=result_data,
                 filename_stem=filename_stem,
             )
+        else:
+            if export_review_pdf_artifact is None:
+                raise RuntimeError("Review PDF artifact exporter is not configured.")
+            path = export_review_pdf_artifact(
+                artifact_service=artifact_service,
+                project_store=project_store,
+                user_id=user_id,
+                project_id=project_id,
+                result_data=result_data,
+                review_sheet_set=safe_dict(payload.get("review_sheet_set")),
+                auto_site_context_summary=safe_dict(payload.get("auto_site_context_summary")),
+                review_package_summary=safe_dict(payload.get("review_package_summary")),
+                filename_stem=filename_stem,
+            )
         if job_id:
             update_job_progress(
                 job_id,
                 stage=f"{kind.upper()} Export Ready",
-                detail="Review artifact generated. Construction release remains blocked without licensed engineer approval.",
+                detail="Review artifact generated. Professional review is required before field use.",
                 progress=96,
             )
         return {
@@ -2718,7 +2733,7 @@ def build_artifact_export_job_runner(
             },
             "job_progress": {
                 "stage": f"{kind.upper()} Export Ready",
-                "detail": "Review artifact generated. Construction release remains blocked without licensed engineer approval.",
+                "detail": "Review artifact generated. Professional review is required before field use.",
                 "progress": 100,
             },
         }

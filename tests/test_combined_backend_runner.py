@@ -26,6 +26,7 @@ def test_combined_runner_externalizes_heavy_jobs_and_keeps_file_jobs_local() -> 
     assert set(worker_env["CIVORA_ENABLED_JOB_TYPES"].split(",")) == {
         "drainage_only",
         "export_dxf",
+        "export_pdf",
         "export_report",
         "orchestrate",
         "plan_pdf_analysis",

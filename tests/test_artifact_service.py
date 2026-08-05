@@ -243,6 +243,80 @@ class ArtifactServiceTest(unittest.TestCase):
             self.assertIn("report-storm-1", sidecar["report_line_items"][0]["canonical_ids"])
             self.assertEqual(sidecar["quantity_line_items"][0]["canonical_ids"], ["report-storm-1"])
 
+    def test_export_review_pdf_creates_real_pdf_with_sidecar(self):
+        from io import BytesIO
+
+        from PIL import Image
+        from pypdf import PdfReader
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ArtifactService(Path(tmpdir))
+            preview_buffer = BytesIO()
+            Image.new("RGB", (800, 500), "white").save(preview_buffer, format="PNG")
+            final_plan = {
+                "project_name": "Review PDF Demo",
+                "units": "ft",
+                "actions": [
+                    {
+                        "task": "rectangle",
+                        "layer": "BUILDING",
+                        "x": 10,
+                        "y": 20,
+                        "width": 80,
+                        "height": 40,
+                        "canonical_source_id": "building-1",
+                    }
+                ],
+                "meta": {
+                    "project_id": "review-pdf-project",
+                    "canonical_revision": "rev-pdf-1",
+                    "canonical_model_hash": "hash-pdf-1",
+                },
+            }
+            sheet_set = {
+                "name": "Review PDF Demo Package",
+                "plotStyles": {"reviewWatermark": "REVIEW ONLY"},
+                "blockers": ["Confirm utility source."],
+                "sheets": [
+                    {
+                        "name": "Site Plan",
+                        "size": "11x17",
+                        "titleBlock": {
+                            "projectName": "Review PDF Demo",
+                            "sheetTitle": "Site Plan",
+                            "sheetNumber": "C-1.0",
+                            "reviewStage": "Review",
+                            "preparedBy": "Civora",
+                            "checkedBy": "Reviewer",
+                            "date": "2026-08-05",
+                        },
+                        "viewports": [{"scale": "1:40"}],
+                    }
+                ],
+            }
+
+            with patch.object(service, "build_preview_png", return_value=preview_buffer.getvalue()):
+                artifact_path = service.export_review_pdf(
+                    user_id="user-1",
+                    result_data={"final_plan": final_plan},
+                    sheet_set=sheet_set,
+                    auto_site_context_summary={"candidateCount": 12, "missingLabels": ["utilities"]},
+                    review_package_summary={"missing": ["Confirm utility source."]},
+                    stem="review-pdf-demo",
+                )
+
+            sidecar_path = artifact_path.with_suffix(f"{artifact_path.suffix}.metadata.json")
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            reader = PdfReader(str(artifact_path))
+
+            self.assertEqual(artifact_path.suffix, ".pdf")
+            self.assertTrue(artifact_path.read_bytes().startswith(b"%PDF"))
+            self.assertEqual(len(reader.pages), 1)
+            self.assertEqual(sidecar["export_type"], "pdf")
+            self.assertEqual(sidecar["export_package_report_v1"]["source_project_id"], "review-pdf-project")
+            self.assertTrue(sidecar["engineer_review_required"])
+            self.assertFalse(sidecar["construction_release_allowed"])
+
 
 if __name__ == "__main__":
     unittest.main()
