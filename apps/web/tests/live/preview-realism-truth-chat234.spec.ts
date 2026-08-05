@@ -15,8 +15,12 @@ test.describe("Chat 234 preview realism truth pass", () => {
 
     const overlays = page.locator("[data-object-overlay]");
     expect(await overlays.count()).toBeGreaterThan(0);
+    await expect(page.getByRole("button", { name: "Select Hydrant W-12 fire-flow scenario" })).toHaveCount(0);
+    await page.locator('[data-object-overlay][data-cad-object-id="demo-hydrant-1"]').click();
+    await expect(page.getByTestId("selected-object-quick-toolbar")).toBeVisible();
     const layerMenu = page.getByTestId("preview-layer-menu");
     await layerMenu.locator("summary").click();
+    await expect(page.getByTestId("preview-source-layer-proposed")).toBeVisible();
     await page.getByTestId("preview-source-layer-proposed").click();
     await expect(overlays).toHaveCount(0);
     await page.getByTestId("preview-source-layer-proposed").click();

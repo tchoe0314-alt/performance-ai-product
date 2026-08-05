@@ -7,6 +7,7 @@ type WaterFireFlowViewModel = ReturnType<typeof buildWaterFireFlowViewModel>;
 
 type PreviewWaterFireFlowHitTargetsProps = {
   waterFireFlow: WaterFireFlowViewModel;
+  canonicalObjectIds: string[];
   passiveOverlayPointerEvents: string;
   sitePointToPreviewPercent: (point: [number, number]) => [number, number];
   setSelectedFireScenarioId: Dispatch<SetStateAction<string | null>>;
@@ -14,13 +15,19 @@ type PreviewWaterFireFlowHitTargetsProps = {
 
 export function PreviewWaterFireFlowHitTargets({
   waterFireFlow,
+  canonicalObjectIds,
   passiveOverlayPointerEvents,
   sitePointToPreviewPercent,
   setSelectedFireScenarioId,
 }: PreviewWaterFireFlowHitTargetsProps) {
+  const canonicalObjectIdSet = new Set(canonicalObjectIds);
   return (
     <>
       {waterFireFlow.hydrants.map((hydrant) => {
+        // Canonical hydrants already have one editable canvas target. Rendering a
+        // second scenario target at the same coordinates blocks object selection
+        // and creates a misleading duplicate symbol.
+        if (canonicalObjectIdSet.has(hydrant.id)) return null;
         const [left, top] = sitePointToPreviewPercent([hydrant.x, hydrant.y]);
         const scenario = waterFireFlow.scenarios.find((item) => item.hydrantId === hydrant.id);
         const selected = waterFireFlow.selectedHydrant?.id === hydrant.id;

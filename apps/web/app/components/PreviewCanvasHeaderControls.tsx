@@ -115,7 +115,7 @@ export function PreviewCanvasHeaderControls({
         : "Draft";
 
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
+    <div className="relative z-[240] flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
       <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-2">
         <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
           Canvas

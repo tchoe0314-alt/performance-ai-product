@@ -2958,6 +2958,7 @@ export default function PreviewPanel({
                   },
                   waterFireFlowHitTargetsProps: {
                     waterFireFlow,
+                    canonicalObjectIds: [...renderedCadObjects, ...renderedSuggestedPlacements].map((item) => item.id),
                     passiveOverlayPointerEvents,
                     sitePointToPreviewPercent,
                     setSelectedFireScenarioId,
