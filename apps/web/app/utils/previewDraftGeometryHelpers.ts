@@ -65,7 +65,7 @@ export function buildDrawToolLabel(mode: DrawMode) {
 
 export function buildDrawToolDetail(drawMode: DrawMode, draftPointCount: number) {
   if (drawMode === "site") return "Pick three or more boundary points, then Finish.";
-  if (drawMode === "polyline") return "Pick two or more vertices, then Finish.";
+  if (drawMode === "polyline") return "Pick two points; the draft line finishes automatically.";
   if (drawMode === "polygon") return "Pick three or more area vertices, then Finish.";
   if (drawMode === "rect") {
     return draftPointCount ? "Pick the opposite box corner." : "Pick the first box corner.";

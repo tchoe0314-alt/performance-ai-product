@@ -178,6 +178,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(cadTools).toBeVisible();
     await expectTopmost(addLine, "Add Line");
     await addLine.click();
+    await expect(page.getByTestId("draw-active-tool-detail")).toContainText(/two points.*finishes automatically/i);
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE tool active|LINE active/i);
     await clickExposedSurface(surface, 0.22, 0.34);
     await clickExposedSurface(surface, 0.42, 0.34);
