@@ -2668,7 +2668,9 @@ export default function PreviewPanel({
           />
           <CadPrecisionDock
             visible={previewMode === "2d" && allowEdits && hasCadCommandActivity}
-            openRequestToken={cadActiveCommand?.command || cadCommandDraft.trim().split(/\s+/, 1)[0] || ""}
+            openRequestToken={`${cadActiveCommand?.command || cadCommandDraft.trim().split(/\s+/, 1)[0] || ""}:${
+              cadToolRequest?.tool === "command" ? cadToolRequest.id : ""
+            }`}
             selectedCadObject={selectedCadObject}
             selectedCadIds={selectedCadIds}
             selectedBuildingId={selectedBuildingId}
