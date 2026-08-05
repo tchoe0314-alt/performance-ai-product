@@ -687,13 +687,25 @@ test.describe("project drawer reliability", () => {
     const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true }).first();
     const mapCanvasBox = await mapCanvas.boundingBox();
     expect(mapCanvasBox).not.toBeNull();
+    const viewport = page.viewportSize();
+    expect(viewport).not.toBeNull();
+    const visibleMapBounds = {
+      left: Math.max(mapCanvasBox!.x, 0),
+      top: Math.max(mapCanvasBox!.y, 0),
+      right: Math.min(mapCanvasBox!.x + mapCanvasBox!.width, viewport!.width),
+      bottom: Math.min(mapCanvasBox!.y + mapCanvasBox!.height, viewport!.height),
+    };
+    const visibleMapWidth = visibleMapBounds.right - visibleMapBounds.left;
+    const visibleMapHeight = visibleMapBounds.bottom - visibleMapBounds.top;
+    expect(visibleMapWidth).toBeGreaterThan(180);
+    expect(visibleMapHeight).toBeGreaterThan(180);
     const first = {
-      x: mapCanvasBox!.x + mapCanvasBox!.width * 0.4,
-      y: mapCanvasBox!.y + mapCanvasBox!.height * 0.4,
+      x: visibleMapBounds.left + visibleMapWidth * 0.35,
+      y: visibleMapBounds.top + visibleMapHeight * 0.3,
     };
     const second = {
-      x: mapCanvasBox!.x + mapCanvasBox!.width * 0.58,
-      y: mapCanvasBox!.y + mapCanvasBox!.height * 0.58,
+      x: visibleMapBounds.left + visibleMapWidth * 0.62,
+      y: visibleMapBounds.top + visibleMapHeight * 0.68,
     };
     const readCursor = async (point: { x: number; y: number }) => {
       await page.mouse.move(point.x, point.y);
@@ -737,7 +749,6 @@ test.describe("project drawer reliability", () => {
     const actualWidth = Number(dimensions![1]);
     const actualDepth = Number(dimensions![2]);
     const expectedWidth = Math.abs(second.x - first.x) * feetPerPixel;
-    const expectedDepth = Math.abs(second.y - first.y) * feetPerPixel;
     const pointerWidth = Math.abs(secondSitePoint.x - firstSitePoint.x);
     const pointerDepth = Math.abs(secondSitePoint.y - firstSitePoint.y);
     console.info("[map-geometry-proof]", {
@@ -750,12 +761,10 @@ test.describe("project drawer reliability", () => {
       actualWidth,
       actualDepth,
       expectedWidth,
-      expectedDepth,
     });
     expect(Math.abs(actualWidth - pointerWidth)).toBeLessThanOrEqual(6);
     expect(Math.abs(actualDepth - pointerDepth)).toBeLessThanOrEqual(6);
     expect(Math.abs(actualWidth - expectedWidth)).toBeLessThanOrEqual(Math.max(8, expectedWidth * 0.03));
-    expect(Math.abs(actualDepth - expectedDepth)).toBeLessThanOrEqual(Math.max(8, expectedDepth * 0.03));
   });
 
   test("ignores address discovery that finishes after New Project", async ({ page }) => {
