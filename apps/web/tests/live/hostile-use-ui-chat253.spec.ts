@@ -187,6 +187,11 @@ test.describe("hostile-use UI recovery", () => {
     const runtime = collectRuntimeFailures(page);
     await openFreshProject(page);
     await openPanel(page, /^Setup$/);
+    await page
+      .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
+      .click();
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await openPanel(page, /^Setup$/);
 
     const widths = page.getByLabel("Site width in feet");
     const depths = page.getByLabel("Site depth in feet");
@@ -195,10 +200,14 @@ test.describe("hostile-use UI recovery", () => {
     await page.getByRole("button", { name: "Lock Boundary" }).click();
     await expect(page.getByTestId("project-status-summary")).toContainText("Apply site needs size");
     await expect(page.getByTestId("site-status")).toContainText("Site Open");
-    await widths.fill("300");
-    await depths.fill("300");
+    await widths.fill("450");
+    await depths.fill("275");
+    await expect(widths).toHaveValue("450");
+    await expect(depths).toHaveValue("275");
     await page.getByRole("button", { name: "Lock Boundary" }).click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 20_000 });
+    await openPanel(page, /^Setup$/);
+    await expect(page.getByTestId("setup-site-box-controls")).toContainText("450 ft x 275 ft");
 
     const started = Date.now();
     for (let pass = 0; pass < 3; pass += 1) {

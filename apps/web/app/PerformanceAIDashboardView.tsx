@@ -1358,18 +1358,17 @@ function PerformanceAIDashboardView({
     setStatusMessage,
   });
 
+  const sitePlacement = buildingPlacements.find((item) => item.type === "site");
+  const sitePlacementWidth = sitePlacement?.w;
+  const sitePlacementHeight = sitePlacement?.d;
+
   useEffect(() => {
-    const site = buildingPlacements.find((item) => item.type === "site");
-    if (!site) return;
-    const nextWidth = String(site.w ?? "");
-    const nextHeight = String(site.d ?? "");
-    if (nextWidth && lotWidth !== nextWidth) {
-      setLotWidth(nextWidth);
-    }
-    if (nextHeight && lotHeight !== nextHeight) {
-      setLotHeight(nextHeight);
-    }
-  }, [buildingPlacements, lotHeight, lotWidth]);
+    if (sitePlacementWidth === undefined && sitePlacementHeight === undefined) return;
+    const nextWidth = String(sitePlacementWidth ?? "");
+    const nextHeight = String(sitePlacementHeight ?? "");
+    if (nextWidth) setLotWidth((current) => (current === nextWidth ? current : nextWidth));
+    if (nextHeight) setLotHeight((current) => (current === nextHeight ? current : nextHeight));
+  }, [sitePlacementHeight, sitePlacementWidth]);
 
   useEffect(() => {
     const site = buildingPlacements.find((item) => item.type === "site");
