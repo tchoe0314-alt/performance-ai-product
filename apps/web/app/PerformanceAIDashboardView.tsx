@@ -578,6 +578,7 @@ function PerformanceAIDashboardView({
   const [planPreviewAnnotations, setPlanPreviewAnnotations] =
     useState<PreviewResponse["preview_annotations"] | null>(null);
   const [previewInteraction, setPreviewInteraction] = useState<"static" | "edit">("static");
+  const [previewSessionVersion, setPreviewSessionVersion] = useState(0);
   const [previewLabelDensity, setPreviewLabelDensity] = useState<"low" | "standard" | "high">("standard");
   const [layerManagerOpen, setLayerManagerOpen] = useState(false);
   const [previewHeightPx, setPreviewHeightPx] = useState(900);
@@ -3831,6 +3832,7 @@ function PerformanceAIDashboardView({
     setPlanSheetSet,
     setPreviewFullscreenOpen,
     setPreviewInteraction,
+    setPreviewSessionVersion,
     setPreviewRefreshing,
     setPreviewRefreshNote,
     setReviewPackageFlowSummary,
@@ -5666,6 +5668,7 @@ function PerformanceAIDashboardView({
     planPreviewUrl,
     planPreviewProjectId,
     projectId,
+    previewSessionVersion,
     canvasPreviewInteraction,
     systemStatuses,
     hasTerrainSource,

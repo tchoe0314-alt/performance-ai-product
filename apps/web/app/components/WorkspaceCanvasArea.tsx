@@ -22,6 +22,7 @@ type WorkspaceCanvasAreaProps = {
   toolbarTools: WorkspaceToolbarTool[];
   previewMode: "2d" | "3d";
   previewQuality: "standard" | "high";
+  previewSessionVersion: number;
   layerManagerOpen: boolean;
   previewLayers: PreviewLayerVisibility;
   selectedBuilding: BuildingPlacement | null | undefined;
@@ -56,6 +57,7 @@ export function WorkspaceCanvasArea({
   toolbarTools,
   previewMode,
   previewQuality,
+  previewSessionVersion,
   layerManagerOpen,
   previewLayers,
   selectedBuilding,
@@ -147,7 +149,7 @@ export function WorkspaceCanvasArea({
             className="civora-workspace-canvas-frame absolute inset-y-0 z-0 overflow-hidden"
           >
             <div className="h-full w-full">
-              <PreviewPanel {...previewPanelProps} />
+              <PreviewPanel key={previewSessionVersion} {...previewPanelProps} />
             </div>
           </div>
         </div>

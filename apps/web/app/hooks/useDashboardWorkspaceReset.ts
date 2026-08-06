@@ -90,6 +90,7 @@ type UseDashboardWorkspaceResetOptions = {
   setPlanSheetSet: Dispatch<SetStateAction<PlanSheetSet>>;
   setPreviewFullscreenOpen: Dispatch<SetStateAction<boolean>>;
   setPreviewInteraction: Dispatch<SetStateAction<"static" | "edit">>;
+  setPreviewSessionVersion: Dispatch<SetStateAction<number>>;
   setPreviewRefreshing: Dispatch<SetStateAction<boolean>>;
   setPreviewRefreshNote: Dispatch<SetStateAction<string | null>>;
   setReviewPackageFlowSummary: Dispatch<SetStateAction<ReviewPackageFlowSummary | null>>;
@@ -194,6 +195,7 @@ export function useDashboardWorkspaceReset({
   setPlanSheetSet,
   setPreviewFullscreenOpen,
   setPreviewInteraction,
+  setPreviewSessionVersion,
   setPreviewRefreshing,
   setPreviewRefreshNote,
   setReviewPackageFlowSummary,
@@ -279,6 +281,7 @@ export function useDashboardWorkspaceReset({
     setLayerManagerOpen(false);
     setPreviewFullscreenOpen(false);
     setPreviewInteraction("static");
+    setPreviewSessionVersion((current) => current + 1);
     setSelectedJobId("");
     setMoveEditFeedback("");
     setObjectManagerStatusMessage("");
@@ -363,6 +366,7 @@ export function useDashboardWorkspaceReset({
     setPlanSheetSet,
     setPreviewFullscreenOpen,
     setPreviewInteraction,
+    setPreviewSessionVersion,
     setPreviewRefreshing,
     setPreviewRefreshNote,
     setReviewPackageFlowSummary,

@@ -1019,6 +1019,10 @@ test.describe("project drawer reliability", () => {
     expect(JSON.stringify(store.get(firstProjectId)?.project_input)).toContain("123 MAIN ST");
     expect(JSON.stringify(store.get(firstProjectId)?.project_input)).toContain("Generate a parking layout note.");
 
+    await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
+    await page.getByTestId("cad-tool-line").filter({ visible: true }).first().click();
+    await expect(page.getByTestId("cad-precision-tools")).toBeVisible();
+    await openProjects(page);
     await page.getByRole("button", { name: "New Project" }).first().click();
     await expect(page.getByTestId("workspace-canvas-shell")).not.toContainText("Precision & commands");
     await openProjects(page);
