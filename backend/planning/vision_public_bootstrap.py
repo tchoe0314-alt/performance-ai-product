@@ -15,6 +15,7 @@ PUBLIC_BOOTSTRAP_VERSION = "civora_public_vision_bootstrap_v1"
 WEAK_SUPERVISION_STATUS = "weak_labels_pending_review"
 REVIEWED_SUPERVISION_STATUS = "reviewer_labeled"
 REVIEW_SPRINT_VERSION = "civora_public_vision_review_sprint_v1"
+VISION_DATASET_SPLITS = ("train", "validation", "test")
 
 
 def capture_date_from_epoch_ms(value: Any) -> str:
@@ -86,6 +87,7 @@ def build_geographic_tile_grid(
     columns: int,
     tile_meters: float,
     image_pixels: int,
+    permanent_split: str = "",
 ) -> List[Dict[str, Any]]:
     rows = max(1, int(rows))
     columns = max(1, int(columns))
@@ -121,8 +123,72 @@ def build_geographic_tile_grid(
                     "file_name": f"naip-r{row:02d}-c{column:02d}.png",
                 }
             )
-    _assign_balanced_splits(tiles)
+    split = safe_str(permanent_split).lower()
+    if split:
+        if split not in VISION_DATASET_SPLITS:
+            raise ValueError("Permanent vision split must be train, validation, or test.")
+        for tile in tiles:
+            tile["split"] = split
+    else:
+        _assign_balanced_splits(tiles)
     return tiles
+
+
+def build_split_integrity(
+    images: Sequence[Dict[str, Any]],
+    *,
+    grouping_field: str = "geography_id",
+    required_splits: Sequence[str] = (),
+) -> Dict[str, Any]:
+    required = [safe_str(item).lower() for item in required_splits if safe_str(item)]
+    invalid_required = sorted(set(required) - set(VISION_DATASET_SPLITS))
+    groups_by_split: Dict[str, List[str]] = {split: [] for split in VISION_DATASET_SPLITS}
+    image_counts_by_split: Dict[str, int] = {split: 0 for split in VISION_DATASET_SPLITS}
+    group_splits: Dict[str, set[str]] = {}
+    ungrouped_image_ids: List[int] = []
+    invalid_split_image_ids: List[int] = []
+    for image in images:
+        rec = safe_dict(image)
+        image_id = int(safe_float(rec.get("id")))
+        split = safe_str(rec.get("split")).lower()
+        if split not in VISION_DATASET_SPLITS:
+            invalid_split_image_ids.append(image_id)
+            continue
+        image_counts_by_split[split] += 1
+        group = safe_str(rec.get(grouping_field))
+        if not group:
+            ungrouped_image_ids.append(image_id)
+            continue
+        group_splits.setdefault(group, set()).add(split)
+    leaked_groups = sorted(group for group, splits in group_splits.items() if len(splits) > 1)
+    for split in VISION_DATASET_SPLITS:
+        groups_by_split[split] = sorted(group for group, splits in group_splits.items() if split in splits)
+    missing_required = sorted(split for split in required if image_counts_by_split.get(split, 0) <= 0)
+    blockers: List[str] = []
+    if invalid_required:
+        blockers.append("split_policy_contains_invalid_required_split")
+    if invalid_split_image_ids:
+        blockers.append("images_have_invalid_or_missing_split")
+    if ungrouped_image_ids:
+        blockers.append("images_missing_split_group")
+    if leaked_groups:
+        blockers.append("split_group_leakage_detected")
+    if missing_required:
+        blockers.append("required_dataset_split_missing")
+    return {
+        "version": "civora_vision_split_integrity_v1",
+        "strategy": "group_disjoint",
+        "grouping_field": grouping_field,
+        "required_splits": required,
+        "image_counts_by_split": image_counts_by_split,
+        "groups_by_split": groups_by_split,
+        "leaked_groups": leaked_groups,
+        "missing_required_splits": missing_required,
+        "ungrouped_image_ids": sorted(ungrouped_image_ids),
+        "invalid_split_image_ids": sorted(invalid_split_image_ids),
+        "valid": not blockers,
+        "blockers": blockers,
+    }
 
 
 def normalize_microsoft_partition_url(value: Any) -> str:
@@ -297,6 +363,7 @@ def merge_weak_supervision_packages(
     packages: Sequence[Dict[str, Any]],
     *,
     source_names: Sequence[str],
+    split_policy: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     if not packages or len(packages) != len(source_names):
         raise ValueError("Each weak-supervision package requires a source name.")
@@ -395,6 +462,12 @@ def merge_weak_supervision_packages(
             if safe_str(safe_dict(item.get("source_rights")).get("rights_registry_fingerprint"))
         }
     )
+    normalized_split_policy = safe_dict(split_policy)
+    split_integrity = build_split_integrity(
+        merged_images,
+        grouping_field=safe_str(normalized_split_policy.get("grouping_field"), "geography_id"),
+        required_splits=safe_list(normalized_split_policy.get("required_splits")),
+    )
     payload: Dict[str, Any] = {
         "version": COCO_PACKAGE_VERSION,
         "bootstrap_version": PUBLIC_BOOTSTRAP_VERSION,
@@ -411,8 +484,10 @@ def merge_weak_supervision_packages(
         "annotations": merged_annotations,
         "splits": {
             split: [image["id"] for image in merged_images if image.get("split") == split]
-            for split in ("train", "validation", "test")
+            for split in VISION_DATASET_SPLITS
         },
+        "split_policy": normalized_split_policy,
+        "split_integrity": split_integrity,
         "eligible_image_count": len(merged_images),
         "annotation_count": len(merged_annotations),
         "contains_image_bytes": False,
@@ -502,6 +577,16 @@ def verify_weak_supervision_package(package: Dict[str, Any]) -> Dict[str, Any]:
             blockers.append("weak_annotation_must_start_pending")
         if safe_str(annotation.get("supervision")) != WEAK_SUPERVISION_STATUS:
             blockers.append("weak_annotation_supervision_mismatch")
+    split_policy = safe_dict(rec.get("split_policy"))
+    if split_policy:
+        expected_integrity = build_split_integrity(
+            images,
+            grouping_field=safe_str(split_policy.get("grouping_field"), "geography_id"),
+            required_splits=safe_list(split_policy.get("required_splits")),
+        )
+        if safe_dict(rec.get("split_integrity")) != expected_integrity:
+            blockers.append("split_integrity_report_mismatch")
+        blockers.extend(expected_integrity["blockers"])
     expected_fingerprint = weak_supervision_package_fingerprint(rec)
     if safe_str(rec.get("dataset_fingerprint")) != expected_fingerprint:
         blockers.append("weak_dataset_fingerprint_mismatch")
@@ -522,6 +607,8 @@ def weak_supervision_package_fingerprint(package: Dict[str, Any]) -> str:
         "images": [safe_dict(item) for item in safe_list(rec.get("images")) if safe_dict(item)],
         "annotations": [safe_dict(item) for item in safe_list(rec.get("annotations")) if safe_dict(item)],
         "splits": safe_dict(rec.get("splits")),
+        "split_policy": safe_dict(rec.get("split_policy")),
+        "split_integrity": safe_dict(rec.get("split_integrity")),
         "source_registry_fingerprints": safe_list(rec.get("source_registry_fingerprints")),
         "supervision_status": safe_str(rec.get("supervision_status")),
     }

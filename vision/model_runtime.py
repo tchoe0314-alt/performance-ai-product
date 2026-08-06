@@ -241,6 +241,7 @@ class LearnedVisionRuntime:
                 input_width=input_width,
                 input_height=input_height,
                 confidence_threshold=confidence_threshold,
+                mask_threshold=mask_threshold,
                 minimum_component_pixels=max(1, int(float(thresholds.get("minimum_component_pixels") or 24))),
                 background_class_id=int(float(output_contract.get("background_class_id") or 0)),
                 requested=requested,
@@ -320,6 +321,7 @@ class LearnedVisionRuntime:
                         "model_name": self.model_name,
                         "model_version": self.model_version,
                         "model_sha256": self._model_sha256,
+                        **_dict(candidate.get("component_quality")),
                     },
                 }
             )
@@ -450,6 +452,7 @@ def _semantic_candidates(
     input_width: int,
     input_height: int,
     confidence_threshold: float,
+    mask_threshold: float,
     minimum_component_pixels: int,
     background_class_id: int,
     requested: set[str],
@@ -470,7 +473,6 @@ def _semantic_candidates(
     except Exception as exc:
         raise VisionModelRuntimeError("rasterio is required to polygonize semantic model output.") from exc
     transform = Affine.scale(input_width / max(mask_width, 1), input_height / max(mask_height, 1))
-    pixel_scale_area = (input_width / max(mask_width, 1)) * (input_height / max(mask_height, 1))
     candidates: List[Dict[str, Any]] = []
     ordinal = 0
     for class_id, kind in sorted(classes.items()):
@@ -478,15 +480,23 @@ def _semantic_candidates(
             continue
         if class_id < 0 or class_id >= probabilities.shape[0]:
             continue
-        class_mask = (assigned == class_id) & (probabilities[class_id] >= confidence_threshold)
+        class_probabilities = probabilities[class_id]
+        class_mask = (assigned == class_id) & (class_probabilities >= mask_threshold)
         if not np.any(class_mask):
             continue
-        confidence = float(np.mean(probabilities[class_id][class_mask]))
-        for geometry, value_flag in shapes(class_mask.astype(np.uint8), mask=class_mask, transform=transform):
-            if int(value_flag) != 1 or geometry.get("type") not in {"Polygon", "MultiPolygon"}:
+        component_labels, component_stats = _label_connected_components(class_mask, class_probabilities)
+        for geometry, component_value in shapes(
+            component_labels,
+            mask=component_labels > 0,
+            transform=transform,
+        ):
+            component_id = int(component_value)
+            stats = component_stats.get(component_id)
+            if not stats or geometry.get("type") not in {"Polygon", "MultiPolygon"}:
                 continue
-            estimated_pixels = _geometry_area_hint(geometry) / max(pixel_scale_area, 1e-12)
-            if estimated_pixels < minimum_component_pixels:
+            if int(stats["pixel_count"]) < minimum_component_pixels:
+                continue
+            if float(stats["mean_probability"]) < confidence_threshold:
                 continue
             xyxy = _geometry_xyxy(geometry)
             if not xyxy:
@@ -497,12 +507,75 @@ def _semantic_candidates(
                     "index": ordinal,
                     "kind": kind,
                     "class_id": class_id,
-                    "confidence": confidence,
+                    "confidence": float(stats["mean_probability"]),
                     "input_xyxy": _clip_xyxy(xyxy, input_width, input_height),
                     "input_geometry": geometry,
+                    "component_quality": {
+                        "component_pixel_count": int(stats["pixel_count"]),
+                        "component_mean_probability": round(float(stats["mean_probability"]), 6),
+                        "component_max_probability": round(float(stats["max_probability"]), 6),
+                        "component_touches_frame_edge": bool(stats["touches_frame_edge"]),
+                    },
                 }
             )
     return candidates
+
+
+def _label_connected_components(
+    mask: np.ndarray,
+    probabilities: np.ndarray,
+) -> Tuple[np.ndarray, Dict[int, Dict[str, Any]]]:
+    if mask.ndim != 2 or probabilities.shape != mask.shape:
+        raise VisionModelRuntimeError("Semantic component inputs must use matching two-dimensional shapes.")
+    height, width = mask.shape
+    labels = np.zeros((height, width), dtype=np.int32)
+    stats: Dict[int, Dict[str, Any]] = {}
+    component_id = 0
+    for start_y, start_x in np.argwhere(mask):
+        y = int(start_y)
+        x = int(start_x)
+        if labels[y, x] != 0:
+            continue
+        component_id += 1
+        labels[y, x] = component_id
+        stack = [(y, x)]
+        pixel_count = 0
+        probability_sum = 0.0
+        max_probability = 0.0
+        touches_frame_edge = False
+        while stack:
+            current_y, current_x = stack.pop()
+            probability = float(probabilities[current_y, current_x])
+            pixel_count += 1
+            probability_sum += probability
+            max_probability = max(max_probability, probability)
+            touches_frame_edge = touches_frame_edge or (
+                current_y == 0
+                or current_x == 0
+                or current_y == height - 1
+                or current_x == width - 1
+            )
+            for next_y, next_x in (
+                (current_y - 1, current_x),
+                (current_y + 1, current_x),
+                (current_y, current_x - 1),
+                (current_y, current_x + 1),
+            ):
+                if (
+                    0 <= next_y < height
+                    and 0 <= next_x < width
+                    and bool(mask[next_y, next_x])
+                    and labels[next_y, next_x] == 0
+                ):
+                    labels[next_y, next_x] = component_id
+                    stack.append((next_y, next_x))
+        stats[component_id] = {
+            "pixel_count": pixel_count,
+            "mean_probability": probability_sum / max(pixel_count, 1),
+            "max_probability": max_probability,
+            "touches_frame_edge": touches_frame_edge,
+        }
+    return labels, stats
 
 
 def _box_to_xyxy(box: Sequence[float], *, box_format: str) -> List[float]:

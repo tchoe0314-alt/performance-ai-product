@@ -6,6 +6,7 @@ import unittest
 from backend.planning.vision_public_bootstrap import (
     WEAK_SUPERVISION_STATUS,
     build_geographic_tile_grid,
+    build_split_integrity,
     build_public_review_sprint,
     build_weak_supervision_package,
     capture_date_from_epoch_ms,
@@ -105,6 +106,36 @@ class VisionPublicBootstrapTests(unittest.TestCase):
         self.assertEqual(sum(tile["split"] == "train" for tile in tiles), 12)
         self.assertEqual(sum(tile["split"] == "validation" for tile in tiles), 2)
         self.assertEqual(sum(tile["split"] == "test" for tile in tiles), 2)
+
+    def test_permanent_geography_splits_are_disjoint_and_leakage_is_reported(self) -> None:
+        images = []
+        for image_id, (geography_id, split) in enumerate(
+            (("gretna_ne", "train"), ("denver_co", "validation"), ("charlotte_nc", "test")),
+            start=1,
+        ):
+            tile = build_geographic_tile_grid(
+                center_longitude=-96.237,
+                center_latitude=41.185,
+                rows=1,
+                columns=1,
+                tile_meters=320,
+                image_pixels=512,
+                permanent_split=split,
+            )[0]
+            images.append({"id": image_id, "geography_id": geography_id, "split": tile["split"]})
+
+        integrity = build_split_integrity(
+            images,
+            required_splits=("train", "validation", "test"),
+        )
+        self.assertTrue(integrity["valid"])
+        self.assertEqual(integrity["groups_by_split"]["validation"], ["denver_co"])
+
+        images.append({"id": 4, "geography_id": "gretna_ne", "split": "test"})
+        leaked = build_split_integrity(images, required_splits=("train", "validation", "test"))
+        self.assertFalse(leaked["valid"])
+        self.assertEqual(leaked["leaked_groups"], ["gretna_ne"])
+        self.assertIn("split_group_leakage_detected", leaked["blockers"])
 
     def test_polygon_clipping_keeps_geometry_inside_tile(self) -> None:
         clipped = clip_ring_to_bbox(

@@ -10,6 +10,7 @@ from vision.model_runtime import MODEL_MANIFEST_VERSION, PROMOTED_STATUS, file_s
 
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .vision_detection_learning import DATASET_VERSION, evaluate_detection_quality
+from .vision_model_calibration import validate_baseline_comparison, validate_threshold_calibration
 
 
 COCO_PACKAGE_VERSION = "civora_vision_coco_package_v1"
@@ -52,6 +53,8 @@ DEFAULT_PROMOTION_THRESHOLDS = {
     "minimum_geography_count": 5,
     "minimum_season_count": 2,
     "minimum_imagery_quality_band_count": 2,
+    "require_validation_only_threshold_calibration": True,
+    "require_baseline_comparison": True,
 }
 
 ACCEPTED_GROUND_TRUTH_SUPERVISION = {"reviewer_labeled", "independent_benchmark_annotated"}
@@ -286,6 +289,7 @@ def assess_model_promotion(
     *,
     thresholds: Optional[Dict[str, Any]] = None,
     required_classes: Optional[Sequence[str]] = None,
+    dataset_fingerprint: str = "",
 ) -> Dict[str, Any]:
     quality = safe_dict(quality_report)
     limits = {**DEFAULT_PROMOTION_THRESHOLDS, **safe_dict(thresholds)}
@@ -294,6 +298,45 @@ def assess_model_promotion(
         blockers.append("ground_truth_evaluation_missing")
     attestation = assess_ground_truth_attestation(quality)
     blockers.extend(safe_list(attestation.get("blockers")))
+    calibration_record = safe_dict(quality.get("threshold_calibration"))
+    calibration_assessment = (
+        validate_threshold_calibration(
+            calibration_record,
+            dataset_fingerprint=safe_str(dataset_fingerprint or calibration_record.get("dataset_fingerprint")),
+            require_promotion_eligible=True,
+        )
+        if calibration_record
+        else {
+            "valid": False,
+            "blockers": ["validation_only_threshold_calibration_missing"],
+            "calibration_fingerprint": "",
+            "chosen_thresholds": {},
+        }
+    )
+    if limits.get("require_validation_only_threshold_calibration") is True:
+        if not calibration_assessment["valid"]:
+            blockers.extend(calibration_assessment["blockers"])
+        if safe_str(calibration_record.get("source_supervision_status")) != safe_str(
+            quality.get("source_supervision_status")
+        ):
+            blockers.append("threshold_calibration_supervision_mismatch")
+    baseline_record = safe_dict(quality.get("baseline_comparison"))
+    baseline_assessment = (
+        validate_baseline_comparison(
+            baseline_record,
+            model_quality=quality,
+        )
+        if baseline_record
+        else {
+            "valid": False,
+            "eligible": False,
+            "blockers": ["held_out_baseline_comparison_missing"],
+            "comparison": {},
+        }
+    )
+    if limits.get("require_baseline_comparison") is True:
+        if not baseline_assessment["valid"]:
+            blockers.extend(baseline_assessment["blockers"])
     for metric in ("precision", "recall", "f1", "mean_matched_iou"):
         if safe_float(quality.get(metric)) < safe_float(limits.get(metric)):
             blockers.append(f"{metric}_below_promotion_threshold")
@@ -343,6 +386,8 @@ def assess_model_promotion(
         "thresholds": limits,
         "blockers": sorted(set(blockers)),
         "ground_truth_attestation": attestation,
+        "threshold_calibration": calibration_assessment,
+        "baseline_comparison": baseline_assessment,
         "evaluation_scope": scope,
         "class_assessments": class_assessments,
         "eligible_classes": eligible_classes,
@@ -385,6 +430,7 @@ def build_model_manifest(
         quality_report,
         thresholds=thresholds,
         required_classes=evaluated_classes,
+        dataset_fingerprint=dataset_fingerprint,
     )
     blockers = list(safe_list(promotion.get("blockers")))
     fingerprint = safe_str(dataset_fingerprint).lower()

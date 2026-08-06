@@ -287,6 +287,19 @@ class PublicVisionReviewSprintTests(unittest.TestCase):
         self.assertEqual(registry["version"], "civora_vision_public_source_registry_v1")
         self.assertEqual(len(plan["geographies"]), 5)
         self.assertEqual(len({item["geography_id"] for item in plan["geographies"]}), 5)
+        self.assertEqual(plan["split_policy"]["strategy"], "geography_disjoint")
+        self.assertEqual(plan["split_policy"]["grouping_field"], "geography_id")
+        self.assertEqual(
+            {item["split"] for item in plan["geographies"]},
+            {"train", "validation", "test"},
+        )
+        split_groups = {
+            split: {item["geography_id"] for item in plan["geographies"] if item["split"] == split}
+            for split in ("train", "validation", "test")
+        }
+        self.assertFalse(split_groups["train"] & split_groups["validation"])
+        self.assertFalse(split_groups["train"] & split_groups["test"])
+        self.assertFalse(split_groups["validation"] & split_groups["test"])
         self.assertFalse(plan["output_policy"]["ground_truth_at_collection_time"])
         self.assertFalse(plan["output_policy"]["promotion_eligible"])
         for source in registry["sources"].values():

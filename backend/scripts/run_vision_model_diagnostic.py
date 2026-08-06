@@ -11,6 +11,10 @@ from backend.planning.vision_model_lifecycle import (
     build_model_manifest,
     evaluate_quality_by_class,
 )
+from backend.planning.vision_model_calibration import (
+    compare_model_to_baseline,
+    validate_threshold_calibration,
+)
 from vision.model_runtime import LearnedVisionRuntime
 
 
@@ -27,7 +31,10 @@ def main() -> int:
     parser.add_argument("--input-size", type=int, default=256)
     parser.add_argument("--confidence", type=float, default=0.30)
     parser.add_argument("--minimum-component-pixels", type=int, default=24)
+    parser.add_argument("--mask-threshold", type=float, default=0.50)
     parser.add_argument("--split", choices=("validation", "test"), default="test")
+    parser.add_argument("--calibration", help="Validation-only threshold calibration artifact to freeze for evaluation.")
+    parser.add_argument("--baseline-quality", help="Quality report for the heuristic baseline on the same test split.")
     parser.add_argument("--imagenet-normalization", action="store_true")
     args = parser.parse_args()
 
@@ -37,6 +44,22 @@ def main() -> int:
     image_root = Path(args.image_root).expanduser().resolve()
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    calibration: Dict[str, Any] = {}
+    if args.calibration:
+        calibration = _read_object(Path(args.calibration).expanduser().resolve())
+        calibration_validation = validate_threshold_calibration(
+            calibration,
+            dataset_fingerprint=str(dataset.get("dataset_fingerprint") or ""),
+            require_promotion_eligible=False,
+        )
+        if not calibration_validation["valid"]:
+            raise SystemExit(
+                "Threshold calibration is invalid: " + ", ".join(calibration_validation["blockers"])
+            )
+        chosen_thresholds = calibration_validation["chosen_thresholds"]
+        args.confidence = float(chosen_thresholds["confidence"])
+        args.minimum_component_pixels = int(chosen_thresholds["minimum_component_pixels"])
+        args.mask_threshold = float(chosen_thresholds["mask"])
     required_classes = sorted({str(label) for key, label in classes.items() if str(key) != "0"})
     seed_quality = {
         "evaluation_status": "unattested_or_weak_label_diagnostic",
@@ -127,6 +150,7 @@ def main() -> int:
             "ground_truth_attestation_assessment": attestation,
             "source_supervision_status": str(dataset.get("supervision_status") or "unspecified"),
             "evaluation_split": args.split,
+            "dataset_fingerprint": str(dataset.get("dataset_fingerprint") or ""),
             "truth_label": (
                 "These metrics use an independently held-out, attested benchmark split. Promotion still requires every "
                 "quality, class-depth, coverage, artifact, and human-approval gate."
@@ -139,7 +163,18 @@ def main() -> int:
             ),
         }
     )
-    promotion = assess_model_promotion(quality, required_classes=required_classes)
+    if calibration:
+        quality["threshold_calibration"] = calibration
+    if args.baseline_quality:
+        if args.split != "test":
+            raise SystemExit("Baseline comparison is valid only on the held-out test split.")
+        baseline_quality = _read_object(Path(args.baseline_quality).expanduser().resolve())
+        quality["baseline_comparison"] = compare_model_to_baseline(quality, baseline_quality)
+    promotion = assess_model_promotion(
+        quality,
+        required_classes=required_classes,
+        dataset_fingerprint=str(dataset.get("dataset_fingerprint") or ""),
+    )
     manifest = _candidate_manifest(
         model_path=model_path,
         classes=classes,
@@ -154,6 +189,12 @@ def main() -> int:
         {
             "version": "civora_vision_diagnostic_predictions_v1",
             "dataset_fingerprint": dataset.get("dataset_fingerprint"),
+            "evaluation_split": args.split,
+            "applied_thresholds": {
+                "confidence": args.confidence,
+                "minimum_component_pixels": args.minimum_component_pixels,
+                "mask": args.mask_threshold,
+            },
             "predictions": predictions,
         },
     )
@@ -161,6 +202,8 @@ def main() -> int:
         output_dir / ("ground-truth.json" if measured else "weak-ground-truth.json"),
         {
             "version": "civora_vision_diagnostic_ground_truth_v1",
+            "dataset_fingerprint": dataset.get("dataset_fingerprint"),
+            "evaluation_split": args.split,
             "supervision_status": dataset.get("supervision_status"),
             "promotion_eligible": measured,
             "ground_truth_attestation": dataset.get("ground_truth_attestation"),
@@ -223,6 +266,7 @@ def _candidate_manifest(
     )
     manifest["thresholds"]["confidence"] = max(0.0, min(1.0, float(args.confidence)))
     manifest["thresholds"]["minimum_component_pixels"] = max(1, int(args.minimum_component_pixels))
+    manifest["thresholds"]["mask"] = max(0.0, min(1.0, float(args.mask_threshold)))
     manifest["inference"]["tile_mode"] = "disabled"
     return manifest
 
