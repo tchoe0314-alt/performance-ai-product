@@ -3,6 +3,8 @@ import type { MutableRefObject } from "react";
 import type { Assumption, BuildingPlacement, Issue, MapAnalysis, ProjectInput, ProjectRecord } from "../types";
 import type { AddressSuggestion, AutoExistingConditionsUiStatus } from "./dashboardDataTypes";
 import type { RecentChange } from "./dashboardTypes";
+import { clearAddressSourceContext } from "./dashboardSourceContext";
+import type { ProjectStatusSummary } from "./workspaceShell";
 import {
   DEFAULT_BLANK_SITE_DEPTH_FT,
   DEFAULT_BLANK_SITE_WIDTH_FT,
@@ -100,6 +102,7 @@ export type DashboardSiteSetupActions = {
   setUploadedImageApiUrl: StateSetter<string>;
   setUploadedImagePreviewUrl: StateSetter<string>;
   systemStatusesDefault: Record<EngineeringSystemKey, SystemStatus>;
+  updateProjectStatus: (updates: Omit<ProjectStatusSummary, "updatedAt">) => void;
 };
 
 export function runDashboardToggleSiteLock({
@@ -266,7 +269,7 @@ export function runDashboardStartBlankSite({ actions }: { actions: DashboardSite
   actions.lastAppliedSiteRef.current = null;
   const currentInput = actions.currentProject?.project_input ?? actions.payloadPreview;
   const nextSiteInputs: Record<string, unknown> = {
-    ...(currentInput?.meta?.site_inputs ?? {}),
+    ...clearAddressSourceContext(currentInput?.meta?.site_inputs ?? {}),
     site_alignment_locked: false,
     site_boundary_source: "blank_user_defined",
     site_boundary_state: "draft_editable",
@@ -327,6 +330,13 @@ export function runDashboardStartBlankSite({ actions }: { actions: DashboardSite
     actions.setLeftSidebarOpen(false);
   }
   actions.scrollToDrawingSurface();
+  actions.updateProjectStatus({
+    state: "ready",
+    area: "setup",
+    title: "Blank site started",
+    detail: "Address-derived context was cleared and a new editable 300 ft by 300 ft draft boundary was created.",
+    nextAction: "Set dimensions or draw the boundary, then lock the site when it is in the right place.",
+  });
   actions.setStatusMessage("Blank site started. Set dimensions, draw the boundary, then lock it for review.");
 }
 

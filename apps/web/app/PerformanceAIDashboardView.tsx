@@ -3148,6 +3148,7 @@ function PerformanceAIDashboardView({
       setUploadedImageApiUrl,
       setUploadedImagePreviewUrl,
       systemStatusesDefault: DEFAULT_SYSTEM_STATUS,
+      updateProjectStatus,
     }),
     [
       autoFitSite,
@@ -3158,6 +3159,7 @@ function PerformanceAIDashboardView({
       recordRecentChange,
       saveProject,
       scrollToDrawingSurface,
+      updateProjectStatus,
     ],
   );
 

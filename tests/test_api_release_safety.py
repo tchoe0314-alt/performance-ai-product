@@ -209,6 +209,128 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         self.assertIsNone(response.lng)
         self.assertNotIn("token-value", response.message)
 
+    def test_geocode_rejects_low_relevance_provider_match(self) -> None:
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {
+                    "features": [
+                        {
+                            "center": [-99.1, 19.4],
+                            "place_name": "Real, Jalisco, Mexico",
+                            "relevance": 0.42,
+                        }
+                    ]
+                }
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def __enter__(self) -> "FakeClient":
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, *args, **kwargs) -> FakeResponse:
+                return FakeResponse()
+
+        with patch.object(api_app_module, "_mapbox_token", return_value=("MAPBOX_TOKEN", "token-value")):
+            with patch.object(api_app_module.httpx, "Client", FakeClient):
+                response = geocode_address(
+                    GeocodePayload(address="asdfghjkl; not a real address"),
+                    current_user={"id": "user-1"},
+                )
+
+        self.assertFalse(response.success)
+        self.assertTrue(response.blocked)
+        self.assertEqual(response.status, "uncertain_match")
+        self.assertIsNone(response.lat)
+        self.assertIsNone(response.lng)
+        self.assertIn("uncertain", response.message)
+
+    def test_geocode_rejects_high_relevance_unrelated_provider_match(self) -> None:
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {
+                    "features": [
+                        {
+                            "center": [-99.1, 19.4],
+                            "place_name": "Real, Jalisco, Mexico",
+                            "relevance": 0.99,
+                        }
+                    ]
+                }
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def __enter__(self) -> "FakeClient":
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, *args, **kwargs) -> FakeResponse:
+                return FakeResponse()
+
+        with patch.object(api_app_module, "_mapbox_token", return_value=("MAPBOX_TOKEN", "token-value")):
+            with patch.object(api_app_module.httpx, "Client", FakeClient):
+                response = geocode_address(
+                    GeocodePayload(address="asdfghjkl; not a real address"),
+                    current_user={"id": "user-1"},
+                )
+
+        self.assertFalse(response.success)
+        self.assertEqual(response.status, "uncertain_match")
+
+    def test_geocode_allows_small_street_typo_when_number_and_place_match(self) -> None:
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {
+                    "features": [
+                        {
+                            "center": [-96.241, 41.132],
+                            "place_name": "20525 Margo Street, Gretna, Nebraska 68028, United States",
+                            "relevance": 0.86,
+                        }
+                    ]
+                }
+
+        class FakeClient:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def __enter__(self) -> "FakeClient":
+                return self
+
+            def __exit__(self, *args) -> None:
+                return None
+
+            def get(self, *args, **kwargs) -> FakeResponse:
+                return FakeResponse()
+
+        with patch.object(api_app_module, "_mapbox_token", return_value=("MAPBOX_TOKEN", "token-value")):
+            with patch.object(api_app_module.httpx, "Client", FakeClient):
+                response = geocode_address(
+                    GeocodePayload(address="20525 Mrago St, Gretna NE"),
+                    current_user={"id": "user-1"},
+                )
+
+        self.assertTrue(response.success)
+        self.assertFalse(response.blocked)
+        self.assertEqual(response.display_name, "20525 Margo Street, Gretna, Nebraska 68028, United States")
+
     def test_professional_release_payload_defaults_do_not_claim_release(self) -> None:
         payload = ProfessionalReleasePayload()
 

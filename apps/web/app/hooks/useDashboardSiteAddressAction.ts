@@ -10,6 +10,7 @@ import {
   type OnlineExistingConditionsFetchResponse,
 } from "../utils/dashboardDataTypes";
 import { panelErrorMessage } from "../utils/dashboardStatus";
+import { clearAddressSourceContext } from "../utils/dashboardSourceContext";
 import { runQueuedSourceContextLookup } from "../utils/sourceContextJobs";
 import type { ProjectStatusSummary, SidePanelKey, WorkspaceMode } from "../utils/workspaceShell";
 
@@ -58,47 +59,9 @@ type UseDashboardSiteAddressActionOptions = {
   updateProjectStatus: UpdateProjectStatus;
 };
 
-function clearAddressSourceContext(siteInputs: SiteInputs): SiteInputs {
-  const next = { ...(siteInputs ?? {}) };
-  delete next.geocode;
-  delete next.location_context;
-  delete next.online_existing_conditions_discovery_v1;
-  delete next.map_feature_detection_report_v1;
-  delete next.existing_conditions_package;
-  delete next.candidate_review_inbox_v1;
-  delete next.civora_vision_training_dataset_v1;
-  delete next.civora_vision_quality_report_v1;
-  delete next.civora_vision_ground_truth_ledger_v1;
-  delete next.civora_vision_ground_truth_dataset_v1;
-  delete next.civora_vision_split_registry_v1;
-  delete next.civora_vision_active_learning_queue_v1;
-  delete next.civora_vision_ground_truth_coverage_v1;
-  delete next.civora_vision_review_workspace_v1;
-  delete next.source_context_detection_coverage_v1;
-  delete next.auto_existing_conditions_v1;
-  delete next.slope_estimate;
-  return next;
-}
-
 function clearLatestResultSourceContext(latestResult: ProjectRecord["latest_result"] | undefined) {
   if (!latestResult?.final_plan) return latestResult;
-  const meta: Record<string, unknown> = { ...(latestResult.final_plan.meta ?? {}) };
-  delete meta.location_context;
-  delete meta.online_existing_conditions_discovery_v1;
-  delete meta.map_feature_detection_report_v1;
-  delete meta.existing_conditions_package;
-  delete meta.existing_conditions_summary;
-  delete meta.candidate_review_inbox_v1;
-  delete meta.civora_vision_training_dataset_v1;
-  delete meta.civora_vision_quality_report_v1;
-  delete meta.civora_vision_ground_truth_ledger_v1;
-  delete meta.civora_vision_ground_truth_dataset_v1;
-  delete meta.civora_vision_split_registry_v1;
-  delete meta.civora_vision_active_learning_queue_v1;
-  delete meta.civora_vision_ground_truth_coverage_v1;
-  delete meta.civora_vision_review_workspace_v1;
-  delete meta.source_context_detection_coverage_v1;
-  delete meta.auto_existing_conditions_v1;
+  const meta = clearAddressSourceContext({ ...(latestResult.final_plan.meta ?? {}) } as SiteInputs) as Record<string, unknown>;
   return {
     ...latestResult,
     final_plan: {
@@ -236,10 +199,10 @@ export function useDashboardSiteAddressAction({
         return;
       }
       const currentInput = currentProject?.project_input ?? payloadPreview;
-      const nextSiteInputs = {
+      const nextSiteInputs = clearAddressSourceContext({
         ...(currentInput?.meta?.site_inputs ?? {}),
         address: trimmed || undefined,
-      };
+      });
       if (!trimmed) {
         const clearedSiteInputs = clearAddressSourceContext(nextSiteInputs);
         delete clearedSiteInputs.address;
@@ -561,7 +524,9 @@ export function useDashboardSiteAddressAction({
                 final_plan: {
                   ...currentProject.latest_result.final_plan,
                   meta: {
-                    ...(currentProject.latest_result.final_plan.meta ?? {}),
+                    ...clearAddressSourceContext(
+                      { ...(currentProject.latest_result.final_plan.meta ?? {}) } as SiteInputs,
+                    ),
                     location_context: nextSiteInputs.location_context,
                     online_existing_conditions_discovery_v1: onlineFetch?.online_existing_conditions_discovery_v1,
                     map_feature_detection_report_v1: onlineFetch?.map_feature_detection_report_v1,

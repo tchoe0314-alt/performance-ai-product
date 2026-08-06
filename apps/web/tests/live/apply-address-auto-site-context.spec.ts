@@ -955,6 +955,24 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   expect(JSON.stringify(savedProjectInput)).toContain("online_existing_conditions_discovery_v1");
   expect(JSON.stringify(savedProjectInput)).toContain("site_intelligence_summary_v1");
   expect(JSON.stringify(savedProjectInput)).toContain("imagery_object_detection_report_v1");
+
+  await page.getByRole("button", { name: "Setup" }).first().click();
+  await page
+    .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
+    .click();
+  await expect.poll(() => JSON.stringify(savedProjectInput)).not.toContain("online_existing_conditions_discovery_v1");
+  expect(JSON.stringify(savedProjectInput)).not.toContain("site_intelligence_summary_v1");
+  expect(JSON.stringify(savedProjectInput)).not.toContain("imagery_object_detection_report_v1");
+  expect(JSON.stringify(savedProjectInput)).not.toContain("candidate_review_accepted_drafts_v1");
+  await expect(page.getByTestId("project-status-summary")).toContainText("Blank site started");
+  await expect(page.getByTestId("project-status-summary")).not.toContainText("Address applied");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Show left sidebar" }).click();
+  await page.getByRole("button", { name: "Setup" }).first().click();
+  await expect(page.getByTestId("setup-detect-inside-site")).toContainText("Blank site started");
+  await expect(page.getByTestId("setup-detect-inside-site")).toContainText("0 found");
+  await expect(page.getByTestId("auto-site-context-candidates")).toContainText("No source candidates found yet");
+  await expect(page.getByTestId("site-intelligence-summary")).toHaveCount(0);
 });
 
 test("Apply Address recovers when a background source status poll is transiently rate limited", async ({ page }) => {

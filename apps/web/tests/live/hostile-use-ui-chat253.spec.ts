@@ -190,6 +190,11 @@ test.describe("hostile-use UI recovery", () => {
 
     const widths = page.getByLabel("Site width in feet");
     const depths = page.getByLabel("Site depth in feet");
+    await widths.fill("-10");
+    await depths.fill("0");
+    await page.getByRole("button", { name: "Lock Boundary" }).click();
+    await expect(page.getByTestId("project-status-summary")).toContainText("Apply site needs size");
+    await expect(page.getByTestId("site-status")).toContainText("Site Open");
     await widths.fill("300");
     await depths.fill("300");
     await page.getByRole("button", { name: "Lock Boundary" }).click();

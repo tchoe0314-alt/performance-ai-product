@@ -112,6 +112,19 @@ export function useDashboardApplySiteAction({
     const currentInput = currentProject?.project_input ?? payloadPreview;
     const visibleWidth = parsePositiveNumber(lotWidth);
     const visibleHeight = parsePositiveNumber(lotHeight);
+    const invalidVisibleWidth = Boolean(lotWidth.trim()) && !visibleWidth;
+    const invalidVisibleHeight = Boolean(lotHeight.trim()) && !visibleHeight;
+    if (invalidVisibleWidth || invalidVisibleHeight) {
+      updateProjectStatus({
+        state: "blocked",
+        area: "setup",
+        title: "Apply site needs size",
+        detail: "Enter a positive width and height in feet before locking the site.",
+        nextAction: "Correct the width/depth, or clear both fields to use the drawn boundary dimensions.",
+      });
+      applyingSiteRef.current = false;
+      return;
+    }
     const width = visibleWidth ?? viewportFootprint?.widthFt;
     const height = visibleHeight ?? viewportFootprint?.heightFt;
     if (!width || !height) {

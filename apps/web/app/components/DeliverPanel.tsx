@@ -256,7 +256,14 @@ export function DeliverPanel({
             ["Plan preview", planPreviewUrl ? "Included" : "Missing"],
             ["Generated result", hasBackendResult ? "Included" : "Missing"],
             ["Objects", placedObjectCount ? `${placedObjectCount} placed` : "Missing"],
-            ["Source notes", sidebarTrustScore || "Review"],
+            [
+              "Source context",
+              autoSiteContextFlowSummary.candidateCount
+                ? `${autoSiteContextFlowSummary.candidateCount} candidates`
+                : autoSiteContextFlowSummary.missingLabels.length
+                  ? "Needs review"
+                  : sidebarTrustScore || "Review",
+            ],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <p className="font-semibold uppercase tracking-[0.12em] text-slate-400">{label}</p>

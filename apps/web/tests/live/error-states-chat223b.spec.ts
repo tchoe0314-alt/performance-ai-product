@@ -224,6 +224,46 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await expect(page.getByTestId("auto-site-context-found")).toContainText(/No usable features/i);
   });
 
+  test("Apply Address rejects an uncertain match before source discovery", async ({ page }) => {
+    await mockSignedInShell(page);
+    let sourceContextRequested = false;
+    page.on("request", (request) => {
+      if (/\/api\/(?:jobs\/source-context|existing-conditions\/fetch-online)/.test(request.url())) {
+        sourceContextRequested = true;
+      }
+    });
+    await page.route("**/api/geocode", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: false,
+          status: "uncertain_match",
+          blocked: true,
+          message: "Address lookup returned an uncertain or unrelated match.",
+          blockers: [
+            {
+              area: "geocode",
+              code: "address_match_uncertain",
+              message: "Address lookup returned an uncertain or unrelated match.",
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Setup" }).first().click();
+    await page.getByLabel("Type project address").fill("asdfghjkl; not a real address");
+    await page.getByRole("button", { name: "Apply address" }).click();
+
+    await expect(page.getByTestId("apply-address-status")).toContainText("uncertain or unrelated match");
+    await expect(page.getByTestId("project-status-summary")).toContainText("Apply address needs correction");
+    await expect(page.getByTestId("site-status")).toContainText("Site Open");
+    expect(sourceContextRequested).toBe(false);
+  });
+
   test("upload, PDF, and survey/topo failures stay inline", async ({ page }, testInfo) => {
     await openDemoWorkspace(page);
     await openWorkspacePanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/i);

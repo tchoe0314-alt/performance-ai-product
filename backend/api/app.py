@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import time
 import uuid
 import urllib.parse
@@ -1946,6 +1947,71 @@ def _mapbox_jurisdiction(feature: Dict[str, Any]) -> Dict[str, str]:
     return jurisdiction
 
 
+_GEOCODE_MATCH_IGNORED_TOKENS = {
+    "a",
+    "address",
+    "at",
+    "avenue",
+    "ave",
+    "boulevard",
+    "blvd",
+    "circle",
+    "court",
+    "ct",
+    "drive",
+    "dr",
+    "highway",
+    "hwy",
+    "in",
+    "lane",
+    "ln",
+    "of",
+    "place",
+    "pl",
+    "road",
+    "rd",
+    "route",
+    "site",
+    "st",
+    "street",
+    "the",
+    "way",
+}
+
+
+def _geocode_match_tokens(value: str) -> List[str]:
+    return [
+        token
+        for token in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+        if token not in _GEOCODE_MATCH_IGNORED_TOKENS
+    ]
+
+
+def _mapbox_match_is_credible(address: str, feature: Dict[str, Any]) -> bool:
+    relevance = _safe_float(feature.get("relevance"), -1.0)
+    if relevance < 0.70:
+        return False
+
+    display_name = str(
+        feature.get("matching_place_name")
+        or feature.get("place_name")
+        or feature.get("text")
+        or ""
+    )
+    query_tokens = set(_geocode_match_tokens(address))
+    match_tokens = set(_geocode_match_tokens(display_name))
+    if not query_tokens or not match_tokens:
+        return False
+
+    query_numbers = {token for token in query_tokens if token.isdigit()}
+    if query_numbers and not query_numbers.intersection(match_tokens):
+        return False
+
+    overlap_ratio = len(query_tokens.intersection(match_tokens)) / len(query_tokens)
+    minimum_overlap = 0.35 if query_numbers else 0.50
+    return overlap_ratio >= minimum_overlap
+
+
 @app.post("/api/geocode", response_model=GeocodeResponse)
 def geocode_address(
     payload: GeocodePayload,
@@ -2021,6 +2087,14 @@ def geocode_address(
             blocker_code="provider_invalid_response",
         )
     display_name = str(first.get("place_name") or address) if isinstance(first, dict) else address
+    if not isinstance(first, dict) or not _mapbox_match_is_credible(address, first):
+        return _blocked_geocode_response(
+            address=address,
+            provider="mapbox",
+            status="uncertain_match",
+            message="Address lookup returned an uncertain or unrelated match. Check the address, choose a suggestion, or place the site manually.",
+            blocker_code="address_match_uncertain",
+        )
     jurisdiction = _mapbox_jurisdiction(first) if isinstance(first, dict) else {}
     geocode_record = {
         "success": True,
