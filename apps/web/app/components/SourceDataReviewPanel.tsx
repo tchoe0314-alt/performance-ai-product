@@ -344,6 +344,16 @@ export function SourceDataReviewPanel({
                 sourceProperties.source_rights && typeof sourceProperties.source_rights === "object"
                   ? (sourceProperties.source_rights as Record<string, unknown>)
                   : {};
+              const geometryQuality =
+                sourceProperties.geometry_quality_v1 && typeof sourceProperties.geometry_quality_v1 === "object"
+                  ? (sourceProperties.geometry_quality_v1 as Record<string, unknown>)
+                  : {};
+              const outlineQuality = Number(
+                geometryQuality.quality_score ?? sourceProperties.outline_quality_score ?? sourceProperties.candidate_quality_score,
+              );
+              const cleanupActions = Array.isArray(geometryQuality.cleanup_actions)
+                ? geometryQuality.cleanup_actions.map((item) => String(item).replaceAll("_", " ")).filter(Boolean)
+                : [];
               return (
                 <div
                   key={candidate.candidate_id}
@@ -413,6 +423,12 @@ export function SourceDataReviewPanel({
                               ? "Source rights permit training after review."
                               : "Feedback is saved, but training waits for source-rights clearance."}
                           </p>
+                          <p className="mt-1 text-[11px] font-medium text-slate-600" data-testid="vision-outline-quality">
+                            {Number.isFinite(outlineQuality) && outlineQuality > 0
+                              ? `Outline quality ${Math.round(outlineQuality * 100)}%`
+                              : "Provider outline"}
+                            {cleanupActions.length ? ` | ${cleanupActions.slice(0, 2).join(", ")}` : " | check edges before accepting"}
+                          </p>
                         </div>
                         <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
                           <select
@@ -450,7 +466,7 @@ export function SourceDataReviewPanel({
                         <p className="min-w-0 flex-1 text-[11px] text-slate-500">
                           {selectedCorrectionGeometry && selectedCorrectionObject
                             ? `Selected outline: ${selectedCorrectionObject.label}. Project-local geometry will be saved; training waits for map registration.`
-                            : "Select an editable user-drawn outline in Draw to replace this detection's geometry."}
+                            : "If the detected edges are wrong, draw the correct outline, select it, then use it here before Accept."}
                         </p>
                         <button
                           type="button"

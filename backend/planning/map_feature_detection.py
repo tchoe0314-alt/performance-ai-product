@@ -366,14 +366,27 @@ def build_map_feature_detection_report(
             continue
         confidence = min(max(safe_float(rec.get("confidence"), 0.35), 0.05), 0.7)
         detection_id = safe_str(rec.get("detection_id") or rec.get("id"), f"imagery-{idx + 1}")
+        raw_detection_properties = safe_dict(rec.get("properties"))
+        geometry_quality = safe_dict(raw_detection_properties.get("geometry_quality_v1"))
+        geometry_quality_score = safe_float(
+            geometry_quality.get("quality_score") or raw_detection_properties.get("candidate_quality_score"),
+            0.0,
+        )
         detection_properties = {
-            **safe_dict(rec.get("properties")),
+            **raw_detection_properties,
             "vision_detection_id": detection_id,
             "imagery_frame_id": safe_str(rec.get("imagery_frame_id")),
             "pixel_geometry": rec.get("pixel_geometry"),
             "geo_geometry": rec.get("geo_geometry"),
             "source_rights": safe_dict(vision_frame.get("source_rights")),
+            "outline_quality_status": safe_str(geometry_quality.get("status"), "provider_candidate"),
+            "outline_quality_score": round(geometry_quality_score, 3),
+            "outline_edit_supported": True,
         }
+        candidate_blockers = [
+            "Imagery/object detection is approximate visual context and must be reviewed before it can affect project objects.",
+            "Check the detected outline against the image; redraw or reclassify it before acceptance when the edges or type are wrong.",
+        ]
         add_candidate(
             _candidate(
                 feature_type=feature_type,
@@ -382,7 +395,7 @@ def build_map_feature_detection_report(
                 confidence=confidence,
                 source_url=safe_str(rec.get("source_url") or rec.get("image_url")),
                 source_name=safe_str(rec.get("evidence_source") or rec.get("source") or rec.get("image_path"), "uploaded_map_snapshot"),
-                blockers=["Imagery/object detection is approximate visual context and must be reviewed before it can affect project objects."],
+                blockers=candidate_blockers,
                 review_required=True,
                 acceptance_status="pending",
                 seed=f"image:{detection_id}:{kind}:{rec.get('bbox')}:{rec.get('geometry')}",

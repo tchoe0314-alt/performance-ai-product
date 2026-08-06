@@ -79,6 +79,12 @@ function candidateInbox(statuses: Record<string, "pending" | "accepted" | "rejec
           vision_detection_id: "vision-detection-1",
           imagery_frame_id: "frame-1",
           source_rights: { training_use_allowed: true },
+          geometry_quality_v1: {
+            status: "usable_review_candidate",
+            quality_score: 0.81,
+            cleanup_actions: ["closed_polygon", "simplified_noisy_outline"],
+            review_edit_supported: true,
+          },
         },
       },
     },
@@ -828,6 +834,8 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(detectedItems).toContainText("Rejected");
   const visionCandidate = detectedItems.locator('[data-candidate-id="image-building-1"]');
   await expect(visionCandidate.getByTestId("vision-candidate-correction")).toBeVisible();
+  await expect(visionCandidate.getByTestId("vision-outline-quality")).toContainText("Outline quality 81%");
+  await expect(visionCandidate.getByTestId("vision-outline-quality")).toContainText("closed polygon");
   await visionCandidate
     .getByLabel("Correct detected type for Detected imagery building footprint")
     .selectOption("parking_area");

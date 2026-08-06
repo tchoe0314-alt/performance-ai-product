@@ -26,6 +26,7 @@ from backend.planning.vision_shadow_evaluation import (
     build_shadow_status_report,
 )
 from vision.model_runtime import LearnedVisionRuntime, VisionModelRuntimeError, runtime_from_environment
+from vision.detection_geometry import normalize_detection_candidates
 
 
 MAPBOX_STATIC_URL = "https://api.mapbox.com/styles/v1/{style}/static/{bbox}/{size}"
@@ -117,7 +118,7 @@ def gateway_health_status() -> Dict[str, Any]:
         "detection_contract_version": DETECTION_VERSION,
         "model_name": runtime_status.get("model_name") or os.getenv("CIVORA_GATEWAY_MODEL_NAME") or provider,
         "model_version": runtime_status.get("model_version") or os.getenv("CIVORA_GATEWAY_MODEL_VERSION")
-        or ("heuristic-v1" if provider == "civora_heuristic" else "unversioned"),
+        or ("heuristic-v2" if provider == "civora_heuristic" else "unversioned"),
         "source_rights": {
             "license": os.getenv("CIVORA_GATEWAY_SOURCE_LICENSE") or "unconfirmed",
             "training_use_allowed": _env_true("CIVORA_GATEWAY_TRAINING_USE_ALLOWED"),
@@ -292,6 +293,31 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
     else:
         response = _call_generic_detector(payload=payload, image_url=image_url, session=session)
         detections = normalize_generic_response(response, source_url=image_url, provider=provider)
+    image_width, image_height = _image_dimensions(payload, detections)
+    detections, geometry_quality = normalize_detection_candidates(
+        detections,
+        image_width=image_width,
+        image_height=image_height,
+        provider=provider,
+    )
+    detections = _dedupe_normalized_detections(detections)
+    geometry_quality["accepted_count"] = len(detections)
+    geometry_quality["deduplicated_count"] = max(
+        0,
+        int(geometry_quality.get("input_count") or 0)
+        - int(geometry_quality.get("rejected_count") or 0)
+        - len(detections),
+    )
+    rejected_count = int(geometry_quality.get("rejected_count") or 0)
+    if rejected_count:
+        reason_summary = ", ".join(
+            f"{reason} ({count})"
+            for reason, count in _dict(geometry_quality.get("rejected_by_reason")).items()
+        )
+        detection_warnings.append(
+            f"Removed {rejected_count} unusable visual candidate{'s' if rejected_count != 1 else ''}"
+            + (f": {reason_summary}." if reason_summary else ".")
+        )
     if shadow_selected:
         if str(os.getenv("CIVORA_GATEWAY_SHADOW_MODE") or "async").strip().lower() == "inline":
             shadow_report = _run_shadow_comparison(
@@ -313,7 +339,6 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
                 "queued" if queued else "dropped",
                 reason="background_shadow_inference_queued" if queued else "shadow_queue_at_capacity",
             )
-    image_width, image_height = _image_dimensions(payload, detections)
     requested_source_rights = _dict(payload.get("source_rights"))
     trust_request_source_rights = _env_true("CIVORA_GATEWAY_TRUST_REQUEST_SOURCE_RIGHTS")
     trusted_request_source_rights = requested_source_rights if trust_request_source_rights else {}
@@ -351,7 +376,7 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
         "provider": provider,
         "model_name": runtime_metadata.get("model_name") or os.getenv("CIVORA_GATEWAY_MODEL_NAME") or provider,
         "model_version": runtime_metadata.get("model_version") or os.getenv("CIVORA_GATEWAY_MODEL_VERSION")
-        or ("heuristic-v1" if provider == "civora_heuristic" else "unversioned"),
+        or ("heuristic-v2" if provider == "civora_heuristic" else "unversioned"),
         "model_sha256": runtime_metadata.get("model_sha256") or "",
         "detector_kind": os.getenv("CIVORA_GATEWAY_DETECTOR_KIND") or provider,
         "capability_level": runtime_metadata.get("capability_level") or (
@@ -368,6 +393,7 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
         "shadow_status": shadow_report.get("status"),
         "shadow_sampled": shadow_selected,
         "shadow_influenced_user_candidates": False,
+        "geometry_quality": geometry_quality,
     }
     vision_report = build_vision_detection_report_v2(
         detections=detections,
@@ -485,6 +511,7 @@ def _call_civora_detector(
                 "source_url": image_url,
                 "provider": "civora_heuristic",
                 "properties": {
+                    **dict(getattr(detection, "properties", {}) or {}),
                     "geometry_type": detection.geometry_type,
                     "detector_message": result.message,
                     "detector_warnings": result.warnings,
@@ -819,6 +846,8 @@ def _filter_civora_detections(detections: List[Dict[str, Any]]) -> List[Dict[str
             if _bbox_iou(bbox, _bbox_list(kept.get("bbox"))) < 0.72:
                 continue
             kept_kind = str(kept.get("kind") or "")
+            if kept_kind != kind:
+                continue
             if priority.get(kind, 0) > priority.get(kept_kind, 0):
                 kept.update(detection)
             duplicate = True
@@ -826,6 +855,90 @@ def _filter_civora_detections(detections: List[Dict[str, Any]]) -> List[Dict[str
         if not duplicate:
             filtered.append(detection)
     return filtered[:24]
+
+
+def _dedupe_normalized_detections(detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    output: List[Dict[str, Any]] = []
+    priority = {
+        "building": 10,
+        "basin": 9,
+        "pool": 9,
+        "road": 8,
+        "parking": 8,
+        "driveway": 7,
+        "sidewalk": 6,
+        "tree": 3,
+        "open_space": 2,
+    }
+
+    def quality(row: Dict[str, Any]) -> float:
+        properties = _dict(row.get("properties"))
+        geometry_quality = _dict(properties.get("geometry_quality_v1"))
+        try:
+            return float(geometry_quality.get("quality_score") or properties.get("candidate_quality_score") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    for detection in detections:
+        bbox = _bbox_list(detection.get("bbox"))
+        kind = str(detection.get("kind") or "")
+        duplicate_index = -1
+        for index, kept in enumerate(output):
+            overlap = _bbox_iou(bbox, _bbox_list(kept.get("bbox")))
+            same_centerline = _similar_line_geometry(detection, kept)
+            if overlap < 0.78 and not same_centerline:
+                continue
+            kept_kind = str(kept.get("kind") or "")
+            if kind != kept_kind:
+                same_area_family = {kind, kept_kind}.issubset({"building", "parking", "open_space"})
+                same_corridor_family = {kind, kept_kind}.issubset({"road", "driveway", "sidewalk"})
+                if not same_area_family and not same_corridor_family:
+                    continue
+            duplicate_index = index
+            break
+        if duplicate_index < 0:
+            output.append(detection)
+            continue
+        kept = output[duplicate_index]
+        kept_kind = str(kept.get("kind") or "")
+        candidate_rank = (quality(detection), priority.get(kind, 0))
+        kept_rank = (quality(kept), priority.get(kept_kind, 0))
+        if candidate_rank > kept_rank:
+            output[duplicate_index] = detection
+    return output[:24]
+
+
+def _similar_line_geometry(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    def endpoints(row: Dict[str, Any]) -> List[List[float]]:
+        geometry = _dict(row.get("geometry"))
+        if str(geometry.get("type") or "") != "LineString":
+            return []
+        coordinates = _list(geometry.get("coordinates"))
+        if len(coordinates) < 2:
+            return []
+        first = coordinates[0]
+        last = coordinates[-1]
+        if not isinstance(first, (list, tuple)) or not isinstance(last, (list, tuple)):
+            return []
+        try:
+            return [[float(first[0]), float(first[1])], [float(last[0]), float(last[1])]]
+        except (TypeError, ValueError, IndexError):
+            return []
+
+    a_points = endpoints(a)
+    b_points = endpoints(b)
+    if not a_points or not b_points:
+        return False
+
+    def distance(first: List[float], second: List[float]) -> float:
+        return ((first[0] - second[0]) ** 2 + (first[1] - second[1]) ** 2) ** 0.5
+
+    a_length = distance(a_points[0], a_points[1])
+    b_length = distance(b_points[0], b_points[1])
+    tolerance = max(3.0, max(a_length, b_length) * 0.04)
+    direct = max(distance(a_points[0], b_points[0]), distance(a_points[1], b_points[1]))
+    reversed_order = max(distance(a_points[0], b_points[1]), distance(a_points[1], b_points[0]))
+    return min(direct, reversed_order) <= tolerance
 
 
 def _call_generic_detector(*, payload: Dict[str, Any], image_url: str, session: Any) -> Dict[str, Any]:

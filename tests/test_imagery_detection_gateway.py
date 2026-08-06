@@ -284,6 +284,20 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
         self.assertEqual(result["status"], "detected")
         self.assertTrue(kinds.intersection({"building", "road", "parking", "basin", "open_space"}))
         self.assertTrue(all(item["provider"] == "civora_heuristic" for item in result["detections"]))
+        self.assertEqual(result["detector_metadata"]["geometry_quality"]["policy"], "conservative_heuristic")
+        self.assertTrue(
+            all(
+                (item.get("properties") or {}).get("geometry_quality_v1", {}).get("status")
+                == "usable_review_candidate"
+                for item in result["detections"]
+            )
+        )
+        self.assertFalse(
+            any(
+                item["kind"] == "building" and (item["bbox"][2] * item["bbox"][3]) > 0.14 * 256 * 256
+                for item in result["detections"]
+            )
+        )
         self.assertFalse(
             any(
                 item["kind"] in {"parking", "open_space"} and (item["bbox"][2] * item["bbox"][3]) > 0.32 * 256 * 256

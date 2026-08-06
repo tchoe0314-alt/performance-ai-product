@@ -14,6 +14,7 @@ class FeatureDetection:
     confidence: float
     geometry_type: str
     geometry: List[Tuple[float, float]]
+    properties: Dict[str, Any]
 
 
 @dataclass
@@ -72,6 +73,9 @@ class FeatureDetectionEngine:
         r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
         gray = 0.299 * r + 0.587 * g + 0.114 * b
         edge_strength = self._sobel_edges(gray)
+        channel_max = np.maximum(np.maximum(r, g), b)
+        channel_min = np.minimum(np.minimum(r, g), b)
+        chroma = channel_max - channel_min
 
         detections: List[FeatureDetection] = []
         warnings: List[str] = [
@@ -80,22 +84,28 @@ class FeatureDetectionEngine:
 
         total_pixels = gray.size
         min_area = max(40, int(total_pixels * 0.002))
-        max_components = 12
+        building_min_area = max(32, int(total_pixels * 0.00035))
+        max_components = 16
 
         green_mask = (g > r * 1.2) & (g > b * 1.2) & (g > 80)
         blue_mask = (b > r * 1.2) & (b > g * 1.1) & (b > 80)
-        light_mask = gray >= 205
-        driveway_mask = (gray >= 90) & (gray < 120)
+        neutral_mask = chroma <= 48
+        light_mask = (gray >= 205) & neutral_mask
+        dark_roof_mask = (gray >= 24) & (gray < 118) & neutral_mask & ~green_mask & ~blue_mask
+        light_roof_mask = (gray >= 148) & (gray < 238) & neutral_mask & ~green_mask & ~blue_mask
+        road_mask = (gray >= 72) & (gray < 152) & neutral_mask
+        driveway_mask = (gray >= 92) & (gray < 142) & neutral_mask
 
-        for kind, mask in (
-            ("building", gray < 70),
-            ("road", (gray >= 70) & (gray < 130)),
-            ("parking", (gray >= 130) & (gray < 205)),
-            ("driveway", driveway_mask),
-            ("sidewalk", light_mask),
-            ("open_space", green_mask),
-            ("basin", blue_mask),
-            ("pool", blue_mask),
+        for kind, mask, kind_min_area in (
+            ("building", dark_roof_mask, building_min_area),
+            ("building", light_roof_mask, building_min_area),
+            ("road", road_mask, min_area),
+            ("parking", (gray >= 132) & (gray < 205) & neutral_mask, min_area),
+            ("driveway", driveway_mask, min_area),
+            ("sidewalk", light_mask, min_area),
+            ("open_space", green_mask, min_area),
+            ("basin", blue_mask, min_area),
+            ("pool", blue_mask, min_area),
         ):
             # Merge nearby fragments before component extraction so adjacent detections become a single shape.
             if kind in {"road", "parking", "driveway", "sidewalk", "open_space", "building"}:
@@ -104,7 +114,7 @@ class FeatureDetectionEngine:
                 self._components_to_detections(
                     mask=mask,
                     kind=kind,
-                    min_area=min_area,
+                    min_area=kind_min_area,
                     max_components=max_components,
                     resized_width=resized_width,
                     resized_height=resized_height,
@@ -179,7 +189,38 @@ class FeatureDetectionEngine:
                     original_width,
                     original_height,
                 )
-                confidence = min(0.6, max(0.2, count / float(mask.size)))
+                component_width = max_x - min_x + 1
+                component_height = max_y - min_y + 1
+                component_bbox_area = max(component_width * component_height, 1)
+                fill_ratio = count / float(component_bbox_area)
+                aspect_ratio = max(component_width, component_height) / max(min(component_width, component_height), 1)
+                bbox_area_ratio = component_bbox_area / max(float(mask.size), 1.0)
+                touches_frame = min_x <= 1 or min_y <= 1 or max_x >= width - 2 or max_y >= height - 2
+                mean_edge_strength = (
+                    sum(float(edge_strength[py, px]) for px, py in component_points) / max(len(component_points), 1)
+                    if edge_strength is not None
+                    else 0.0
+                )
+                if kind == "building":
+                    if touches_frame or bbox_area_ratio > 0.14 or fill_ratio < 0.34 or aspect_ratio > 12.0:
+                        continue
+                    if component_width < 4 or component_height < 4:
+                        continue
+                    confidence = min(
+                        0.62,
+                        max(
+                            0.24,
+                            0.2 + min(fill_ratio, 1.0) * 0.24 + min(mean_edge_strength / 180.0, 1.0) * 0.12,
+                        ),
+                    )
+                elif kind in {"road", "driveway", "sidewalk"}:
+                    if aspect_ratio < 1.7 and bbox_area_ratio > 0.015:
+                        continue
+                    if fill_ratio > 0.9 and bbox_area_ratio > 0.12 and aspect_ratio < 4.0:
+                        continue
+                    confidence = min(0.58, max(0.22, 0.2 + min(aspect_ratio / 8.0, 1.0) * 0.25))
+                else:
+                    confidence = min(0.58, max(0.2, 0.2 + min(fill_ratio, 1.0) * 0.22))
                 geometry_type, geometry = self._derive_geometry(
                     kind=kind,
                     points=component_points,
@@ -198,6 +239,19 @@ class FeatureDetectionEngine:
                         confidence=confidence,
                         geometry_type=geometry_type,
                         geometry=geometry,
+                        properties={
+                            "component_shape_v1": {
+                                "pixel_count": count,
+                                "fill_ratio": round(fill_ratio, 4),
+                                "aspect_ratio": round(aspect_ratio, 3),
+                                "bbox_area_ratio": round(bbox_area_ratio, 6),
+                                "touches_frame": touches_frame,
+                                "mean_edge_strength": round(mean_edge_strength, 2),
+                            },
+                            "geometry_fidelity": (
+                                "component_outline" if geometry_type == "polygon" else "principal_axis_centerline"
+                            ),
+                        },
                     )
                 )
                 if len(detections) >= max_components:
