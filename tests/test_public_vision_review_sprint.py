@@ -144,6 +144,14 @@ class PublicVisionReviewSprintTests(unittest.TestCase):
         self.assertIn("decisions_fingerprint", html)
         self.assertIn("crypto.subtle.digest('SHA-256'", html)
         self.assertIn("Exported ${reviewed.length} decisions", html)
+        self.assertIn('data-testid="vision-review-queue"', html)
+        self.assertIn("Needs redraw", html)
+        self.assertIn("civora-vision-review:${data.review_sprint_fingerprint}", html)
+        self.assertIn("frame.permanent_split", html)
+        self.assertIn("state === 'redraw'", html)
+        self.assertIn("corrected geometry must be redrawn in Civora Draw", html)
+        self.assertIn("height: 100vh", html)
+        self.assertIn("grid-template-columns: minmax(0, 1fr)", html)
         self.assertNotIn("construction-ready", html.lower())
 
     def test_attested_accept_and_reject_append_verified_ledger_events(self) -> None:
