@@ -1020,6 +1020,7 @@ test.describe("project drawer reliability", () => {
     expect(JSON.stringify(store.get(firstProjectId)?.project_input)).toContain("Generate a parking layout note.");
 
     await page.getByRole("button", { name: "New Project" }).first().click();
+    await expect(page.getByTestId("workspace-canvas-shell")).not.toContainText("Precision & commands");
     await openProjects(page);
     await expect(page.getByTestId("project-drawer-state")).toContainText("Unsaved draft");
     await openSetup(page);

@@ -3830,6 +3830,7 @@ function PerformanceAIDashboardView({
     setPlanPreviewUrl,
     setPlanSheetSet,
     setPreviewFullscreenOpen,
+    setPreviewInteraction,
     setPreviewRefreshing,
     setPreviewRefreshNote,
     setReviewPackageFlowSummary,
