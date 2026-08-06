@@ -259,7 +259,7 @@ test.describe("Chat 231A loading states and status truth", () => {
 
     await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock");
     await runCommand(page, "create AI visualization");
-    await expect(page.getByTestId("workspace-canvas-shell")).toContainText("High Quality", { timeout: 5_000 });
+    await expect(page.getByTestId("preview-quality-high").first()).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
     await expect(page.getByTestId("project-status-summary")).toContainText(/Ready: Plan Sheet view on/i);
     await expect(page.getByTestId("ai-realism-off").first()).toHaveAttribute("aria-pressed", "true");
     await page.getByRole("button", { name: "Minimize" }).click();
@@ -267,6 +267,6 @@ test.describe("Chat 231A loading states and status truth", () => {
     await expect(page.getByTestId("ai-realism-image")).toBeVisible({ timeout: 10_000 });
 
     await runCommand(page, "turn AI visualization off");
-    await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Standard", { timeout: 5_000 });
+    await expect(page.getByTestId("preview-quality-standard").first()).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
   });
 });

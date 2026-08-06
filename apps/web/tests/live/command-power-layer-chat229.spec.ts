@@ -336,11 +336,11 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("workspace-right-panel")).not.toContainText(/construction-ready|approved for construction/i);
 
     await runCommand(page, "create AI realism");
-    await expect(page.getByTestId("workspace-canvas-shell")).toContainText("High Quality", { timeout: 5_000 });
+    await expect(page.getByTestId("preview-quality-high").first()).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
     await expect(page.getByTestId("ai-realism-toggle").first()).toBeVisible();
 
     await runCommand(page, "turn AI realism off");
-    await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Standard", { timeout: 5_000 });
+    await expect(page.getByTestId("preview-quality-standard").first()).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
   });
 
   test("shortcuts open panels, cancel tools, delete selected objects, save truthfully, and refuse unsafe commands", async ({ page }) => {

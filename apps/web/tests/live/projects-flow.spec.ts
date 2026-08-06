@@ -374,6 +374,15 @@ test.describe("project drawer reliability", () => {
     await page.getByRole("button", { name: "Open project Locked Denver Site" }).click();
 
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+    const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
+    if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
+    await page
+      .getByTestId("primary-workflow-sidebar")
+      .getByRole("button", { name: /^Draw\b/i })
+      .filter({ visible: true })
+      .first()
+      .click();
+    await page.getByLabel("Select Denver Office").filter({ visible: true }).first().click();
     await expect(page.getByTestId("preview-object-manager-list")).toContainText("Denver Office");
     await openSetup(page);
     await expect(page.getByLabel("Width (ft)")).toHaveValue("920");

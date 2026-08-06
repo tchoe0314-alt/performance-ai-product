@@ -852,6 +852,13 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(detectedBuildingOverlay).toBeVisible();
   const previewLayerMenu = page.getByTestId("preview-layer-menu");
   await previewLayerMenu.locator("summary").click();
+  const layerControls = page.getByTestId("preview-semantic-layer-controls");
+  const layerControlsBox = await layerControls.boundingBox();
+  const viewport = page.viewportSize();
+  expect(layerControlsBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  expect(layerControlsBox!.x).toBeGreaterThanOrEqual(0);
+  expect(layerControlsBox!.x + layerControlsBox!.width).toBeLessThanOrEqual(viewport!.width);
   await expect(page.getByTestId("preview-source-layer-existing")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("preview-source-layer-existing")).toContainText(/\d+ source object/i);
   await page.getByTestId("preview-source-sublayer-buildings").click();

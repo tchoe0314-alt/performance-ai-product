@@ -5095,7 +5095,7 @@ function PerformanceAIDashboardView({
     sidePanelForRender === "layers" ||
     sidePanelForRender === "details";
   const canvasPreviewInteraction =
-    canvasDrawControlsActive ? "edit" : "static";
+    canvasDrawControlsActive || previewInteraction === "edit" ? "edit" : "static";
   const commandBarVisible =
     Boolean(commandBarExpanded || prompt.trim() || imageName || busy || chatBlockingActiveJob) &&
     !(mobileViewport && leftSidebarOpen);

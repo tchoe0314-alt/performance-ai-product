@@ -293,7 +293,7 @@ export function PreviewCanvasHeaderControls({
         </div>
         <details
           data-testid="preview-layer-menu"
-          className="group pointer-events-auto relative z-[210]"
+          className="group pointer-events-auto static z-[210]"
         >
           <summary className="flex h-8 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 shadow-sm marker:hidden hover:bg-slate-50">
             <Layers3 className="h-3.5 w-3.5" />
@@ -304,7 +304,7 @@ export function PreviewCanvasHeaderControls({
           </summary>
           <div
             data-testid="preview-semantic-layer-controls"
-            className="absolute right-0 top-[calc(100%+0.4rem)] z-[220] w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white/96 p-3 text-slate-700 shadow-[0_22px_70px_-38px_rgba(15,23,42,0.65)] backdrop-blur-xl"
+            className="absolute right-3 top-[calc(100%+0.4rem)] z-[220] w-[min(22rem,calc(100%-1.5rem))] rounded-xl border border-slate-200 bg-white/96 p-3 text-slate-700 shadow-[0_22px_70px_-38px_rgba(15,23,42,0.65)] backdrop-blur-xl"
           >
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View layers</p>
             <div className="mt-2 space-y-1.5">

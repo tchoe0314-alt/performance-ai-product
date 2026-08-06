@@ -106,7 +106,8 @@ test.describe("Chat 238 site preview performance", () => {
 
     await timed("high quality from new project", async () => {
       await canvas.getByTestId("preview-quality-high").first().click();
-      await expect(canvas).toContainText("High Quality", { timeout: 2_500 });
+      await expect(canvas.getByTestId("preview-quality-high").first()).toHaveAttribute("aria-pressed", "true", { timeout: 2_500 });
+      await expect(canvas).toContainText("Plan Sheet · 2D", { timeout: 2_500 });
     });
     await expect(page.evaluate(() => (window as unknown as { __civoraShowMap?: boolean }).__civoraShowMap)).resolves.toBeFalsy();
 
