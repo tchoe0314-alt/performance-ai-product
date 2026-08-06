@@ -2574,8 +2574,8 @@ export default function PreviewPanel({
     setCanvasView,
   });
   return (
-    <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-white/92 p-2 shadow-[0_20px_60px_-44px_rgba(15,23,42,0.45)] backdrop-blur sm:p-3">
-      <div className="civora-preview-canvas-container flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto rounded-xl border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] sm:p-3">
+    <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-hidden">
+      <div className="civora-preview-canvas-container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2">
           <PreviewCanvasControlStack
             previewMode={previewMode}
             allowEdits={allowEdits}

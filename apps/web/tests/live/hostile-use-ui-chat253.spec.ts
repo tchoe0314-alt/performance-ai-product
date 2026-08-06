@@ -12,7 +12,7 @@ async function openFreshProject(page: Page) {
   await page.getByRole("button", { name: "Projects" }).filter({ visible: true }).first().click();
   await expect(page.getByTestId("projects-drawer")).toBeVisible();
   await page.getByRole("button", { name: "New Project" }).filter({ visible: true }).first().click();
-  await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
+  await expect(page.getByTestId("site-status")).toContainText("Site Open");
 }
 
 async function openPanel(page: Page, name: RegExp | string) {
@@ -170,7 +170,7 @@ test.describe("hostile-use UI recovery", () => {
     await expect(finish).toBeDisabled();
     await cancel.click();
     await expect(page.getByRole("button", { name: "Finish", exact: true })).toHaveCount(0);
-    await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
+    await expect(page.getByTestId("site-status")).toContainText("Site Open");
 
     await openPanel(page, /^Setup$/);
     await page
@@ -179,7 +179,7 @@ test.describe("hostile-use UI recovery", () => {
     await clickSurface(surface, 0.4, 0.5);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Finish", exact: true })).toHaveCount(0);
-    await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
+    await expect(page.getByTestId("site-status")).toContainText("Site Open");
     runtime.assertClean();
   });
 

@@ -4,7 +4,7 @@ async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Detention Basin A", { timeout: 30_000 });
+  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/\d+ project object\(s\)/, { timeout: 30_000 });
 }
 
 test.describe("Chat 234 preview realism truth pass", () => {

@@ -217,9 +217,8 @@ export function useDashboardShellShortcuts({
     runDashboardOpenPanelFromDrawer({
       panel,
       openSidePanel: handleOpenSidePanel,
-      setLeftSidebarOpen,
     });
-  }, [handleOpenSidePanel, setLeftSidebarOpen]);
+  }, [handleOpenSidePanel]);
 
   const handleOpenWorkspaceMode = useCallback((mode: WorkspaceMode) => {
     runDashboardOpenWorkspaceMode({

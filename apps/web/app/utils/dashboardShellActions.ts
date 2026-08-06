@@ -108,17 +108,10 @@ export function runDashboardCloseSidePanel({
 export function runDashboardOpenPanelFromDrawer({
   panel,
   openSidePanel,
-  setLeftSidebarOpen,
 }: {
   panel: SidePanelKey;
   openSidePanel: (panel: SidePanelKey) => void;
-  setLeftSidebarOpen: StateSetter<boolean>;
 }) {
-  if (typeof window !== "undefined" && window.innerWidth < 1024) {
-    setLeftSidebarOpen(false);
-    window.requestAnimationFrame(() => openSidePanel(panel));
-    return;
-  }
   openSidePanel(panel);
 }
 

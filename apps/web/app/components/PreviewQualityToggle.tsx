@@ -29,6 +29,7 @@ export function PreviewQualityToggle({
       <button
         type="button"
         data-testid={standardTestId}
+        aria-pressed={value === "standard"}
         onClick={() => setQuality("standard")}
         className={`${buttonClassName} ${value === "standard" ? activeClass : inactiveClass}`}
       >
@@ -37,6 +38,7 @@ export function PreviewQualityToggle({
       <button
         type="button"
         data-testid={highTestId}
+        aria-pressed={value === "high"}
         onClick={() => setQuality("high")}
         className={`${buttonClassName} ${value === "high" ? activeClass : inactiveClass}`}
       >

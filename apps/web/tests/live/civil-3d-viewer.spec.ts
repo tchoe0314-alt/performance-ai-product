@@ -17,7 +17,9 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
   }
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Detention Basin A", { timeout: 30_000 });
+  // Object labels stay quiet in 2D until hover/selection. Prove the seeded
+  // semantic model is loaded without forcing plan labels to remain visible.
+  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/\d+ project object\(s\)/, { timeout: 30_000 });
 }
 
 async function open3D(page: Page) {
@@ -82,12 +84,12 @@ test.describe("Civil 3D model viewer", () => {
     expect(initialCount).toBeGreaterThan(0);
 
     await page.getByTestId("preview-quality-high").click();
-    await expect(page.getByTestId("workspace-canvas-shell")).toContainText("High Quality");
+    await expect(page.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText(/visual preview only/i);
     expect(await objectButtons.count()).toBe(initialCount);
 
     await page.getByTestId("preview-quality-standard").click();
-    await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Standard");
+    await expect(page.getByTestId("preview-quality-standard")).toHaveAttribute("aria-pressed", "true");
     expect(await objectButtons.count()).toBe(initialCount);
   });
 

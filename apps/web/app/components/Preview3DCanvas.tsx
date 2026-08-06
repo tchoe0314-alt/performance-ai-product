@@ -1552,7 +1552,7 @@ export default function Preview3DCanvas({
       className={`relative w-full min-w-0 overflow-hidden bg-white ${
         fullscreen
           ? "h-[100dvh] min-h-0 rounded-none"
-          : "h-[min(600px,calc(100dvh-11rem))] min-h-[360px] rounded-xl md:rounded-[20px]"
+          : "h-full min-h-[300px] rounded-none"
       }`}
       data-testid="civil-3d-viewer"
       onDoubleClick={onOpenFullscreen}

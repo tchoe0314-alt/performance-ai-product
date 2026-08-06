@@ -15,7 +15,7 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
 async function enableHighQuality(page: Page) {
   const canvas = page.getByTestId("workspace-canvas-shell");
   await canvas.getByTestId("preview-quality-high").click();
-  await expect(canvas).toContainText("High Quality");
+  await expect(canvas.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("ai-realism-toggle")).toBeVisible();
 }
 

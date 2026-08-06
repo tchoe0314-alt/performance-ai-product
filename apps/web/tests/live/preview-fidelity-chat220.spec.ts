@@ -4,7 +4,7 @@ async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&mapDebug=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Detention Basin A", { timeout: 30_000 });
+  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/\d+ project object\(s\)/, { timeout: 30_000 });
 }
 
 test.describe("Chat 220 preview fidelity", () => {
@@ -20,13 +20,13 @@ test.describe("Chat 220 preview fidelity", () => {
     const canvas = page.getByTestId("workspace-canvas-shell");
 
     await canvas.getByTestId("preview-quality-standard").click();
-    await expect(canvas).toContainText("Standard");
+    await expect(canvas.getByTestId("preview-quality-standard")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("preview-map-fallback-surface")).toHaveCount(0);
     await expect(page.getByTestId("preview-source-confidence-summary")).toHaveCount(0);
     await expect(page.getByTestId("preview-fallback-object-badge")).toHaveCount(0);
 
     await canvas.getByTestId("preview-quality-high").click();
-    await expect(canvas).toContainText("High Quality");
+    await expect(canvas.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText("Visual preview only");
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText("Canonical geometry unchanged");
     await expect(page.getByTestId("preview-source-confidence-summary")).toHaveCount(0);

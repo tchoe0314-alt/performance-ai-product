@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { Loader2, MessageSquareText, SendHorizonal } from "lucide-react";
 
 import type { PlanToolMode } from "../types";
@@ -31,6 +32,8 @@ type PinnedCommandBarProps = {
     snap: string;
     view: string;
   };
+  leftRailVisible?: boolean;
+  rightPanelSize?: "none" | "standard" | "wide";
 };
 
 export default function PinnedCommandBar({
@@ -47,6 +50,8 @@ export default function PinnedCommandBar({
   thinkingState,
   statusText,
   commandContext,
+  leftRailVisible = true,
+  rightPanelSize = "none",
 }: PinnedCommandBarProps) {
   const isWorking = busy || hasVisibleActiveJob;
   const canSend = Boolean(prompt.trim() || imageName) && !isWorking;
@@ -64,12 +69,22 @@ export default function PinnedCommandBar({
         ["View", commandContext.view],
       ].filter(([, value]) => Boolean(value))
     : [];
+  const dockStyle = {
+    "--civora-command-left-inset": leftRailVisible ? "var(--civora-shell-rail-width)" : "0px",
+    "--civora-command-right-inset":
+      rightPanelSize === "wide"
+        ? "calc(var(--civora-shell-drawer-wide-width) + var(--civora-shell-gutter))"
+        : rightPanelSize === "standard"
+          ? "calc(var(--civora-shell-drawer-width) + var(--civora-shell-gutter))"
+          : "0px",
+  } as CSSProperties;
 
   return (
     <div
       data-testid="floating-command-bar"
       data-command-bar-id="pinned-civora-command-bar"
-      className="civora-motion-command-bar fixed bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] left-1/2 z-[120] w-[min(30rem,calc(100vw-1rem))] -translate-x-1/2 rounded-xl border border-blue-200/70 bg-white/96 p-2 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.58)] backdrop-blur-xl sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)]"
+      className="civora-motion-command-bar civora-command-dock fixed bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] left-1/2 z-[120] w-[min(30rem,calc(100vw-1rem))] -translate-x-1/2 rounded-xl border border-slate-200/90 bg-white/97 p-2 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.58)] backdrop-blur-xl sm:bottom-[calc(env(safe-area-inset-bottom)+1rem)]"
+      style={dockStyle}
     >
       {isWorking ? (
         <div className="mb-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">

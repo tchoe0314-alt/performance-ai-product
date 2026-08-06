@@ -28,7 +28,10 @@ export function useDashboardSidePanelState() {
     let timeout: number | undefined;
     const frames: number[] = [];
 
-    if (!rightRailCollapsed) {
+    // An active panel is an open intent even before the collapsed flag catches up.
+    // Treating that intermediate render as closed makes the drawer briefly slide
+    // through the mobile navigation when a panel is opened or switched.
+    if (!rightRailCollapsed || activeSidePanel !== null) {
       frames.push(window.requestAnimationFrame(() => {
         setRenderedSidePanel(activeSidePanel ?? "dashboard");
       }));

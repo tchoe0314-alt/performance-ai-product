@@ -164,15 +164,15 @@ export function DisclosurePanel({
     <details
       open={isOpen}
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
-      className={`rounded-xl border border-slate-200 bg-white ${className}`}
+      className={`overflow-clip rounded-xl border border-slate-200/90 bg-white ${className}`}
       data-testid={testId}
     >
-      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-        <span className="min-w-0">
+      <summary className="flex min-h-14 cursor-pointer items-center gap-2.5 px-3.5 py-3">
+        <span className="min-w-0 flex-1">
           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
             {title}
           </span>
-          <span className="mt-1 block truncate text-sm font-semibold text-slate-950">
+          <span className="mt-1 block break-words text-sm font-semibold leading-5 text-slate-950">
             {subtitle}
           </span>
         </span>
@@ -184,7 +184,7 @@ export function DisclosurePanel({
           </span>
         ) : null}
       </summary>
-      <div className={`border-t border-slate-100 px-4 py-4 ${bodyClassName}`}>
+      <div className={`border-t border-slate-100 px-3.5 py-3.5 ${bodyClassName}`}>
         {children}
       </div>
     </details>
@@ -202,7 +202,7 @@ export function PanelCard({
 }) {
   return (
     <div
-      className={`rounded-2xl border border-slate-200 bg-white p-4 ${className}`}
+      className={`rounded-xl border border-slate-200/90 bg-white p-3.5 ${className}`}
       data-testid={testId}
     >
       {children}

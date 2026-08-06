@@ -78,20 +78,16 @@ export function WorkspaceCanvasArea({
   onOpenSelectedObjectDetails,
 }: WorkspaceCanvasAreaProps) {
   const floatingInspectorAllowed = !sidePanelForRender && rightRailCollapsed;
+  const drawerOpen = !rightRailCollapsed && Boolean(sidePanelForRender);
+  const drawerSize = sidePanelForRender === "deliverables" ? "wide" : "standard";
 
   return (
-    <main data-testid="workspace-canvas-shell" className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
+    <main
+      data-testid="workspace-canvas-shell"
+      data-site-locked={siteScaleLocked}
+      className="absolute inset-0 min-h-0 min-w-0 overflow-hidden"
+    >
       <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
-        <div
-          data-testid="site-status"
-          className={`pointer-events-none absolute left-[112px] top-4 z-30 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] shadow-sm backdrop-blur-xl max-lg:left-4 max-lg:top-4 ${
-            siteScaleLocked
-              ? "border-emerald-200 bg-emerald-50/90 text-emerald-700"
-              : "border-amber-200 bg-amber-50/90 text-amber-700"
-          }`}
-        >
-          {siteScaleLocked ? "Site Locked" : "Site Not Locked"}
-        </div>
         <div className="contents">
           <WorkspaceCanvasChromePanel
             hidden={workspaceChromeHidden}
@@ -145,14 +141,10 @@ export function WorkspaceCanvasArea({
           />
           <div
             data-testid="workspace-canvas-frame"
-            className={`absolute inset-0 z-0 h-full w-full overflow-hidden lg:left-[112px] lg:w-auto ${
-              rightRailCollapsed
-                ? "lg:right-0"
-                : sidePanelForRender === "deliverables"
-                  ? "lg:right-[784px]"
-                  : "lg:right-[408px]"
-            }`}
-            style={{ height: "100%" }}
+            data-drawer-state={drawerOpen ? "open" : "closed"}
+            data-drawer-size={drawerSize}
+            data-navigation-state={sidebarVisible ? "visible" : "hidden"}
+            className="civora-workspace-canvas-frame absolute inset-y-0 z-0 overflow-hidden"
           >
             <div className="h-full w-full">
               <PreviewPanel {...previewPanelProps} />

@@ -4,7 +4,7 @@ async function openDemoWorkspace(page: import("@playwright/test").Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText("Detention Basin A", { timeout: 30_000 });
+  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/\d+ project object\(s\)/, { timeout: 30_000 });
 }
 
 test.describe("Chat 32 UI functionality QA", () => {
@@ -29,13 +29,13 @@ test.describe("Chat 32 UI functionality QA", () => {
     await page.locator("header").getByRole("button", { name: "Workspace" }).click();
     await expect(canvas.getByTestId("preview-quality-high")).toBeVisible();
     await canvas.getByTestId("preview-quality-high").click();
-    await expect(canvas).toContainText("High Quality");
+    await expect(canvas.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Visual preview only/i);
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Canonical geometry unchanged/i);
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Not engineering evidence/i);
     expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
     await canvas.getByTestId("preview-quality-standard").click();
-    await expect(canvas).toContainText("Standard");
+    await expect(canvas.getByTestId("preview-quality-standard")).toHaveAttribute("aria-pressed", "true");
     expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
 
     await canvas.getByTestId("preview-mode-3d").click();

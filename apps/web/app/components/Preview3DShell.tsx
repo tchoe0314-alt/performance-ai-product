@@ -54,7 +54,7 @@ export function Preview3DShell({
 
   if (!items.length) {
     return (
-      <div className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden rounded-[24px] bg-white shadow-[0_18px_50px_-30px_rgba(15,23,42,0.45)]">
+      <div className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-[0_16px_40px_-34px_rgba(15,23,42,0.45)]">
         <div className="pointer-events-none absolute left-6 top-6 rounded-full border border-slate-200 bg-white/90 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm">
           3D geometry not ready yet
         </div>
@@ -67,7 +67,7 @@ export function Preview3DShell({
       className={
         fullscreenOpen
           ? "fixed inset-0 z-[500] min-w-0 overflow-hidden bg-slate-950"
-          : "relative min-w-0"
+          : "relative flex min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200/90 bg-white"
       }
       data-testid={fullscreenOpen ? "civil-3d-fullscreen" : undefined}
     >
@@ -75,7 +75,7 @@ export function Preview3DShell({
         fallback={
           <div
             data-testid="civil-3d-viewer-loading"
-            className="flex min-h-[520px] items-center justify-center rounded-xl border border-slate-200 bg-slate-950 text-xs font-semibold uppercase tracking-[0.18em] text-white"
+            className="flex h-full min-h-[300px] items-center justify-center bg-slate-950 text-xs font-semibold uppercase tracking-[0.18em] text-white"
           >
             Loading 3D preview...
           </div>

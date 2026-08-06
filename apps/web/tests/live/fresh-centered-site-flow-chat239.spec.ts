@@ -457,14 +457,14 @@ test("centered site rejects bad dimensions without launching discovery and keeps
   await page.getByLabel("Site depth in feet").fill("0");
   await page.getByTestId("create-centered-site-button").click();
   await expect(page.getByTestId("project-status-summary")).toContainText("Site size needs correction");
-  await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
+  await expect(page.getByTestId("site-status")).toContainText("Site Open");
   expect(counters).toEqual({ geocode: autocompleteGeocodeCount, sourceContext: 0 });
 
   await page.getByLabel("Site width in feet").fill("100000");
   await page.getByLabel("Site depth in feet").fill("100000");
   await page.getByTestId("create-centered-site-button").click();
   await expect(page.getByTestId("project-status-summary")).toContainText("Site area needs correction");
-  await expect(page.getByTestId("site-status")).toContainText("Site Not Locked");
+  await expect(page.getByTestId("site-status")).toContainText("Site Open");
   expect(counters).toEqual({ geocode: autocompleteGeocodeCount, sourceContext: 0 });
 
   await page.getByLabel("Site width in feet").fill("");

@@ -5889,14 +5889,9 @@ function PerformanceAIDashboardView({
           {sidebarRendered ? (
             <WorkspaceLeftRail
               visible={sidebarVisible}
-              activePanel={sidePanelForRender}
               activeWorkflowKey={activePrimaryWorkflowKey}
               restoreTruthLabel={restoreTruthLabel}
               primaryWorkflowItems={primaryWorkflowItems}
-              onOpenProjects={() => {
-                if (token) void refreshProjects(token);
-                handleOpenSidePanel("projects");
-              }}
               onOpenPanel={handleOpenPanelFromDrawer}
             />
           ) : null}
@@ -5906,6 +5901,7 @@ function PerformanceAIDashboardView({
               description={activePanelDescription}
               visible={sidePanelVisible}
               commandBarVisible={commandBarVisible}
+              mobileNavigationVisible={leftSidebarOpen && sidebarVisible}
               wide={sidePanelForRender === "deliverables"}
               onMinimize={handleCloseSidePanel}
             >
@@ -6160,7 +6156,17 @@ function PerformanceAIDashboardView({
             />
           ) : null}
           {commandBarVisible ? (
-            <PinnedCommandBar {...pinnedCommandBarProps} />
+            <PinnedCommandBar
+              {...pinnedCommandBarProps}
+              leftRailVisible={sidebarRendered && sidebarVisible}
+              rightPanelSize={
+                sidePanelForRender === "deliverables"
+                  ? "wide"
+                  : sidePanelForRender
+                    ? "standard"
+                    : "none"
+              }
+            />
           ) : null}
         </div>
       </div>

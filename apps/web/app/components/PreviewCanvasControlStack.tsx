@@ -26,16 +26,19 @@ export function PreviewCanvasControlStack({
   selectedObjectPresent,
 }: PreviewCanvasControlStackProps) {
   return (
-    <div className="relative isolate z-[220] mb-3 overflow-visible rounded-xl border border-slate-200 bg-white/95 shadow-sm">
+    <div
+      data-testid="preview-control-stack"
+      className="relative isolate z-[220] mb-2 overflow-visible rounded-[10px] border border-slate-200/90 bg-white/97 shadow-[0_12px_30px_-26px_rgba(15,23,42,0.45)]"
+    >
       <PreviewCanvasHeaderControls {...headerProps} />
-      <div className="pointer-events-none relative z-[220] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 px-3 py-2">
-        {previewMode === "2d" ? (
+      {previewMode === "2d" && allowEdits && drawMode === "select" && selectedObjectPresent ? (
+        <div className="pointer-events-none relative z-[220] flex min-w-0 max-w-full flex-wrap items-stretch gap-2 border-t border-slate-100 px-3 py-2">
           <PreviewObjectManagerOverlay
             {...objectManagerProps}
-            visible={allowEdits && drawMode === "select" && selectedObjectPresent}
+            visible
           />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
       <PreviewActiveDrawHud {...activeDrawHudProps} />
     </div>
   );

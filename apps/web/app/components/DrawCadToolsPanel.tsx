@@ -12,11 +12,11 @@ type DrawCadToolsPanelProps = {
 
 export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelProps) {
   return (
-    <details className="rounded-2xl border border-slate-200 bg-white p-4" open data-testid="draw-cad-tools-section">
-      <summary className="flex cursor-pointer items-center gap-3 text-left">
+    <details className="rounded-xl border border-slate-200/90 bg-white p-3.5" open data-testid="draw-cad-tools-section">
+      <summary className="flex cursor-pointer items-center gap-2.5 text-left">
         <span className="min-w-0 flex-1">
           <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Tools</span>
-          <span className="mt-1 block truncate text-sm font-semibold text-slate-900">
+          <span className="mt-1 block text-sm font-semibold leading-5 text-slate-900">
             Choose a tool, then draw on the canvas
           </span>
         </span>
@@ -48,16 +48,16 @@ export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelPro
           );
           if (groupIndex === 0) {
             return (
-              <div key={group.title} className="rounded-xl border border-slate-200 bg-slate-50 p-2">
+              <div key={group.title} className="rounded-lg border border-slate-200/90 bg-slate-50/80 p-2">
                 {toolGrid}
               </div>
             );
           }
           return (
-            <details key={group.title} className="rounded-xl border border-slate-200 bg-white p-2">
-              <summary className="flex cursor-pointer items-center justify-between px-1 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                {group.title}
-                <span>{group.tools.length}</span>
+            <details key={group.title} className="rounded-lg border border-slate-200/90 bg-white p-2">
+              <summary className="flex cursor-pointer items-center gap-2 px-1 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                <span className="min-w-0 flex-1">{group.title}</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{group.tools.length}</span>
               </summary>
               <div className="mt-2">{toolGrid}</div>
             </details>

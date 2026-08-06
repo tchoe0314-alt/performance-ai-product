@@ -115,14 +115,23 @@ export function PreviewCanvasHeaderControls({
         : "Draft";
 
   return (
-    <div className="relative z-[240] flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
-      <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-2">
-        <span className="inline-flex items-center rounded-md bg-slate-950 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-white">
+    <div className="relative z-[240] grid min-w-0 gap-2 px-3 py-2.5">
+      <div className="pointer-events-auto relative z-[120] flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+        <span className="inline-flex items-center px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
           Canvas
         </span>
-        <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-          {modeLabel} / {previewQuality === "high" ? "High Quality" : "Standard"} / {previewMode.toUpperCase()} /{" "}
-          {coordinateModeLabel(coordinateMode)}
+        <span
+          data-testid="site-status"
+          className={`inline-flex items-center rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] ${
+            siteLocked
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-amber-200 bg-amber-50 text-amber-700"
+          }`}
+        >
+          {siteLocked ? "Site Locked" : "Site Open"}
+        </span>
+        <span className="mr-1 inline-flex min-w-0 max-w-full items-center truncate px-1 text-[11px] font-medium text-slate-500">
+          {modeLabel} · {previewMode.toUpperCase()} · {coordinateModeLabel(coordinateMode)}
         </span>
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <PreviewQualityToggle
@@ -295,7 +304,7 @@ export function PreviewCanvasHeaderControls({
           </summary>
           <div
             data-testid="preview-semantic-layer-controls"
-            className="absolute left-0 top-[calc(100%+0.4rem)] z-[220] w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white/96 p-3 text-slate-700 shadow-[0_22px_70px_-38px_rgba(15,23,42,0.65)] backdrop-blur-xl"
+            className="absolute right-0 top-[calc(100%+0.4rem)] z-[220] w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white/96 p-3 text-slate-700 shadow-[0_22px_70px_-38px_rgba(15,23,42,0.65)] backdrop-blur-xl"
           >
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View layers</p>
             <div className="mt-2 space-y-1.5">
@@ -395,23 +404,23 @@ export function PreviewCanvasHeaderControls({
         {isHighQuality ? (
           <span
             data-testid="high-quality-preview-only-label"
-            className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-800"
+            className="flex w-full items-center border-t border-slate-100 px-1 pt-2 text-[10px] font-medium text-slate-500"
           >
             {aiRealismEnabled ? "Presentation" : "Plan Sheet"} mode. Visual preview only. Canonical geometry unchanged. Not engineering evidence.
           </span>
         ) : null}
         {useLightHighQuality ? (
-          <span className="inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-800">
+          <span className="inline-flex items-center rounded-md bg-sky-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-sky-800">
             High Quality Lite
           </span>
         ) : null}
       </div>
-      <div className="pointer-events-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
+      <div className="pointer-events-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1.5 border-t border-slate-100 pt-2">
         {showMap ? (
           <button
             type="button"
             onClick={() => onSetMapLocked((prev) => !prev)}
-            className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition ${
+            className={`inline-flex h-8 items-center gap-2 rounded-lg border px-2.5 text-xs font-semibold transition ${
               mapLocked ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}
           >
@@ -425,7 +434,7 @@ export function PreviewCanvasHeaderControls({
             onSetFocusTransform(null);
             onResetView?.();
           }}
-          className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          className="inline-flex h-8 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
         >
           <RotateCcw className="h-4 w-4" />
           Reset
@@ -434,7 +443,7 @@ export function PreviewCanvasHeaderControls({
           type="button"
           onClick={onRefreshPreview}
           disabled={busy}
-          className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RefreshCw className="h-4 w-4" />
           Refresh
@@ -446,7 +455,7 @@ export function PreviewCanvasHeaderControls({
               onSetFocusTransform(null);
               onClearHighlights?.();
             }}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="inline-flex h-8 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             <X className="h-4 w-4" />
             Clear
