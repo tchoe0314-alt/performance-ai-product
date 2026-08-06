@@ -544,6 +544,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
             { key: "building_footprints", label: "building footprints", provider: "Test Buildings", candidate_count: 1, review_required: true, blockers: ["review-required"] },
             { key: "imagery_object_detection", label: "imagery/object detection", provider: "Test Imagery Detector", candidate_count: 1, review_required: true, blockers: ["visual review only"] },
             { key: "terrain_dem_lidar", label: "terrain/DEM/LiDAR", provider: "USGS 3DEP Elevation ImageServer", candidate_count: 25, review_required: true, blockers: ["not survey/control"] },
+            { key: "floodplain", label: "floodplain", provider: "fema_nfhl_arcgis", candidate_count: 0, review_required: true, blockers: ["no_features_returned"] },
             {
               key: "public_utilities",
               label: "public utility layers",
@@ -755,13 +756,13 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   }
 
   await expect(page.getByTestId("auto-site-context-summary")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary");
-  await expect(page.getByTestId("auto-site-context-found")).toContainText("building footprints");
-  await expect(page.getByTestId("auto-site-context-missing")).toContainText("public utility layers");
+  await expect(page.getByTestId("auto-site-context-found")).toContainText(/parcel\/site boundary/i);
+  await expect(page.getByTestId("auto-site-context-found")).toContainText(/building footprints/i);
+  await expect(page.getByTestId("auto-site-context-missing")).toContainText(/public utility layers/i);
   await expect(page.getByTestId("auto-site-context-candidates")).toContainText("available for review");
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/Detected inside site/i);
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/parcel\/site boundary|building footprints/i);
-  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/missing public utility layers/i);
+  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/missing[\s\S]*public utility layers/i);
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/not survey\/control/i);
   await expect(page.getByTestId("auto-site-context-source-table")).toBeVisible();
   await expect(page.getByTestId("auto-site-context-status-parcel")).toContainText("found");
@@ -798,6 +799,12 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await page.getByTestId("review-found-context").click();
   const detectedItems = page.getByTestId("detected-items-review");
   await expect(detectedItems).toBeVisible();
+  await expect(detectedItems).toContainText("FEMA National Flood Hazard Layer");
+  await expect(detectedItems).toContainText("no features returned");
+  await expect(detectedItems).not.toContainText("fema_nfhl_arcgis");
+  await expect(detectedItems.getByTestId("detected-item-decision-help")).toContainText(
+    "Accept adds the detected item to project context",
+  );
   await expect(detectedItems).toContainText("Detected Items · 34 To Review");
   await expect(detectedItems.getByTestId("detected-items-page-summary")).toHaveText("Showing 1-12 of 34");
   await expect(detectedItems.getByTestId("detected-item-candidate")).toHaveCount(12);
@@ -1125,6 +1132,6 @@ test("Apply Address recovers when a background source status poll is transiently
   await expect(page.getByTestId("auto-site-context-candidates")).toContainText("1 source candidate available for review", {
     timeout: 30_000,
   });
-  await expect(page.getByTestId("auto-site-context-found")).toContainText("building footprints");
+  await expect(page.getByTestId("auto-site-context-found")).toContainText(/building footprints/i);
   expect(pollCount).toBeGreaterThanOrEqual(2);
 });

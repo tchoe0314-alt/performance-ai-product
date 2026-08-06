@@ -12,7 +12,7 @@ async function openFreshProject(page: Page) {
   await page.getByRole("button", { name: "Projects" }).filter({ visible: true }).first().click();
   await expect(page.getByTestId("projects-drawer")).toBeVisible();
   await page.getByRole("button", { name: "New Project" }).filter({ visible: true }).first().click();
-  await expect(page.getByTestId("site-status")).toContainText("Site Open");
+  await expect(page.getByTestId("site-status")).toContainText("Site Editable");
 }
 
 async function openPanel(page: Page, name: RegExp | string) {
@@ -170,7 +170,7 @@ test.describe("hostile-use UI recovery", () => {
     await expect(finish).toBeDisabled();
     await cancel.click();
     await expect(page.getByRole("button", { name: "Finish", exact: true })).toHaveCount(0);
-    await expect(page.getByTestId("site-status")).toContainText("Site Open");
+    await expect(page.getByTestId("site-status")).toContainText("Site Editable");
 
     await openPanel(page, /^Setup$/);
     await page
@@ -179,7 +179,7 @@ test.describe("hostile-use UI recovery", () => {
     await clickSurface(surface, 0.4, 0.5);
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Finish", exact: true })).toHaveCount(0);
-    await expect(page.getByTestId("site-status")).toContainText("Site Open");
+    await expect(page.getByTestId("site-status")).toContainText("Site Editable");
     runtime.assertClean();
   });
 
@@ -199,7 +199,7 @@ test.describe("hostile-use UI recovery", () => {
     await depths.fill("0");
     await page.getByRole("button", { name: "Lock Boundary" }).click();
     await expect(page.getByTestId("project-status-summary")).toContainText("Apply site needs size");
-    await expect(page.getByTestId("site-status")).toContainText("Site Open");
+    await expect(page.getByTestId("site-status")).toContainText("Site Editable");
     await widths.fill("450");
     await depths.fill("275");
     await expect(widths).toHaveValue("450");

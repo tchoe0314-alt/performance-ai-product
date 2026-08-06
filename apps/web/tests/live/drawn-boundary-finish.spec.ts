@@ -105,7 +105,7 @@ async function openBlankWorkspace(page: Page) {
     .getByTestId("setup-address-truth")
     .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
     .click({ noWaitAfter: true });
-  await expect(page.getByTestId("site-status")).toContainText("Site Open");
+  await expect(page.getByTestId("site-status")).toContainText("Site Editable");
   await expect(page.getByText("Detention Basin A")).toHaveCount(0);
   await expect(page.getByText("Multifamily Building A")).toHaveCount(0);
   await openDrawControls(page);
@@ -232,7 +232,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(cadTools.getByTestId("cad-tool-point")).toBeEnabled();
 
     await page.getByTestId("change-site-boundary-canvas").click();
-    await expect(page.getByTestId("site-status")).toContainText("Site Open");
+    await expect(page.getByTestId("site-status")).toContainText("Site Editable");
     await page.getByTestId("lock-site-boundary-toolbar").filter({ visible: true }).first().click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     const relockClose = page.getByRole("button", { name: "Close" });

@@ -150,6 +150,7 @@ export function usePreview2DShellHandlers({
       event.preventDefault();
     },
     onMouseDownCapture: (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (allowMapInteraction) return;
       const target = event.target as HTMLElement | null;
       if (
         drawMode !== "select" &&

@@ -38,14 +38,17 @@ export function SetupSiteBoundarySection({
   onUnlockSite,
   onCreateCenteredSite,
 }: SetupSiteBoundarySectionProps) {
+  const hasSiteDimensions = Boolean(lotBounds.w && lotBounds.h);
+  const hasTypedSiteSize = Number(lotWidth) > 0 && Number(lotHeight) > 0;
+  const canLockBoundary = hasSiteDimensions || hasTypedSiteSize;
   return (
     <DisclosurePanel
       defaultOpen
       testId="setup-site-box-controls"
       title="Site Boundary"
-      subtitle={lotBounds.w && lotBounds.h ? `${lotBounds.w.toFixed(0)} ft x ${lotBounds.h.toFixed(0)} ft` : "No boundary locked"}
-      status={siteScaleLocked ? "Locked" : "Needs lock"}
-      statusClassName={siteScaleLocked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}
+      subtitle={hasSiteDimensions ? `${lotBounds.w!.toFixed(0)} ft x ${lotBounds.h!.toFixed(0)} ft` : "No site boundary yet"}
+      status={siteScaleLocked ? "Locked" : hasSiteDimensions ? "Editable" : "Add boundary"}
+      statusClassName={siteScaleLocked ? "bg-emerald-50 text-emerald-700" : hasSiteDimensions ? "bg-sky-50 text-sky-700" : "bg-amber-50 text-amber-700"}
     >
       <div className="grid grid-cols-2 gap-3 text-xs text-slate-600">
         <label className="flex flex-col gap-1 font-semibold">
@@ -88,9 +91,11 @@ export function SetupSiteBoundarySection({
         <button
           type="button"
           onClick={siteScaleLocked ? onUnlockSite : onApplySite}
-          className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
+          disabled={!siteScaleLocked && !canLockBoundary}
+          title={!siteScaleLocked && !canLockBoundary ? "Enter width and depth, or draw a boundary first" : undefined}
+          className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500"
         >
-          {siteScaleLocked ? "Change Boundary" : "Lock Boundary"}
+          {siteScaleLocked ? "Change Boundary" : canLockBoundary ? "Lock Boundary" : "Enter Size First"}
         </button>
       </div>
       <button

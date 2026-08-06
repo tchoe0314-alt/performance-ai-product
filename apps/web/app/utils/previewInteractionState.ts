@@ -69,7 +69,11 @@ export function buildPreviewInteractionState({
   const showMap = showMapBase && previewMode === "2d";
   const showMap3D = showMapBase && previewMode === "3d";
   const allowMapInteraction =
-    showMap && previewInteraction === "static" && !placementMode && !rotateDragActive && !mapLocked;
+    showMap &&
+    (previewInteraction === "static" || drawMode === "pan") &&
+    !placementMode &&
+    !rotateDragActive &&
+    !mapLocked;
   const showGeneratedPlan =
     !showMap &&
     previewInteraction === "static" &&
@@ -118,7 +122,10 @@ export function buildPreviewInteractionState({
     activeDrawMode,
     drawingOwnsCanvasHits,
     drawingSurfaceInteractive,
-    overlayPointerEvents: drawingSurfaceInteractive ? "pointer-events-auto" : "pointer-events-none",
+    overlayPointerEvents:
+      allowMapInteraction || !drawingSurfaceInteractive
+        ? "pointer-events-none"
+        : "pointer-events-auto",
     passiveOverlayPointerEvents: drawingOwnsCanvasHits ? "pointer-events-none" : "pointer-events-auto",
   };
 }

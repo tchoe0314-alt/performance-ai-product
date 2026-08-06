@@ -72,7 +72,7 @@ async function startBlankSite(page: Page) {
   await addressDetails
     .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
     .click({ noWaitAfter: true });
-  await expect(page.getByTestId("site-status")).toContainText("Site Open");
+  await expect(page.getByTestId("site-status")).toContainText("Site Editable");
   await openDrawPanel(page);
 }
 

@@ -57,7 +57,7 @@ test("step 1.1 preview stability flow", async ({ page, request, baseURL }) => {
   await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
   const refreshedSiteSection = page.getByTestId("setup-site-box-controls");
   await refreshedSiteSection.getByRole("button", { name: "Change Boundary" }).click();
-  await expect(page.getByTestId("site-status")).toContainText("Site Open");
+  await expect(page.getByTestId("site-status")).toContainText("Site Editable");
   await refreshedSiteSection.getByRole("button", { name: "Lock Boundary" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   await page.getByTestId("workspace-right-panel").getByRole("button", { name: "Minimize" }).click();

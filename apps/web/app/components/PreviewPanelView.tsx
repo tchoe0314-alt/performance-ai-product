@@ -408,8 +408,6 @@ export default function PreviewPanel({
   const [mapOverlayEnabled, setMapOverlayEnabled] = useState(false);
   const autoEnabledMapLocationRef = useRef("");
   const [mapLocked, setMapLocked] = useState(false);
-  const mapDragRef = useRef<{ x: number; y: number } | null>(null);
-  const mapDragActiveRef = useRef(false);
   const [rotateDragActive, setRotateDragActive] = useState(false);
   const [rotateDragStart, setRotateDragStart] = useState<{ x: number; value: number } | null>(null);
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -2421,10 +2419,6 @@ export default function PreviewPanel({
     setMapboxTileCount,
     setMapCanvasSize,
     setMapContainerSize,
-    mapLocked,
-    previewInteraction,
-    mapDragActiveRef,
-    mapDragRef,
     onMapScaleUpdate,
     onViewportFootprint,
     siteLocked,
@@ -2434,6 +2428,7 @@ export default function PreviewPanel({
     lotWidth,
     lotHeight,
     placementMode,
+    mapPanMode: drawMode === "pan",
     selectedBuildingId,
     onPlaceObject,
     onPlaceBuilding,
@@ -2907,10 +2902,7 @@ export default function PreviewPanel({
                   showMap,
                   mapLocked,
                   previewInteraction,
-                  placementMode,
                   mapRef,
-                  mapDragActiveRef,
-                  mapDragRef,
                   analysisFocusLocked,
                   showProposedOverlays: technicalProposedVisible,
                   onClearHighlights,

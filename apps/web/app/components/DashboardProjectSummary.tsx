@@ -28,7 +28,7 @@ export function DashboardProjectSummary({
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Dashboard</p>
           <p className="mt-1 text-lg font-semibold text-slate-950">{siteName || "Untitled Project"}</p>
           <p className="mt-1 text-xs text-slate-500">
-            {fileName || "No file name"} · {lotWidth && lotHeight ? `${lotWidth.toFixed(0)} ft x ${lotHeight.toFixed(0)} ft` : "Site not locked"}
+            {fileName || "No file name"} · {lotWidth && lotHeight ? `${lotWidth.toFixed(0)} ft x ${lotHeight.toFixed(0)} ft` : "No site boundary yet"}
           </p>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${

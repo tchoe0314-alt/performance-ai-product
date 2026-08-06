@@ -67,11 +67,13 @@ export function SmallButton({
   onClick,
   variant = "primary",
   disabled = false,
+  type = "button",
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   variant?: "primary" | "secondary";
   disabled?: boolean;
+  type?: "button" | "submit" | "reset";
 }) {
   const styles =
     variant === "primary"
@@ -80,7 +82,7 @@ export function SmallButton({
 
   return (
     <button
-      type="button"
+      type={type}
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex items-center rounded-[var(--civora-radius-md)] px-4 py-2.5 text-sm font-medium shadow-[0_12px_30px_-22px_rgba(15,23,42,0.55)] transition duration-200 ${styles} ${

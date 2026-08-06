@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { sourceStatusLabel } from "../utils/dashboardDataTypes";
 import type { CapabilityExposure } from "../utils/dashboardTypes";
+import { sourceDisplayName, sourceDisplaySentence } from "../utils/sourceDisplayText";
 import { VisionGroundTruthWorkspace } from "./VisionGroundTruthWorkspace";
 
 const DATA_CAPABILITY_KEYS = new Set([
@@ -204,7 +205,7 @@ export function SourceDataReviewPanel({
           {onlineDiscoverySources.slice(0, 8).map((source) => (
             <div key={source.key || source.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
               <div className="flex items-start justify-between gap-3 text-sm">
-                <span className="font-semibold text-slate-700">{source.label || source.key}</span>
+                <span className="font-semibold text-slate-700">{sourceDisplayName(source.label || source.key)}</span>
                 <span
                   className={`shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] ${
                     Number(source.candidate_count ?? 0) > 0 ? "text-amber-700" : "text-red-600"
@@ -214,11 +215,11 @@ export function SourceDataReviewPanel({
                 </span>
               </div>
               <p className="mt-1 truncate text-xs font-medium text-slate-500">
-                {source.provider || source.agency || source.source_type || "Provider not configured"}
+                {sourceDisplayName(source.provider || source.agency || source.source_type, "Provider not configured")}
               </p>
               {Number(source.candidate_count ?? 0) <= 0 ? (
                 <p className="mt-1 text-xs text-slate-500">
-                  {(source.blockers ?? [])[0] || `${source.label || source.key} source is missing/unavailable.`}
+                  {sourceDisplaySentence((source.blockers ?? [])[0] || `${source.label || source.key} source is missing/unavailable.`)}
                 </p>
               ) : (
                 <p className="mt-1 text-xs text-slate-500">Candidate evidence only; review is required before use.</p>
@@ -236,11 +237,14 @@ export function SourceDataReviewPanel({
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Review Detected Items</p>
-            <p className="mt-1 text-xs font-medium text-slate-500">Accepted items become draft evidence for review only.</p>
+            <p className="mt-1 text-xs font-medium text-slate-500">Choose what belongs in this project. You can change the decision later.</p>
           </div>
           <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
             {candidateCounts.pending ?? 0} pending
           </span>
+        </div>
+        <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-900" data-testid="detected-item-decision-help">
+          <strong>Accept</strong> adds the detected item to project context. <strong>Reject</strong> keeps it out. <strong>Pending</strong> leaves it undecided. Detected items do not become survey or control evidence.
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] font-semibold uppercase tracking-[0.12em]">
           {[
@@ -380,9 +384,9 @@ export function SourceDataReviewPanel({
                       />
                     ) : null}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-slate-800">{candidate.label || candidate.candidate_type || "Candidate"}</p>
+                      <p className="truncate text-sm font-semibold text-slate-800">{sourceDisplayName(candidate.label || candidate.candidate_type, "Detected item")}</p>
                       <p className="mt-1 truncate text-xs font-medium text-slate-500">
-                        {candidate.provider || candidate.source || "Unknown provider"}
+                        {sourceDisplayName(candidate.provider || candidate.source, "Unknown provider")}
                         {candidate.source_date ? ` | ${candidate.source_date}` : ""}
                       </p>
                     </div>
@@ -401,7 +405,12 @@ export function SourceDataReviewPanel({
                   <div className="mt-2 grid gap-2 text-xs sm:grid-cols-3">
                     <p className="min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-2 font-medium text-slate-600">
                       <span className="font-semibold text-slate-400">Source </span>
-                      <span className="break-words">{candidate.source || candidate.source_url || "Unknown"}</span>
+                      <span className="break-words">
+                        {sourceDisplayName(
+                          candidate.source || candidate.provider,
+                          candidate.source_url ? "See source details" : "Unknown",
+                        )}
+                      </span>
                     </p>
                     <p className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-medium text-slate-600">
                       <span className="font-semibold text-slate-400">Confidence </span>
@@ -412,7 +421,13 @@ export function SourceDataReviewPanel({
                       {Number(candidate.object_count ?? 1)}
                     </p>
                   </div>
-                  <p className="mt-2 text-xs font-medium text-slate-500">{candidate.blocker_review_reason || "Review reason not recorded."}</p>
+                  <p className="mt-2 text-xs font-medium text-slate-500">{sourceDisplaySentence(candidate.blocker_review_reason, "Review why this item was detected before deciding.")}</p>
+                  {candidate.source_url ? (
+                    <details className="mt-2 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-500">
+                      <summary className="cursor-pointer font-semibold text-slate-600">Source details</summary>
+                      <p className="mt-2 break-all">{candidate.source_url}</p>
+                    </details>
+                  ) : null}
                   {visionCandidate ? (
                     <div className="mt-3 rounded-lg border border-sky-200 bg-white p-2.5" data-testid="vision-candidate-correction">
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -491,6 +506,7 @@ export function SourceDataReviewPanel({
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     <button
                       type="button"
+                      title="Add this detected item to project context"
                       onClick={() => onCandidateDecision(candidate.candidate_id, "accept")}
                       disabled={status === "accepted" || anyCandidateBusy}
                       className="rounded-lg border border-emerald-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -499,6 +515,7 @@ export function SourceDataReviewPanel({
                     </button>
                     <button
                       type="button"
+                      title="Keep this detected item out of the project"
                       onClick={() => onCandidateDecision(candidate.candidate_id, "reject")}
                       disabled={status === "rejected" || anyCandidateBusy}
                       className="rounded-lg border border-red-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -507,6 +524,7 @@ export function SourceDataReviewPanel({
                     </button>
                     <button
                       type="button"
+                      title="Leave this detected item undecided"
                       onClick={() => onCandidateDecision(candidate.candidate_id, "pending")}
                       disabled={status === "pending" || anyCandidateBusy}
                       className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"

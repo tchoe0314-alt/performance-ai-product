@@ -16,10 +16,7 @@ type Preview2DOverlayStackProps = {
   showMap: boolean;
   mapLocked: boolean;
   previewInteraction: "static" | "edit";
-  placementMode: boolean;
   mapRef: MutableRefObject<mapboxgl.Map | null>;
-  mapDragActiveRef: MutableRefObject<boolean>;
-  mapDragRef: MutableRefObject<{ x: number; y: number } | null>;
   analysisFocusLocked?: boolean;
   showProposedOverlays: boolean;
   onClearHighlights?: () => void;
@@ -40,10 +37,7 @@ export function Preview2DOverlayStack({
   showMap,
   mapLocked,
   previewInteraction,
-  placementMode,
   mapRef,
-  mapDragActiveRef,
-  mapDragRef,
   analysisFocusLocked,
   showProposedOverlays,
   onClearHighlights,
@@ -68,7 +62,9 @@ export function Preview2DOverlayStack({
               drawMode === "select"
                 ? "pointer-events-none"
                 : drawMode === "pan"
-                  ? "pointer-events-auto cursor-grab active:cursor-grabbing"
+                  ? showMap
+                    ? "pointer-events-none"
+                    : "pointer-events-auto cursor-grab active:cursor-grabbing"
                   : "pointer-events-auto cursor-crosshair"
             }`}
           />
@@ -80,13 +76,7 @@ export function Preview2DOverlayStack({
               transform: viewportTransformStyle.transform,
             }}
             onMouseDown={(event) => {
-              if (beginCadWindowSelect(event)) return;
-              if (!showMap || mapLocked) return;
-              if (previewInteraction !== "edit") return;
-              if (placementMode) return;
-              if ((event.target as HTMLElement)?.closest?.("[data-object-overlay]")) return;
-              mapDragActiveRef.current = true;
-              mapDragRef.current = { x: event.clientX, y: event.clientY };
+              beginCadWindowSelect(event);
             }}
             onWheel={(event) => {
               if (!showMap || mapLocked) return;

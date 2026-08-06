@@ -67,7 +67,7 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
   await expect(refreshedAddressSection).toContainText(/Applied|Local/i);
 
   await refreshedSiteSection.getByRole("button", { name: "Change Boundary" }).click();
-  await expect(page.getByTestId("site-status")).toContainText("Site Open");
+  await expect(page.getByTestId("site-status")).toContainText("Site Editable");
   await refreshedSiteSection.getByRole("button", { name: "Lock Boundary" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
 

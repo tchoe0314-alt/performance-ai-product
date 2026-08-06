@@ -36,10 +36,6 @@ type PreviewMapRuntimeOptions = {
   setMapboxTileCount: Dispatch<SetStateAction<number>>;
   setMapCanvasSize: Dispatch<SetStateAction<MapSize | null>>;
   setMapContainerSize: Dispatch<SetStateAction<MapSize | null>>;
-  mapLocked: boolean;
-  previewInteraction: PreviewPanelProps["previewInteraction"];
-  mapDragActiveRef: MutableRef<boolean>;
-  mapDragRef: MutableRef<{ x: number; y: number } | null>;
   onMapScaleUpdate?: PreviewPanelProps["onMapScaleUpdate"];
   onViewportFootprint?: PreviewPanelProps["onViewportFootprint"];
   siteLocked?: boolean;
@@ -49,6 +45,7 @@ type PreviewMapRuntimeOptions = {
   lotWidth: number;
   lotHeight: number;
   placementMode: boolean;
+  mapPanMode: boolean;
   selectedBuildingId: string | null;
   onPlaceObject: PreviewPanelProps["onPlaceObject"];
   onPlaceBuilding: PreviewPanelProps["onPlaceBuilding"];
@@ -88,10 +85,6 @@ export function usePreviewMapRuntime({
   setMapboxTileCount,
   setMapCanvasSize,
   setMapContainerSize,
-  mapLocked,
-  previewInteraction,
-  mapDragActiveRef,
-  mapDragRef,
   onMapScaleUpdate,
   onViewportFootprint,
   siteLocked,
@@ -101,6 +94,7 @@ export function usePreviewMapRuntime({
   lotWidth,
   lotHeight,
   placementMode,
+  mapPanMode,
   selectedBuildingId,
   onPlaceObject,
   onPlaceBuilding,
@@ -257,30 +251,6 @@ export function usePreviewMapRuntime({
   }, [debugStats?.enabled, mapContainerRef, mapRef, setMapCanvasSize, setMapContainerSize, setMapboxRequestCount, setMapboxTileCount, showMap]);
 
   useEffect(() => {
-    if (!showMap || mapLocked) return;
-    if (previewInteraction !== "edit") return;
-    const handleMove = (event: MouseEvent) => {
-      if (!mapDragActiveRef.current || !mapDragRef.current) return;
-      const map = mapRef.current;
-      if (!map) return;
-      const deltaX = event.clientX - mapDragRef.current.x;
-      const deltaY = event.clientY - mapDragRef.current.y;
-      mapDragRef.current = { x: event.clientX, y: event.clientY };
-      map.panBy([deltaX, deltaY], { animate: false });
-    };
-    const handleUp = () => {
-      mapDragActiveRef.current = false;
-      mapDragRef.current = null;
-    };
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseup", handleUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-    };
-  }, [mapDragActiveRef, mapDragRef, mapLocked, mapRef, previewInteraction, showMap]);
-
-  useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current) return;
     const map = mapRef.current;
     const reportScale = () => {
@@ -353,6 +323,7 @@ export function usePreviewMapRuntime({
         }
         return;
       }
+      if (mapPanMode) return;
       const features = map.queryRenderedFeatures(event.point, {
         layers: [
           "civora-buildings-fill",
@@ -395,7 +366,7 @@ export function usePreviewMapRuntime({
       map.off("pitch", requestMapOverlayUpdate);
       map.off("rotate", requestMapOverlayUpdate);
     };
-  }, [currentSiteSize, latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, mapRef, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, scheduleCursorSitePoint, selectedBuildingId, onSelectBuilding, setMapRevision, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
+  }, [currentSiteSize, latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, mapPanMode, mapRef, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, scheduleCursorSitePoint, selectedBuildingId, onSelectBuilding, setMapRevision, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current) return;

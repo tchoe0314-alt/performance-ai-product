@@ -2654,6 +2654,8 @@ function PerformanceAIDashboardView({
     shouldRouteToOrchestrator,
   } = useDashboardCommandUtilityActions({
     appendChatMessage,
+    activeSidePanel,
+    chatInputRef: chatPromptInputRef,
     commandInputRef,
     setActivePlacementId,
     setCadToolRequest,
@@ -3313,6 +3315,7 @@ function PerformanceAIDashboardView({
     setFitToSiteRequest,
     setLeftSidebarOpen,
     setRenderedSidePanel,
+    setRightRailCollapsed,
     setShowSiteBounds,
     setSidePanelVisible,
     setSiteScaleLocked,
@@ -5128,6 +5131,7 @@ function PerformanceAIDashboardView({
   const commandBarVisible =
     Boolean(commandBarExpanded || prompt.trim() || imageName || busy || chatBlockingActiveJob) &&
     !(mobileViewport && leftSidebarOpen);
+  const commandBarDockVisible = commandBarVisible && sidePanelForRender !== "chat";
   const workspaceChromeHidden = workspaceChromeMinimized || (drawWorkspaceActive && sidebarVisible);
   const handleCopyIssueDiagnostic = async () => {
     try {
@@ -5931,7 +5935,7 @@ function PerformanceAIDashboardView({
               title={activePanelTitle}
               description={activePanelDescription}
               visible={sidePanelVisible}
-              commandBarVisible={commandBarVisible}
+              commandBarVisible={commandBarDockVisible}
               mobileNavigationVisible={leftSidebarOpen && sidebarVisible}
               wide={sidePanelForRender === "deliverables"}
               onMinimize={handleCloseSidePanel}
@@ -6186,7 +6190,7 @@ function PerformanceAIDashboardView({
               onClose={() => setShortcutsOverlayOpen(false)}
             />
           ) : null}
-          {commandBarVisible ? (
+          {commandBarDockVisible ? (
             <PinnedCommandBar
               {...pinnedCommandBarProps}
               leftRailVisible={sidebarRendered && sidebarVisible}

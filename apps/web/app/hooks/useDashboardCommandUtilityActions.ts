@@ -4,6 +4,7 @@ import type { RefObject } from "react";
 import type { ChatMessage } from "../types";
 import type { CadToolRequestForPreview } from "../utils/dashboardTypes";
 import type { ProjectStatusSummary } from "../utils/workspaceShell";
+import type { SidePanelKey } from "../utils/workspaceShell";
 
 type AppendChatMessage = (
   role: ChatMessage["role"],
@@ -16,6 +17,8 @@ type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 
 type UseDashboardCommandUtilityActionsInput = {
   appendChatMessage: AppendChatMessage;
+  activeSidePanel: SidePanelKey | null;
+  chatInputRef: RefObject<HTMLTextAreaElement | null>;
   commandInputRef: RefObject<HTMLTextAreaElement | null>;
   setActivePlacementId: StateSetter<string | null>;
   setCadToolRequest: StateSetter<CadToolRequestForPreview | null>;
@@ -47,6 +50,8 @@ export function shouldRouteDashboardMessageToOrchestrator(message: string): bool
 
 export function useDashboardCommandUtilityActions({
   appendChatMessage,
+  activeSidePanel,
+  chatInputRef,
   commandInputRef,
   setActivePlacementId,
   setCadToolRequest,
@@ -65,7 +70,8 @@ export function useDashboardCommandUtilityActions({
     const focusRequestId = commandFocusRequestRef.current + 1;
     commandFocusRequestRef.current = focusRequestId;
     setShortcutsOverlayOpen(false);
-    setCommandBarExpanded(true);
+    const useOpenChatComposer = activeSidePanel === "chat";
+    if (!useOpenChatComposer) setCommandBarExpanded(true);
     setWorkspaceChromeMinimized(true);
     setPlacementModeEnabled(false);
     setPreviewInteraction("static");
@@ -95,11 +101,13 @@ export function useDashboardCommandUtilityActions({
         cleanupFocusListeners();
         return;
       }
-      const referencedInput = commandInputRef.current;
+      const referencedInput = useOpenChatComposer ? chatInputRef.current : commandInputRef.current;
       const input =
         (referencedInput?.isConnected ? referencedInput : null) ??
         (document.querySelector(
-          '[data-testid="civora-command-input"]',
+          useOpenChatComposer
+            ? '[data-testid="civora-chat-input"]'
+            : '[data-testid="civora-command-input"]',
         ) as HTMLTextAreaElement | null);
       if (input) {
         if (document.activeElement !== input) {
@@ -134,6 +142,8 @@ export function useDashboardCommandUtilityActions({
     };
     focusMountedInput();
   }, [
+    activeSidePanel,
+    chatInputRef,
     commandInputRef,
     setCadToolRequest,
     setCommandBarExpanded,

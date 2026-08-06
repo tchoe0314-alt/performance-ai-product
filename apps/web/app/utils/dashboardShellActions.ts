@@ -85,16 +85,17 @@ export function runDashboardCloseSidePanel({
   if (sidePanelCloseTimeoutRef.current !== null) {
     window.clearTimeout(sidePanelCloseTimeoutRef.current);
   }
-  setRightRailCollapsed(false);
   panelCloseProbeRef.current = {
     label: activeSidePanel === "projects" ? "projects.drawer.close" : "panel.close",
     panel: activeSidePanel,
     startedAt: markCivoraInteraction(),
   };
+  // Close intent must be committed together. Leaving either flag open lets the
+  // panel-state effect interpret the transition as a new open request.
+  setActiveSidePanel(null);
+  setRightRailCollapsed(true);
   setSidePanelVisible(false);
   sidePanelCloseTimeoutRef.current = window.setTimeout(() => {
-    setRightRailCollapsed(true);
-    setActiveSidePanel(null);
     setRenderedSidePanel(null);
     const probe = panelCloseProbeRef.current;
     if (probe) {

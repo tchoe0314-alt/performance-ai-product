@@ -77,10 +77,14 @@ export function FloatingLayerManager({
               <span className={`h-2 w-2 rounded-full ${value ? "bg-emerald-500" : "bg-slate-300"}`} />
               <input
                 type="checkbox"
+                aria-label={`${value ? "Hide" : "Show"} ${key.replace("_", " ")} layer`}
                 checked={Boolean(value)}
                 onChange={(event) => onToggleLayer(key as keyof PreviewLayerVisibility, event.target.checked)}
                 className="h-4 w-4 accent-slate-950"
               />
+              <span className="w-12 text-right text-[10px] uppercase tracking-[0.1em] text-slate-500">
+                {value ? "Shown" : "Hidden"}
+              </span>
             </span>
           </label>
         ))}

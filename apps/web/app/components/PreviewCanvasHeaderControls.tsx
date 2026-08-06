@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { Eye, EyeOff, Layers3, Lock, RefreshCw, RotateCcw, Unlock, X } from "lucide-react";
+import { Eye, EyeOff, Layers3, Lock, MousePointer2, RefreshCw, RotateCcw, Unlock, X } from "lucide-react";
 
 import type { CoordinateMode } from "../utils/geometryTransforms";
 import { coordinateModeLabel } from "../utils/geometryTransforms";
@@ -128,7 +128,7 @@ export function PreviewCanvasHeaderControls({
               : "border-amber-200 bg-amber-50 text-amber-700"
           }`}
         >
-          {siteLocked ? "Site Locked" : "Site Open"}
+          {siteLocked ? "Site Locked" : "Site Editable"}
         </span>
         <span className="mr-1 inline-flex min-w-0 max-w-full items-center truncate px-1 text-[11px] font-medium text-slate-500">
           {modeLabel} · {previewMode.toUpperCase()} · {coordinateModeLabel(coordinateMode)}
@@ -187,16 +187,19 @@ export function PreviewCanvasHeaderControls({
           <button
             type="button"
             data-testid="preview-interaction-edit"
-            aria-label="Use canvas edit tool"
+            aria-label="Select and edit objects"
+            aria-pressed={allowEdits && drawMode === "select"}
+            title="Exit the active drawing tool and select objects"
             onClick={() => {
               if (aiRealismEnabled) onSetAiVisualizationOff();
-              onSetPreviewInteraction("edit");
+              onActivateDrawTool("select");
             }}
             className={`inline-flex h-8 items-center rounded-md border px-2.5 text-xs font-semibold ${
-              allowEdits ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
+              allowEdits && drawMode === "select" ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600"
             }`}
           >
-            Edit
+            <MousePointer2 className="mr-1.5 h-3.5 w-3.5" />
+            Select
           </button>
           {isHighQuality ? (
             <div
@@ -307,6 +310,9 @@ export function PreviewCanvasHeaderControls({
             className="absolute right-3 top-[calc(100%+0.4rem)] z-[220] w-[min(22rem,calc(100%-1.5rem))] rounded-xl border border-slate-200 bg-white/96 p-3 text-slate-700 shadow-[0_22px_70px_-38px_rgba(15,23,42,0.65)] backdrop-blur-xl"
           >
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">View layers</p>
+            <p className="mt-1 text-xs font-medium text-slate-600" data-testid="preview-layer-visibility-summary" aria-live="polite">
+              Existing context is {sourceLayerVisibility.detectedExisting ? "shown" : "hidden"}; proposed design is {sourceLayerVisibility.proposedDesign ? "shown" : "hidden"}.
+            </p>
             <div className="mt-2 space-y-1.5">
               <button
                 type="button"
@@ -319,7 +325,10 @@ export function PreviewCanvasHeaderControls({
                   <span className="block text-xs font-semibold text-slate-800">Detected existing context</span>
                   <span className="block text-[10px] text-slate-500">{sourceLayerCounts.detectedExisting} source object(s)</span>
                 </span>
-                {sourceLayerVisibility.detectedExisting ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-slate-400" />}
+                <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                  {sourceLayerVisibility.detectedExisting ? "Shown" : "Hidden"}
+                  {sourceLayerVisibility.detectedExisting ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-slate-400" />}
+                </span>
               </button>
               {sourceLayerVisibility.detectedExisting ? (
                 <div className="grid grid-cols-4 gap-1" data-testid="preview-existing-sublayers">
@@ -357,7 +366,10 @@ export function PreviewCanvasHeaderControls({
                   <span className="block text-xs font-semibold text-slate-800">Proposed linework</span>
                   <span className="block text-[10px] text-slate-500">{sourceLayerCounts.proposedDesign} project object(s)</span>
                 </span>
-                {sourceLayerVisibility.proposedDesign && !aiRealismEnabled ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-slate-400" />}
+                <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                  {sourceLayerVisibility.proposedDesign && !aiRealismEnabled ? "Shown" : "Hidden"}
+                  {sourceLayerVisibility.proposedDesign && !aiRealismEnabled ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-slate-400" />}
+                </span>
               </button>
               {aiRealismEnabled ? (
                 <p className="rounded-md bg-sky-50 px-2 py-1.5 text-[10px] text-sky-800">

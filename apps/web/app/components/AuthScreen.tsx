@@ -99,10 +99,11 @@ export default function AuthScreen({
                   </a>
                   <a
                     href="mailto:support@civora.ai?subject=Civora%20pilot%20support"
+                    aria-label="Email Civora support at support@civora.ai"
                     className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
                   >
                     <LifeBuoy className="h-3.5 w-3.5" />
-                    Support
+                    Email support
                   </a>
                 </div>
               </div>
@@ -148,7 +149,14 @@ export default function AuthScreen({
                 desc="Auth is now user-scoped so projects and jobs are private per beta tester."
               />
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent>
+              <form
+                className="space-y-4"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!authLoading) onSubmit();
+                }}
+              >
               <div className="inline-flex rounded-2xl border border-black/10 bg-slate-100 p-1">
                 <button
                   type="button"
@@ -240,7 +248,7 @@ export default function AuthScreen({
                 </div>
               ) : null}
               <div className="flex flex-wrap gap-3">
-                <SmallButton onClick={onSubmit} disabled={authLoading}>
+                <SmallButton type="submit" disabled={authLoading}>
                   <Sparkles className="mr-2 h-4 w-4" />
                   {authLoading
                     ? "Working..."
@@ -258,6 +266,7 @@ export default function AuthScreen({
                   {authMode === "register" ? "Switch to sign-in" : "Request access"}
                 </SmallButton>
               </div>
+              </form>
             </CardContent>
           </Card>
         </motion.div>

@@ -256,6 +256,7 @@ export default function ChatPanel({
         <div className={`min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:rounded-3xl ${collapsed ? "" : "mb-4"}`}>
           <TextArea
             ref={promptInputRef}
+            data-testid="civora-chat-input"
             value={prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             onKeyDown={onPromptKeyDown}

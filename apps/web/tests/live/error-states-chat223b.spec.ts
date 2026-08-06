@@ -260,7 +260,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
 
     await expect(page.getByTestId("apply-address-status")).toContainText("uncertain or unrelated match");
     await expect(page.getByTestId("project-status-summary")).toContainText("Apply address needs correction");
-    await expect(page.getByTestId("site-status")).toContainText("Site Open");
+    await expect(page.getByTestId("site-status")).toContainText("Site Editable");
     expect(sourceContextRequested).toBe(false);
   });
 

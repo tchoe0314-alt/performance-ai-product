@@ -55,6 +55,7 @@ type UseDashboardApplySiteActionOptions = {
   setFitToSiteRequest: Dispatch<SetStateAction<number>>;
   setLeftSidebarOpen: Dispatch<SetStateAction<boolean>>;
   setRenderedSidePanel: Dispatch<SetStateAction<SidePanelKey | null>>;
+  setRightRailCollapsed: Dispatch<SetStateAction<boolean>>;
   setShowSiteBounds: Dispatch<SetStateAction<boolean>>;
   setSidePanelVisible: Dispatch<SetStateAction<boolean>>;
   setSiteScaleLocked: Dispatch<SetStateAction<boolean>>;
@@ -84,6 +85,7 @@ export function useDashboardApplySiteAction({
   setFitToSiteRequest,
   setLeftSidebarOpen,
   setRenderedSidePanel,
+  setRightRailCollapsed,
   setShowSiteBounds,
   setSidePanelVisible,
   setSiteScaleLocked,
@@ -197,6 +199,7 @@ export function useDashboardApplySiteAction({
       setActiveWorkspaceMode("canvas");
       setActiveSidePanel(null);
       setRenderedSidePanel(null);
+      setRightRailCollapsed(true);
       setSidePanelVisible(false);
       setFitToSiteRequest((value) => value + 1);
       setBuildingPlacements((prevPlacements) =>
@@ -328,6 +331,7 @@ export function useDashboardApplySiteAction({
     setActiveWorkspaceMode("canvas");
     setActiveSidePanel(null);
     setRenderedSidePanel(null);
+    setRightRailCollapsed(true);
     setSidePanelVisible(false);
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
       setLeftSidebarOpen(false);
@@ -384,6 +388,7 @@ export function useDashboardApplySiteAction({
     setFitToSiteRequest,
     setLeftSidebarOpen,
     setRenderedSidePanel,
+    setRightRailCollapsed,
     setShowSiteBounds,
     setSidePanelVisible,
     setSiteScaleLocked,

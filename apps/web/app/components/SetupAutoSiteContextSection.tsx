@@ -1,4 +1,5 @@
 import { DisclosurePanel } from "./ui";
+import { sourceDisplayName, sourceDisplaySentence } from "../utils/sourceDisplayText";
 
 type AutoExistingConditionsStatus = {
   status: string;
@@ -68,7 +69,7 @@ function rowStatusClass(status: string): string {
 function rowStatusLabel(status: string): string {
   if (status === "missing") return "needs source";
   if (status === "not_checked") return "not checked";
-  return status.replace("_", " ");
+  return status.replaceAll("_", " ");
 }
 
 function formatSourceGuidance(message: string): string {
@@ -104,15 +105,15 @@ export function SetupAutoSiteContextSection({
   const missingCount = autoSiteContextRows.filter((row) => row.status === "missing").length;
   const assumedCount = autoSiteContextRows.filter((row) => row.status === "assumed").length;
   const outsideCount = autoSiteContextRows.filter((row) => row.status === "outside").length;
-  const sourceGuidanceMessage = formatSourceGuidance(autoExistingConditionsStatus.message);
+  const sourceGuidanceMessage = sourceDisplaySentence(formatSourceGuidance(autoExistingConditionsStatus.message));
   const detectedLabels = autoSiteContextFlowSummary.candidateLabels.length
-    ? autoSiteContextFlowSummary.candidateLabels
-    : autoSiteContextRows.filter((row) => row.status === "found").map((row) => row.title);
+    ? autoSiteContextFlowSummary.candidateLabels.map((label) => sourceDisplayName(label))
+    : autoSiteContextRows.filter((row) => row.status === "found").map((row) => sourceDisplayName(row.title));
   const detectedSummary = detectedLabels.length
     ? detectedLabels.slice(0, 5).join(", ")
     : "nothing usable yet";
   const missingSummary = autoSiteContextFlowSummary.missingLabels.length
-    ? autoSiteContextFlowSummary.missingLabels.slice(0, 4).join(", ")
+    ? autoSiteContextFlowSummary.missingLabels.slice(0, 4).map((label) => sourceDisplayName(label)).join(", ")
     : "source evidence not available yet";
 
   return (
@@ -153,8 +154,8 @@ export function SetupAutoSiteContextSection({
             : autoExistingConditionsStatus.status === "waiting" && /cancel/i.test(autoExistingConditionsStatus.message)
               ? sourceGuidanceMessage
             : autoSiteContextFlowSummary.candidateCount
-              ? `${autoSiteContextFlowSummary.candidateCount} source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available for review. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`
-              : `No source candidates found yet. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`}
+              ? `${autoSiteContextFlowSummary.candidateCount} source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available for review. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.map((label) => sourceDisplayName(label)).join(", ") || "source evidence not available yet"}.`
+              : `No source candidates found yet. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.map((label) => sourceDisplayName(label)).join(", ") || "source evidence not available yet"}.`}
         </p>
         <div className="mb-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-xs text-emerald-900" data-testid="auto-site-context-plain-summary">
           <p className="font-semibold">Detected inside site: {detectedSummary}{detectedLabels.length > 5 ? `, plus ${detectedLabels.length - 5} more` : ""}.</p>
@@ -213,10 +214,10 @@ export function SetupAutoSiteContextSection({
               <div className="min-w-0">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${rowDotClass(row.status)}`} />
-                  <p className="truncate text-sm font-semibold text-slate-900">{row.title}</p>
+                  <p className="truncate text-sm font-semibold text-slate-900">{sourceDisplayName(row.title)}</p>
                 </div>
                 <p className="mt-1 text-xs font-medium leading-5 text-slate-500" data-testid={`auto-site-context-detail-${row.key}`}>
-                  {row.detail}
+                  {sourceDisplaySentence(row.detail)}
                 </p>
               </div>
               <span className={`h-fit rounded-full px-2.5 py-1 text-center text-[10px] font-semibold uppercase tracking-[0.12em] ${rowStatusClass(row.status)}`} data-testid={`auto-site-context-status-${row.key}`}>
@@ -227,10 +228,10 @@ export function SetupAutoSiteContextSection({
         </div>
         <div className="sr-only" aria-hidden="false">
           <span data-testid="auto-site-context-found">
-            {onlineFoundSources.length ? onlineFoundSources.map((source) => source.label || source.key).join(", ") : "No usable features yet"}
+            {onlineFoundSources.length ? onlineFoundSources.map((source) => sourceDisplayName(source.label || source.key)).join(", ") : "No usable features yet"}
           </span>
           <span data-testid="auto-site-context-missing">
-            {autoSiteContextFlowSummary.missingLabels.length ? autoSiteContextFlowSummary.missingLabels.join(", ") : "Source evidence not available yet"}
+            {autoSiteContextFlowSummary.missingLabels.length ? autoSiteContextFlowSummary.missingLabels.map((label) => sourceDisplayName(label)).join(", ") : "Source evidence not available yet"}
           </span>
         </div>
         <button
