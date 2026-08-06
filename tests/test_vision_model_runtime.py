@@ -54,6 +54,21 @@ class _SemanticSession:
         return [logits]
 
 
+class _MultiConfidenceSemanticSession:
+    def get_inputs(self):
+        return [_TensorRecord("images")]
+
+    def get_outputs(self):
+        return [_TensorRecord("logits")]
+
+    def run(self, names, feeds):
+        logits = np.full((1, 3, 32, 32), -4.0, dtype=np.float32)
+        logits[:, 0, :, :] = 1.0
+        logits[:, 1, 0:8, 2:10] = 3.0
+        logits[:, 1, 20:30, 18:30] = 8.0
+        return [logits]
+
+
 def _image_bytes(width: int = 200, height: int = 100) -> bytes:
     buffer = BytesIO()
     Image.new("RGB", (width, height), (120, 130, 140)).save(buffer, format="PNG")
@@ -130,6 +145,46 @@ class VisionModelRuntimeTests(unittest.TestCase):
         self.assertEqual({item["kind"] for item in result.detections}, {"building", "road"})
         self.assertTrue(all(item["properties"]["geometry_fidelity"] == "semantic_segmentation" for item in result.detections))
         self.assertTrue(all(item["geometry"]["type"] in {"Polygon", "MultiPolygon"} for item in result.detections))
+
+    def test_semantic_runtime_scores_each_connected_component_independently(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = self._runtime(
+                Path(directory),
+                adapter="civora_semantic_v1",
+                session=_MultiConfidenceSemanticSession(),
+            )
+            result = runtime.detect(_image_bytes(128, 128), requested_kinds={"building"})
+
+        self.assertEqual(len(result.detections), 2)
+        low, high = sorted(result.detections, key=lambda item: item["confidence"])
+        self.assertGreater(high["confidence"] - low["confidence"], 0.1)
+        self.assertTrue(low["properties"]["component_touches_frame_edge"])
+        self.assertFalse(high["properties"]["component_touches_frame_edge"])
+        self.assertEqual(low["properties"]["component_pixel_count"], 64)
+        self.assertEqual(high["properties"]["component_pixel_count"], 120)
+        self.assertEqual(low["confidence"], low["properties"]["component_mean_probability"])
+
+    def test_semantic_confidence_filters_components_without_reshaping_the_mask(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            initial = self._runtime(
+                root,
+                adapter="civora_semantic_v1",
+                session=_MultiConfidenceSemanticSession(),
+            )
+            manifest = json.loads(initial.manifest_path.read_text(encoding="utf-8"))
+            manifest["thresholds"]["confidence"] = 0.95
+            initial.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            runtime = LearnedVisionRuntime(
+                manifest_path=initial.manifest_path,
+                session_factory=lambda _: _MultiConfidenceSemanticSession(),
+            )
+            result = runtime.detect(_image_bytes(128, 128), requested_kinds={"building"})
+
+        self.assertEqual(len(result.detections), 1)
+        detection = result.detections[0]
+        self.assertEqual(detection["properties"]["component_pixel_count"], 120)
+        self.assertEqual(detection["bbox"], [72.0, 80.0, 48.0, 40.0])
 
     def test_runtime_tiles_large_imagery_without_losing_global_coordinates(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -47,6 +47,17 @@ def bootstrap_public_vision_collection(
     geography_ids = [str(item.get("geography_id") or "") for item in geographies]
     if any(not item for item in geography_ids) or len(geography_ids) != len(set(geography_ids)):
         raise SystemExit("Collection geography IDs must be present and unique.")
+    split_policy = dict(plan.get("split_policy") or {})
+    required_splits = [str(item) for item in split_policy.get("required_splits") or []]
+    geography_splits = [str(item.get("split") or "") for item in geographies]
+    if split_policy.get("strategy") != "geography_disjoint":
+        raise SystemExit("Collection plan must use the geography_disjoint split strategy.")
+    if split_policy.get("grouping_field") != "geography_id":
+        raise SystemExit("Collection plan split grouping must use geography_id.")
+    if any(item not in {"train", "validation", "test"} for item in geography_splits):
+        raise SystemExit("Every collection geography must declare train, validation, or test split.")
+    if any(split not in geography_splits for split in required_splits):
+        raise SystemExit("Collection plan is missing a required geography split.")
     output_root = output_root.expanduser().resolve()
     region_root = output_root / "regions"
     region_root.mkdir(parents=True, exist_ok=True)
@@ -63,6 +74,7 @@ def bootstrap_public_vision_collection(
             image_pixels=int(geography.get("image_pixels") or defaults.get("image_pixels") or 512),
             output_root=region_root / geography_id,
             geography_id=geography_id,
+            permanent_split=str(geography["split"]),
             source_registry_path=source_registry_path,
             imagery_source_id=str(plan.get("imagery_source_id") or "usgs_naip_conus"),
             label_source_id=str(plan.get("label_source_id") or "microsoft_global_building_footprints"),
@@ -71,7 +83,11 @@ def bootstrap_public_vision_collection(
         package_paths.append(Path(result["package"]))
 
     merged_root = output_root / "merged"
-    merged_result = merge_public_vision_packages(package_paths=package_paths, output_root=merged_root)
+    merged_result = merge_public_vision_packages(
+        package_paths=package_paths,
+        output_root=merged_root,
+        split_policy=split_policy,
+    )
     merged_package = _read_object(Path(merged_result["package"]))
     review_sprint = build_public_review_sprint(merged_package)
     review_sprint_path = merged_root / "vision-review-sprint.json"
@@ -128,6 +144,7 @@ def _collection_coverage(package: Dict[str, Any], review_sprint: Dict[str, Any])
         "geographies": sorted({str(item.get("geography_id") or item.get("source_dataset") or "") for item in images if item.get("geography_id") or item.get("source_dataset")}),
         "seasons": sorted({str(item.get("season") or "") for item in images if item.get("season")}),
         "imagery_quality_bands": sorted({str(item.get("imagery_quality_band") or "") for item in images if item.get("imagery_quality_band")}),
+        "split_integrity": dict(package.get("split_integrity") or {}),
         "capture_dates": sorted({str(item.get("capture_date") or "") for item in images if item.get("capture_date")}),
         "review_status": "pending_human_review",
         "promotion_eligible": False,

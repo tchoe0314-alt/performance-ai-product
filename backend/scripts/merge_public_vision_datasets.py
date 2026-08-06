@@ -28,7 +28,12 @@ def main() -> int:
     return 0 if result["success"] else 2
 
 
-def merge_public_vision_packages(*, package_paths: List[Path], output_root: Path) -> Dict[str, Any]:
+def merge_public_vision_packages(
+    *,
+    package_paths: List[Path],
+    output_root: Path,
+    split_policy: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     if not package_paths:
         raise SystemExit("At least one public weak-supervision package is required.")
 
@@ -63,7 +68,11 @@ def merge_public_vision_packages(*, package_paths: List[Path], output_root: Path
             source_images[(source_name, str(raw_image.get("file_name") or ""))] = source_file
         packages.append(package)
 
-    merged = merge_weak_supervision_packages(packages, source_names=source_names)
+    merged = merge_weak_supervision_packages(
+        packages,
+        source_names=source_names,
+        split_policy=split_policy,
+    )
     for image in merged["images"]:
         source_name = str(image.get("source_dataset") or "")
         source_file_name = str(image.get("file_name") or "")
@@ -76,6 +85,9 @@ def merge_public_vision_packages(*, package_paths: List[Path], output_root: Path
         shutil.copy2(source_file, destination)
         image["file_name"] = destination_name
     merged["dataset_fingerprint"] = weak_supervision_package_fingerprint(merged)
+    validation = verify_weak_supervision_package(merged)
+    if not validation["valid"]:
+        raise SystemExit("Merged package failed verification: " + ", ".join(validation["blockers"]))
     merged["image_root"] = str(image_root)
     package_path = output_root / "weak-coco-package.json"
     review_path = output_root / "review-candidates.geojson"
@@ -91,6 +103,8 @@ def merge_public_vision_packages(*, package_paths: List[Path], output_root: Path
             "imagery_tiles": len(merged["images"]),
             "weak_building_labels": len(merged["annotations"]),
             "splits": merged["splits"],
+            "split_policy": merged["split_policy"],
+            "split_integrity": merged["split_integrity"],
             "supervision_status": merged["supervision_status"],
             "promotion_eligible": False,
             "promotion_blockers": merged["promotion_blockers"],
@@ -104,6 +118,7 @@ def merge_public_vision_packages(*, package_paths: List[Path], output_root: Path
         "imagery_tiles": len(merged["images"]),
         "weak_building_labels": len(merged["annotations"]),
         "splits": merged["splits"],
+        "split_integrity": merged["split_integrity"],
         "promotion_eligible": False,
         "promotion_blockers": merged["promotion_blockers"],
     }

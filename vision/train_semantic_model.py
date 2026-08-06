@@ -27,6 +27,7 @@ def main() -> int:
     parser.add_argument("--dice-weight", type=float, default=0.40)
     parser.add_argument("--architecture", choices=("unet", "lraspp_mobilenet_v3_large"), default="unet")
     parser.add_argument("--pretrained-backbone", action="store_true")
+    parser.add_argument("--early-stopping-patience", type=int, default=8)
     parser.add_argument("--seed", type=int, default=41)
     parser.add_argument("--device", default="auto")
     args = parser.parse_args()
@@ -230,11 +231,20 @@ def main() -> int:
         model = CivoraUNet(class_count, max(8, args.base_channels))
     model = model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="max",
+        factor=0.5,
+        patience=max(1, int(args.early_stopping_patience) // 3),
+        min_lr=1e-6,
+    )
     class_weights = torch.ones(class_count, dtype=torch.float32, device=device)
     class_weights[0] = min(max(float(args.background_weight), 0.01), 1.0)
     criterion = CombinedSegmentationLoss(class_weights, args.dice_weight)
     history: List[Dict[str, float]] = []
+    best_validation_iou = -1.0
     best_validation_loss = float("inf")
+    epochs_without_improvement = 0
     checkpoint_path = output_dir / "best_state_dict.pt"
     for epoch in range(max(1, args.epochs)):
         model.train()
@@ -250,18 +260,33 @@ def main() -> int:
         record = {
             "epoch": epoch + 1,
             "training_loss": round(training_loss / max(len(train_loader), 1), 6),
+            "learning_rate": round(float(optimizer.param_groups[0]["lr"]), 10),
             **validation,
         }
         history.append(record)
         print(json.dumps(record))
-        if validation["validation_loss"] < best_validation_loss:
+        scheduler.step(validation["validation_mean_foreground_iou"])
+        improved = (
+            validation["validation_mean_foreground_iou"] > best_validation_iou + 1e-8
+            or (
+                abs(validation["validation_mean_foreground_iou"] - best_validation_iou) <= 1e-8
+                and validation["validation_loss"] < best_validation_loss
+            )
+        )
+        if improved:
+            best_validation_iou = validation["validation_mean_foreground_iou"]
             best_validation_loss = validation["validation_loss"]
+            epochs_without_improvement = 0
             torch.save(model.state_dict(), checkpoint_path)
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= max(1, int(args.early_stopping_patience)):
+                break
     model.load_state_dict(torch.load(checkpoint_path, map_location=device, weights_only=True))
     model.eval()
     onnx_path = output_dir / "civora_semantic.onnx"
-    dummy = torch.zeros((1, 3, args.image_size, args.image_size), dtype=torch.float32, device=device)
-    export_model = LogitsOnly(model).to(device).eval()
+    dummy = torch.zeros((1, 3, args.image_size, args.image_size), dtype=torch.float32)
+    export_model = LogitsOnly(model).cpu().eval()
     torch.onnx.export(
         export_model,
         dummy,
@@ -292,11 +317,17 @@ def main() -> int:
             "dice_weight": round(float(args.dice_weight), 4),
             "architecture": args.architecture,
             "pretrained_backbone": args.pretrained_backbone,
+            "early_stopping_patience": args.early_stopping_patience,
             "seed": args.seed,
             "device": device_name,
         },
         "history": history,
-        "best_validation": min(history, key=lambda item: item["validation_loss"]),
+        "epochs_completed": len(history),
+        "checkpoint_selection_metric": "validation_mean_foreground_iou_then_validation_loss",
+        "best_validation": max(
+            history,
+            key=lambda item: (item["validation_mean_foreground_iou"], -item["validation_loss"]),
+        ),
         "onnx_path": onnx_path.name,
         "checkpoint_path": checkpoint_path.name,
         "promotion_ready": False,

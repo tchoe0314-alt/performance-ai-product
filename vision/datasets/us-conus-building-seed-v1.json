@@ -9,31 +9,45 @@
     "rows": 2,
     "tile_meters": 320
   },
+  "split_policy": {
+    "strategy": "geography_disjoint",
+    "grouping_field": "geography_id",
+    "required_splits": [
+      "train",
+      "validation",
+      "test"
+    ]
+  },
   "geographies": [
     {
       "center_latitude": 41.1852405,
       "center_longitude": -96.2370225,
-      "geography_id": "gretna_ne"
+      "geography_id": "gretna_ne",
+      "split": "train"
     },
     {
       "center_latitude": 32.7767,
       "center_longitude": -96.797,
-      "geography_id": "dallas_tx"
+      "geography_id": "dallas_tx",
+      "split": "train"
     },
     {
       "center_latitude": 39.7392,
       "center_longitude": -104.9903,
-      "geography_id": "denver_co"
+      "geography_id": "denver_co",
+      "split": "validation"
     },
     {
       "center_latitude": 33.4484,
       "center_longitude": -112.074,
-      "geography_id": "phoenix_az"
+      "geography_id": "phoenix_az",
+      "split": "train"
     },
     {
       "center_latitude": 35.2271,
       "center_longitude": -80.8431,
-      "geography_id": "charlotte_nc"
+      "geography_id": "charlotte_nc",
+      "split": "test"
     }
   ],
   "output_policy": {

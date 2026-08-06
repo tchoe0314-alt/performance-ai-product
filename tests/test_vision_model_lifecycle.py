@@ -11,6 +11,10 @@ from backend.planning.vision_model_lifecycle import (
     build_model_manifest,
     evaluate_quality_by_class,
 )
+from backend.planning.vision_model_calibration import (
+    calibrate_detection_thresholds,
+    compare_model_to_baseline,
+)
 
 
 def _polygon(x0: float, y0: float, x1: float, y1: float):
@@ -87,6 +91,37 @@ def _attested_quality_scope():
     }
 
 
+def _attach_promotion_evidence(quality):
+    calibration = calibrate_detection_thresholds(
+        [{"kind": "building", "geometry": _polygon(0, 0, 10, 10), "confidence": 0.9}],
+        [{"kind": "building", "geometry": _polygon(0, 0, 10, 10)}],
+        dataset_fingerprint="b" * 64,
+        confidence_values=[0.5],
+        minimum_component_pixels_values=[1],
+        ground_truth_attested=True,
+        source_supervision_status="independent_benchmark_annotated",
+    )
+    baseline = {
+        "evaluation_status": "measured_against_ground_truth",
+        "evaluation_split": "test",
+        "dataset_fingerprint": "b" * 64,
+        "ground_truth_count": quality.get("ground_truth_count"),
+        "prediction_count": quality.get("prediction_count", quality.get("ground_truth_count")),
+        "true_positive": max(0, int(quality.get("true_positive") or 0) - 5),
+        "false_positive": int(quality.get("false_positive") or 0),
+        "false_negative": int(quality.get("false_negative") or 0) + 5,
+        "precision": max(0.0, float(quality.get("precision") or 0.0) - 0.05),
+        "recall": max(0.0, float(quality.get("recall") or 0.0) - 0.1),
+        "f1": max(0.0, float(quality.get("f1") or 0.0) - 0.1),
+        "mean_matched_iou": quality.get("mean_matched_iou"),
+    }
+    quality["evaluation_split"] = "test"
+    quality["dataset_fingerprint"] = "b" * 64
+    quality["threshold_calibration"] = calibration
+    quality["baseline_comparison"] = compare_model_to_baseline(quality, baseline)
+    return quality
+
+
 class VisionModelLifecycleTests(unittest.TestCase):
     def test_coco_export_includes_reviewed_positive_and_negative_image_without_bytes(self) -> None:
         package = build_coco_training_package([_dataset()], asset_registry=_asset_registry())
@@ -136,6 +171,7 @@ class VisionModelLifecycleTests(unittest.TestCase):
             truth,
             **_attested_quality_scope(),
         )
+        _attach_promotion_evidence(quality)
         promotion = assess_model_promotion(quality, required_classes=["building"])
 
         self.assertEqual(quality["precision"], 1.0)
@@ -145,6 +181,8 @@ class VisionModelLifecycleTests(unittest.TestCase):
         blocked = assess_model_promotion({"evaluation_status": "ground_truth_not_attached"})
         self.assertFalse(blocked["eligible"])
         self.assertIn("ground_truth_evaluation_missing", blocked["blockers"])
+        self.assertIn("validation_only_threshold_calibration_missing", blocked["blockers"])
+        self.assertIn("held_out_baseline_comparison_missing", blocked["blockers"])
 
     def test_promotion_blocks_narrow_coverage_and_reports_class_gate(self) -> None:
         quality = {
@@ -162,6 +200,7 @@ class VisionModelLifecycleTests(unittest.TestCase):
             "season_count": 0,
             "imagery_quality_band_count": 1,
         }
+        _attach_promotion_evidence(quality)
 
         promotion = assess_model_promotion(quality, required_classes=["building"])
 
@@ -209,6 +248,7 @@ class VisionModelLifecycleTests(unittest.TestCase):
             "per_class": {"building": {"precision": 0.9, "recall": 0.8, "ground_truth_count": 100}},
             **_attested_quality_scope(),
         }
+        _attach_promotion_evidence(quality)
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "model.onnx"
             model.write_bytes(b"model-weights")
@@ -243,6 +283,7 @@ class VisionModelLifecycleTests(unittest.TestCase):
             "per_class": {"building": {"precision": 0.9, "recall": 0.8, "ground_truth_count": 100}},
             **_attested_quality_scope(),
         }
+        _attach_promotion_evidence(quality)
         with tempfile.TemporaryDirectory() as directory:
             model = Path(directory) / "model.onnx"
             model.write_bytes(b"model-weights")

@@ -53,6 +53,7 @@ def main() -> int:
     parser.add_argument("--country", default="UnitedStates")
     parser.add_argument("--quadkey-level", type=int, default=9)
     parser.add_argument("--geography-id", default="")
+    parser.add_argument("--split", choices=("train", "validation", "test"), default="")
     parser.add_argument("--source-registry", default=str(DEFAULT_SOURCE_REGISTRY))
     parser.add_argument("--imagery-source-id", default="usgs_naip_conus")
     parser.add_argument("--label-source-id", default="microsoft_global_building_footprints")
@@ -70,6 +71,7 @@ def main() -> int:
         country=args.country,
         quadkey_level=args.quadkey_level,
         geography_id=args.geography_id,
+        permanent_split=args.split,
         source_registry_path=Path(args.source_registry),
         imagery_source_id=args.imagery_source_id,
         label_source_id=args.label_source_id,
@@ -92,6 +94,7 @@ def bootstrap_public_vision_region(
     country: str = "UnitedStates",
     quadkey_level: int = 9,
     geography_id: str = "",
+    permanent_split: str = "",
     source_registry_path: Path = DEFAULT_SOURCE_REGISTRY,
     imagery_source_id: str = "usgs_naip_conus",
     label_source_id: str = "microsoft_global_building_footprints",
@@ -123,6 +126,7 @@ def bootstrap_public_vision_region(
         columns=columns,
         tile_meters=tile_meters,
         image_pixels=image_pixels,
+        permanent_split=permanent_split,
     )
     for tile in tiles:
         destination = image_root / str(tile["file_name"])
