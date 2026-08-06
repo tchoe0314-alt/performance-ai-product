@@ -26,6 +26,7 @@ type SaveSiteAddressOptions = {
   preserveLockedSite?: boolean;
   siteWidth?: number;
   siteHeight?: number;
+  forceRefresh?: boolean;
 };
 
 type UseDashboardSiteAddressActionOptions = {
@@ -37,6 +38,7 @@ type UseDashboardSiteAddressActionOptions = {
   localGisProviderRegistry: LocalGisProviderRegistry;
   payloadPreview: ProjectInput;
   projectLoadRequestRef: MutableRefObject<number>;
+  sourceContextAbortRef: MutableRefObject<AbortController | null>;
   saveProject: SaveProject;
   selectedAddressSuggestion: AddressSuggestion | null;
   setActiveSidePanel: Dispatch<SetStateAction<SidePanelKey | null>>;
@@ -99,6 +101,7 @@ export function useDashboardSiteAddressAction({
   localGisProviderRegistry,
   payloadPreview,
   projectLoadRequestRef,
+  sourceContextAbortRef,
   saveProject,
   selectedAddressSuggestion,
   setActiveSidePanel,
@@ -128,6 +131,7 @@ export function useDashboardSiteAddressAction({
       const preserveLockedSite = Boolean(options?.preserveLockedSite);
       const overrideSiteWidth = options?.siteWidth;
       const overrideSiteHeight = options?.siteHeight;
+      const forceRefresh = Boolean(options?.forceRefresh);
       if (!token) {
         if (!trimmed) {
           const message = "Type a project address before applying.";
@@ -199,10 +203,19 @@ export function useDashboardSiteAddressAction({
         return;
       }
       const currentInput = currentProject?.project_input ?? payloadPreview;
-      const nextSiteInputs = clearAddressSourceContext({
-        ...(currentInput?.meta?.site_inputs ?? {}),
-        address: trimmed || undefined,
-      });
+      const currentSiteInputs = (currentInput?.meta?.site_inputs ?? {}) as SiteInputs;
+      const currentlyAppliedAddress = String(
+        currentSiteInputs.address || currentSiteInputs.geocode?.display_name || "",
+      ).trim();
+      const preserveSourceContextDuringRefresh = Boolean(
+        forceRefresh && trimmed && trimmed === currentlyAppliedAddress,
+      );
+      const nextSiteInputs = preserveSourceContextDuringRefresh
+        ? ({ ...currentSiteInputs, address: trimmed } as SiteInputs)
+        : clearAddressSourceContext({
+            ...currentSiteInputs,
+            address: trimmed || undefined,
+          });
       if (!trimmed) {
         const clearedSiteInputs = clearAddressSourceContext(nextSiteInputs);
         delete clearedSiteInputs.address;
@@ -252,6 +265,9 @@ export function useDashboardSiteAddressAction({
         });
         return;
       }
+      sourceContextAbortRef.current?.abort();
+      const sourceContextController = new AbortController();
+      sourceContextAbortRef.current = sourceContextController;
       try {
         setOnlineDiscoveryBusy(true);
         updateProjectStatus({
@@ -261,7 +277,9 @@ export function useDashboardSiteAddressAction({
           detail: "Civora is geocoding the address and checking available source context.",
           nextAction: "Wait for source candidates or an exact provider/auth blocker.",
         });
-        const runningSiteInputs = clearAddressSourceContext(nextSiteInputs);
+        const runningSiteInputs = preserveSourceContextDuringRefresh
+          ? ({ ...nextSiteInputs } as SiteInputs)
+          : clearAddressSourceContext(nextSiteInputs);
         runningSiteInputs.address = trimmed;
         const runningProjectInput: ProjectInput = {
           ...currentInput,
@@ -278,14 +296,16 @@ export function useDashboardSiteAddressAction({
             ? {
                 ...project,
                 project_input: runningProjectInput,
-                latest_result: clearLatestResultSourceContext(project.latest_result),
+                latest_result: preserveSourceContextDuringRefresh
+                  ? project.latest_result
+                  : clearLatestResultSourceContext(project.latest_result),
                 updated_at: Date.now() / 1000,
               }
             : project,
         );
         let geocode = selectedAddressSuggestion;
         if (!hasAddressCoordinates(geocode)) {
-          geocode = await postJson<AddressSuggestion>("/api/geocode", { address: trimmed }, { token });
+          geocode = await postJson<AddressSuggestion>("/api/geocode", { address: trimmed }, { token, signal: sourceContextController.signal });
         }
         if (!workspaceIsCurrent()) return;
         if (!hasAddressCoordinates(geocode)) {
@@ -398,10 +418,22 @@ export function useDashboardSiteAddressAction({
         setViewportCenter({ lat: geocode.lat, lng: geocode.lng });
         setSelectedAddressSuggestion(geocode);
 
+        // Geocoding is complete at this point. Persist that checkpoint before
+        // the slower source fan-out so cancelling discovery cannot roll the
+        // address, map center, or retry path back to an unapplied state.
+        const geocodedSavedProject = await saveProject({
+          silent: true,
+          projectInputOverride: geocodedProjectInput,
+          latestResultOverride: preserveSourceContextDuringRefresh
+            ? currentProject?.latest_result
+            : clearLatestResultSourceContext(currentProject?.latest_result),
+        });
+        if (!workspaceIsCurrent()) return;
+
         let onlineFetch: OnlineExistingConditionsFetchResponse | null = null;
         try {
           onlineFetch = await runQueuedSourceContextLookup({
-            projectId: currentProject?.project_id,
+            projectId: geocodedSavedProject?.project_id || currentProject?.project_id,
             token,
             request: {
               address: geocode.display_name,
@@ -429,7 +461,19 @@ export function useDashboardSiteAddressAction({
               include_elevation: true,
               include_imagery_detection: true,
               include_worldwide_context: true,
+              force_refresh: forceRefresh,
               provider_registry: localGisProviderRegistry,
+            },
+            signal: sourceContextController.signal,
+            onQueued: (job) => {
+              setAutoExistingConditionsStatus({
+                status: "running",
+                message: "Source lookup queued. Civora will show each source as it completes.",
+                candidateCount: 0,
+                missing: [],
+                progress: Number(job.progress ?? 0),
+                jobId: job.job_id,
+              });
             },
             onProgress: (job) => {
               setAutoExistingConditionsStatus({
@@ -437,11 +481,34 @@ export function useDashboardSiteAddressAction({
                 message: job.stage_detail || "Checking roads, buildings, terrain, constraints, and utilities in the background...",
                 candidateCount: 0,
                 missing: [],
+                progress: Number(job.progress ?? 0),
+                jobId: job.job_id,
+                latestSource: job.stage,
               });
             },
           });
         } catch (error) {
           if (!workspaceIsCurrent()) return;
+          if (error instanceof Error && error.name === "AbortError") {
+            const preservedDiscovery = nextSiteInputs.online_existing_conditions_discovery_v1;
+            setAutoExistingConditionsStatus({
+              status: "waiting",
+              message: "Source lookup cancelled. The site remains editable; rerun when you are ready.",
+              candidateCount: Number(preservedDiscovery?.candidate_count ?? 0),
+              missing: (preservedDiscovery?.sources ?? [])
+                .filter((source) => Number(source.candidate_count ?? 0) <= 0)
+                .map((source) => String(source.label || source.key || source.source_type || "source unavailable"))
+                .slice(0, 6),
+            });
+            updateProjectStatus({
+              state: "needs review",
+              area: "setup",
+              title: "Source lookup cancelled",
+              detail: "The source check was cancelled before new candidates were applied.",
+              nextAction: "Rerun Site Context or continue with manual and uploaded evidence.",
+            });
+            return;
+          }
           onlineFetch = {
             success: false,
             status: "fetch_failed",
@@ -480,8 +547,15 @@ export function useDashboardSiteAddressAction({
         if (onlineFetch?.source_context_detection_coverage_v1) {
           nextSiteInputs.source_context_detection_coverage_v1 = onlineFetch.source_context_detection_coverage_v1;
         }
+        if (onlineFetch?.source_context_fetch_metrics_v1) {
+          nextSiteInputs.source_context_fetch_metrics_v1 = onlineFetch.source_context_fetch_metrics_v1;
+        }
+        if (onlineFetch?.source_context_cache_v1) {
+          nextSiteInputs.source_context_cache_v1 = onlineFetch.source_context_cache_v1;
+        }
         const preserveLatestLockedSite = preserveLockedSite || siteScaleLockedRef.current;
-        const liveProjectInput = currentProjectRef.current?.project_input ?? geocodedProjectInput;
+        const liveProjectInput =
+          currentProjectRef.current?.project_input ?? geocodedSavedProject?.project_input ?? geocodedProjectInput;
         const liveSiteInputs = (liveProjectInput?.meta?.site_inputs ?? {}) as SiteInputs;
         if (preserveLatestLockedSite) {
           const writableSiteInputs = nextSiteInputs as Record<string, unknown>;
@@ -535,6 +609,8 @@ export function useDashboardSiteAddressAction({
                     candidate_review_inbox_v1: onlineFetch?.candidate_review_inbox_v1,
                     civora_vision_review_workspace_v1: onlineFetch?.civora_vision_review_workspace_v1,
                     source_context_detection_coverage_v1: onlineFetch?.source_context_detection_coverage_v1,
+                    source_context_fetch_metrics_v1: onlineFetch?.source_context_fetch_metrics_v1,
+                    source_context_cache_v1: onlineFetch?.source_context_cache_v1,
                   },
                 },
               }
@@ -657,6 +733,19 @@ export function useDashboardSiteAddressAction({
         });
       } catch (error) {
         if (!workspaceIsCurrent()) return;
+        if (error instanceof Error && error.name === "AbortError") {
+          const preservedDiscovery = nextSiteInputs.online_existing_conditions_discovery_v1;
+          setAutoExistingConditionsStatus({
+            status: "waiting",
+            message: "Source lookup cancelled. The site remains editable; rerun when you are ready.",
+            candidateCount: Number(preservedDiscovery?.candidate_count ?? 0),
+            missing: (preservedDiscovery?.sources ?? [])
+              .filter((source) => Number(source.candidate_count ?? 0) <= 0)
+              .map((source) => String(source.label || source.key || source.source_type || "source unavailable"))
+              .slice(0, 6),
+          });
+          return;
+        }
         const message = `Geocode failed: ${panelErrorMessage(error, "Check the address or retry after the backend responds.")}`;
         setAutoExistingConditionsStatus({
           status: "blocked",
@@ -672,7 +761,10 @@ export function useDashboardSiteAddressAction({
           nextAction: "Check the address or retry after the backend responds.",
         });
       } finally {
-        setOnlineDiscoveryBusy(false);
+        if (sourceContextAbortRef.current === sourceContextController) {
+          sourceContextAbortRef.current = null;
+          setOnlineDiscoveryBusy(false);
+        }
       }
     },
     [
@@ -702,6 +794,7 @@ export function useDashboardSiteAddressAction({
       setViewportCenter,
       siteAddress,
       siteScaleLockedRef,
+      sourceContextAbortRef,
       token,
       updateProjectStatus,
     ],

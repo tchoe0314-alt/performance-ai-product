@@ -3,6 +3,8 @@ import { DisclosurePanel } from "./ui";
 type AutoExistingConditionsStatus = {
   status: string;
   message: string;
+  progress?: number;
+  latestSource?: string;
 };
 
 type AutoSiteContextFlowSummary = {
@@ -44,6 +46,7 @@ type SetupAutoSiteContextSectionProps = {
   onlineDiscoveryBusy: boolean;
   onReviewFoundContext: () => void;
   onRerunSiteContext: () => void;
+  onCancelSiteContext: () => void;
 };
 
 function rowDotClass(status: string): string {
@@ -95,6 +98,7 @@ export function SetupAutoSiteContextSection({
   onlineDiscoveryBusy,
   onReviewFoundContext,
   onRerunSiteContext,
+  onCancelSiteContext,
 }: SetupAutoSiteContextSectionProps) {
   const foundCount = autoSiteContextRows.filter((row) => row.status === "found").length;
   const missingCount = autoSiteContextRows.filter((row) => row.status === "missing").length;
@@ -128,9 +132,26 @@ export function SetupAutoSiteContextSection({
       bodyClassName=""
     >
       <div data-testid="auto-site-context-summary">
+        {onlineDiscoveryBusy ? (
+          <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2" data-testid="auto-site-context-progress">
+            <div className="flex items-center justify-between gap-3 text-xs font-semibold text-sky-900">
+              <span className="min-w-0 truncate">{autoExistingConditionsStatus.latestSource || "Checking site sources"}</span>
+              <span className="shrink-0">{Math.max(0, Math.min(100, Math.round(autoExistingConditionsStatus.progress ?? 0)))}%</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sky-100" aria-hidden="true">
+              <div
+                className="h-full rounded-full bg-sky-600 transition-[width] duration-200"
+                style={{ width: `${Math.max(4, Math.min(100, autoExistingConditionsStatus.progress ?? 4))}%` }}
+              />
+            </div>
+            <p className="mt-2 text-xs font-medium leading-5 text-sky-800">{sourceGuidanceMessage}</p>
+          </div>
+        ) : null}
         <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-testid="auto-site-context-candidates">
           {autoExistingConditionsStatus.status === "blocked"
             ? sourceGuidanceMessage
+            : autoExistingConditionsStatus.status === "waiting" && /cancel/i.test(autoExistingConditionsStatus.message)
+              ? sourceGuidanceMessage
             : autoSiteContextFlowSummary.candidateCount
               ? `${autoSiteContextFlowSummary.candidateCount} source candidate${autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available for review. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`
               : `No source candidates found yet. Sources still needed: ${autoSiteContextFlowSummary.missingLabels.join(", ") || "source evidence not available yet"}.`}
@@ -221,15 +242,27 @@ export function SetupAutoSiteContextSection({
         >
           Review / Accept Found Items
         </button>
-        <button
-          type="button"
-          onClick={onRerunSiteContext}
-          disabled={!hasAppliedAddress || onlineDiscoveryBusy}
-          className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-          data-testid="rerun-site-context"
-        >
-          {hasAppliedAddress ? "Rerun Site Context" : "Apply Address First"}
-        </button>
+        <div className={`mt-2 grid gap-2 ${onlineDiscoveryBusy ? "grid-cols-2" : "grid-cols-1"}`}>
+          <button
+            type="button"
+            onClick={onRerunSiteContext}
+            disabled={!hasAppliedAddress || onlineDiscoveryBusy}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            data-testid="rerun-site-context"
+          >
+            {hasAppliedAddress ? "Rerun Site Context" : "Apply Address First"}
+          </button>
+          {onlineDiscoveryBusy ? (
+            <button
+              type="button"
+              onClick={onCancelSiteContext}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:bg-slate-50"
+              data-testid="cancel-site-context"
+            >
+              Cancel Lookup
+            </button>
+          ) : null}
+        </div>
       </div>
     </DisclosurePanel>
   );

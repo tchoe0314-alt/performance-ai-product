@@ -595,6 +595,7 @@ class ExistingConditionsOnlineFetchPayload(BaseModel):
     include_elevation: bool = True
     include_imagery_detection: bool = True
     include_worldwide_context: bool = True
+    force_refresh: bool = False
     active_site_boundary: Dict[str, Any] = Field(default_factory=dict)
 
 

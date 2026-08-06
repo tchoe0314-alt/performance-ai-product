@@ -211,10 +211,16 @@ export async function postJsonWithTimeout<T>(
   timeoutMs = 60000,
 ): Promise<T> {
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  options.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  if (options.signal?.aborted) controller.abort();
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await postJson<T>(path, body, { ...options, signal: options.signal ?? controller.signal });
+    return await postJson<T>(path, body, { ...options, signal: controller.signal });
   } catch (error) {
+    if (options.signal?.aborted) {
+      throw error;
+    }
     if (error instanceof Error && error.name === "AbortError") {
       throw new CivoraApiError(
         "Source lookup took too long. The site stayed editable; retry source discovery or continue with manual/survey evidence.",
@@ -224,6 +230,7 @@ export async function postJsonWithTimeout<T>(
     throw error;
   } finally {
     window.clearTimeout(timeout);
+    options.signal?.removeEventListener("abort", abortFromCaller);
   }
 }
 

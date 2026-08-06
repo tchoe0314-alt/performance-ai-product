@@ -1,4 +1,6 @@
 import unittest
+from threading import Lock
+from time import sleep
 
 from backend.planning.existing_conditions_online import (
     ONLINE_DISCOVERY_VERSION,
@@ -188,7 +190,146 @@ class _TerrainGridSession:
         return _Response({"samples": samples})
 
 
+class _ConcurrentSession:
+    def __init__(self, fail_url_fragment=None):
+        self._lock = Lock()
+        self.fail_url_fragment = fail_url_fragment
+        self.active = 0
+        self.max_active = 0
+        self.calls = []
+
+    def get(self, url, params=None, timeout=None):
+        with self._lock:
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            self.calls.append({"url": url, "params": params, "timeout": timeout})
+        try:
+            sleep(0.04)
+            if self.fail_url_fragment and self.fail_url_fragment in url:
+                raise RuntimeError(f"simulated provider failure: {self.fail_url_fragment}")
+            return _Response(
+                {
+                    "type": "FeatureCollection",
+                    "features": [
+                        {
+                            "id": url,
+                            "properties": {},
+                            "geometry": {"type": "Polygon", "coordinates": []},
+                        }
+                    ],
+                }
+            )
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
 class ExistingConditionsOnlineTests(unittest.TestCase):
+    def test_online_sources_fan_out_concurrently_and_report_progress(self) -> None:
+        session = _ConcurrentSession()
+        progress = []
+
+        result = fetch_online_existing_conditions(
+            address="100 Main St, Madison, WI",
+            bbox={"west": -89.41, "south": 43.06, "east": -89.38, "north": 43.09},
+            geocode_context={
+                "success": True,
+                "status": "ready",
+                "lat": 43.0748,
+                "lng": -89.3848,
+                "display_name": "100 Main St, Madison, WI",
+                "provider": "test",
+                "location_context": {"jurisdiction": {"country_code": "US", "state": "WI"}},
+            },
+            parcel_service_url="https://county.example/Parcels/MapServer",
+            building_footprints_service_url="https://city.example/Buildings/MapServer",
+            roads_service_url="https://city.example/Roads/MapServer",
+            include_elevation=False,
+            include_easements=False,
+            include_zoning=False,
+            include_utilities=False,
+            include_contours=False,
+            include_imagery_detection=False,
+            include_worldwide_context=False,
+            progress_callback=progress.append,
+            session=session,
+        )
+
+        metrics = result["source_context_fetch_metrics_v1"]
+        self.assertGreaterEqual(session.max_active, 2)
+        self.assertEqual(metrics["mode"], "concurrent_provider_fanout")
+        self.assertEqual(metrics["task_count"], 5)
+        self.assertEqual(metrics["failed_task_count"], 0)
+        self.assertEqual(len(progress), 5)
+        self.assertEqual(progress[-1]["completed_source_count"], 5)
+        self.assertEqual(progress[-1]["total_source_count"], 5)
+
+    def test_concurrent_provider_failure_is_isolated_and_reported(self) -> None:
+        session = _ConcurrentSession(fail_url_fragment="Parcels")
+
+        result = fetch_online_existing_conditions(
+            address="100 Main St, Madison, WI",
+            bbox={"west": -89.41, "south": 43.06, "east": -89.38, "north": 43.09},
+            geocode_context={
+                "success": True,
+                "status": "ready",
+                "lat": 43.0748,
+                "lng": -89.3848,
+                "display_name": "100 Main St, Madison, WI",
+                "provider": "test",
+                "location_context": {"jurisdiction": {"country_code": "US", "state": "WI"}},
+            },
+            parcel_service_url="https://county.example/Parcels/MapServer",
+            building_footprints_service_url="https://city.example/Buildings/MapServer",
+            roads_service_url="https://city.example/Roads/MapServer",
+            include_elevation=False,
+            include_easements=False,
+            include_zoning=False,
+            include_utilities=False,
+            include_contours=False,
+            include_imagery_detection=False,
+            include_worldwide_context=False,
+            session=session,
+        )
+
+        sources = result["source_results"]
+        self.assertEqual(sources["parcels"]["status"], "fetch_failed")
+        self.assertTrue(sources["building_footprints"]["success"])
+        self.assertTrue(sources["roads_row"]["success"])
+        self.assertEqual(result["source_context_fetch_metrics_v1"]["failed_task_count"], 1)
+
+    def test_progress_callback_can_interrupt_result_assembly(self) -> None:
+        session = _ConcurrentSession()
+
+        with self.assertRaisesRegex(RuntimeError, "cancelled during source lookup"):
+            fetch_online_existing_conditions(
+                address="100 Main St, Madison, WI",
+                bbox={"west": -89.41, "south": 43.06, "east": -89.38, "north": 43.09},
+                geocode_context={
+                    "success": True,
+                    "status": "ready",
+                    "lat": 43.0748,
+                    "lng": -89.3848,
+                    "display_name": "100 Main St, Madison, WI",
+                    "provider": "test",
+                    "location_context": {"jurisdiction": {"country_code": "US", "state": "WI"}},
+                },
+                parcel_service_url="https://county.example/Parcels/MapServer",
+                building_footprints_service_url="https://city.example/Buildings/MapServer",
+                roads_service_url="https://city.example/Roads/MapServer",
+                include_elevation=False,
+                include_floodplain=False,
+                include_wetlands=False,
+                include_easements=False,
+                include_zoning=False,
+                include_utilities=False,
+                include_contours=False,
+                include_imagery_detection=False,
+                include_worldwide_context=False,
+                progress_callback=lambda event: (_ for _ in ()).throw(RuntimeError("cancelled during source lookup")),
+                session=session,
+            )
+
     def test_usgs_surface_grid_preserves_source_truth_and_elevation_shape(self) -> None:
         result = fetch_usgs_elevation_grid(
             {"west": -96.24, "south": 41.18, "east": -96.23, "north": 41.19},

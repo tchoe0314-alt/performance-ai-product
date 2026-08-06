@@ -566,6 +566,7 @@ function PerformanceAIDashboardView({
   const [imageUploadState, setImageUploadState] = useState<"idle" | "uploading" | "uploaded" | "detecting" | "failed">("idle");
   const [imageUploadNote, setImageUploadNote] = useState<string | null>(null);
   const autoExistingRunKeyRef = useRef("");
+  const sourceContextAbortRef = useRef<AbortController | null>(null);
   const [pendingClarification, setPendingClarification] = useState<{
     action: string;
     payload?: Record<string, unknown>;
@@ -3283,6 +3284,7 @@ function PerformanceAIDashboardView({
     setOnlineDiscoveryBusy,
     setSurveySlopeEstimate,
     setUseSurveyForGrading,
+    sourceContextAbortRef,
     siteAddress,
     siteInputs,
     surveySlopeEstimate,
@@ -3352,6 +3354,7 @@ function PerformanceAIDashboardView({
     localGisProviderRegistry,
     payloadPreview,
     projectLoadRequestRef,
+    sourceContextAbortRef,
     saveProject,
     selectedAddressSuggestion,
     setActiveSidePanel,
@@ -3373,6 +3376,28 @@ function PerformanceAIDashboardView({
     token,
     updateProjectStatus,
   });
+
+  const handleCancelSiteContext = useCallback(() => {
+    const activeController = sourceContextAbortRef.current;
+    sourceContextAbortRef.current = null;
+    activeController?.abort();
+    setOnlineDiscoveryBusy(false);
+    setAutoExistingConditionsStatus({
+      status: "waiting",
+      message: "Source lookup cancelled. Existing reviewed context remains unchanged.",
+      candidateCount: autoSiteContextFlowSummary.candidateCount,
+      missing: autoSiteContextFlowSummary.missingLabels,
+    });
+    updateProjectStatus({
+      state: "needs review",
+      area: "setup",
+      title: "Source lookup cancelled",
+      detail: "The active source check was cancelled before new candidates were applied.",
+      nextAction: "Rerun Site Context or continue with manual and uploaded evidence.",
+    });
+  }, [autoSiteContextFlowSummary.candidateCount, autoSiteContextFlowSummary.missingLabels, updateProjectStatus]);
+
+  useEffect(() => () => sourceContextAbortRef.current?.abort(), []);
 
   const { handleCreateCenteredSiteFromSetup, handleMapCenter } = useDashboardSiteSetupUtilityActions({
     autoFitSite,
@@ -5201,7 +5226,8 @@ function PerformanceAIDashboardView({
     onlineFoundSources,
     candidateReviewItemCount: candidateReviewItems.length,
     onReviewFoundContext: () => handleOpenSidePanel("data"),
-    onRerunSiteContext: () => void saveSiteAddress(),
+    onRerunSiteContext: () => void saveSiteAddress(undefined, { forceRefresh: true }),
+    onCancelSiteContext: handleCancelSiteContext,
     planPdfReady: Boolean(planPdfAnalysis),
     mapAnalysisReady: Boolean(mapAnalysis?.success),
     detectionScaleFtPerPx,

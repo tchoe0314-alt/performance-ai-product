@@ -52,6 +52,7 @@ type UseDashboardAutoExistingConditionsOptions = {
   setOnlineDiscoveryBusy: Dispatch<SetStateAction<boolean>>;
   setSurveySlopeEstimate: Dispatch<SetStateAction<SurveySlopeResponse | null>>;
   setUseSurveyForGrading: Dispatch<SetStateAction<boolean>>;
+  sourceContextAbortRef: MutableRefObject<AbortController | null>;
   siteAddress: string;
   siteInputs: SiteInputs;
   surveySlopeEstimate: SurveySlopeResponse | null;
@@ -81,6 +82,7 @@ export function useDashboardAutoExistingConditions({
   setOnlineDiscoveryBusy,
   setSurveySlopeEstimate,
   setUseSurveyForGrading,
+  sourceContextAbortRef,
   siteAddress,
   siteInputs,
   surveySlopeEstimate,
@@ -93,6 +95,12 @@ export function useDashboardAutoExistingConditions({
     async (projectInputOverride?: ProjectInput) => {
       const currentInput = projectInputOverride ?? currentProject?.project_input ?? payloadPreview;
       const currentSiteInputs = (currentInput?.meta?.site_inputs ?? {}) as SiteInputs;
+      const priorDiscovery = currentSiteInputs.online_existing_conditions_discovery_v1;
+      const priorCandidateCount = Number(priorDiscovery?.candidate_count ?? 0);
+      const priorMissingSources = (priorDiscovery?.sources ?? [])
+        .filter((source) => Number(source.candidate_count ?? 0) <= 0)
+        .map((source) => String(source.label || source.key || source.source_type || "source unavailable"))
+        .slice(0, 6);
       const geocode = currentSiteInputs.geocode;
       const address = String(currentSiteInputs.address || geocode?.display_name || siteAddress || "").trim();
       const site = buildingPlacements.find((item) => item.type === "site");
@@ -143,6 +151,9 @@ export function useDashboardAutoExistingConditions({
       if (autoExistingRunKeyRef.current === runKey) {
         return;
       }
+      sourceContextAbortRef.current?.abort();
+      const sourceContextController = new AbortController();
+      sourceContextAbortRef.current = sourceContextController;
       autoExistingRunKeyRef.current = runKey;
       setOnlineDiscoveryBusy(true);
       setAutoExistingConditionsStatus({
@@ -214,16 +225,31 @@ export function useDashboardAutoExistingConditions({
               include_worldwide_context: true,
               provider_registry: currentSiteInputs.local_gis_provider_registry_v1 ?? siteInputs?.local_gis_provider_registry_v1 ?? {},
             },
+            signal: sourceContextController.signal,
+            onQueued: (job) => {
+              setAutoExistingConditionsStatus({
+                status: "running",
+                message: "Source lookup queued. Civora will show each source as it completes.",
+                candidateCount: 0,
+                missing: [],
+                progress: Number(job.progress ?? 0),
+                jobId: job.job_id,
+              });
+            },
             onProgress: (job) => {
               setAutoExistingConditionsStatus({
                 status: "running",
                 message: job.stage_detail || "Checking site sources in the background...",
                 candidateCount: 0,
                 missing: [],
+                progress: Number(job.progress ?? 0),
+                jobId: job.job_id,
+                latestSource: job.stage,
               });
             },
           });
         } catch (error) {
+          if (error instanceof Error && error.name === "AbortError") throw error;
           onlineFetch = {
             success: false,
             status: "fetch_failed",
@@ -315,6 +341,10 @@ export function useDashboardAutoExistingConditions({
             onlineFetch?.civora_vision_review_workspace_v1 ?? currentSiteInputs.civora_vision_review_workspace_v1,
           source_context_detection_coverage_v1:
             onlineFetch?.source_context_detection_coverage_v1 ?? currentSiteInputs.source_context_detection_coverage_v1,
+          source_context_fetch_metrics_v1:
+            onlineFetch?.source_context_fetch_metrics_v1 ?? currentSiteInputs.source_context_fetch_metrics_v1,
+          source_context_cache_v1:
+            onlineFetch?.source_context_cache_v1 ?? currentSiteInputs.source_context_cache_v1,
           auto_existing_conditions_v1: autoExistingConditions,
           ...(slopeEstimateOverride
             ? {
@@ -352,6 +382,8 @@ export function useDashboardAutoExistingConditions({
                     candidate_review_inbox_v1: onlineFetch?.candidate_review_inbox_v1,
                     civora_vision_review_workspace_v1: onlineFetch?.civora_vision_review_workspace_v1,
                     source_context_detection_coverage_v1: onlineFetch?.source_context_detection_coverage_v1,
+                    source_context_fetch_metrics_v1: onlineFetch?.source_context_fetch_metrics_v1,
+                    source_context_cache_v1: onlineFetch?.source_context_cache_v1,
                     auto_existing_conditions_v1: autoExistingConditions,
                   },
                 },
@@ -418,6 +450,24 @@ export function useDashboardAutoExistingConditions({
           void handleGenerateSystemRef.current?.("grading", { slopeEstimateOverride });
         }
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          autoExistingRunKeyRef.current = "";
+          setAutoExistingConditionsStatus({
+            status: "waiting",
+            message: "Source lookup cancelled. Existing reviewed context remains unchanged.",
+            candidateCount: priorCandidateCount,
+            missing: priorMissingSources,
+          });
+          updateProjectStatus({
+            state: "needs review",
+            area: "setup",
+            title: "Source lookup cancelled",
+            detail: "The source check was cancelled before new candidates were applied.",
+            nextAction: "Rerun Site Context or continue with the current accepted evidence.",
+          });
+          return;
+        }
+        autoExistingRunKeyRef.current = "";
         const message = error instanceof Error ? error.message : "Automatic existing-condition discovery could not finish.";
         setAutoExistingConditionsStatus({
           status: "blocked",
@@ -433,7 +483,10 @@ export function useDashboardAutoExistingConditions({
           nextAction: "Check backend/provider connectivity, then recheck sources inside the site.",
         });
       } finally {
-        setOnlineDiscoveryBusy(false);
+        if (sourceContextAbortRef.current === sourceContextController) {
+          sourceContextAbortRef.current = null;
+          setOnlineDiscoveryBusy(false);
+        }
       }
     },
     [
@@ -458,6 +511,7 @@ export function useDashboardAutoExistingConditions({
       setUseSurveyForGrading,
       siteAddress,
       siteInputs,
+      sourceContextAbortRef,
       surveySlopeEstimate?.slope_percent,
       token,
       updateProjectStatus,

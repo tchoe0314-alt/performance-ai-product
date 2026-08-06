@@ -120,6 +120,7 @@ type UseDashboardStartPanelPropsInput = {
   candidateReviewItemCount: number;
   onReviewFoundContext: () => void;
   onRerunSiteContext: () => void;
+  onCancelSiteContext: () => void;
   planPdfReady: boolean;
   mapAnalysisReady: boolean;
   detectionScaleFtPerPx: number | null;
@@ -219,6 +220,7 @@ export function useDashboardStartPanelProps({
   candidateReviewItemCount,
   onReviewFoundContext,
   onRerunSiteContext,
+  onCancelSiteContext,
   planPdfReady,
   mapAnalysisReady,
   detectionScaleFtPerPx,
@@ -418,6 +420,7 @@ export function useDashboardStartPanelProps({
       onlineDiscoveryBusy,
       onReviewFoundContext,
       onRerunSiteContext,
+      onCancelSiteContext,
     },
   }), [
     addressNeedsApply,
@@ -447,6 +450,7 @@ export function useDashboardStartPanelProps({
     onLotWidthChange,
     onOpenImport,
     onRerunSiteContext,
+    onCancelSiteContext,
     onReviewFoundContext,
     onSaveSiteAddress,
     onSelectedAddressSuggestionChange,

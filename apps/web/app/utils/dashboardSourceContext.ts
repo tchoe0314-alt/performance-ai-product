@@ -21,6 +21,8 @@ const ADDRESS_SOURCE_CONTEXT_KEYS = [
   "civora_vision_ground_truth_coverage_v1",
   "civora_vision_review_workspace_v1",
   "source_context_detection_coverage_v1",
+  "source_context_fetch_metrics_v1",
+  "source_context_cache_v1",
   "auto_existing_conditions_v1",
   "imagery_object_detection_report_v1",
   "site_intelligence_summary_v1",

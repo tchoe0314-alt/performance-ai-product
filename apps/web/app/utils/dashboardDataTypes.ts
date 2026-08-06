@@ -26,6 +26,8 @@ export type OnlineExistingConditionsFetchResponse = {
   candidate_review_inbox_v1?: CandidateReviewInbox;
   civora_vision_review_workspace_v1?: CivoraVisionReviewWorkspace;
   source_context_detection_coverage_v1?: Record<string, unknown>;
+  source_context_fetch_metrics_v1?: Record<string, unknown>;
+  source_context_cache_v1?: Record<string, unknown>;
   warnings?: string[];
 };
 export type AutoExistingConditionsUiStatus = {
@@ -33,6 +35,9 @@ export type AutoExistingConditionsUiStatus = {
   message: string;
   candidateCount: number;
   missing: string[];
+  progress?: number;
+  jobId?: string;
+  latestSource?: string;
 };
 export type AutoSiteContextFlowSummary = {
   candidateCount: number;

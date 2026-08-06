@@ -1382,6 +1382,8 @@ export type PlanMeta = {
   existing_conditions_package?: Record<string, unknown>;
   existing_conditions_summary?: Record<string, unknown>;
   source_context_detection_coverage_v1?: Record<string, unknown>;
+  source_context_fetch_metrics_v1?: Record<string, unknown>;
+  source_context_cache_v1?: Record<string, unknown>;
   candidate_rule_report?: {
     candidate_count?: number;
     candidate_rules?: Array<Record<string, unknown>>;
@@ -1612,6 +1614,8 @@ export type SiteInputs = {
   civora_vision_ground_truth_coverage_v1?: Record<string, unknown>;
   existing_conditions_package?: Record<string, unknown>;
   source_context_detection_coverage_v1?: Record<string, unknown>;
+  source_context_fetch_metrics_v1?: Record<string, unknown>;
+  source_context_cache_v1?: Record<string, unknown>;
   auto_existing_conditions_v1?: Record<string, unknown>;
   viewport_bounds?: {
     north?: number;

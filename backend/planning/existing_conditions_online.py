@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from time import monotonic
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import requests
@@ -1493,6 +1495,7 @@ def fetch_online_existing_conditions(
     standards_jurisdiction: Optional[Dict[str, Any]] = None,
     provider_registry: Optional[Dict[str, Any]] = None,
     active_site_boundary: Optional[Dict[str, Any]] = None,
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     session: Any = requests,
 ) -> Dict[str, Any]:
     source_results: Dict[str, Dict[str, Any]] = {}
@@ -1577,281 +1580,474 @@ def fetch_online_existing_conditions(
         }
 
     center_lat, center_lng = bbox_center(working_bbox)
-    if include_elevation:
+    fetch_started = monotonic()
+    source_tasks: List[Tuple[str, str, Callable[[], Dict[str, Any]]]] = []
+    source_timings: Dict[str, float] = {}
+    task_payloads: Dict[str, Dict[str, Any]] = {}
+
+    def notify_progress(*, label: str, completed: int, total: int) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(
+            {
+                "stage": "Finding Site Sources",
+                "detail": f"Checked {label}. {completed} of {total} source checks complete.",
+                "progress": 20 + round(52 * completed / max(total, 1)),
+                "completed_source_count": completed,
+                "total_source_count": total,
+                "latest_source": label,
+            }
+        )
+
+    def add_task(task_id: str, label: str, fetcher: Callable[[], Dict[str, Any]]) -> None:
+        source_tasks.append((task_id, label, fetcher))
+
+    def fetch_terrain_sources() -> Dict[str, Any]:
+        attempts: Dict[str, Any] = {}
         if include_worldwide_context and supplied_geocode and not is_us_location:
-            terrain_grid = fetch_global_elevation_grid(working_bbox, session=session)
-            elevation = fetch_global_elevation_point(center_lat, center_lng, session=session)
+            terrain = fetch_global_elevation_grid(working_bbox, session=session)
+            point = fetch_global_elevation_point(center_lat, center_lng, session=session)
         else:
-            terrain_grid = fetch_usgs_elevation_grid(working_bbox, session=session)
-            if terrain_grid.get("success"):
+            terrain = fetch_usgs_elevation_grid(working_bbox, session=session)
+            if terrain.get("success"):
                 center_sample = min(
-                    safe_list(terrain_grid.get("samples")),
+                    safe_list(terrain.get("samples")),
                     key=lambda item: abs(safe_float(safe_dict(item).get("x_ratio")) - 0.5)
                     + abs(safe_float(safe_dict(item).get("y_ratio")) - 0.5),
                 )
-                elevation = {
+                point = {
                     "success": True,
                     "status": "ready",
-                    "source": terrain_grid.get("source"),
-                    "source_type": terrain_grid.get("source_type"),
-                    "source_tier": terrain_grid.get("source_tier"),
-                    "provider": terrain_grid.get("provider"),
+                    "source": terrain.get("source"),
+                    "source_type": terrain.get("source_type"),
+                    "source_tier": terrain.get("source_tier"),
+                    "provider": terrain.get("provider"),
                     "lat": safe_float(safe_dict(center_sample).get("lat"), center_lat),
                     "lng": safe_float(safe_dict(center_sample).get("lng"), center_lng),
                     "elevation": safe_float(safe_dict(center_sample).get("elevation_ft")),
                     "units": "Feet",
-                    "source_date": terrain_grid.get("source_date"),
-                    "horizontal_resolution": terrain_grid.get("horizontal_resolution"),
-                    "vertical_datum": terrain_grid.get("vertical_datum"),
-                    "truth_label": terrain_grid.get("truth_label"),
+                    "source_date": terrain.get("source_date"),
+                    "horizontal_resolution": terrain.get("horizontal_resolution"),
+                    "vertical_datum": terrain.get("vertical_datum"),
+                    "truth_label": terrain.get("truth_label"),
                 }
             else:
-                elevation = fetch_usgs_elevation_point(center_lat, center_lng, session=session)
-            if include_worldwide_context and supplied_geocode and not terrain_grid.get("success") and not elevation.get("success"):
-                source_results["usgs_terrain_grid_attempt"] = terrain_grid
-                source_results["usgs_elevation_attempt"] = elevation
-                terrain_grid = fetch_global_elevation_grid(working_bbox, session=session)
-                elevation = fetch_global_elevation_point(center_lat, center_lng, session=session)
-    else:
-        terrain_grid = {
-            "success": False,
-            "source_type": "usgs_3dep_elevation_grid",
-            "status": "skipped",
-            "warnings": ["Terrain-grid fetch skipped by request."],
-        }
-        elevation = {
-            "success": False,
-            "source_type": "usgs_3dep_epqs",
-            "status": "skipped",
-            "warnings": ["Elevation fetch skipped by request."],
-        }
-    source_results["terrain_grid"] = terrain_grid
-    source_results["elevation"] = elevation
+                point = fetch_usgs_elevation_point(center_lat, center_lng, session=session)
+            if include_worldwide_context and supplied_geocode and not terrain.get("success") and not point.get("success"):
+                attempts["usgs_terrain_grid_attempt"] = terrain
+                attempts["usgs_elevation_attempt"] = point
+                terrain = fetch_global_elevation_grid(working_bbox, session=session)
+                point = fetch_global_elevation_point(center_lat, center_lng, session=session)
+        return {"terrain_grid": terrain, "elevation": point, **attempts}
 
-    layer_imports: List[Dict[str, Any]] = []
+    if include_elevation:
+        add_task("terrain", "terrain and elevation", fetch_terrain_sources)
+    else:
+        task_payloads["terrain"] = {
+            "terrain_grid": {
+                "success": False,
+                "source_type": "usgs_3dep_elevation_grid",
+                "status": "skipped",
+                "warnings": ["Terrain-grid fetch skipped by request."],
+            },
+            "elevation": {
+                "success": False,
+                "source_type": "usgs_3dep_epqs",
+                "status": "skipped",
+                "warnings": ["Elevation fetch skipped by request."],
+            },
+        }
+
     if include_floodplain:
         floodplain_provider = selected_provider(registry, "floodplain")
         floodplain_arcgis = safe_dict(floodplain_provider.get("arcgis"))
         if safe_str(floodplain_arcgis.get("service_url")) and safe_str(floodplain_provider.get("jurisdiction_level")) != "federal":
-            floodplain = fetch_arcgis_layer_geojson(
-                service_url=safe_str(floodplain_arcgis.get("service_url")),
-                layer_id=int(floodplain_arcgis.get("layer_id") or 0),
-                bbox=working_bbox,
-                source_type="configured_floodplain_arcgis",
-                layer_name="floodplain",
-                provider=floodplain_provider,
-                session=session,
+            add_task(
+                "floodplain",
+                "floodplain",
+                lambda: fetch_arcgis_layer_geojson(
+                    service_url=safe_str(floodplain_arcgis.get("service_url")),
+                    layer_id=int(floodplain_arcgis.get("layer_id") or 0),
+                    bbox=working_bbox,
+                    source_type="configured_floodplain_arcgis",
+                    layer_name="floodplain",
+                    provider=floodplain_provider,
+                    session=session,
+                ),
             )
         elif supplied_geocode and not is_us_location:
-            floodplain = _source_not_applicable(
-                source_type="fema_nfhl_arcgis",
-                label="FEMA floodplain",
-                country_code=country_code,
+            task_payloads["floodplain"] = _source_not_applicable(
+                source_type="fema_nfhl_arcgis", label="FEMA floodplain", country_code=country_code
             )
         else:
-            floodplain = fetch_fema_floodplain(working_bbox, session=session)
-        source_results["floodplain"] = floodplain
-        layer_imports.append(floodplain)
+            add_task("floodplain", "floodplain", lambda: fetch_fema_floodplain(working_bbox, session=session))
+
     if include_wetlands:
         wetlands_provider = selected_provider(registry, "wetlands")
         wetlands_arcgis = safe_dict(wetlands_provider.get("arcgis"))
         if safe_str(wetlands_arcgis.get("service_url")) and safe_str(wetlands_provider.get("jurisdiction_level")) != "federal":
-            wetlands = fetch_arcgis_layer_geojson(
-                service_url=safe_str(wetlands_arcgis.get("service_url")),
-                layer_id=int(wetlands_arcgis.get("layer_id") or 0),
-                bbox=working_bbox,
-                source_type="configured_wetlands_arcgis",
-                layer_name="wetlands",
-                provider=wetlands_provider,
-                session=session,
+            add_task(
+                "wetlands",
+                "wetlands",
+                lambda: fetch_arcgis_layer_geojson(
+                    service_url=safe_str(wetlands_arcgis.get("service_url")),
+                    layer_id=int(wetlands_arcgis.get("layer_id") or 0),
+                    bbox=working_bbox,
+                    source_type="configured_wetlands_arcgis",
+                    layer_name="wetlands",
+                    provider=wetlands_provider,
+                    session=session,
+                ),
             )
         elif supplied_geocode and not is_us_location:
-            wetlands = _source_not_applicable(
-                source_type="usfws_nwi_arcgis",
-                label="USFWS wetlands",
-                country_code=country_code,
+            task_payloads["wetlands"] = _source_not_applicable(
+                source_type="usfws_nwi_arcgis", label="USFWS wetlands", country_code=country_code
             )
         else:
-            wetlands = fetch_usfws_wetlands(working_bbox, session=session)
-        source_results["wetlands"] = wetlands
-        layer_imports.append(wetlands)
+            add_task("wetlands", "wetlands", lambda: fetch_usfws_wetlands(working_bbox, session=session))
+
     if include_parcels:
         parcel_provider = selected_provider(registry, "parcels")
-        parcels = fetch_configured_parcels(
-            working_bbox,
-            service_url=parcel_service_url,
-            layer_id=parcel_layer_id,
-            provider=parcel_provider,
-            session=session,
+        add_task(
+            "parcels",
+            "parcels",
+            lambda: fetch_configured_parcels(
+                working_bbox,
+                service_url=parcel_service_url,
+                layer_id=parcel_layer_id,
+                provider=parcel_provider,
+                session=session,
+            ),
         )
-        source_results["parcels"] = parcels
-        layer_imports.append(parcels)
+
     if include_building_footprints:
         building_provider = selected_provider(registry, "buildings")
         building_arcgis = safe_dict(building_provider.get("arcgis"))
         building_url = safe_str(building_arcgis.get("service_url") or building_footprints_service_url)
         building_layer = int(building_arcgis.get("layer_id", building_footprints_layer_id) or 0)
-        if safe_str(building_url):
-            buildings = fetch_arcgis_layer_geojson(
-                service_url=building_url,
-                layer_id=building_layer,
-                bbox=working_bbox,
-                source_type="configured_building_footprints_arcgis",
-                layer_name="building_footprints",
-                provider=building_provider,
-                session=session,
+        if building_url:
+            add_task(
+                "building_footprints",
+                "building footprints",
+                lambda: fetch_arcgis_layer_geojson(
+                    service_url=building_url,
+                    layer_id=building_layer,
+                    bbox=working_bbox,
+                    source_type="configured_building_footprints_arcgis",
+                    layer_name="building_footprints",
+                    provider=building_provider,
+                    session=session,
+                ),
             )
         else:
-            buildings = _missing_configured_source(registry=registry, source_type="buildings", result_source_type="configured_building_footprints_arcgis", label="building footprint")
-        source_results["building_footprints"] = buildings
-        layer_imports.append(buildings)
+            task_payloads["building_footprints"] = _missing_configured_source(
+                registry=registry,
+                source_type="buildings",
+                result_source_type="configured_building_footprints_arcgis",
+                label="building footprint",
+            )
+
     if include_roads:
         roads_provider = selected_provider(registry, "roads_row")
         roads_arcgis = safe_dict(roads_provider.get("arcgis"))
         roads_url = safe_str(roads_arcgis.get("service_url") or roads_service_url)
         roads_layer = int(roads_arcgis.get("layer_id", roads_layer_id) or 0)
-        if safe_str(roads_url):
-            roads = fetch_arcgis_layer_geojson(
-                service_url=roads_url,
-                layer_id=roads_layer,
-                bbox=working_bbox,
-                source_type="configured_roads_row_arcgis",
-                layer_name="roads",
-                provider=roads_provider,
-                session=session,
+        if roads_url:
+            add_task(
+                "roads_row",
+                "roads and right-of-way",
+                lambda: fetch_arcgis_layer_geojson(
+                    service_url=roads_url,
+                    layer_id=roads_layer,
+                    bbox=working_bbox,
+                    source_type="configured_roads_row_arcgis",
+                    layer_name="roads",
+                    provider=roads_provider,
+                    session=session,
+                ),
             )
         else:
-            roads = _missing_configured_source(registry=registry, source_type="roads_row", result_source_type="configured_roads_row_arcgis", label="roads/right-of-way")
-        source_results["roads_row"] = roads
-        layer_imports.append(roads)
+            task_payloads["roads_row"] = _missing_configured_source(
+                registry=registry,
+                source_type="roads_row",
+                result_source_type="configured_roads_row_arcgis",
+                label="roads/right-of-way",
+            )
+
     if include_easements:
         if safe_str(easements_service_url):
-            easements = fetch_arcgis_layer_geojson(
-                service_url=easements_service_url,
-                layer_id=easements_layer_id,
-                bbox=working_bbox,
-                source_type="configured_easements_arcgis",
-                layer_name="easements",
-                session=session,
+            add_task(
+                "easements",
+                "easements",
+                lambda: fetch_arcgis_layer_geojson(
+                    service_url=easements_service_url,
+                    layer_id=easements_layer_id,
+                    bbox=working_bbox,
+                    source_type="configured_easements_arcgis",
+                    layer_name="easements",
+                    session=session,
+                ),
             )
         else:
-            easements = fetch_unconfigured_gis_source(source_type="configured_easements_arcgis", label="easement")
-        source_results["easements"] = easements
-        layer_imports.append(easements)
+            task_payloads["easements"] = fetch_unconfigured_gis_source(
+                source_type="configured_easements_arcgis", label="easement"
+            )
+
     if include_zoning:
         zoning_provider = selected_provider(registry, "zoning")
         zoning_arcgis = safe_dict(zoning_provider.get("arcgis"))
         zoning_url = safe_str(zoning_arcgis.get("service_url") or zoning_service_url)
         zoning_layer = int(zoning_arcgis.get("layer_id", zoning_layer_id) or 0)
         if zoning_url:
-            zoning = fetch_arcgis_layer_geojson(
-                service_url=zoning_url,
-                layer_id=zoning_layer,
-                bbox=working_bbox,
-                source_type="configured_zoning_arcgis",
-                layer_name="zoning",
-                provider=zoning_provider,
-                session=session,
+            add_task(
+                "zoning",
+                "zoning",
+                lambda: fetch_arcgis_layer_geojson(
+                    service_url=zoning_url,
+                    layer_id=zoning_layer,
+                    bbox=working_bbox,
+                    source_type="configured_zoning_arcgis",
+                    layer_name="zoning",
+                    provider=zoning_provider,
+                    session=session,
+                ),
             )
         else:
-            zoning = fetch_unconfigured_gis_source(source_type="configured_zoning_arcgis", label="zoning")
-        source_results["zoning"] = zoning
-        layer_imports.append(zoning)
+            task_payloads["zoning"] = fetch_unconfigured_gis_source(
+                source_type="configured_zoning_arcgis", label="zoning"
+            )
+
+    utility_task_ids: List[str] = []
     if include_utilities:
         utilities_providers = providers_for_source_type(registry, "utilities")
-        utility_results: List[Dict[str, Any]] = []
         if utilities_providers:
-            for utilities_provider in utilities_providers:
+            for index, utilities_provider in enumerate(utilities_providers):
                 utilities_arcgis = safe_dict(utilities_provider.get("arcgis"))
                 utilities_url = safe_str(utilities_arcgis.get("service_url"))
-                utilities_layer = int(utilities_arcgis.get("layer_id", 0) or 0)
                 if not utilities_url:
                     continue
-                utility_result = fetch_arcgis_layer_geojson(
-                    service_url=utilities_url,
-                    layer_id=utilities_layer,
+                task_id = f"utility:{index}"
+                utility_task_ids.append(task_id)
+                add_task(
+                    task_id,
+                    safe_str(utilities_provider.get("name"), "utility records"),
+                    lambda provider=utilities_provider, arcgis=utilities_arcgis, url=utilities_url: fetch_arcgis_layer_geojson(
+                        service_url=url,
+                        layer_id=int(arcgis.get("layer_id", 0) or 0),
+                        bbox=working_bbox,
+                        source_type="configured_existing_utilities_arcgis",
+                        layer_name="existing_utilities",
+                        provider=provider,
+                        session=session,
+                    ),
+                )
+        elif safe_str(utilities_service_url):
+            utility_task_ids.append("utility:configured")
+            add_task(
+                "utility:configured",
+                "utility records",
+                lambda: fetch_arcgis_layer_geojson(
+                    service_url=utilities_service_url,
+                    layer_id=utilities_layer_id,
                     bbox=working_bbox,
                     source_type="configured_existing_utilities_arcgis",
                     layer_name="existing_utilities",
-                    provider=utilities_provider,
                     session=session,
-                )
-                utility_results.append(utility_result)
-                layer_imports.append(utility_result)
-            utilities = _aggregate_layer_results(
-                source_type="configured_existing_utilities_arcgis",
-                layer_name="existing_utilities",
-                results=utility_results,
+                ),
             )
-        elif safe_str(utilities_service_url):
-            utilities = fetch_arcgis_layer_geojson(
-                service_url=utilities_service_url,
-                layer_id=utilities_layer_id,
-                bbox=working_bbox,
-                source_type="configured_existing_utilities_arcgis",
-                layer_name="existing_utilities",
-                session=session,
-            )
-            layer_imports.append(utilities)
         else:
-            utilities = _missing_configured_source(registry=registry, source_type="utilities", result_source_type="configured_existing_utilities_arcgis", label="existing utilities")
-        source_results["existing_utilities"] = utilities
+            task_payloads["existing_utilities"] = _missing_configured_source(
+                registry=registry,
+                source_type="utilities",
+                result_source_type="configured_existing_utilities_arcgis",
+                label="existing utilities",
+            )
+
     if include_contours:
         contours_provider = selected_provider(registry, "contours")
         contours_arcgis = safe_dict(contours_provider.get("arcgis"))
         contours_url = safe_str(contours_arcgis.get("service_url") or contours_service_url)
         contours_layer = int(contours_arcgis.get("layer_id", contours_layer_id) or 0)
-        if safe_str(contours_url):
-            contours = fetch_arcgis_layer_geojson(
-                service_url=contours_url,
-                layer_id=contours_layer,
-                bbox=working_bbox,
-                source_type="configured_contours_arcgis",
-                layer_name="contours",
-                provider=contours_provider,
-                session=session,
+        if contours_url:
+            add_task(
+                "contours",
+                "contours",
+                lambda: fetch_arcgis_layer_geojson(
+                    service_url=contours_url,
+                    layer_id=contours_layer,
+                    bbox=working_bbox,
+                    source_type="configured_contours_arcgis",
+                    layer_name="contours",
+                    provider=contours_provider,
+                    session=session,
+                ),
             )
         else:
-            contours = _missing_configured_source(registry=registry, source_type="contours", result_source_type="configured_contours_arcgis", label="contour")
-        if not _result_feature_count(contours) and terrain_grid.get("success"):
-            source_results["authoritative_contours_attempt"] = contours
-            contours = derive_review_contours_from_terrain_grid(terrain_grid)
-        source_results["contours"] = contours
-        layer_imports.append(contours)
+            task_payloads["contours"] = _missing_configured_source(
+                registry=registry,
+                source_type="contours",
+                result_source_type="configured_contours_arcgis",
+                label="contour",
+            )
+
+    terrain_provider_tasks: Dict[str, Tuple[str, str]] = {}
     if include_terrain_context:
         for provider_source_type, result_key, layer_name in (
             ("terrain_breaklines", "terrain_breaklines", "terrain_breaklines"),
             ("lidar_index", "lidar_index", "lidar_coverage"),
         ):
-            terrain_results: List[Dict[str, Any]] = []
-            for terrain_provider in providers_for_source_type(registry, provider_source_type):
+            for index, terrain_provider in enumerate(providers_for_source_type(registry, provider_source_type)):
                 terrain_arcgis = safe_dict(terrain_provider.get("arcgis"))
                 terrain_url = safe_str(terrain_arcgis.get("service_url"))
                 if not terrain_url:
                     continue
-                terrain_result = fetch_arcgis_layer_geojson(
-                    service_url=terrain_url,
-                    layer_id=int(terrain_arcgis.get("layer_id") or 0),
-                    bbox=working_bbox,
-                    source_type=f"configured_{provider_source_type}_arcgis",
-                    layer_name=layer_name,
-                    provider=terrain_provider,
-                    session=session,
+                task_id = f"{provider_source_type}:{index}"
+                terrain_provider_tasks[task_id] = (result_key, layer_name)
+                add_task(
+                    task_id,
+                    safe_str(terrain_provider.get("name"), layer_name),
+                    lambda provider=terrain_provider, arcgis=terrain_arcgis, url=terrain_url, source_type=provider_source_type, layer=layer_name: fetch_arcgis_layer_geojson(
+                        service_url=url,
+                        layer_id=int(arcgis.get("layer_id") or 0),
+                        bbox=working_bbox,
+                        source_type=f"configured_{source_type}_arcgis",
+                        layer_name=layer,
+                        provider=provider,
+                        session=session,
+                    ),
                 )
-                terrain_results.append(terrain_result)
-            if terrain_results:
-                aggregated_terrain = _aggregate_layer_results(
-                    source_type=f"configured_{provider_source_type}_arcgis",
-                    layer_name=layer_name,
-                    results=terrain_results,
-                )
-                source_results[result_key] = aggregated_terrain
-                layer_imports.append(aggregated_terrain)
 
-    worldwide_context: Dict[str, Any] = {}
     if include_worldwide_context and geocode.get("success"):
-        worldwide_context = fetch_openstreetmap_site_context(working_bbox, session=session)
+        add_task(
+            "worldwide_mapped_context",
+            "worldwide mapped context",
+            lambda: fetch_openstreetmap_site_context(working_bbox, session=session),
+        )
+    elif include_worldwide_context:
+        task_payloads["worldwide_mapped_context"] = {
+            "success": False,
+            "status": "not_requested_without_geocode",
+            "source_type": "openstreetmap_overpass",
+            "warnings": ["Worldwide mapped context needs usable geocoded coordinates."],
+            "review_required": True,
+        }
+
+    if include_imagery_detection:
+        add_task(
+            "imagery_object_detection",
+            "imagery detection",
+            lambda: fetch_imagery_object_detection(
+                address=address,
+                bbox=working_bbox,
+                location_context=location_context,
+                active_site_boundary=active_site_boundary,
+                provider_url=imagery_detection_provider_url,
+                provider_token=imagery_detection_provider_token,
+                provider_name=imagery_detection_provider_name,
+                session=session,
+            ),
+        )
+    else:
+        task_payloads["imagery_object_detection"] = fetch_imagery_object_detection(
+            provider_name="skipped", session=session
+        )
+
+    def run_source_task(task_id: str, fetcher: Callable[[], Dict[str, Any]]) -> Tuple[Dict[str, Any], float]:
+        started = monotonic()
+        try:
+            payload = safe_dict(fetcher())
+        except Exception as exc:
+            payload = {
+                "success": False,
+                "status": "fetch_failed",
+                "source_type": task_id.split(":", 1)[0],
+                "warnings": [safe_str(exc, f"{task_id} source lookup failed.")],
+                "review_required": True,
+            }
+        return payload, monotonic() - started
+
+    if source_tasks:
+        max_workers = min(8, len(source_tasks))
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="civora-source") as executor:
+            futures = {
+                executor.submit(run_source_task, task_id, fetcher): (task_id, label)
+                for task_id, label, fetcher in source_tasks
+            }
+            for completed_count, future in enumerate(as_completed(futures), start=1):
+                task_id, label = futures[future]
+                payload, elapsed = future.result()
+                task_payloads[task_id] = payload
+                source_timings[task_id] = round(elapsed, 3)
+                notify_progress(label=label, completed=completed_count, total=len(source_tasks))
+
+    terrain_payload = safe_dict(task_payloads.get("terrain"))
+    terrain_grid = safe_dict(terrain_payload.get("terrain_grid"))
+    elevation = safe_dict(terrain_payload.get("elevation"))
+    source_results["terrain_grid"] = terrain_grid
+    source_results["elevation"] = elevation
+    for attempt_key in ("usgs_terrain_grid_attempt", "usgs_elevation_attempt"):
+        if terrain_payload.get(attempt_key):
+            source_results[attempt_key] = safe_dict(terrain_payload.get(attempt_key))
+
+    layer_imports: List[Dict[str, Any]] = []
+    for source_key in (
+        "floodplain",
+        "wetlands",
+        "parcels",
+        "building_footprints",
+        "roads_row",
+        "easements",
+        "zoning",
+    ):
+        if source_key not in task_payloads:
+            continue
+        result = safe_dict(task_payloads.get(source_key))
+        source_results[source_key] = result
+        layer_imports.append(result)
+
+    if include_utilities:
+        utility_results = [safe_dict(task_payloads.get(task_id)) for task_id in utility_task_ids if task_payloads.get(task_id)]
+        if utility_results:
+            layer_imports.extend(utility_results)
+            source_results["existing_utilities"] = _aggregate_layer_results(
+                source_type="configured_existing_utilities_arcgis",
+                layer_name="existing_utilities",
+                results=utility_results,
+            )
+        else:
+            source_results["existing_utilities"] = safe_dict(task_payloads.get("existing_utilities"))
+
+    if include_contours:
+        contours = safe_dict(task_payloads.get("contours"))
+        if not _result_feature_count(contours) and terrain_grid.get("success"):
+            source_results["authoritative_contours_attempt"] = contours
+            contours = derive_review_contours_from_terrain_grid(terrain_grid)
+        source_results["contours"] = contours
+        layer_imports.append(contours)
+
+    for result_key, layer_name in (
+        ("terrain_breaklines", "terrain_breaklines"),
+        ("lidar_index", "lidar_coverage"),
+    ):
+        terrain_results = [
+            safe_dict(task_payloads.get(task_id))
+            for task_id, (target_key, _) in terrain_provider_tasks.items()
+            if target_key == result_key and task_payloads.get(task_id)
+        ]
+        if not terrain_results:
+            continue
+        aggregated_terrain = _aggregate_layer_results(
+            source_type=f"configured_{result_key}_arcgis",
+            layer_name=layer_name,
+            results=terrain_results,
+        )
+        source_results[result_key] = aggregated_terrain
+        layer_imports.append(aggregated_terrain)
+
+    worldwide_context = safe_dict(task_payloads.get("worldwide_mapped_context"))
+    if include_worldwide_context:
         source_results["worldwide_mapped_context"] = worldwide_context
+    if include_worldwide_context and geocode.get("success"):
         worldwide_layers = safe_dict(worldwide_context.get("layer_results"))
         fallback_targets = {
             **({"building_footprints": "building_footprints"} if include_building_footprints else {}),
@@ -1877,31 +2073,23 @@ def fetch_online_existing_conditions(
             "source_tier": "community_global",
             "review_required": True,
         }
-    elif include_worldwide_context:
-        worldwide_context = {
-            "success": False,
-            "status": "not_requested_without_geocode",
-            "source_type": "openstreetmap_overpass",
-            "warnings": ["Worldwide mapped context needs usable geocoded coordinates."],
-            "review_required": True,
-        }
-        source_results["worldwide_mapped_context"] = worldwide_context
 
     online_layers = online_import_to_gis_layers(*layer_imports)
-    imagery_detection = fetch_imagery_object_detection(
-        address=address,
-        bbox=working_bbox,
-        location_context=location_context,
-        active_site_boundary=active_site_boundary,
-        provider_url=imagery_detection_provider_url,
-        provider_token=imagery_detection_provider_token,
-        provider_name=imagery_detection_provider_name,
-        session=session,
-    ) if include_imagery_detection else fetch_imagery_object_detection(
-        provider_name="skipped",
-        session=session,
-    )
+    imagery_detection = safe_dict(task_payloads.get("imagery_object_detection"))
     source_results["imagery_object_detection"] = imagery_detection
+    source_fetch_metrics = {
+        "version": "source_context_fetch_metrics_v1",
+        "mode": "concurrent_provider_fanout",
+        "task_count": len(source_tasks),
+        "max_parallel_workers": min(8, len(source_tasks)) if source_tasks else 0,
+        "elapsed_seconds": round(monotonic() - fetch_started, 3),
+        "source_elapsed_seconds": source_timings,
+        "failed_task_count": sum(
+            1
+            for payload in task_payloads.values()
+            if safe_str(safe_dict(payload).get("status")) in {"fetch_failed", "provider_failed"}
+        ),
+    }
     warnings.extend(safe_list(online_layers.get("warnings")))
     source_strategy = _location_source_strategy(
         location_context=location_context,
@@ -1988,6 +2176,7 @@ def fetch_online_existing_conditions(
         ONLINE_DISCOVERY_VERSION: discovery_report,
         "map_feature_detection_report_v1": feature_report,
         "location_source_strategy_v1": source_strategy,
+        "source_context_fetch_metrics_v1": source_fetch_metrics,
         "canonical_existing_conditions": canonical,
         "warnings": warnings,
         "truth_label": "Fetched online public context. This does not replace boundary/topo survey, utility locates, record drawings, or jurisdiction confirmation.",

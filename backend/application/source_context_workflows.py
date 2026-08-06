@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
+import json
+import os
+from threading import Lock
+from time import monotonic
 from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
@@ -201,11 +206,49 @@ def build_source_context_job_runner(
     update_job_progress: Callable[..., None],
     fetch_source_context: Callable[..., Dict[str, Any]],
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+    cache_lock = Lock()
+    source_cache: Dict[str, Dict[str, Any]] = {}
+    cache_ttl_seconds = max(0, safe_int(os.getenv("CIVORA_SOURCE_CONTEXT_CACHE_TTL_SECONDS"), 300))
+    cache_max_entries = max(1, safe_int(os.getenv("CIVORA_SOURCE_CONTEXT_CACHE_MAX_ENTRIES"), 64))
+
+    def request_fingerprint(*, user_id: str, payload: Dict[str, Any]) -> str:
+        encoded = json.dumps(
+            {"user_id": user_id, "request": payload},
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+    def cached_result(cache_key: str) -> tuple[Optional[Dict[str, Any]], float]:
+        if not cache_ttl_seconds:
+            return None, 0.0
+        with cache_lock:
+            record = source_cache.get(cache_key)
+            if not record:
+                return None, 0.0
+            age_seconds = max(0.0, monotonic() - float(record.get("stored_at") or 0.0))
+            if age_seconds > cache_ttl_seconds:
+                source_cache.pop(cache_key, None)
+                return None, age_seconds
+            return deepcopy(safe_dict(record.get("result"))), age_seconds
+
+    def store_cached_result(cache_key: str, result: Dict[str, Any]) -> None:
+        if not cache_ttl_seconds or not result.get("success"):
+            return
+        with cache_lock:
+            source_cache[cache_key] = {"stored_at": monotonic(), "result": deepcopy(result)}
+            while len(source_cache) > cache_max_entries:
+                oldest_key = min(source_cache, key=lambda key: float(source_cache[key].get("stored_at") or 0.0))
+                source_cache.pop(oldest_key, None)
+
     def source_context_runner(job: Dict[str, Any]) -> Dict[str, Any]:
         payload = dict(job.get("payload") or {})
+        force_refresh = bool(payload.pop("force_refresh", False))
         job_id = safe_str(job.get("job_id"))
         user_id = safe_str(job.get("user_id"))
         project_id = safe_str(job.get("project_id"))
+        cache_key = request_fingerprint(user_id=user_id, payload=payload)
         if job_id:
             update_job_progress(
                 job_id,
@@ -213,7 +256,38 @@ def build_source_context_job_runner(
                 detail="Checking location-appropriate local records, public mapped context, terrain, constraints, and imagery sources.",
                 progress=20,
             )
-        result = dict(fetch_source_context(**payload) or {})
+        result, cache_age_seconds = (None, 0.0) if force_refresh else cached_result(cache_key)
+        cache_status = "hit" if result is not None else ("bypassed" if force_refresh else "miss")
+        if result is not None:
+            if job_id:
+                update_job_progress(
+                    job_id,
+                    stage="Using Recent Site Sources",
+                    detail=f"Using source context checked {max(1, round(cache_age_seconds))} second(s) ago.",
+                    progress=72,
+                )
+        else:
+            def report_provider_progress(event: Dict[str, Any]) -> None:
+                if not job_id:
+                    return
+                update_job_progress(
+                    job_id,
+                    stage=safe_str(event.get("latest_source") or event.get("stage"), "Finding Site Sources"),
+                    detail=safe_str(event.get("detail"), "Checking available site sources."),
+                    progress=max(20, min(74, safe_int(event.get("progress"), 20))),
+                )
+
+            result = dict(fetch_source_context(**payload, progress_callback=report_provider_progress) or {})
+            store_cached_result(cache_key, result)
+        result["source_context_cache_v1"] = {
+            "version": "source_context_cache_v1",
+            "status": cache_status,
+            "fingerprint": cache_key[:16],
+            "age_seconds": round(cache_age_seconds, 3) if cache_status == "hit" else 0,
+            "ttl_seconds": cache_ttl_seconds,
+            "force_refresh": force_refresh,
+            "truth_label": "Cache reuse is limited to an identical recent source request; explicit reruns bypass it.",
+        }
         coverage = build_detection_coverage_report(result)
         result["source_context_detection_coverage_v1"] = coverage
         meta_patch = {
@@ -223,6 +297,8 @@ def build_source_context_job_runner(
             "existing_conditions_summary": result.get("existing_conditions_summary"),
             "source_context_detection_coverage_v1": coverage,
             "location_source_strategy_v1": result.get("location_source_strategy_v1"),
+            "source_context_fetch_metrics_v1": result.get("source_context_fetch_metrics_v1"),
+            "source_context_cache_v1": result.get("source_context_cache_v1"),
         }
         project = (
             project_store.get_project(user_id=user_id, project_id=project_id)

@@ -231,3 +231,99 @@ def test_source_context_rerun_preserves_existing_review_decisions():
     assert rerun["candidate_review_inbox_v1"]["counts"]["pending"] == 1
     site_inputs = store.saved["project_input"]["meta"]["site_inputs"]
     assert site_inputs["candidate_review_accepted_drafts_v1"][0]["source_candidate_id"] == "building-1"
+
+
+def test_source_context_cache_reuses_identical_request_and_force_refresh_bypasses_it():
+    store = FakeProjectStore()
+    calls = []
+    progress = []
+
+    def fetch_source_context(**kwargs):
+        calls.append(kwargs)
+        callback = kwargs.get("progress_callback")
+        if callback:
+            callback(
+                {
+                    "stage": "Finding Site Sources",
+                    "latest_source": "parcels",
+                    "detail": "Checked parcels. 1 of 1 source checks complete.",
+                    "progress": 72,
+                }
+            )
+        return source_result()
+
+    runner = build_source_context_job_runner(
+        project_store=store,
+        update_job_progress=lambda job_id, **kwargs: progress.append({"job_id": job_id, **kwargs}),
+        fetch_source_context=fetch_source_context,
+    )
+    job = {
+        "job_id": "source-first",
+        "user_id": "u1",
+        "project_id": "p1",
+        "payload": {"address": "20525 Margo St", "bbox": {"west": 1, "south": 1, "east": 2, "north": 2}},
+    }
+
+    first = runner(job)
+    second = runner({**job, "job_id": "source-second"})
+    refreshed = runner(
+        {
+            **job,
+            "job_id": "source-refresh",
+            "payload": {**job["payload"], "force_refresh": True},
+        }
+    )
+
+    assert len(calls) == 2
+    assert first["source_context_cache_v1"]["status"] == "miss"
+    assert second["source_context_cache_v1"]["status"] == "hit"
+    assert refreshed["source_context_cache_v1"]["status"] == "bypassed"
+    assert any(item["stage"] == "Using Recent Site Sources" for item in progress)
+    assert any(item["stage"] == "parcels" for item in progress)
+    assert any("Checked parcels" in item["detail"] for item in progress)
+
+
+def test_source_context_cache_is_user_scoped_and_does_not_cache_failures():
+    store = FakeProjectStore()
+    calls = []
+    should_fail = {"value": False}
+
+    def fetch_source_context(**kwargs):
+        calls.append(kwargs)
+        result = source_result()
+        if should_fail["value"]:
+            result["success"] = False
+            result["status"] = "fetch_failed"
+        return result
+
+    runner = build_source_context_job_runner(
+        project_store=store,
+        update_job_progress=lambda *args, **kwargs: None,
+        fetch_source_context=fetch_source_context,
+    )
+    base_job = {
+        "project_id": "p1",
+        "payload": {"address": "20525 Margo St", "bbox": {"west": 1, "south": 1, "east": 2, "north": 2}},
+    }
+
+    first = runner({**base_job, "job_id": "u1-first", "user_id": "u1"})
+    same_user = runner({**base_job, "job_id": "u1-second", "user_id": "u1"})
+    other_user = runner({**base_job, "job_id": "u2-first", "user_id": "u2"})
+
+    assert first["source_context_cache_v1"]["status"] == "miss"
+    assert same_user["source_context_cache_v1"]["status"] == "hit"
+    assert other_user["source_context_cache_v1"]["status"] == "miss"
+    assert len(calls) == 2
+
+    should_fail["value"] = True
+    failed_job = {
+        **base_job,
+        "user_id": "u3",
+        "payload": {**base_job["payload"], "address": "No Provider Result"},
+    }
+    failed_first = runner({**failed_job, "job_id": "failed-first"})
+    failed_second = runner({**failed_job, "job_id": "failed-second"})
+
+    assert failed_first["source_context_cache_v1"]["status"] == "miss"
+    assert failed_second["source_context_cache_v1"]["status"] == "miss"
+    assert len(calls) == 4

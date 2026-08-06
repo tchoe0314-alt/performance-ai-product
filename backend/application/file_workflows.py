@@ -5,7 +5,7 @@ import math
 import mimetypes
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from fastapi import HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -419,6 +419,7 @@ def fetch_existing_conditions_online(
     include_imagery_detection: bool = True,
     include_worldwide_context: bool = True,
     active_site_boundary: Optional[Dict[str, Any]] = None,
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     registry = build_provider_registry(providers=(provider_registry or {}).get("providers") if provider_registry else None)
     parcel_url = parcel_service_url or str(os.getenv("CIVORA_PARCEL_ARCGIS_SERVICE_URL") or "")
@@ -456,6 +457,7 @@ def fetch_existing_conditions_online(
         imagery_detection_provider_name=str(os.getenv("CIVORA_IMAGERY_DETECTION_PROVIDER") or ""),
         provider_registry=registry,
         active_site_boundary=active_site_boundary,
+        progress_callback=progress_callback,
     )
     canonical = result.get("canonical_existing_conditions") or {}
     effective_registry = canonical.get("local_gis_provider_registry_v1") or registry
