@@ -1046,8 +1046,8 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         result = decide_chat(
             {
                 "message": (
-                    "20525 Margo St Gretna NE, 1000 by 1000 ft centered there, with a 28000 sf office, "
-                    "140 parkin spots, detention pond, drveway, side walks, watter, sanitry, and storm sewar"
+                    "20525 Margo St Gretna NE, 1000 by 1000 ft centered there, with a 28000 sf ofice bilding, "
+                    "140 parkin spots, detention bason, drveway, side walks, watter, sanitry, and strom sewar"
                 ),
                 "context": {"current_project": {"project_id": "project_123"}},
             },

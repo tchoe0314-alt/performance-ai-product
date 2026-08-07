@@ -130,7 +130,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
 
     await runCommand(
       page,
-      "put in a 32,000 sqft office, 165 parkin spots, a detention pond, drveway, storm sewar, watter, sanitry, and ADA walks",
+      "put in a 32,000 sqft ofice bilding, 165 parkin spots, a detention bason, drveway, strom sewar, watter, sanitry, and side walks with ADA access",
     );
 
     await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 32,000 sf"]').first()).toBeVisible({ timeout: 8_000 });

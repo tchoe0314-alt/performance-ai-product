@@ -104,6 +104,10 @@ def _extract_requested_program_from_message(message: str) -> Dict[str, Any]:
     normalized = re.sub(r"\s+", " ", message.strip().lower())
     typo_replacements = {
         r"\b(?:parkin|parkng|prking)\b": "parking",
+        r"\bofice\b": "office",
+        r"\bbilding\b": "building",
+        r"\bbason\b": "basin",
+        r"\bstrom\b": "storm",
         r"\b(?:drveway|drivewy|driveay)\b": "driveway",
         r"\b(?:sanatary|sanitry)\b": "sanitary",
         r"\bsewar\b": "sewer",
