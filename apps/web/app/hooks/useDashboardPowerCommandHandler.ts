@@ -225,8 +225,22 @@ export function useDashboardPowerCommandHandler({
       return handleCreateDenseCommercialConcept(message);
     }
     const lot = resolveLotBounds();
+    const allowAdditionalObjects = /\b(another|additional|second|extra|one more)\b/.test(lower);
+    const hasPlacedObject = (predicate: (item: BuildingPlacement) => boolean) =>
+      buildingPlacements.some((item) => item.placed !== false && predicate(item));
     const requested: Array<() => void> = [];
     const labels: string[] = [];
+    const addedLabels: string[] = [];
+    const keptLabels: string[] = [];
+    const queueUniqueObject = (alreadyExists: boolean, label: string, action: () => void) => {
+      labels.push(label);
+      if (alreadyExists && !allowAdditionalObjects) {
+        keptLabels.push(label);
+        return;
+      }
+      addedLabels.push(label);
+      requested.push(action);
+    };
     const officeArea = lower.match(
       /(\d{1,3}(?:,\d{3})+|\d{3,8})\s*(?:sf|sq\s*ft|sqft|square\s*feet)\s+(?:(?:office\s+)?building|office(?:\s+project)?)\b/,
     );
@@ -234,67 +248,98 @@ export function useDashboardPowerCommandHandler({
       const area = officeArea ? Number(officeArea[1].replace(/,/g, "")) : null;
       const depth = area ? Math.round(Math.sqrt(area / 1.8)) : undefined;
       const width = area && depth ? Math.round(area / Math.max(depth, 1)) : undefined;
-      requested.push(() => handleAddObject("office_building", {
-        label: area ? `Office Building - ${Math.round(area).toLocaleString()} sf` : undefined,
-        placed: true,
-        width,
-        depth,
-        meta: area ? { requested_area_sf: Math.round(area), command_created: true } : { command_created: true },
-      }));
-      labels.push(area ? `${Math.round(area).toLocaleString()} sf office building` : "office building");
+      const label = area ? `${Math.round(area).toLocaleString()} sf office building` : "office building";
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "office_building"),
+        label,
+        () => handleAddObject("office_building", {
+          label: area ? `Office Building - ${Math.round(area).toLocaleString()} sf` : undefined,
+          placed: true,
+          width,
+          depth,
+          meta: area ? { requested_area_sf: Math.round(area), command_created: true } : { command_created: true },
+        }),
+      );
     }
     const parking = lower.match(/(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls|spots?)/);
     if (parking || /\bparking\b/.test(lower)) {
       const stalls = parking ? Number(parking[1]) : parsePositiveNumber(parkingCount) ?? 140;
       const fieldWidth = Math.max(260, Math.min((lot.w || 1000) * 0.48, Math.ceil(stalls / 2) * 9 + 36));
       const fieldDepth = Math.max(120, Math.min((lot.h || 1000) * 0.20, 18 * 2 + 24 + Math.ceil(stalls / 70) * 42));
-      requested.push(() => {
-        setParkingCount(String(Math.round(stalls)));
-        handleAddObject("parking", {
-          label: `Parking Field - ${Math.round(stalls)} stalls`,
-          placed: true,
-          width: fieldWidth,
-          depth: fieldDepth,
-          meta: { command_created: true, requested_stalls: Math.round(stalls) },
-        });
-      });
-      labels.push(`${Math.round(stalls)} parking stalls`);
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "parking"),
+        `${Math.round(stalls)} parking stalls`,
+        () => {
+          setParkingCount(String(Math.round(stalls)));
+          handleAddObject("parking", {
+            label: `Parking Field - ${Math.round(stalls)} stalls`,
+            placed: true,
+            width: fieldWidth,
+            depth: fieldDepth,
+            meta: { command_created: true, requested_stalls: Math.round(stalls) },
+          });
+        },
+      );
     }
     if (/\b(basin|detention|pond)\b/.test(lower)) {
-      requested.push(() => handleAddObject("basin", { placed: true, meta: { command_created: true } }));
-      labels.push("detention basin");
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "basin"),
+        "detention basin",
+        () => handleAddObject("basin", { placed: true, meta: { command_created: true } }),
+      );
     }
     if (/\b(driveway|drive aisle|access)\b/.test(lower)) {
-      requested.push(() => handleAddObject("driveway", { placed: true, meta: { command_created: true } }));
-      labels.push("driveway/access");
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "driveway"),
+        "driveway/access",
+        () => handleAddObject("driveway", { placed: true, meta: { command_created: true } }),
+      );
     }
     if (/\b(sidewalk|sidewalks|ada route|ada routes|path|paths)\b/.test(lower)) {
-      requested.push(() => handleAddObject("sidewalk", { label: "Sidewalk / ADA Route", placed: true, meta: { command_created: true, routeKind: "ada_review_route" } }));
-      labels.push("sidewalk / ADA route");
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "sidewalk"),
+        "sidewalk / ADA route",
+        () => handleAddObject("sidewalk", { label: "Sidewalk / ADA Route", placed: true, meta: { command_created: true, routeKind: "ada_review_route" } }),
+      );
     }
     if (/\b(public water|water line|water)\b/.test(lower)) {
-      requested.push(() => handleAddObject("utility_corridor", { label: "Public Water Line", geometryType: "polyline", placed: true, meta: { network: "water", command_created: true } }));
-      labels.push("public water line");
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "utility_corridor" && String(item.meta?.network || "") === "water"),
+        "public water line",
+        () => handleAddObject("utility_corridor", { label: "Public Water Line", geometryType: "polyline", placed: true, meta: { network: "water", command_created: true } }),
+      );
     }
     const requestsSanitary = /\b(public sanitary|sanitary(?: sewer)?|wastewater)\b/.test(lower) ||
       (/\bsewer\b/.test(lower) && !/\bstorm\s+sewer\b/.test(lower));
     if (requestsSanitary) {
-      requested.push(() => handleAddObject("utility_corridor", { label: "Public Sanitary Line", geometryType: "polyline", placed: true, meta: { network: "sanitary", command_created: true } }));
-      labels.push("public sanitary line");
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "utility_corridor" && String(item.meta?.network || "") === "sanitary"),
+        "public sanitary line",
+        () => handleAddObject("utility_corridor", { label: "Public Sanitary Line", geometryType: "polyline", placed: true, meta: { network: "sanitary", command_created: true } }),
+      );
     }
     if (/\bstorm\b/.test(lower)) {
-      requested.push(() => handleAddObject("utility_corridor", { label: "Storm Sewer", geometryType: "polyline", placed: true, meta: { network: "storm", command_created: true } }));
-      labels.push("storm sewer");
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "utility_corridor" && String(item.meta?.network || "") === "storm"),
+        "storm sewer",
+        () => handleAddObject("utility_corridor", { label: "Storm Sewer", geometryType: "polyline", placed: true, meta: { network: "storm", command_created: true } }),
+      );
     }
     if (/\boutfall\b/.test(lower)) {
-      requested.push(() => handleAddObject("outfall", { placed: true, meta: { command_created: true, role: "storm_outfall_review_point" } }));
-      labels.push("outfall");
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "outfall"),
+        "outfall",
+        () => handleAddObject("outfall", { placed: true, meta: { command_created: true, role: "storm_outfall_review_point" } }),
+      );
     }
     if (/\binlet\b/.test(lower)) {
-      requested.push(() => handleAddObject("inlet", { placed: true, meta: { command_created: true, role: "storm_inlet_review_point" } }));
-      labels.push("inlet");
+      queueUniqueObject(
+        hasPlacedObject((item) => item.type === "inlet"),
+        "inlet",
+        () => handleAddObject("inlet", { placed: true, meta: { command_created: true, role: "storm_inlet_review_point" } }),
+      );
     }
-    if (requested.length < 2) return false;
+    if (labels.length < 2) return false;
     appendChatMessage("user", message);
     if (!hasSiteBoundary()) {
       appendChatMessage(
@@ -305,23 +350,32 @@ export function useDashboardPowerCommandHandler({
       handleOpenSidePanel("site_existing");
       return true;
     }
-    requested.forEach((action) => action());
-    setActivePlacementId(null);
-    setCommandBarExpanded(false);
-    setPreviewInteraction("static");
-    setActiveWorkspaceMode("canvas");
-    setActiveSidePanel(null);
-    setRenderedSidePanel(null);
-    setSidePanelVisible(false);
-    setRightRailCollapsed(true);
+    if (requested.length) {
+      requested.forEach((action) => action());
+      setActivePlacementId(null);
+      setCommandBarExpanded(false);
+      setPreviewInteraction("static");
+      setActiveWorkspaceMode("canvas");
+      setActiveSidePanel(null);
+      setRenderedSidePanel(null);
+      setSidePanelVisible(false);
+      setRightRailCollapsed(true);
+    }
+    const additionSummary = addedLabels.length
+      ? `Added and placed ${addedLabels.join(", ")} as draft review objects.`
+      : "No duplicate objects were added.";
+    const existingSummary = keptLabels.length
+      ? ` Existing ${keptLabels.join(", ")} already satisfy this request.`
+      : "";
     appendChatMessage(
       "assistant",
-      `Added and placed ${labels.join(", ")} as draft review objects. They are editable on the canvas and still require review before Generate/Deliver.`,
+      `${additionSummary}${existingSummary} The project objects are editable on the canvas and still require review before Generate/Deliver.`,
       "status",
     );
     return true;
   }, [
     appendChatMessage,
+    buildingPlacements,
     handleAddObject,
     handleCreateDenseCommercialConcept,
     handleOpenSidePanel,

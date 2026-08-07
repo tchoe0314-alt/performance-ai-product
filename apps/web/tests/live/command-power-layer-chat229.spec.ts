@@ -142,6 +142,24 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.locator('[data-cad-object-id][aria-label*="Public Sanitary Line"]').first()).toBeVisible();
     await expect(page.locator('[data-cad-object-id][aria-label*="Storm Sewer"]').first()).toBeVisible();
     await expect(page.getByText(/32,000 sf office building, 165 parking stalls/i).first()).toBeVisible({ timeout: 5_000 });
+
+    await runCommand(
+      page,
+      "put in a 32,000 sqft ofice bilding, 165 parkin spots, a detention bason, drveway, strom sewar, watter, sanitry, and side walks with ADA access",
+    );
+    await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 32,000 sf"]')).toHaveCount(1);
+    await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 165 stalls"]')).toHaveCount(1);
+    await expect(page.locator('[data-cad-object-id][aria-label*="Basin / Detention"]')).toHaveCount(1);
+    await expect(page.locator('[data-cad-object-id][aria-label*="Driveway"]')).toHaveCount(1);
+    await expect(page.locator('[data-cad-object-id][aria-label*="Sidewalk / ADA Route"]')).toHaveCount(1);
+    await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"]')).toHaveCount(1);
+    await expect(page.locator('[data-cad-object-id][aria-label*="Public Sanitary Line"]')).toHaveCount(1);
+    await expect(page.locator('[data-cad-object-id][aria-label*="Storm Sewer"]')).toHaveCount(1);
+    await expect(page.getByText(/No duplicate objects were added/i).first()).toBeVisible({ timeout: 5_000 });
+
+    await runCommand(page, "add another detention basin and another driveway");
+    await expect(page.locator('[data-cad-object-id][aria-label*="Basin / Detention"]')).toHaveCount(2);
+    await expect(page.locator('[data-cad-object-id][aria-label*="Driveway"]')).toHaveCount(2);
   });
 
   test("natural grading and drainage context commands create editable review geometry", async ({ page }) => {
