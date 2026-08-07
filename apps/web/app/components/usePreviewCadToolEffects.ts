@@ -277,8 +277,11 @@ export function usePreviewCadShortcutEffect({
         transformSelectedCadObjects("rotate");
       }
     };
-    window.addEventListener("keydown", handleCadShortcuts);
-    return () => window.removeEventListener("keydown", handleCadShortcuts);
+    // Map canvases and other interactive preview surfaces may stop bubbling
+    // keyboard events. Capture drafting shortcuts before those surfaces so
+    // Ortho, Snap, and tool keys behave the same over imagery and local canvas.
+    window.addEventListener("keydown", handleCadShortcuts, { capture: true });
+    return () => window.removeEventListener("keydown", handleCadShortcuts, { capture: true });
   }, [
     canDrawObjects,
     moveSelectedCadObjectsByVector,

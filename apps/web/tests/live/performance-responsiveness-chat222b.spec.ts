@@ -256,9 +256,18 @@ test.describe("Chat 222B performance and responsiveness", () => {
     await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-pan").click();
     const drawingSurface = page.getByTestId("preview-drawing-surface");
     await expect(drawingSurface).toHaveAttribute("data-draw-mode", "pan");
-    await expect(drawingSurface).toHaveCSS("pointer-events", "auto");
-    const drawingSurfaceBox = await drawingSurface.boundingBox();
+    const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
+    const mapPanActive = (await mapCanvas.count()) > 0;
+    await expect(drawingSurface).toHaveCSS("pointer-events", mapPanActive ? "none" : "auto");
+    const panSurface = mapPanActive ? mapCanvas.first() : drawingSurface;
+    const drawingSurfaceBox = await panSurface.boundingBox();
     expect(drawingSurfaceBox).toBeTruthy();
+    const beforeMapViewport = mapPanActive
+      ? await page.evaluate(() => {
+          const value = (window as unknown as Record<string, unknown>).__civoraMapViewport;
+          return value as { lat: number; lng: number } | null;
+        })
+      : null;
     if (drawingSurfaceBox) {
       const viewport = page.viewportSize();
       expect(viewport).toBeTruthy();
@@ -274,9 +283,13 @@ test.describe("Chat 222B performance and responsiveness", () => {
       };
       const hitTarget = await page.evaluate(({ x, y }) => {
         const element = document.elementFromPoint(x, y) as HTMLElement | null;
-        return element?.closest<HTMLElement>("[data-testid]")?.dataset.testid ?? null;
+        return {
+          testId: element?.closest<HTMLElement>("[data-testid]")?.dataset.testid ?? null,
+          mapCanvas: Boolean(element?.closest(".mapboxgl-canvas")),
+        };
       }, dragStart);
-      expect(["preview-drawing-surface", "preview-drawing-overlays"]).toContain(hitTarget);
+      if (mapPanActive) expect(hitTarget.mapCanvas).toBe(true);
+      else expect(["preview-drawing-surface", "preview-drawing-overlays"]).toContain(hitTarget.testId);
       await page.mouse.move(dragStart.x, dragStart.y);
       await page.mouse.down();
       await page.mouse.move(
@@ -286,14 +299,26 @@ test.describe("Chat 222B performance and responsiveness", () => {
       );
       await page.mouse.up();
     }
-    await expect.poll(
-      async () =>
-        page.evaluate(() => {
-          const perf = (window as typeof window & { __civoraPerf?: { last?: Record<string, { durationMs: number }> } }).__civoraPerf;
-          return perf?.last?.["preview.pan.drag"]?.durationMs ?? null;
-        }),
-      { timeout: 3_000 },
-    ).not.toBeNull();
+    if (mapPanActive) {
+      expect(beforeMapViewport).not.toBeNull();
+      await expect.poll(async () => {
+        const viewport = await page.evaluate(() => {
+          const value = (window as unknown as Record<string, unknown>).__civoraMapViewport;
+          return value as { lat: number; lng: number } | null;
+        });
+        if (!viewport || !beforeMapViewport) return 0;
+        return Math.hypot(viewport.lat - beforeMapViewport.lat, viewport.lng - beforeMapViewport.lng);
+      }).toBeGreaterThan(0.000001);
+    } else {
+      await expect.poll(
+        async () =>
+          page.evaluate(() => {
+            const perf = (window as typeof window & { __civoraPerf?: { last?: Record<string, { durationMs: number }> } }).__civoraPerf;
+            return perf?.last?.["preview.pan.drag"]?.durationMs ?? null;
+          }),
+        { timeout: 3_000 },
+      ).not.toBeNull();
+    }
 
     await expectNoHorizontalOverflow(page);
     expect(failures.pageErrors).toEqual([]);

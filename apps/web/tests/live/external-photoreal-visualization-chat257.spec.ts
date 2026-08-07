@@ -6,6 +6,16 @@ const EXTERNAL_IMAGE =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1536 1024"><rect width="1536" height="1024" fill="#86a66d"/><path d="M0 760h1536v180H0z" fill="#4b5563"/><rect x="370" y="260" width="460" height="280" fill="#d2c09f"/><ellipse cx="1120" cy="550" rx="180" ry="120" fill="#55b8d9"/></svg>',
   );
 
+async function expectTechnicalPlanRestored(page: Page) {
+  const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
+  if ((await mapCanvas.count()) > 0) {
+    await expect(mapCanvas.first()).toBeVisible();
+    await expect(page.locator("[data-object-overlay]").first()).toBeVisible();
+    return;
+  }
+  await expect(page.getByTestId("plan-polyline-object").first()).toBeVisible();
+}
+
 async function installAuthenticatedApiMocks(
   page: Page,
   options: { unavailable?: boolean } = {},
@@ -205,7 +215,7 @@ test.describe("external photorealistic visualization", () => {
       "External photorealistic visualization is not configured",
     );
     await page.getByTestId("ai-realism-off").click();
-    await expect(page.getByTestId("plan-polyline-object").first()).toBeVisible();
+    await expectTechnicalPlanRestored(page);
   });
 
   test("turning Visual off cancels browser polling and immediately restores the plan", async ({ page }) => {
@@ -217,7 +227,7 @@ test.describe("external photorealistic visualization", () => {
       "Generating Photorealistic Visualization",
     );
     await page.getByTestId("ai-realism-off").click();
-    await expect(page.getByTestId("plan-polyline-object").first()).toBeVisible();
+    await expectTechnicalPlanRestored(page);
     await page.waitForTimeout(1_200);
 
     await expect(page.getByTestId("ai-realism-image")).toHaveCount(0);

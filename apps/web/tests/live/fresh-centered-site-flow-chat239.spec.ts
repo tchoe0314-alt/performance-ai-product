@@ -274,7 +274,9 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
 
   const settledSaveCount = projectSaveCount;
   await page.waitForTimeout(3_000);
-  expect(projectSaveCount - settledSaveCount).toBeLessThanOrEqual(1);
+  // A hosted map may settle its live scale once after the explicit site save,
+  // alongside the coalesced control autosave. Both must remain bounded.
+  expect(projectSaveCount - settledSaveCount).toBeLessThanOrEqual(2);
 });
 
 test("chat can create the same centered site from natural language", async ({ page }) => {

@@ -85,7 +85,13 @@ test.describe("Preview height and geometry fidelity", () => {
     expect(pixelSignal.colored).toBeGreaterThan(18);
 
     await page.getByTestId("preview-mode-2d").click();
-    await expect(page.getByTestId("professional-building-footprint").first()).toHaveJSProperty("tagName", "polygon");
+    const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
+    if ((await mapCanvas.count()) > 0) {
+      await expect(mapCanvas.first()).toBeVisible();
+      await expect(page.locator('[data-object-overlay][aria-label*="Multifamily Building A"]').first()).toBeVisible();
+    } else {
+      await expect(page.getByTestId("professional-building-footprint").first()).toHaveJSProperty("tagName", "polygon");
+    }
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Plan Sheet mode/i);
     await page.getByRole("button", { name: /^Draw$/ }).first().click();
     expect(await page.getByTestId("object-manager-row").count()).toBe(initialObjectCount);

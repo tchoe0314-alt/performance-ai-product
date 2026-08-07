@@ -19,6 +19,28 @@ async function enableHighQuality(page: Page) {
   await expect(page.getByTestId("ai-realism-toggle")).toBeVisible();
 }
 
+async function expectTechnicalPlanGeometry(page: Page) {
+  const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
+  if ((await mapCanvas.count()) > 0) {
+    await expect(mapCanvas.first()).toBeVisible();
+    await expect.poll(
+      () =>
+        page.evaluate(() => {
+          const summary = (
+            window as Window & {
+              __civoraMapLayerSummary?: { featureCounts?: Record<string, number> };
+            }
+          ).__civoraMapLayerSummary;
+          return Object.values(summary?.featureCounts ?? {}).reduce((total, count) => total + Number(count || 0), 0);
+        }),
+      { timeout: 15_000 },
+    ).toBeGreaterThan(0);
+    return;
+  }
+  await expect(page.getByTestId("plan-polyline-object").first()).toBeVisible();
+  await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
+}
+
 async function getAiArtifact(page: Page) {
   return page.evaluate(() => (window as typeof window & { __civoraAiRealismArtifact?: unknown }).__civoraAiRealismArtifact);
 }
@@ -69,8 +91,7 @@ test.describe("Chat 226 AI visualization preview", () => {
     await enableHighQuality(page);
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Plan Sheet mode");
     await expect(page.getByTestId("ai-realism-off")).toHaveClass(/bg-slate-950/);
-    await expect(page.getByTestId("plan-polyline-object").first()).toBeVisible();
-    await expect(page.getByTestId("plan-parking-stall-cues").first()).toBeVisible();
+    await expectTechnicalPlanGeometry(page);
   });
 
   test("shows truthful blockers for empty layout and unavailable provider", async ({ page }) => {
