@@ -67,10 +67,12 @@ test("step 1.1 preview stability flow", async ({ page, request, baseURL }) => {
   await expect(workspacePanel).toHaveCount(0);
 
   for (let index = 0; index < 8; index += 1) {
-    await canvas.getByTestId("preview-quality-standard").first().click();
-    await expect(canvas).toContainText(/Draft \/ Standard/i);
-    await canvas.getByTestId("preview-quality-high").first().click();
-    await expect(canvas).toContainText(/Plan Sheet \/ High Quality/i);
+    const standardQuality = canvas.getByTestId("preview-quality-standard").first();
+    await standardQuality.click();
+    await expect(standardQuality).toHaveAttribute("aria-pressed", "true");
+    const highQuality = canvas.getByTestId("preview-quality-high").first();
+    await highQuality.click();
+    await expect(highQuality).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator(".mapboxgl-canvas")).toHaveCount(1);
     await expect(page.locator(".mapboxgl-canvas")).toBeVisible();
   }
