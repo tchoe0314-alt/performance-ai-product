@@ -677,6 +677,8 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await clickExposedSurface(drawingSurface, 0.72, 0.28);
   await clickExposedSurface(drawingSurface, 0.68, 0.78);
   await clickExposedSurface(drawingSurface, 0.24, 0.75);
+  await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
+  await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   await cadTools.getByTestId("cad-tool-area").filter({ visible: true }).first().click();
   await clickExposedSurface(drawingSurface, 0.25, 0.52);
