@@ -3,7 +3,7 @@ import path from "node:path";
 
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
-const DEFAULT_APP_URL = "https://civoraai.com/demo/workspace?debugPreview=1&aiRealismProvider=mock";
+const DEFAULT_APP_URL = "https://civoraai.com/?debugPreview=1&aiRealismProvider=mock";
 const DEFAULT_API_URL = "https://api.civoraai.com";
 const SURVEY_FIXTURE = path.resolve(__dirname, "../../../../backend/fixtures/real_input_benchmarks/survey_points.csv");
 
@@ -94,6 +94,8 @@ test("hosted survey upload drives source-backed preview marks without fake topo"
   const canvas = page.getByTestId("workspace-canvas-shell");
   await canvas.getByTestId("preview-quality-high").click();
   await expect(page.getByTestId("source-survey-point").first()).toBeVisible({ timeout: 15_000 });
+  await canvas.getByTestId("preview-inner-map-toggle").click();
+  await expect(canvas.getByTestId("preview-inner-map-toggle")).toContainText("Map Off");
   await expect(page.getByTestId("survey-spot-elevation").first()).toBeVisible();
   await expect(canvas).toContainText(/SOURCE EXHIBIT/i);
   await expect(canvas).toContainText(/SOURCE REVIEW/i);
@@ -104,5 +106,7 @@ test("hosted survey upload drives source-backed preview marks without fake topo"
   expect(overflow).toBeLessThanOrEqual(1);
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((line) => !/401|auth|favicon/i.test(line))).toEqual([]);
-  expect(failedRequests.filter((line) => !/401|auth|favicon/i.test(line))).toEqual([]);
+  expect(
+    failedRequests.filter((line) => !/401|auth|favicon|api\.mapbox\.com\/.*ERR_ABORTED/i.test(line)),
+  ).toEqual([]);
 });

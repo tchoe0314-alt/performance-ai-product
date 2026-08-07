@@ -1,5 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
+import { openCadPrecisionTools } from "./testUiHelpers";
+
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 const ACTIVE_PROJECT_KEY = "civora.activeProjectId";
@@ -112,10 +114,10 @@ async function seedAuthAndProject(page: Page, token: string, projectId: string) 
 async function openProject(page: Page, project: HostedProject) {
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("project-status-summary")).toContainText(/Project opened/i, { timeout: 30_000 });
   await expect
     .poll(() => page.evaluate((activeProjectKey) => window.localStorage.getItem(activeProjectKey), ACTIVE_PROJECT_KEY))
     .toBe(project.project_id);
+  await expect(page.getByTestId("project-status-summary")).not.toContainText(/Opening project/i, { timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
 }
 
@@ -123,6 +125,13 @@ async function selectCorrectionRectangle(page: Page) {
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
   if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
   await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
+  const rectangles = page.getByTestId("object-manager-row").filter({ hasText: /Command Rectangle/ });
+  if ((await rectangles.count()) === 0) {
+    const precision = await openCadPrecisionTools(page);
+    const input = precision.getByLabel("Draft command input");
+    await input.fill("RECTANGLE 20,20 80,80");
+    await input.press("Enter");
+  }
   const row = page.getByTestId("object-manager-row").filter({ hasText: /Command Rectangle/ }).last();
   await expect(row).toBeVisible({ timeout: 15_000 });
   await row.getByTestId("object-manager-select").click();

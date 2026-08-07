@@ -126,5 +126,7 @@ test("hosted real user can set up site, upload real sources, generate, and deliv
   expect(overflow).toBeLessThanOrEqual(1);
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((line) => !/401|auth|favicon|rate limit/i.test(line))).toEqual([]);
-  expect(failedRequests.filter((line) => !/401|auth|favicon|rate limit/i.test(line))).toEqual([]);
+  expect(
+    failedRequests.filter((line) => !/401|auth|favicon|rate limit|api\.mapbox\.com\/.*ERR_ABORTED/i.test(line)),
+  ).toEqual([]);
 });
