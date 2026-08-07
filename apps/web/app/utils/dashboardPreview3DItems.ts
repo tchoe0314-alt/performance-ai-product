@@ -7,6 +7,7 @@ import type {
 } from "../types";
 import type { CadEntityPreview } from "./cadEntityPreview";
 import { SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
+import { canonicalPreview3DFootprintSignature } from "./canonicalGeometrySignature";
 
 type PreviewLayerFlags = {
   buildings: boolean;
@@ -150,27 +151,48 @@ function preview3DOverlapRatio(a: Preview3DItem, b: Preview3DItem) {
   return intersection / smallerArea;
 }
 
-function mergePlacementLedPreview3DItems(backendItems: Preview3DItem[], placementItems: Preview3DItem[]) {
+export function mergePlacementLedPreview3DItems(backendItems: Preview3DItem[], placementItems: Preview3DItem[]) {
   if (!backendItems.length) return placementItems;
   if (!placementItems.length) return backendItems;
 
   const merged = [...placementItems];
   const existingIds = new Set(merged.map((item) => String(item.id || "")));
+  const existingLinkedIds = new Set(
+    merged
+      .map((item) => String(item.linkedObjectId || ""))
+      .filter(Boolean),
+  );
+  const existingSignatures = new Set(
+    merged.map(
+      (item) => `${normalizePreview3DLayer(item.layer)}:${canonicalPreview3DFootprintSignature(item)}`,
+    ),
+  );
   backendItems.forEach((item) => {
     const id = String(item.id || "");
+    const linkedObjectId = String(item.linkedObjectId || "");
     const layer = normalizePreview3DLayer(item.layer);
-    if (id && existingIds.has(id)) return;
+    const signature = canonicalPreview3DFootprintSignature(item);
+    const layerSignature = `${layer}:${signature}`;
+    if (
+      (id && existingIds.has(id)) ||
+      (linkedObjectId && (existingIds.has(linkedObjectId) || existingLinkedIds.has(linkedObjectId))) ||
+      existingSignatures.has(layerSignature)
+    ) return;
     const isTerrainEvidence = layer === "TERRAIN" && (item.terrainSample || /terrain|elevation/i.test(String(item.label || item.source || "")));
     if (!isTerrainEvidence) {
       const duplicate = merged.some((candidate) => {
         const candidateLayer = normalizePreview3DLayer(candidate.layer);
         if (candidateLayer !== layer) return false;
-        return preview3DOverlapRatio(item, candidate) >= 0.58;
+        const widthRatio = Math.min(item.w, candidate.w) / Math.max(item.w, candidate.w, 1);
+        const depthRatio = Math.min(item.h, candidate.h) / Math.max(item.h, candidate.h, 1);
+        return preview3DOverlapRatio(item, candidate) >= 0.92 && widthRatio >= 0.9 && depthRatio >= 0.9;
       });
       if (duplicate) return;
     }
     merged.push(item);
     if (id) existingIds.add(id);
+    if (linkedObjectId) existingLinkedIds.add(linkedObjectId);
+    existingSignatures.add(layerSignature);
   });
   return merged;
 }
@@ -600,6 +622,7 @@ export function buildPlacementPreview3DItems({
           : undefined;
       items.push({
         id: item.id,
+        linkedObjectId: item.id,
         x: item.x ?? 0,
         y: item.y ?? 0,
         w: Math.max(1, item.w),

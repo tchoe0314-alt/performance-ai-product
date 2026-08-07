@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { canonicalPreview3DFootprintSignature } from "../utils/canonicalGeometrySignature";
 import type { Preview3DItem } from "../types";
 
 type PickedObject = {
@@ -336,6 +337,7 @@ export default function Preview3DCanvas({
           confidence: describeConfidence(item.confidence),
           blockers: item.blockers || [],
           source: item.source || "preview object",
+          geometrySignature: canonicalPreview3DFootprintSignature(item),
           heightFt: normalizeLayer(preview3DLayerText(item)) === "BUILDING" || normalizeLayer(preview3DLayerText(item)) === "STRUCTURE"
             ? displayHeightForLayer(item, normalizeLayer(preview3DLayerText(item)))
             : null,
@@ -361,8 +363,7 @@ export default function Preview3DCanvas({
                         : 9,
         }))
         .filter((item) => item.layer !== "TERRAIN")
-        .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label))
-        .slice(0, 6);
+        .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label));
     },
     [items, selectedItemId],
   );
@@ -1588,6 +1589,8 @@ export default function Preview3DCanvas({
             <button
               key={object.id}
               type="button"
+              data-canonical-object-id={object.id}
+              data-canonical-geometry-signature={object.geometrySignature}
               onClick={() => selectObject(object)}
               className={`min-w-0 rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition ${
                 selectedItemId === object.id

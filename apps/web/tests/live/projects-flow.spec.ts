@@ -1007,6 +1007,12 @@ test.describe("project drawer reliability", () => {
     await page.getByRole("button", { name: /^Draw$/ }).first().click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls");
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls was added as draft geometry.");
+    const parkingOverlay = page
+      .locator('[data-object-overlay][aria-label*="Parking Field - 140 stalls"]')
+      .first();
+    await expect(parkingOverlay).toBeVisible();
+    const parkingGeometrySignature = await parkingOverlay.getAttribute("data-canonical-geometry-signature");
+    expect(parkingGeometrySignature).toBeTruthy();
     await page.getByTestId("header-chat-button").click();
     await chatComposer.fill("Generate a parking layout note.");
 
@@ -1051,6 +1057,15 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
     await openSetup(page);
     await expect(page.getByTestId("workspace-right-panel")).toContainText("123 MAIN ST, TEST CITY, TX");
+    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    const restoredParkingOverlay = page
+      .locator('[data-object-overlay][aria-label*="Parking Field - 140 stalls"]')
+      .first();
+    await expect(restoredParkingOverlay).toBeVisible();
+    await expect(restoredParkingOverlay).toHaveAttribute(
+      "data-canonical-geometry-signature",
+      parkingGeometrySignature!,
+    );
 
     page.once("dialog", async (dialog) => {
       expect(dialog.message()).toContain("Delete");

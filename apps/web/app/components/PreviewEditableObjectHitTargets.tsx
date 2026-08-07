@@ -1,6 +1,7 @@
 import type { Dispatch, MouseEvent as ReactMouseEvent, MutableRefObject, Ref, SetStateAction } from "react";
 
 import type { BuildingPlacement } from "../types";
+import { canonicalPlacementFootprintSignature } from "../utils/canonicalGeometrySignature";
 import { resolveSourceState } from "../utils/previewGeometryTruth";
 import type { PreviewSemanticLayer } from "../utils/previewSemanticLayers";
 import {
@@ -254,6 +255,7 @@ export function PreviewEditableObjectHitTargets({
               key={item.id}
               data-object-overlay
               data-cad-object-id={item.id}
+              data-canonical-geometry-signature={canonicalPlacementFootprintSignature(item)}
               data-semantic-layer={semanticLayerForPlacement(item)}
               aria-label={`Select ${item.label || item.type || "Draft object"}`}
               data-preview-quality={previewQuality}
