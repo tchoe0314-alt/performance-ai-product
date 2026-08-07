@@ -7,7 +7,7 @@ import {
   normalizeReviewPackageSummary,
   normalizeReviewSheetSetForProject,
 } from "./reviewPackagePresentation";
-import type { QuantityReviewRow } from "./workflowConstants";
+import type { QuantityReviewRow, SystemStatus } from "./workflowConstants";
 import type { SidePanelKey, WorkspaceMode } from "./workspaceShell";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
@@ -48,9 +48,41 @@ export type DashboardExportActionsConfig = {
   setExportActionMessage: StateSetter<string>;
   setStatusMessage: StateSetter<string>;
   siteName: string;
+  systemStatuses: Record<string, SystemStatus>;
   token: string | null;
   visibleActiveJob: JobSummary | null | undefined;
 };
+
+export function resolveDashboardExportBlockReason({
+  token,
+  backendResultPresent,
+  projectId,
+  systemStatuses,
+  staleOutputs,
+}: {
+  token: string | null;
+  backendResultPresent: boolean;
+  projectId: string;
+  systemStatuses: Record<string, SystemStatus>;
+  staleOutputs: unknown;
+}) {
+  if (!token) return "authenticate with a backend session before exporting review packages";
+  if (!backendResultPresent) {
+    return projectId
+      ? "run systems or load a generated review package before exporting"
+      : "run the planner or load a saved project before exporting";
+  }
+  const staleSystems = Object.entries(systemStatuses)
+    .filter(([, status]) => status === "stale")
+    .map(([system]) => system);
+  const normalizedStaleOutputs = Array.isArray(staleOutputs)
+    ? staleOutputs.map((item) => String(item)).filter(Boolean)
+    : [];
+  const staleItems = [...new Set([...staleSystems, ...normalizedStaleOutputs])];
+  return staleItems.length
+    ? `rerun affected systems before exporting: ${staleItems.slice(0, 5).join(", ")}`
+    : "";
+}
 
 export function createDashboardExportActions(config: DashboardExportActionsConfig) {
   const {
@@ -73,6 +105,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     setExportActionMessage,
     setStatusMessage,
     siteName,
+    systemStatuses,
     token,
     visibleActiveJob,
   } = config;
@@ -190,15 +223,13 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
   };
 
   const getExportBlockReason = () => {
-    if (!token) {
-      return "authenticate with a backend session before exporting review packages";
-    }
-    if (!backendResultPresent) {
-      return projectId
-        ? "run systems or load a generated review package before exporting"
-        : "run the planner or load a saved project before exporting";
-    }
-    return "";
+    return resolveDashboardExportBlockReason({
+      token,
+      backendResultPresent,
+      projectId,
+      systemStatuses,
+      staleOutputs: currentPlanMeta.reactive_update_report?.stale_outputs,
+    });
   };
 
   const queueExportJob = async ({
