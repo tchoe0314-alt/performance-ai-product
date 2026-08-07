@@ -1777,6 +1777,7 @@ function PerformanceAIDashboardView({
     resolveLotBounds,
     setActivePlacementId,
     setBuildingPlacements,
+    setObjectManagerStatusMessage,
     setPlacementModeEnabled,
     setPreviewInteraction,
     setPreviewMode,

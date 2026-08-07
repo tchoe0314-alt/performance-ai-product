@@ -57,6 +57,7 @@ test.describe("Chat 231B undo recovery and change history", () => {
     await page.getByTestId("selected-object-name-input").fill("Undo HQ Office");
     await openDrawPanel(page);
     await expect(page.getByTestId("object-manager-status")).toContainText(/renamed|Undo can restore/i);
+    await openRecentChanges(page);
     await expect(page.getByTestId("recent-changes-section")).toContainText("Object renamed");
     await page.getByTestId("recent-changes-undo").click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Office Building - 28,000 sf");
@@ -97,6 +98,7 @@ test.describe("Chat 231B undo recovery and change history", () => {
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input/i, { timeout: 10_000 });
     await openDrawPanel(page);
+    await openRecentChanges(page);
     await expect(page.getByTestId("recent-changes-section")).toContainText(/Generate recorded|Generate needs input/);
 
     await page.getByRole("button", { name: /^Deliver$/ }).first().click();

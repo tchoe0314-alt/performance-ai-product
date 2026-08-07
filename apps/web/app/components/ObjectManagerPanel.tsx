@@ -39,19 +39,19 @@ export function ObjectManagerPanel({
       <DrawCadToolsPanel {...cadTools} />
       <NeedsPlacementTray {...needsPlacement} />
       <SelectedObjectCard {...selectedObject} />
+      {statusMessage ? (
+        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="object-manager-status">
+          {statusMessage}
+        </p>
+      ) : null}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="object-manager-panel">
         <ObjectManagerOverview {...overview} />
         <ObjectManagerHiddenState {...hiddenState} />
+        <ObjectManagerListPanel {...objectList} />
         <ObjectManagerLayerControls {...layerControls} />
-        {statusMessage ? (
-          <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="object-manager-status">
-            {statusMessage}
-          </p>
-        ) : null}
         <RecentChangesPanel {...recentChanges} />
         {selectedTools ? <ObjectManagerSelectedToolsPanel {...selectedTools} /> : null}
-        <ObjectManagerListPanel {...objectList} />
       </div>
     </div>
   );

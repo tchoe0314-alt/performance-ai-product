@@ -1047,7 +1047,7 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
             {
                 "message": (
                     "20525 Margo St Gretna NE, 1000 by 1000 ft centered there, with a 28000 sf ofice bilding, "
-                    "140 parkin spots, detention bason, drveway, side walks, watter, sanitry, and strom sewar"
+                    "73 parkin spces, detenshun bason, drveway, sidewaks, watter, sanitry, and strom sewar"
                 ),
                 "context": {"current_project": {"project_id": "project_123"}},
             },
@@ -1063,7 +1063,7 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         object_types = {item["type"] for item in program["requested_objects"]}
         parking = next(item for item in program["requested_objects"] if item["type"] == "parking")
         self.assertTrue({"office_building", "parking", "detention_basin", "driveway", "sidewalk"}.issubset(object_types))
-        self.assertEqual(parking["stall_count"], 140)
+        self.assertEqual(parking["stall_count"], 73)
         self.assertTrue({"water", "sanitary", "storm", "drainage", "roadway"}.issubset(set(program["requested_systems"])))
 
     def test_site_setup_dimensions_only_changes_site_state(self):

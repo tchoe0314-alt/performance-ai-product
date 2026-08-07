@@ -19,6 +19,7 @@ export type DashboardPlacementActions = {
   resolveLotBounds: () => LotBounds;
   setActivePlacementId: StateSetter<string | null>;
   setBuildingPlacements: StateSetter<BuildingPlacement[]>;
+  setObjectManagerStatusMessage: (message: string) => void;
   setPlacementModeEnabled: StateSetter<boolean>;
   setPreviewInteraction: (value: "static" | "edit") => void;
   setPreviewMode: (value: "2d" | "3d") => void;
@@ -26,6 +27,11 @@ export type DashboardPlacementActions = {
   setStatusMessage: (message: string) => void;
   systemsImpactedByPlacement: SystemsImpactedByPlacement;
 };
+
+function setPlacementMessage(actions: DashboardPlacementActions, message: string) {
+  actions.setStatusMessage(message);
+  actions.setObjectManagerStatusMessage(message);
+}
 
 function clampUnit(value: number) {
   return Math.min(Math.max(value, 0), 1);
@@ -45,7 +51,7 @@ export function runDashboardPlaceBuilding({
   actions.clearGeneratedPreview();
   const lot = actions.resolveLotBounds();
   if (!lot.w || !lot.h) {
-    actions.setStatusMessage("Set the site width and height before placing buildings.");
+    setPlacementMessage(actions, "Set the site width and height before placing buildings.");
     return;
   }
   const { w, d } = actions.resolveDefaultBuildingDims();
@@ -54,7 +60,7 @@ export function runDashboardPlaceBuilding({
   const nextX = lot.x + clampedX * lot.w - w / 2;
   const nextY = lot.y + clampedY * lot.h - d / 2;
   if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) {
-    actions.setStatusMessage("Placement failed: invalid coordinates.");
+    setPlacementMessage(actions, "Placement failed: invalid coordinates.");
     return;
   }
   const boundedX = Math.min(Math.max(nextX, lot.x), lot.x + lot.w - w);
@@ -85,7 +91,7 @@ export function runDashboardPlaceBuilding({
     actions.setActivePlacementId(null);
     actions.markSystemsStale(actions.systemsImpactedByPlacement(activePlacement));
     actions.debugLog("place-building-commit", { id: activePlacementId ?? null });
-    actions.setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
+    setPlacementMessage(actions, "Object placed. Regenerate systems to reflect the new layout.");
     actions.persistDraftRefresh("Refreshing preview after object placement...");
     return;
   }
@@ -108,7 +114,7 @@ export function runDashboardPlaceBuilding({
     y: nextPlacement.y,
   });
   actions.markSystemsStale(actions.systemsImpactedByPlacement(nextPlacement));
-  actions.setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
+  setPlacementMessage(actions, "Object placed. Regenerate systems to reflect the new layout.");
   actions.persistDraftRefresh("Refreshing preview after object placement...");
 }
 
@@ -128,7 +134,7 @@ export function runDashboardPlaceObject({
   if (!lot.w || !lot.h) {
     const ok = actions.ensureSiteBoundary("Place the object again to drop it on the new site.");
     if (!ok) {
-      actions.setStatusMessage("Set the site width and height before placing objects.");
+      setPlacementMessage(actions, "Set the site width and height before placing objects.");
     }
     return;
   }
@@ -163,7 +169,7 @@ export function runDashboardPlaceObject({
   actions.setPlacementModeEnabled(false);
   actions.markSystemsStale(actions.systemsImpactedByPlacement(target));
   actions.debugLog("place-object-complete", { id });
-  actions.setStatusMessage("Object placed. Regenerate systems to reflect the new layout.");
+  setPlacementMessage(actions, "Object placed. Regenerate systems to reflect the new layout.");
   actions.persistDraftRefresh("Refreshing preview after object placement...");
 }
 
@@ -180,7 +186,7 @@ export function runDashboardSelectPlacementTarget({
   const target = buildingPlacements.find((item) => item.id === id);
   if (!target) {
     actions.setPlacementModeEnabled(false);
-    actions.setStatusMessage("Move needs input: select an existing object first.");
+    setPlacementMessage(actions, "Move needs input: select an existing object first.");
     return;
   }
   if (!lot.w || !lot.h) {
@@ -189,13 +195,13 @@ export function runDashboardSelectPlacementTarget({
     return;
   }
   if (target.type === "site") {
-    actions.setStatusMessage("Site boundary is already configured and cannot be moved from the object tray.");
+    setPlacementMessage(actions, "Site boundary is already configured and cannot be moved from the object tray.");
     return;
   }
   const editBlocker = getObjectEditBlocker(target, "move");
   if (editBlocker) {
     actions.setPlacementModeEnabled(false);
-    actions.setStatusMessage(editBlocker);
+    setPlacementMessage(actions, editBlocker);
     return;
   }
   if (!target.placed) {
@@ -218,12 +224,12 @@ export function runDashboardSelectPlacementTarget({
     actions.setPreviewInteraction("edit");
     actions.setActivePlacementId(id);
     actions.setPlacementModeEnabled(false);
-    actions.setStatusMessage(`${target.label} placed as a visible draft. Select it to move or edit.`);
+    setPlacementMessage(actions, `${target.label} placed as a visible draft. Select it to move or edit.`);
     return;
   }
   actions.setPreviewMode("2d");
   actions.setPreviewInteraction("edit");
   actions.setActivePlacementId(id);
   actions.setPlacementModeEnabled(true);
-  actions.setStatusMessage(`Ready to place ${target.label}. Click on the canvas to drop it.`);
+  setPlacementMessage(actions, `Ready to place ${target.label}. Click on the canvas to drop it.`);
 }

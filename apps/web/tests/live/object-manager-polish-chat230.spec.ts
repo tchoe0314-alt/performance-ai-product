@@ -65,7 +65,11 @@ async function runCommand(page: Page, command: string) {
 }
 
 async function openDrawPanel(page: Page) {
-  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  const drawButton = page.getByRole("button", { name: /^Draw$/ }).first();
+  if (!(await drawButton.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "Show left sidebar" }).click();
+  }
+  await drawButton.click();
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/, { timeout: 5_000 });
 }
 
@@ -142,6 +146,27 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(panel).toContainText(/Basin|Detention/i);
     await expect(panel).toContainText("Water Line");
     await expect(panel).toContainText(/pending placement|draft/i);
+  });
+
+  test("imperfect project language preserves counts and creates the complete requested draft program", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "start site");
+
+    await runCommand(
+      page,
+      "pls add a 28000 sf ofice bulding and 73 parkin spces, a detenshun basin, driveway, sidewaks, ADA, water, sanitary, and storm",
+    );
+    await openDrawPanel(page);
+
+    const panel = page.getByTestId("object-manager-panel");
+    await expect(panel).toContainText("Office Building - 28,000 sf");
+    await expect(panel).toContainText("Parking Field - 73 stalls");
+    await expect(panel).toContainText("Sidewalk / ADA Route");
+    await expect(panel).toContainText("Public Water Line");
+    await expect(panel).toContainText("Public Sanitary Line");
+    await expect(panel).toContainText("Storm Sewer");
+    await expect(page.getByTestId("recent-changes-list")).toHaveCount(0);
+    await expect(page.getByTestId("object-manager-layer-row").filter({ hasText: "Office Building" })).toBeVisible();
   });
 
   test("typed layer commands hide, show, isolate, and restore draft layers", async ({ page }) => {
@@ -336,7 +361,9 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     expect(beforeMove).not.toBeNull();
 
     await page.getByTestId("selected-object-move-on-canvas").click();
-    await expect(page.getByText(/Ready to place Office Building.*Click on the canvas/i)).toBeVisible();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      /Ready to place Office Building.*Click on the canvas/i,
+    );
 
     const surfaceBox = await page.getByTestId("preview-drawing-surface").boundingBox();
     expect(surfaceBox).not.toBeNull();
@@ -345,7 +372,9 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
       surfaceBox!.y + surfaceBox!.height * 0.45,
     );
 
-    await expect(page.getByText("Object placed. Regenerate systems to reflect the new layout.")).toBeVisible();
+    await expect(page.getByTestId("object-manager-status")).toContainText(
+      "Object placed. Regenerate systems to reflect the new layout.",
+    );
     await expect
       .poll(async () => {
         const box = await officeOverlay.boundingBox();

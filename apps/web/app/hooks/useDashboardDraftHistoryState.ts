@@ -51,7 +51,6 @@ export function useDashboardDraftHistoryState() {
       createdAt: Date.now(),
     };
     setRecentChanges((current) => [nextChange, ...current].slice(0, 12));
-    setRecentChangesOpen(true);
     return nextChange;
   }, []);
 

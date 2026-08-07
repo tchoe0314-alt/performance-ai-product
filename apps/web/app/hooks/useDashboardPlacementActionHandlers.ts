@@ -32,6 +32,7 @@ type UseDashboardPlacementActionHandlersInput = {
   resolveLotBounds: () => LotBounds;
   setActivePlacementId: StateSetter<string | null>;
   setBuildingPlacements: StateSetter<BuildingPlacement[]>;
+  setObjectManagerStatusMessage: (message: string) => void;
   setPlacementModeEnabled: StateSetter<boolean>;
   setPreviewInteraction: (value: PreviewInteraction) => void;
   setPreviewMode: (value: PreviewMode) => void;
@@ -59,6 +60,7 @@ export function useDashboardPlacementActionHandlers({
   resolveLotBounds,
   setActivePlacementId,
   setBuildingPlacements,
+  setObjectManagerStatusMessage,
   setPlacementModeEnabled,
   setPreviewInteraction,
   setPreviewMode,
@@ -87,6 +89,7 @@ export function useDashboardPlacementActionHandlers({
     resolveLotBounds,
     setActivePlacementId,
     setBuildingPlacements,
+    setObjectManagerStatusMessage,
     setPlacementModeEnabled,
     setPreviewInteraction,
     setPreviewMode,
@@ -105,6 +108,7 @@ export function useDashboardPlacementActionHandlers({
     resolveLotBounds,
     setActivePlacementId,
     setBuildingPlacements,
+    setObjectManagerStatusMessage,
     setPlacementModeEnabled,
     setPreviewInteraction,
     setPreviewMode,
