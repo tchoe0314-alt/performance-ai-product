@@ -58,6 +58,7 @@ type HandleAddObject = (
     placed?: boolean;
     width?: number;
     depth?: number;
+    stallCount?: number;
     meta?: Record<string, unknown>;
   },
 ) => void;
@@ -276,6 +277,7 @@ export function useDashboardPowerCommandHandler({
             placed: true,
             width: fieldWidth,
             depth: fieldDepth,
+            stallCount: Math.round(stalls),
             meta: { command_created: true, requested_stalls: Math.round(stalls) },
           });
         },

@@ -9,6 +9,7 @@ type AddObjectOptions = {
   placed?: boolean;
   width?: number;
   depth?: number;
+  stallCount?: number;
   meta?: Record<string, unknown>;
 };
 
@@ -241,8 +242,18 @@ export function buildDashboardObjectPlacement({
     network,
     existingPlacements,
   });
+  const requestedParkingStalls = options?.meta?.requested_stalls;
   const parkingStalls =
-    type === "parking" ? parsePositiveNumber(parkingControls.parkingCount) ?? 0 : undefined;
+    type === "parking"
+      ? parsePositiveNumber(options?.stallCount)
+        ?? parsePositiveNumber(
+          typeof requestedParkingStalls === "number" || typeof requestedParkingStalls === "string"
+            ? requestedParkingStalls
+            : null,
+        )
+        ?? parsePositiveNumber(parkingControls.parkingCount)
+        ?? 0
+      : undefined;
   const parkingParams =
     type === "parking"
       ? {

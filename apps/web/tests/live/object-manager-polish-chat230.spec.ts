@@ -45,7 +45,9 @@ function platformShortcut(key: string) {
 async function runCommand(page: Page, command: string) {
   const input = await focusCommand(page);
   await input.fill(command);
-  await input.press("Enter");
+  // Focus may intentionally migrate from the compact command bar to the mounted
+  // Chat composer while both surfaces share the same prompt state.
+  await page.keyboard.press("Enter");
 }
 
 async function openDrawPanel(page: Page) {

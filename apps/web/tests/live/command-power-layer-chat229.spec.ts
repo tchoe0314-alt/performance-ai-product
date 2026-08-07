@@ -120,6 +120,10 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.locator('[data-cad-object-id][aria-label*="Basin / Detention"]').first()).toBeVisible();
     await expect(page.locator('[data-cad-object-id][aria-label*="Storm Sewer"]').first()).toBeVisible();
     await expect(page.getByText(/Added and placed 28,000 sf office building/i).first()).toBeVisible({ timeout: 5_000 });
+
+    await openDrawPanel(page);
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await expect(parkingRow.getByTestId("object-manager-row-metrics")).toContainText(/\b140 stalls\b/);
   });
 
   test("messy site-program wording preserves quantities and common drafting typos", async ({ page }) => {
@@ -142,6 +146,10 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.locator('[data-cad-object-id][aria-label*="Public Sanitary Line"]').first()).toBeVisible();
     await expect(page.locator('[data-cad-object-id][aria-label*="Storm Sewer"]').first()).toBeVisible();
     await expect(page.getByText(/32,000 sf office building, 165 parking stalls/i).first()).toBeVisible({ timeout: 5_000 });
+
+    await openDrawPanel(page);
+    const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 165 stalls" }).first();
+    await expect(parkingRow.getByTestId("object-manager-row-metrics")).toContainText(/\b165 stalls\b/);
 
     await runCommand(
       page,

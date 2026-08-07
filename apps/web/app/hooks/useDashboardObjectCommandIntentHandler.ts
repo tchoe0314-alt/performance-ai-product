@@ -25,6 +25,7 @@ type AddObjectOptions = {
   placed?: boolean;
   width?: number;
   depth?: number;
+  stallCount?: number;
   meta?: Record<string, unknown>;
 };
 
@@ -86,6 +87,7 @@ export function useDashboardObjectCommandIntentHandler({
       handleAddObject("parking", {
         label: `Parking Field - ${Math.round(intent.stalls)} stalls`,
         placed: true,
+        stallCount: Math.round(intent.stalls),
         meta: { command_created: true, requested_stalls: Math.round(intent.stalls) },
       });
       appendChatMessage(

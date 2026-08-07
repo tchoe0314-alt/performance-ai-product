@@ -19,6 +19,7 @@ type AddObjectOptions = {
   placed?: boolean;
   width?: number;
   depth?: number;
+  stallCount?: number;
   meta?: Record<string, unknown>;
 };
 type ParkingFootprint = {

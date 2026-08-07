@@ -1,6 +1,6 @@
 import type { BuildingPlacement, CanonicalGeometryHandoffV1, SiteObjectType } from "../types";
 
-import { toReadableLabel } from "./formatting";
+import { parsePositiveNumber, toReadableLabel } from "./formatting";
 import { SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
 
 export const clampValue = (value: number, min: number, max: number) =>
@@ -718,8 +718,15 @@ export const getObjectDimensionsLabel = (item: BuildingPlacement) => {
   if (item.type === "custom") return formatCustomGeometryMetrics(item);
   const pieces = [`${Math.round(item.w)} ft x ${Math.round(item.d)} ft`];
   if (typeof item.h === "number" && item.h > 0) pieces.push(`${Math.round(item.h)} ft high`);
-  if (item.type === "parking" && typeof item.stallCount === "number") {
-    pieces.push(`${Math.round(item.stallCount)} stalls`);
+  if (item.type === "parking") {
+    const requestedStalls = item.meta?.requested_stalls;
+    const stallCount = parsePositiveNumber(item.stallCount)
+      ?? parsePositiveNumber(
+        typeof requestedStalls === "number" || typeof requestedStalls === "string"
+          ? requestedStalls
+          : null,
+      );
+    if (stallCount) pieces.push(`${Math.round(stallCount)} stalls`);
   }
   return pieces.join(" · ");
 };
