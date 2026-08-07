@@ -78,6 +78,16 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(canvas).toContainText(/concept plan/i);
   await expect(canvas).toContainText(/no survey \/ topo source/i);
 
+  await canvas.getByTestId("preview-mode-3d").click();
+  await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
+  const threeDObjects = page.getByTestId("civil-3d-object-strip");
+  for (const label of ["Public Water Line", "Public Sanitary Line", "Storm Sewer"]) {
+    const utility = threeDObjects.getByRole("button", { name: new RegExp(label, "i") });
+    await expect(utility).toHaveCount(1);
+    await expect(utility).toContainText("UTILITY");
+  }
+  await canvas.getByTestId("preview-mode-2d").click();
+
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   const objectPanel = page.getByTestId("object-manager-panel");
   await expect(objectPanel).toContainText("Office Building - 28,000 sf");

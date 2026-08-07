@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { canonicalPreview3DFootprintSignature } from "../utils/canonicalGeometrySignature";
+import { normalizePreview3DLayer } from "../utils/preview3DLayer";
 import type { Preview3DItem } from "../types";
 
 type PickedObject = {
@@ -62,24 +63,6 @@ const layerSurfaceLift = (layer: string) => {
   return 0;
 };
 
-const normalizeLayer = (layer: string) => {
-  const key = String(layer || "").toUpperCase();
-  if (/\b[A-Z]\d{1,2}-\d{1,3}\b/.test(key) || /\bLOT\s*\d/.test(key) || /\bBLOCK\s*\d/.test(key)) return "LOT";
-  if (key.includes("BUILDING") || key.includes("PAD")) return "BUILDING";
-  if (key.includes("STRUCTURE")) return "STRUCTURE";
-  if (key.includes("PARK")) return "PARKING";
-  if (key.includes("LOT") || key.includes("BLOCK")) return "LOT";
-  if (key.includes("SIDEWALK") || key.includes("WALK")) return "SIDEWALK";
-  if (key.includes("DRAIN") || key.includes("BASIN") || key.includes("STORM")) return "DRAINAGE";
-  if (key.includes("UTILITY") || key.includes("WATER") || key.includes("SAN") || key.includes("HYDRANT") || key.includes("MANHOLE")) return "UTILITY";
-  if (key.includes("EASEMENT") || key.includes("CONSTRAINT") || key.includes("SETBACK")) return "CONSTRAINT";
-  if (key.includes("LANDSCAPE") || key.includes("OPEN") || key.includes("GREEN")) return "LANDSCAPE";
-  if (key.includes("TERRAIN") || key.includes("SITE")) return "TERRAIN";
-  if (key.includes("ROAD") || key.includes("DRIVE")) return "ROAD";
-  if (key.includes("OBJECT") || key.includes("CUSTOM") || key.includes("C-DRAFT") || key.includes("NOTE") || key.includes("TEXT")) return "OBJECT";
-  return key || "OBJECT";
-};
-
 const describeConfidence = (value: Preview3DItem["confidence"]) => {
   if (typeof value === "number" && Number.isFinite(value)) return `${Math.round(value * 100)}%`;
   if (typeof value === "string" && value.trim()) return value.replaceAll("_", " ");
@@ -123,10 +106,17 @@ const createTextSprite = (label: string, color = "#0f172a") => {
 };
 
 const getItemId = (item: Preview3DItem, index: number) =>
-  item.id || `${normalizeLayer(item.layer).toLowerCase()}-${item.label.replace(/\W+/g, "-").toLowerCase()}-${index}`;
+  item.id || `${normalizePreview3DItemLayer(item).toLowerCase()}-${item.label.replace(/\W+/g, "-").toLowerCase()}-${index}`;
 
-const preview3DLayerText = (item: Preview3DItem) =>
-  `${item.layer || ""} ${item.label || ""} ${item.entityType || ""} ${item.source || ""} ${String(item.meta?.cad_layer || "")} ${String(item.meta?.layer || "")}`;
+const normalizePreview3DItemLayer = (item: Preview3DItem) =>
+  normalizePreview3DLayer(item.layer, [
+    item.label,
+    item.entityType,
+    item.source,
+    item.meta?.cad_layer,
+    item.meta?.layer,
+    item.meta?.network,
+  ]);
 
 const displayHeightForLayer = (item: Preview3DItem, layer: string) => {
   const explicitHeight = Number(item.height);
@@ -152,9 +142,9 @@ const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
 
 const flatPlanOpacity = (layer: string, state: string) => {
   if (layer === "LOT") return 0.018;
-  if (layer === "PARKING") return state === "low" ? 0.72 : 0.9;
-  if (layer === "ROAD") return state === "low" ? 0.62 : 0.8;
-  if (layer === "SIDEWALK") return state === "low" ? 0.58 : 0.82;
+  if (layer === "PARKING") return state === "low" ? 0.9 : 0.98;
+  if (layer === "ROAD") return state === "low" ? 0.88 : 0.98;
+  if (layer === "SIDEWALK") return state === "low" ? 0.78 : 0.92;
   if (layer === "LANDSCAPE") return state === "low" ? 0.42 : 0.58;
   if (state === "low") return 0.5;
   if (state === "imported") return 0.58;
@@ -353,32 +343,32 @@ export default function Preview3DCanvas({
         .map((item, index) => ({
           id: getItemId(item, index),
           label: item.label,
-          layer: normalizeLayer(preview3DLayerText(item)),
+          layer: normalizePreview3DItemLayer(item),
           confidence: describeConfidence(item.confidence),
           blockers: item.blockers || [],
           source: item.source || "preview object",
           geometrySignature: canonicalPreview3DFootprintSignature(item),
-          heightFt: normalizeLayer(preview3DLayerText(item)) === "BUILDING" || normalizeLayer(preview3DLayerText(item)) === "STRUCTURE"
-            ? displayHeightForLayer(item, normalizeLayer(preview3DLayerText(item)))
+          heightFt: normalizePreview3DItemLayer(item) === "BUILDING" || normalizePreview3DItemLayer(item) === "STRUCTURE"
+            ? displayHeightForLayer(item, normalizePreview3DItemLayer(item))
             : null,
           priority:
             getItemId(item, index) === selectedItemId
               ? -2
               : item.meta?.hero_massing
               ? -1
-              : normalizeLayer(preview3DLayerText(item)) === "BUILDING"
+              : normalizePreview3DItemLayer(item) === "BUILDING"
               ? 0
-              : normalizeLayer(preview3DLayerText(item)) === "STRUCTURE"
+              : normalizePreview3DItemLayer(item) === "STRUCTURE"
                 ? 1
-                : normalizeLayer(preview3DLayerText(item)) === "DRAINAGE"
+                : normalizePreview3DItemLayer(item) === "DRAINAGE"
                   ? 2
-                : normalizeLayer(preview3DLayerText(item)) === "LANDSCAPE"
+                : normalizePreview3DItemLayer(item) === "LANDSCAPE"
                   ? 3
-                : normalizeLayer(preview3DLayerText(item)) === "ROAD"
+                : normalizePreview3DItemLayer(item) === "ROAD"
                     ? 4
-                    : normalizeLayer(preview3DLayerText(item)) === "PARKING"
+                    : normalizePreview3DItemLayer(item) === "PARKING"
                       ? 5
-                      : normalizeLayer(preview3DLayerText(item)) === "UTILITY"
+                      : normalizePreview3DItemLayer(item) === "UTILITY"
                         ? 6
                         : 9,
         }))
@@ -390,17 +380,17 @@ export default function Preview3DCanvas({
   const massingStats = useMemo(() => {
     const visibleObjects = items.filter((item) => !item.terrainSample);
     const vertical = visibleObjects.filter((item) => {
-      const layer = normalizeLayer(preview3DLayerText(item));
+      const layer = normalizePreview3DItemLayer(item);
       return layer === "BUILDING" || layer === "STRUCTURE" || (layer === "LOT" && isDenseConceptLot(item));
     }).length;
     const buildingDetail = visibleObjects.reduce((count, item) => {
-      const layer = normalizeLayer(preview3DLayerText(item));
+      const layer = normalizePreview3DItemLayer(item);
       if (layer === "BUILDING") return count + 1;
       if (layer === "LOT" && isDenseConceptLot(item) && Math.min(item.w, item.h) >= 18) return count + 1;
       return count;
     }, 0);
     const civilFlat = visibleObjects.filter((item) => {
-      const layer = normalizeLayer(preview3DLayerText(item));
+      const layer = normalizePreview3DItemLayer(item);
       return ["ROAD", "PARKING", "LOT", "SIDEWALK", "UTILITY", "DRAINAGE"].includes(layer);
     }).length;
     return { vertical, civilFlat, buildingDetail };
@@ -534,7 +524,7 @@ export default function Preview3DCanvas({
     const height = Math.max(mount.clientHeight, 320);
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(previewQuality === "high" ? "#eef2f6" : "#e8edf1");
+    scene.background = new THREE.Color(previewQuality === "high" ? "#e7ebef" : "#e9edf0");
 
     const renderer = new THREE.WebGLRenderer({ antialias: previewQuality === "high", preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, previewQuality === "high" ? 2 : 1.35));
@@ -550,10 +540,10 @@ export default function Preview3DCanvas({
       12,
       ...items
         .filter((item) => !item.terrainSample)
-        .map((item) => displayHeightForLayer(item, normalizeLayer(preview3DLayerText(item)))),
+        .map((item) => displayHeightForLayer(item, normalizePreview3DItemLayer(item))),
     );
-    camera.position.set(maxSpan * 0.9, Math.max(maxSpan * 0.75, maxObjectHeight * 3.1), maxSpan * 1.2);
-    camera.zoom = previewQuality === "high" ? 0.92 : 0.88;
+    camera.position.set(maxSpan * 0.78, Math.max(maxSpan * 0.66, maxObjectHeight * 3.1), maxSpan * 1.03);
+    camera.zoom = previewQuality === "high" ? 1.1 : 1.06;
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
 
@@ -569,11 +559,11 @@ export default function Preview3DCanvas({
 
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = previewQuality === "high" ? 1.04 : 1;
+    renderer.toneMappingExposure = previewQuality === "high" ? 1 : 0.98;
 
-    const ambient = new THREE.HemisphereLight("#f8fbff", "#8f9f91", previewQuality === "high" ? 1.18 : 1.38);
+    const ambient = new THREE.HemisphereLight("#f8fbff", "#7f9182", previewQuality === "high" ? 0.98 : 1.08);
     scene.add(ambient);
-    const sun = new THREE.DirectionalLight("#fff7ed", previewQuality === "high" ? 2.6 : 1.65);
+    const sun = new THREE.DirectionalLight("#fff7ed", previewQuality === "high" ? 2.05 : 1.5);
     sun.position.set(maxSpan * 0.42, maxSpan * 0.95, maxSpan * 0.52);
     sun.castShadow = previewQuality === "high";
     sun.shadow.mapSize.width = previewQuality === "high" ? 2048 : 1024;
@@ -726,7 +716,7 @@ export default function Preview3DCanvas({
       terrainGeometry.computeVertexNormals();
     }
     const terrainMaterial = new THREE.MeshStandardMaterial({
-      color: terrainState.mode === "fallback" ? "#dde4df" : "#cfdfc8",
+      color: terrainState.mode === "fallback" ? "#d5ddd8" : "#c6d8c1",
       roughness: 0.9,
       metalness: 0,
       wireframe: previewQuality === "standard" && terrainState.mode === "terrain",
@@ -745,7 +735,7 @@ export default function Preview3DCanvas({
     ];
     const siteBoundary = new THREE.LineLoop(
       new THREE.BufferGeometry().setFromPoints(siteBoundaryPoints),
-      new THREE.LineBasicMaterial({ color: "#334155", transparent: true, opacity: 0.72 }),
+      new THREE.LineBasicMaterial({ color: "#334155", transparent: true, opacity: 0.48 }),
     );
     siteBoundary.name = "civil-3d-site-boundary";
     root.add(siteBoundary);
@@ -783,13 +773,17 @@ export default function Preview3DCanvas({
     let visibleLabelCount = 0;
     const maxVisibleLabels = selectedItemId ? 1 : 0;
     items.forEach((item, index) => {
-      const layer = normalizeLayer(preview3DLayerText(item));
+      const layer = normalizePreview3DItemLayer(item);
       if (layer === "TERRAIN") return;
       const id = getItemId(item, index);
       const palette = resolveLayerPalette(item, layer);
       const heightFt = displayHeightForLayer(item, layer);
       const itemOffset = typeof item.z === "number" && Number.isFinite(item.z) ? item.z : 0;
-      const baseY = terrainElevationAt(item.x + item.w / 2, item.y + item.h / 2) + itemOffset;
+      const terrainBaseY = terrainElevationAt(item.x + item.w / 2, item.y + item.h / 2);
+      // Basin depths describe engineering intent, but the review mesh does not
+      // cut holes into the terrain. Keep the visible basin surfaces above the
+      // terrain instead of burying them and losing the object entirely.
+      const baseY = terrainBaseY + (layer === "DRAINAGE" ? Math.max(itemOffset, 0) : itemOffset);
       const state = confidenceState(item);
       const minPlanDimension = Math.min(Math.max(item.w, 0), Math.max(item.h, 0));
       const maxPlanDimension = Math.max(Math.max(item.w, 0), Math.max(item.h, 0));
@@ -1205,7 +1199,7 @@ export default function Preview3DCanvas({
         const flatPlanSurface = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK";
         const material = flatPlanSurface
           ? new THREE.MeshBasicMaterial({
-              color: previewQuality === "high" ? palette.top : item.color || palette.top,
+              color: layer === "OBJECT" && item.color ? item.color : palette.top,
               transparent: true,
               depthWrite: false,
               polygonOffset: true,
@@ -1214,7 +1208,7 @@ export default function Preview3DCanvas({
               opacity: flatPlanOpacity(layer, state),
             })
           : new THREE.MeshStandardMaterial({
-              color: previewQuality === "high" ? palette.top : item.color || palette.top,
+              color: layer === "OBJECT" && item.color ? item.color : palette.top,
               roughness: 0.58,
               metalness: 0.02,
             });

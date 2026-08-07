@@ -9,6 +9,7 @@ import {
   buildPlacementPreview3DItems,
   mergePlacementLedPreview3DItems,
 } from "../../app/utils/dashboardPreview3DItems";
+import { normalizePreview3DLayer } from "../../app/utils/preview3DLayer";
 
 const placement = (
   id: string,
@@ -111,6 +112,13 @@ test.describe("canonical geometry parity", () => {
 
     expect(mergePlacementLedPreview3DItems([exactBackendCopy], [placementItem])).toHaveLength(1);
     expect(mergePlacementLedPreview3DItems([nearbyDistinctBuilding], [placementItem])).toHaveLength(2);
+  });
+
+  test("keeps storm utilities distinct from drainage features", () => {
+    expect(normalizePreview3DLayer("UTILITY", ["Storm Sewer", "storm"])).toBe("UTILITY");
+    expect(normalizePreview3DLayer("", ["Storm trunk pipe"])).toBe("UTILITY");
+    expect(normalizePreview3DLayer("DRAINAGE", ["Detention Basin A"])).toBe("DRAINAGE");
+    expect(normalizePreview3DLayer("", ["Storm inlet S-15"])).toBe("DRAINAGE");
   });
 });
 

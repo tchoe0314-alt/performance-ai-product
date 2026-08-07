@@ -8,6 +8,7 @@ import type {
 import type { CadEntityPreview } from "./cadEntityPreview";
 import { SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
 import { canonicalPreview3DFootprintSignature } from "./canonicalGeometrySignature";
+import { normalizePreview3DLayer } from "./preview3DLayer";
 
 type PreviewLayerFlags = {
   buildings: boolean;
@@ -120,19 +121,6 @@ function buildReviewContourTerrainSamples(buildingPlacements: BuildingPlacement[
         terrainSample: true,
       }));
   });
-}
-
-function normalizePreview3DLayer(layer: unknown) {
-  const key = String(layer || "").toUpperCase();
-  if (key.includes("BUILDING") || key.includes("PAD")) return "BUILDING";
-  if (key.includes("PARK")) return "PARKING";
-  if (key.includes("SIDEWALK") || key.includes("WALK")) return "SIDEWALK";
-  if (key.includes("DRAIN") || key.includes("BASIN") || key.includes("STORM") || key.includes("POND")) return "DRAINAGE";
-  if (key.includes("UTILITY") || key.includes("WATER") || key.includes("SAN") || key.includes("HYDRANT") || key.includes("MANHOLE")) return "UTILITY";
-  if (key.includes("LOT") || key.includes("EASEMENT") || key.includes("CONSTRAINT") || key.includes("SETBACK")) return "CONSTRAINT";
-  if (key.includes("TERRAIN") || key.includes("SITE")) return "TERRAIN";
-  if (key.includes("ROAD") || key.includes("DRIVE")) return "ROAD";
-  return key || "OBJECT";
 }
 
 function preview3DOverlapRatio(a: Preview3DItem, b: Preview3DItem) {
