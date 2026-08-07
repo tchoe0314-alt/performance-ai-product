@@ -1199,7 +1199,7 @@ export default function Preview3DCanvas({
         const flatPlanSurface = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK";
         const material = flatPlanSurface
           ? new THREE.MeshBasicMaterial({
-              color: layer === "OBJECT" && item.color ? item.color : palette.top,
+              color: palette.top,
               transparent: true,
               depthWrite: false,
               polygonOffset: true,

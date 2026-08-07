@@ -286,6 +286,14 @@ export function usePreview2DShellHandlers({
       event.stopPropagation();
       finishDraftGeometry();
     },
+    onContextMenu: (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest?.("button,input,textarea,select,[role='button'],[data-no-window-select]")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      finishDraftGeometry();
+    },
     onWheel: (event: ReactWheelEvent<HTMLDivElement>) => {
       if (previewMode !== "2d" || !overlayBoundsResolved || showMap) return;
       userAdjustedCanvasViewRef.current = true;

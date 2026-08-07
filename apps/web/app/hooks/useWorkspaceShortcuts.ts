@@ -125,21 +125,9 @@ export function useWorkspaceShortcuts({
       }
     };
 
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (event.key !== "Escape") return;
-      consumeShortcut(event);
-      onCancelActiveTool();
-    };
     window.addEventListener("keydown", onKeyDown, { capture: true });
-    document.addEventListener("keydown", onKeyDown, { capture: true });
-    window.addEventListener("keyup", onKeyUp, { capture: true });
-    document.addEventListener("keyup", onKeyUp, { capture: true });
     return () => {
       window.removeEventListener("keydown", onKeyDown, { capture: true });
-      document.removeEventListener("keydown", onKeyDown, { capture: true });
-      window.removeEventListener("keyup", onKeyUp, { capture: true });
-      document.removeEventListener("keyup", onKeyUp, { capture: true });
     };
   }, [
     onCancelActiveTool,

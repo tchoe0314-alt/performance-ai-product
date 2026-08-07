@@ -37,12 +37,36 @@ async function openAllDraftToolGroups(page: Page) {
 }
 
 async function clickSurface(surface: Locator, xRatio: number, yRatio: number) {
+  await surface.scrollIntoViewIfNeeded();
   const point = await surface.evaluate(
     (element, ratios) => {
       const rect = element.getBoundingClientRect();
-      const x = rect.left + rect.width * ratios.xRatio;
-      const y = rect.top + rect.height * ratios.yRatio;
-      return { x, y };
+      const clamp = (value: number) => Math.max(0.08, Math.min(0.92, value));
+      const candidates: Array<{ x: number; y: number; distance: number }> = [];
+      for (const xOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24, -0.32]) {
+        for (const yOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24]) {
+          const candidateXRatio = clamp(ratios.xRatio + xOffset);
+          const candidateYRatio = clamp(ratios.yRatio + yOffset);
+          const x = rect.left + rect.width * candidateXRatio;
+          const y = rect.top + rect.height * candidateYRatio;
+          const hit = document.elementFromPoint(x, y);
+          const blocked = hit?.closest?.(
+            '[data-object-overlay],button,input,select,textarea,aside,header,[data-testid="cad-precision-tools"],[data-testid="workspace-right-panel"]',
+          );
+          if ((hit === element || element.contains(hit)) && !blocked) {
+            candidates.push({
+              x,
+              y,
+              distance: Math.abs(candidateXRatio - ratios.xRatio) + Math.abs(candidateYRatio - ratios.yRatio),
+            });
+          }
+        }
+      }
+      candidates.sort((a, b) => a.distance - b.distance);
+      return candidates[0] ?? {
+        x: rect.left + rect.width * clamp(ratios.xRatio),
+        y: rect.top + rect.height * clamp(ratios.yRatio),
+      };
     },
     { xRatio, yRatio },
   );
@@ -155,6 +179,13 @@ test.describe("hostile-use UI recovery", () => {
   test("unfinished boundary drawing stays reversible with Finish, Cancel, and Escape", async ({ page }) => {
     const runtime = collectRuntimeFailures(page);
     await openFreshProject(page);
+    await page.evaluate(() => {
+      (window as typeof window & { __civoraCancelEventCount?: number }).__civoraCancelEventCount = 0;
+      window.addEventListener("civora:cancel-active-tool", () => {
+        const state = window as typeof window & { __civoraCancelEventCount?: number };
+        state.__civoraCancelEventCount = (state.__civoraCancelEventCount ?? 0) + 1;
+      });
+    });
     await openPanel(page, /^Setup$/);
     await page
       .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
@@ -180,6 +211,29 @@ test.describe("hostile-use UI recovery", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Finish", exact: true })).toHaveCount(0);
     await expect(page.getByTestId("site-status")).toContainText("Site Editable");
+    expect(
+      await page.evaluate(
+        () => (window as typeof window & { __civoraCancelEventCount?: number }).__civoraCancelEventCount,
+      ),
+    ).toBe(1);
+
+    await openPanel(page, /^Setup$/);
+    await page
+      .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
+      .click();
+    for (const point of [
+      [0.3, 0.35],
+      [0.7, 0.35],
+      [0.7, 0.7],
+      [0.3, 0.7],
+    ] as const) {
+      await clickSurface(surface, point[0], point[1]);
+    }
+    await expect(page.getByRole("button", { name: "Finish", exact: true }).filter({ visible: true })).toBeEnabled();
+    await expect(surface).toHaveAttribute("data-draft-point-count", "4");
+    await surface.click({ button: "right", position: { x: 20, y: 20 } });
+    await expect(page.getByRole("button", { name: "Finish", exact: true })).toHaveCount(0);
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     runtime.assertClean();
   });
 

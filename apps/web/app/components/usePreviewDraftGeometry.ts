@@ -289,6 +289,7 @@ export function usePreviewDraftGeometry({
       bounds: PreviewBounds | null,
     ) => {
       if (drawMode === "select") return false;
+      if (event.button !== 0) return false;
       if (!bounds || !previewRef.current) return false;
       if (drawMode === "pan") {
         event.preventDefault();
@@ -347,31 +348,6 @@ export function usePreviewDraftGeometry({
         return true;
       }
       const nextPoints = [...currentDraftPoints, point];
-      if (drawMode === "site" && nextPoints.length >= 4) {
-        const cleaned = cleanupPolygon(nextPoints, 0.5);
-        if (!cleaned.ok) {
-          setCadCommandStatus(`SITE blocked: ${cleaned.reason}`);
-          pushCadCommandFeedback("SITE", "blocked", `SITE blocked: ${cleaned.reason}`);
-          return true;
-        }
-        const validation = validatePolygon(cleaned.value);
-        if (!validation.ok) {
-          const reason = validation.issues.join(", ");
-          setCadCommandStatus(`SITE blocked: ${reason}`);
-          pushCadCommandFeedback("SITE", "blocked", `SITE blocked: ${reason}`);
-          return true;
-        }
-        onCreateSiteBoundary?.({ points: cleaned.value });
-        setDrawMode("select");
-        setDraftPreviewPoint(null);
-        draftPointsRef.current = [];
-        setDraftPoints([]);
-        setDrawAutoFinishPointCount(null);
-        setCadActiveCommand(null);
-        setCadCommandStatus("SITE boundary locked from drawn points.");
-        pushCadCommandFeedback("SITE", "applied", "Site boundary locked from drawn points.");
-        return true;
-      }
       if (
         drawAutoFinishPointCount &&
         nextPoints.length >= drawAutoFinishPointCount &&
@@ -436,7 +412,6 @@ export function usePreviewDraftGeometry({
       draftPointsRef,
       drawMode,
       onCreateCustomGeometry,
-      onCreateSiteBoundary,
       previewRef,
       pushCadCommandFeedback,
       resolveCadSnapPoint,
@@ -521,6 +496,7 @@ export function usePreviewDraftGeometry({
 
   useEffect(() => {
     const handleUndo = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       const isUndo = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z";
       if (!isUndo) return;
       if (!lastPolylineEdit && !lastRectEdit) return;
@@ -544,6 +520,7 @@ export function usePreviewDraftGeometry({
       setDrawMode("select");
     };
     const handleKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
       if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
       if (event.key === "Escape") {
