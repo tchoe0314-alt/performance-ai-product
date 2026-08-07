@@ -277,6 +277,17 @@ export function useDashboardApplySiteAction({
     autoFitSite(width, height, "Site Boundary", undefined, false, true);
     setShowSiteBounds(false);
     setSiteScaleLocked(true);
+    // Commit the Setup close before persistence begins. A slow project save must
+    // not close a newer panel (for example Chat) that the user opens meanwhile.
+    setSiteSelectionMode(false);
+    setActiveWorkspaceMode("canvas");
+    setActiveSidePanel(null);
+    setRenderedSidePanel(null);
+    setRightRailCollapsed(true);
+    setSidePanelVisible(false);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setLeftSidebarOpen(false);
+    }
     const nextSiteInputs = {
       ...(currentInput?.meta?.site_inputs ?? {}),
       site_alignment_locked: true,
@@ -327,15 +338,6 @@ export function useDashboardApplySiteAction({
         },
       },
     });
-    setSiteSelectionMode(false);
-    setActiveWorkspaceMode("canvas");
-    setActiveSidePanel(null);
-    setRenderedSidePanel(null);
-    setRightRailCollapsed(true);
-    setSidePanelVisible(false);
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setLeftSidebarOpen(false);
-    }
     updateProjectStatus({
       state: "working",
       area: "setup",
