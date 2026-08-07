@@ -42,6 +42,26 @@ const layerPalette: Record<string, { top: string; side: string; line: string }> 
   LANDSCAPE: { top: "#93bb64", side: "#6f944f", line: "#365314" },
 };
 
+const resolveLayerPalette = (item: Preview3DItem, layer: string) => {
+  if (layer !== "UTILITY") {
+    return layerPalette[layer] || { top: item.color || "#cbd5e1", side: item.color || "#94a3b8", line: "#f8fafc" };
+  }
+  const network = `${String(item.meta?.network || "")} ${String(item.meta?.cad_layer || "")} ${item.label}`.toLowerCase();
+  if (network.includes("water")) return { top: "#3b82f6", side: "#2563eb", line: "#dbeafe" };
+  if (network.includes("sanitary") || network.includes("sewer")) return { top: "#22c55e", side: "#15803d", line: "#dcfce7" };
+  if (network.includes("storm") || network.includes("drain")) return { top: "#22d3ee", side: "#0891b2", line: "#cffafe" };
+  return layerPalette.UTILITY;
+};
+
+const layerSurfaceLift = (layer: string) => {
+  if (layer === "SIDEWALK") return 0.28;
+  if (layer === "PARKING") return 0.22;
+  if (layer === "ROAD") return 0.16;
+  if (layer === "LANDSCAPE") return 0.12;
+  if (layer === "LOT") return 0.04;
+  return 0;
+};
+
 const normalizeLayer = (layer: string) => {
   const key = String(layer || "").toUpperCase();
   if (/\b[A-Z]\d{1,2}-\d{1,3}\b/.test(key) || /\bLOT\s*\d/.test(key) || /\bBLOCK\s*\d/.test(key)) return "LOT";
@@ -766,7 +786,7 @@ export default function Preview3DCanvas({
       const layer = normalizeLayer(preview3DLayerText(item));
       if (layer === "TERRAIN") return;
       const id = getItemId(item, index);
-      const palette = layerPalette[layer] || { top: item.color || "#cbd5e1", side: item.color || "#94a3b8", line: "#f8fafc" };
+      const palette = resolveLayerPalette(item, layer);
       const heightFt = displayHeightForLayer(item, layer);
       const itemOffset = typeof item.z === "number" && Number.isFinite(item.z) ? item.z : 0;
       const baseY = terrainElevationAt(item.x + item.w / 2, item.y + item.h / 2) + itemOffset;
@@ -800,6 +820,7 @@ export default function Preview3DCanvas({
       };
 
       const isFlatPlanLayer = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK" || layer === "LANDSCAPE";
+      const visualLift = layerSurfaceLift(layer);
       const cadMaterial = new THREE.MeshStandardMaterial({
         color: layer === "LOT" ? palette.top : state === "blocked" ? "#dc2626" : item.unsupported ? "#f59e0b" : palette.top,
         roughness: layer === "ROAD" || layer === "PARKING" ? 0.86 : layer === "DRAINAGE" ? 0.42 : 0.72,
@@ -938,6 +959,7 @@ export default function Preview3DCanvas({
             });
             geometry.rotateX(-Math.PI / 2);
             const mesh = new THREE.Mesh(geometry, cadMaterial);
+            mesh.position.y = baseY + visualLift;
             mesh.userData = object.userData;
             mesh.castShadow = previewQuality === "high" && layer === "BUILDING";
             mesh.receiveShadow = layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK";
@@ -973,8 +995,8 @@ export default function Preview3DCanvas({
             stripeSegments.forEach(([start, end]) => {
               const line = new THREE.Line(
                 new THREE.BufferGeometry().setFromPoints([
-                  toScene(start[0], start[1], baseY + displayDepth + 0.06),
-                  toScene(end[0], end[1], baseY + displayDepth + 0.06),
+                  toScene(start[0], start[1], baseY + visualLift + displayDepth + 0.06),
+                  toScene(end[0], end[1], baseY + visualLift + displayDepth + 0.06),
                 ]),
                 stripeMaterial,
               );
@@ -1002,7 +1024,7 @@ export default function Preview3DCanvas({
           const corridorGeometry = corridorSurfaceGeometry(
             planPoints,
             corridorWidth,
-            baseY + slabDepth + 0.05,
+            baseY + visualLift + slabDepth + 0.05,
             centerX,
             centerY,
           );
@@ -1016,7 +1038,7 @@ export default function Preview3DCanvas({
           if (layer === "ROAD") {
             const centerline = new THREE.Line(
               new THREE.BufferGeometry().setFromPoints(
-                planPoints.map(([x, y]) => toScene(x, y, baseY + slabDepth + 0.15)),
+                planPoints.map(([x, y]) => toScene(x, y, baseY + visualLift + slabDepth + 0.15)),
               ),
               lineMaterial,
             );
@@ -1031,7 +1053,7 @@ export default function Preview3DCanvas({
               new THREE.LineBasicMaterial({
                 color: palette.side,
                 transparent: true,
-                opacity: previewQuality === "high" ? 0.38 : 0.32,
+                opacity: previewQuality === "high" ? 0.78 : 0.62,
               }),
             );
             utilityLine.userData = object.userData;
@@ -1040,7 +1062,7 @@ export default function Preview3DCanvas({
               utilityPoints.forEach((point, pointIndex) => {
                 const node = new THREE.Mesh(
                   new THREE.SphereGeometry(pointIndex === 0 || pointIndex === utilityPoints.length - 1 ? 0.42 : 0.28, 10, 8),
-                  new THREE.MeshStandardMaterial({ color: palette.side, roughness: 0.72, transparent: true, opacity: 0.58 }),
+                  new THREE.MeshStandardMaterial({ color: palette.side, roughness: 0.72, transparent: true, opacity: 0.82 }),
                 );
                 node.position.copy(point);
                 node.userData = object.userData;
@@ -1142,9 +1164,9 @@ export default function Preview3DCanvas({
       } else if (layer === "UTILITY") {
         const horizontal = item.w >= item.h;
         const geometry = new THREE.BoxGeometry(
-          Math.max(horizontal ? item.w : 0.72, 0.72),
-          0.055,
-          Math.max(horizontal ? 0.72 : item.h, 0.72),
+          Math.max(horizontal ? item.w : 1.15, 1.15),
+          0.08,
+          Math.max(horizontal ? 1.15 : item.h, 1.15),
         );
         const utility = new THREE.Mesh(
           geometry,
@@ -1153,7 +1175,7 @@ export default function Preview3DCanvas({
             roughness: 0.72,
             metalness: 0,
             transparent: true,
-            opacity: previewQuality === "high" ? 0.42 : 0.34,
+            opacity: previewQuality === "high" ? 0.76 : 0.58,
           }),
         );
         utility.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + 0.12));
@@ -1199,7 +1221,6 @@ export default function Preview3DCanvas({
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = previewQuality === "high" && layer === "BUILDING";
         mesh.receiveShadow = layer !== "ROAD" && layer !== "PARKING" && layer !== "SIDEWALK";
-        const visualLift = flatPlanSurface ? 0.18 : 0;
         mesh.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + visualLift + heightFt / 2));
         mesh.userData = object.userData;
         object.add(mesh);
