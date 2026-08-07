@@ -295,6 +295,10 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
     const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
+    // Exact endpoint/intersection snaps intentionally outrank Ortho. Turn
+    // object/grid snapping off so this test isolates the Ortho constraint.
+    await page.keyboard.press("s");
+    await expect(page.getByLabel("Snap")).not.toBeChecked();
     await page.keyboard.press("o");
     await expect(page.getByLabel("Ortho")).toBeChecked();
     await cadTools.getByTestId("cad-tool-line").click();
