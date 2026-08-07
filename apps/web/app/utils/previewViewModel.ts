@@ -47,7 +47,6 @@ export function findPreviewHoveredObject({
 export function findPreviewSelectedObject({
   selectedBuildingId,
   managedObjectId,
-  hoveredObjectId,
   selectedObjectIds,
   cadSelectionSet,
   buildingPlacements,
@@ -56,7 +55,6 @@ export function findPreviewSelectedObject({
 }: {
   selectedBuildingId?: string | null;
   managedObjectId: string | null;
-  hoveredObjectId: string | null;
   selectedObjectIds: string[];
   cadSelectionSet: string[];
   buildingPlacements: BuildingPlacement[];
@@ -66,7 +64,6 @@ export function findPreviewSelectedObject({
   const selectedIds = [
     selectedBuildingId,
     managedObjectId,
-    hoveredObjectId,
     ...selectedObjectIds,
     ...cadSelectionSet,
   ].filter((id): id is string => Boolean(id));

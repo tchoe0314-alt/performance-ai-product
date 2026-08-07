@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, Maximize2, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Maximize2, Trash2, X } from "lucide-react";
 
 import type { BuildingPlacement, SiteObjectType } from "../types";
 import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
@@ -21,6 +21,7 @@ type PreviewObjectManagerOverlayProps = {
   selectedCadIds: string[];
   onSetManagedObjectId: (id: string | null) => void;
   onSelectBuilding: (id: string | null) => void;
+  onSelectObjects?: (ids: string[]) => void;
   onSetCadSelectionSet: (ids: string[]) => void;
   onClearSelectedVertex: () => void;
   onSetCadCommandStatus: (message: string) => void;
@@ -51,6 +52,7 @@ export function PreviewObjectManagerOverlay({
   selectedCadIds,
   onSetManagedObjectId,
   onSelectBuilding,
+  onSelectObjects,
   onSetCadSelectionSet,
   onClearSelectedVertex,
   onSetCadCommandStatus,
@@ -83,6 +85,7 @@ export function PreviewObjectManagerOverlay({
           const id = event.target.value || null;
           onSetManagedObjectId(id);
           onSelectBuilding(id);
+          onSelectObjects?.(id ? [id] : []);
           onSetCadSelectionSet(id ? [id] : []);
           onClearSelectedVertex();
         }}
@@ -115,6 +118,23 @@ export function PreviewObjectManagerOverlay({
       ) : null}
       {selectedObject ? (
         <>
+          <button
+            type="button"
+            aria-label="Deselect canvas object"
+            title="Deselect canvas object"
+            data-testid="preview-object-manager-clear-selection"
+            onClick={() => {
+              onSetManagedObjectId(null);
+              onSelectBuilding(null);
+              onSelectObjects?.([]);
+              onSetCadSelectionSet([]);
+              onClearSelectedVertex();
+              onSetCadCommandStatus("Selection cleared.");
+            }}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          >
+            <X className="h-4 w-4" />
+          </button>
           <input
             aria-label="Rename selected object"
             data-testid="preview-object-manager-rename"

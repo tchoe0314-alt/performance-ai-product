@@ -623,14 +623,13 @@ export default function PreviewPanel({
       findPreviewSelectedObject({
         selectedBuildingId,
         managedObjectId,
-        hoveredObjectId,
         selectedObjectIds,
         cadSelectionSet,
         buildingPlacements,
         cadEntityPreviewObjects,
         suggestedPlacements,
       }),
-    [buildingPlacements, cadEntityPreviewObjects, cadSelectionSet, hoveredObjectId, managedObjectId, selectedBuildingId, selectedObjectIds, suggestedPlacements],
+    [buildingPlacements, cadEntityPreviewObjects, cadSelectionSet, managedObjectId, selectedBuildingId, selectedObjectIds, suggestedPlacements],
   );
   const aiProposedBuildingPlacements = useMemo(
     () => buildingPlacements.filter((item) => !isDetectedExistingPlacement(item)),
@@ -2626,6 +2625,7 @@ export default function PreviewPanel({
               selectedCadIds,
               onSetManagedObjectId: setManagedObjectId,
               onSelectBuilding,
+              onSelectObjects,
               onSetCadSelectionSet: setCadSelectionSet,
               onClearSelectedVertex: () => setSelectedVertex(null),
               onSetCadCommandStatus: setCadCommandStatus,

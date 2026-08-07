@@ -178,18 +178,30 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
   }, 20_000);
   await shot(page, testInfo, "05-object-manager-edits");
 
+  await timed("clear selection and minimize drafting controls", async () => {
+    await humanClick(page.getByTestId("preview-object-manager-clear-selection"), "Clear selection");
+    await expect(page.getByTestId("preview-object-manager")).toBeHidden({ timeout: 10_000 });
+    await humanClick(page.getByRole("button", { name: "Minimize" }), "Minimize Draw panel");
+    await expect(page.getByTestId("workspace-right-panel")).toBeHidden({ timeout: 10_000 });
+  }, 10_000);
+
   await timed("preview mode and quality toggles", async () => {
-    const high = page.getByTestId("preview-inner-quality-high").filter({ visible: true }).first();
-    if (await high.isVisible().catch(() => false)) await humanClick(high, "High Quality");
-    const ai = page.getByTestId("ai-realism-toggle").filter({ visible: true }).first();
-    if (await ai.isVisible().catch(() => false)) await humanClick(ai, "AI Visualization toggle");
-    const mode3d = page.getByTestId("preview-inner-mode-3d").filter({ visible: true }).first();
-    if (await mode3d.isVisible().catch(() => false)) {
-      await humanClick(mode3d, "3D mode");
-      await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 30_000 });
-      const mode2d = page.getByTestId("preview-inner-mode-2d").filter({ visible: true }).first();
-      if (await mode2d.isVisible().catch(() => false)) await humanClick(mode2d, "2D mode");
-    }
+    const high = page.getByTestId("preview-quality-high");
+    await humanClick(high, "Plan Sheet quality");
+    await expect(high).toHaveAttribute("aria-pressed", "true");
+    await shot(page, testInfo, "06-plan-sheet-preview");
+
+    const aiOn = page.getByTestId("ai-realism-on");
+    await humanClick(aiOn, "AI Visualization on");
+    await expect(page.getByTestId("ai-realism-visual-frame")).toBeVisible({ timeout: 30_000 });
+    await shot(page, testInfo, "06-ai-visualization");
+    await humanClick(page.getByTestId("ai-realism-off"), "AI Visualization off");
+
+    const mode3d = page.getByTestId("preview-mode-3d");
+    await humanClick(mode3d, "3D mode");
+    await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 30_000 });
+    await shot(page, testInfo, "06-3d-preview");
+    await humanClick(page.getByTestId("preview-mode-2d"), "2D mode");
   }, 35_000);
   await shot(page, testInfo, "06-preview-toggles");
 

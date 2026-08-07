@@ -84,6 +84,9 @@ test.describe("canonical geometry parity", () => {
       );
       expect(item?.linkedObjectId).toBe(source.id);
     });
+    expect(objectItems.find((item) => item.id === "driveway")?.layer).toBe("ROAD");
+    expect(objectItems.find((item) => item.id === "parking")?.layer).toBe("PARKING");
+    expect(objectItems.find((item) => item.id === "water")?.layer).toBe("UTILITY");
   });
 
   test("deduplicates an exact rendering copy but preserves nearby distinct objects", () => {

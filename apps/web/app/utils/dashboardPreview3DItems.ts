@@ -659,6 +659,8 @@ export function buildPlacementPreview3DItems({
           ? "BUILDING"
           : isParking
             ? "PARKING"
+            : isRoad
+              ? "ROAD"
             : isDrainage
             ? "DRAINAGE"
             : isUtility
