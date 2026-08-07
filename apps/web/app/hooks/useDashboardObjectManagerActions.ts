@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { MutableRefObject } from "react";
 
 import type { BuildingPlacement, ChatMessage, SiteObjectType } from "../types";
@@ -152,12 +152,24 @@ export function useDashboardObjectManagerActions({
   systemsImpactedByPlacement,
   appendChatMessage,
 }: UseDashboardObjectManagerActionsOptions) {
+  const objectClipboardRef = useRef(objectClipboard);
+  useEffect(() => {
+    objectClipboardRef.current = objectClipboard;
+  }, [objectClipboard]);
+  const setObjectClipboardImmediate = useCallback<StateSetter<BuildingPlacement[]>>((value) => {
+    const next = typeof value === "function"
+      ? value(objectClipboardRef.current)
+      : value;
+    objectClipboardRef.current = next;
+    setObjectClipboard(next);
+  }, [setObjectClipboard]);
+
   const objectManagerSelectionActions = useMemo(() => ({
     appendStatusMessage: (message: string) => appendChatMessage("assistant", message, "status"),
     handleRemoveBuilding,
     reportObjectActionBlocker,
     setActivePlacementId,
-    setObjectClipboard,
+    setObjectClipboard: setObjectClipboardImmediate,
     setObjectManagerStatusMessage,
     setPreviewInteraction,
     setSelectedObjectIds,
@@ -167,7 +179,7 @@ export function useDashboardObjectManagerActions({
     handleRemoveBuilding,
     reportObjectActionBlocker,
     setActivePlacementId,
-    setObjectClipboard,
+    setObjectClipboardImmediate,
     setObjectManagerStatusMessage,
     setPreviewInteraction,
     setSelectedObjectIds,
@@ -395,11 +407,11 @@ export function useDashboardObjectManagerActions({
 
   const handleObjectManagerPaste = useCallback(() => {
     runObjectManagerPaste({
-      objectClipboard,
+      objectClipboard: objectClipboardRef.current,
       buildingPlacements,
       actions: objectManagerCopyActions,
     });
-  }, [buildingPlacements, objectClipboard, objectManagerCopyActions]);
+  }, [buildingPlacements, objectClipboardRef, objectManagerCopyActions]);
 
   const handleObjectManagerTransform = useCallback((item: BuildingPlacement, transform: ObjectManagerSingleTransform) => {
     runObjectManagerTransform({
@@ -634,5 +646,6 @@ export function useDashboardObjectManagerActions({
     handleObjectManagerUpdateBlock,
     handleSnapObjectVertexToNearestEndpoint,
     handleUpdateObjectVertex,
+    setObjectClipboardImmediate,
   };
 }

@@ -1712,6 +1712,7 @@ function PerformanceAIDashboardView({
     handleObjectManagerUpdateBlock,
     handleSnapObjectVertexToNearestEndpoint,
     handleUpdateObjectVertex,
+    setObjectClipboardImmediate,
   } = useDashboardObjectManagerActions({
     activePlacementId,
     arrayColumns,
@@ -4679,7 +4680,7 @@ function PerformanceAIDashboardView({
     setCadToolRequest,
     setLayerManagerOpen,
     setLeftSidebarOpen,
-    setObjectClipboard,
+    setObjectClipboard: setObjectClipboardImmediate,
     setObjectManagerStatusMessage,
     setPendingClarification,
     setPlacementModeEnabled,

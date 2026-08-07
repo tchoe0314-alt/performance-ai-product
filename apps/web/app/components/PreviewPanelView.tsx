@@ -2063,8 +2063,6 @@ export default function PreviewPanel({
     onSetPreviewInteraction,
     moveSelectedCadObjectsByVector,
     transformSelectedCadObjects,
-    undoCadCommand,
-    redoCadCommand,
   });
 
   const {

@@ -60,7 +60,11 @@ test("step 1.1 preview stability flow", async ({ page, request, baseURL }) => {
   await expect(page.getByTestId("site-status")).toContainText("Site Editable");
   await refreshedSiteSection.getByRole("button", { name: "Lock Boundary" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
-  await page.getByTestId("workspace-right-panel").getByRole("button", { name: "Minimize" }).click();
+  const workspacePanel = page.getByTestId("workspace-right-panel");
+  if (await workspacePanel.isVisible().catch(() => false)) {
+    await workspacePanel.getByRole("button", { name: "Minimize" }).click();
+  }
+  await expect(workspacePanel).toHaveCount(0);
 
   for (let index = 0; index < 8; index += 1) {
     await canvas.getByTestId("preview-quality-standard").first().click();

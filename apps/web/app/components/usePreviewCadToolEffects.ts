@@ -62,8 +62,6 @@ type PreviewCadShortcutEffectArgs = {
   onSetPreviewInteraction: (value: "static" | "edit") => void;
   moveSelectedCadObjectsByVector: (dx: number, dy: number) => void;
   transformSelectedCadObjects: (operation: "move" | "rotate" | "scale" | "flip_horizontal" | "flip_vertical", value?: string) => void;
-  undoCadCommand: () => void;
-  redoCadCommand: () => void;
 };
 
 export function usePreviewCadToolRequestEffect({
@@ -204,8 +202,6 @@ export function usePreviewCadShortcutEffect({
   onSetPreviewInteraction,
   moveSelectedCadObjectsByVector,
   transformSelectedCadObjects,
-  undoCadCommand,
-  redoCadCommand,
 }: PreviewCadShortcutEffectArgs) {
   useEffect(() => {
     const handleCadShortcuts = (event: KeyboardEvent) => {
@@ -213,17 +209,11 @@ export function usePreviewCadShortcutEffect({
       if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
       const key = event.key.toLowerCase();
       const command = event.metaKey || event.ctrlKey;
-      if (command && key === "z") {
-        event.preventDefault();
-        if (event.shiftKey) redoCadCommand();
-        else undoCadCommand();
-        return;
-      }
-      if (command && key === "y") {
-        event.preventDefault();
-        redoCadCommand();
-        return;
-      }
+      // Modified shortcuts belong to the unified workspace history and
+      // clipboard. Canvas edits already record there through onUpdateBuilding;
+      // handling them again here made Cmd/Ctrl+Z undo an older canvas edit and
+      // made Cmd/Ctrl+V look like the plain V selection shortcut.
+      if (command) return;
       if (["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
         if (!selectedCadCount) return;
         event.preventDefault();
@@ -290,7 +280,6 @@ export function usePreviewCadShortcutEffect({
     canDrawObjects,
     moveSelectedCadObjectsByVector,
     onSetPreviewInteraction,
-    redoCadCommand,
     selectedCadCount,
     setCadOrthoEnabled,
     setCadSnapEnabled,
@@ -298,6 +287,5 @@ export function usePreviewCadShortcutEffect({
     setDraftPreviewPoint,
     setDrawMode,
     transformSelectedCadObjects,
-    undoCadCommand,
   ]);
 }
