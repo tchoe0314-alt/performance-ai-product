@@ -153,6 +153,7 @@ export function SelectedObjectCard({
             <button
               type="button"
               onClick={() => onMove(selectedObject)}
+              data-testid="selected-object-move-on-canvas"
               className="rounded-lg border border-slate-950 bg-slate-950 px-3 py-2 font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800"
             >
               Move

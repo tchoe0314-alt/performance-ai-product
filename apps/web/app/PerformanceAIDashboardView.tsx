@@ -1416,7 +1416,7 @@ function PerformanceAIDashboardView({
         canonicalCount: buildingPlacements.length,
         placedCount: placedObjectCount,
         previewImageActive: Boolean(planPreviewUrl),
-        placementMode: placementModeEnabled || Boolean(activePlacementId),
+        placementMode: placementModeEnabled,
       };
       console.debug(`[debug-preview] ${label}`, { ...snapshot, ...(payload ?? {}) });
     },
@@ -6073,7 +6073,6 @@ function PerformanceAIDashboardView({
                     handleSelectPlacementTarget={handleSelectPlacementTarget}
                     selectedBuilding={selectedBuilding}
                     handleObjectManagerSelect={handleObjectManagerSelect}
-                    setPlacementModeEnabled={setPlacementModeEnabled}
                     setFocusObjectId={setFocusObjectId}
                     onCloseSidePanel={handleCloseSidePanel}
                     handleObjectManagerCopy={handleObjectManagerCopy}

@@ -91,7 +91,7 @@ export function buildPreviewInteractionState({
   const activeDrawMode =
     (drawMode === "site" && !siteLocked) ||
     ((drawMode === "polyline" || drawMode === "polygon" || drawMode === "rect" || drawMode === "point") && canDrawObjects);
-  const drawingOwnsCanvasHits = activeDrawMode || drawMode === "pan";
+  const drawingOwnsCanvasHits = placementMode || activeDrawMode || drawMode === "pan";
   const drawingSurfaceInteractive =
     Boolean(placementMode) ||
     activeDrawMode ||

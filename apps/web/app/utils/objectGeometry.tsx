@@ -731,7 +731,7 @@ export const getObjectDimensionsLabel = (item: BuildingPlacement) => {
   return pieces.join(" · ");
 };
 
-export const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style" | "type" | "hide" | "delete" | "copy" | "transform" | "resize") => {
+export const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style" | "type" | "hide" | "delete" | "copy" | "move" | "transform" | "resize") => {
   if (item.type === "site") {
     return `${action} needs input: locked site boundary is controlled from Setup.`;
   }
@@ -747,7 +747,7 @@ export const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" |
   if (action === "delete" && item.locked) {
     return `Delete needs input: unlock ${item.label} before deleting it.`;
   }
-  if ((action === "copy" || action === "transform" || action === "resize") && item.locked) {
+  if ((action === "copy" || action === "move" || action === "transform" || action === "resize") && item.locked) {
     return `${action} needs input: unlock ${item.label} before changing draft geometry.`;
   }
   return null;

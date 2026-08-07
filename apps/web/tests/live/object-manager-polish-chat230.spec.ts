@@ -17,25 +17,24 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismPr
 }
 
 async function focusCommand(page: Page) {
-  const chatInput = page.getByTestId("civora-chat-input");
-  if (await chatInput.isVisible()) {
-    await chatInput.click();
-    await expect(chatInput).toBeFocused({ timeout: 5_000 });
-    return chatInput;
+  const visibleInputs = () =>
+    page.locator(
+      '[data-testid="civora-chat-input"]:visible, [data-testid="civora-command-input"]:visible',
+    );
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const input = visibleInputs().last();
+    if (await input.count()) {
+      try {
+        await input.click({ timeout: 2_000 });
+        return input;
+      } catch (error) {
+        if (!/detached from the DOM/i.test(String(error))) throw error;
+      }
+    }
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+    await page.waitForTimeout(100);
   }
-  await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
-  if (await chatInput.isVisible()) {
-    await expect(chatInput).toBeFocused({ timeout: 5_000 });
-    return chatInput;
-  }
-  const commandInput = page.getByTestId("civora-command-input");
-  await expect(commandInput).toBeVisible({ timeout: 5_000 });
-  const focused = await commandInput.evaluate((element) => document.activeElement === element).catch(() => false);
-  if (!focused) {
-    await commandInput.click({ force: true });
-  }
-  await expect(commandInput).toBeFocused({ timeout: 5_000 });
-  return commandInput;
+  throw new Error("No visible Civora command or chat input is available.");
 }
 
 function platformShortcut(key: string) {
@@ -43,11 +42,26 @@ function platformShortcut(key: string) {
 }
 
 async function runCommand(page: Page, command: string) {
-  const input = await focusCommand(page);
-  await input.fill(command);
-  // Focus may intentionally migrate from the compact command bar to the mounted
-  // Chat composer while both surfaces share the same prompt state.
-  await page.keyboard.press("Enter");
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const input = await focusCommand(page);
+    try {
+      await input.fill(command, { timeout: 5_000 });
+      // Focus may intentionally migrate from the compact command bar to the mounted
+      // Chat composer while both surfaces share the same prompt state.
+      await page.keyboard.press("Enter");
+      await expect.poll(async () => {
+        const values = await page.locator(
+          '[data-testid="civora-chat-input"], [data-testid="civora-command-input"]',
+        ).evaluateAll((elements) =>
+          elements.map((element) => (element as HTMLTextAreaElement).value),
+        );
+        return values.length === 0 || values.every((value) => value === "");
+      }, { timeout: 5_000 }).toBeTruthy();
+      return;
+    } catch (error) {
+      if (attempt === 2 || !/detached from the DOM/i.test(String(error))) throw error;
+    }
+  }
 }
 
 async function openDrawPanel(page: Page) {
@@ -307,6 +321,38 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     expect(afterResize!.width).toBeGreaterThan(beforeResize!.width + 10);
     expect(afterResize!.height).toBeGreaterThan(beforeResize!.height + 6);
     await expect(page.getByTestId("selected-object-resize-handle")).toBeVisible();
+  });
+
+  test("selected object Move arms that object and places it with one canvas click", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await openDrawPanel(page);
+
+    const officeOverlay = canvasObject(page, "Office Building");
+    await expect(officeOverlay).toBeVisible();
+    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-select").click();
+    await officeOverlay.click();
+    const beforeMove = await officeOverlay.boundingBox();
+    expect(beforeMove).not.toBeNull();
+
+    await page.getByTestId("selected-object-move-on-canvas").click();
+    await expect(page.getByText(/Ready to place Office Building.*Click on the canvas/i)).toBeVisible();
+
+    const surfaceBox = await page.getByTestId("preview-drawing-surface").boundingBox();
+    expect(surfaceBox).not.toBeNull();
+    await page.mouse.click(
+      surfaceBox!.x + surfaceBox!.width * 0.75,
+      surfaceBox!.y + surfaceBox!.height * 0.45,
+    );
+
+    await expect(page.getByText("Object placed. Regenerate systems to reflect the new layout.")).toBeVisible();
+    await expect
+      .poll(async () => {
+        const box = await officeOverlay.boundingBox();
+        if (!box) return false;
+        return Math.abs(box.x - beforeMove!.x) > 12 || Math.abs(box.y - beforeMove!.y) > 12;
+      })
+      .toBeTruthy();
   });
 
   test("selected canvas object can be rotated and deleted with visible handles", async ({ page }) => {

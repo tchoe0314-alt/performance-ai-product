@@ -22,7 +22,7 @@ export function ObjectManagerListPanel({
   selectedObjectSet,
   sourceConfidenceByObjectId,
   objectOutlineColor,
-  onSetPlacementModeEnabled,
+  onMove,
   onSelect,
   onToggleMultiSelect,
   onDelete,
@@ -41,7 +41,7 @@ export function ObjectManagerListPanel({
   selectedObjectSet: Set<string>;
   sourceConfidenceByObjectId: Map<string, SourceConfidenceEntry>;
   objectOutlineColor: string;
-  onSetPlacementModeEnabled: (enabled: boolean) => void;
+  onMove: (objectId: string) => void;
   onSelect: (objectId: string) => void;
   onToggleMultiSelect: (objectId: string, checked: boolean) => void;
   onDelete: (item: BuildingPlacement) => void;
@@ -83,7 +83,7 @@ export function ObjectManagerListPanel({
               onDragStart={(event) => {
                 if (item.locked) return;
                 event.dataTransfer?.setData("civora-object-id", item.id);
-                onSetPlacementModeEnabled(true);
+                onMove(item.id);
               }}
               onToggleMultiSelect={(checked) => onToggleMultiSelect(item.id, checked)}
               onDelete={() => onDelete(item)}
@@ -164,10 +164,7 @@ export function ObjectManagerListPanel({
                 });
               }}
               onToggleLock={() => onToggleLock(item.id)}
-              onMove={() => {
-                onSelect(item.id);
-                onSetPlacementModeEnabled(true);
-              }}
+              onMove={() => onMove(item.id)}
               onSelect={() => onSelect(item.id)}
               onFocus={() => {
                 onSelect(item.id);

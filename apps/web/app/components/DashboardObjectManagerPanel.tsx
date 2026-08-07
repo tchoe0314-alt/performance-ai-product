@@ -15,7 +15,6 @@ type DashboardObjectManagerPanelProps = {
   handleSelectPlacementTarget: (id: string) => void;
   selectedBuilding: BuildingPlacement | null;
   handleObjectManagerSelect: (id: string) => void;
-  setPlacementModeEnabled: Dispatch<SetStateAction<boolean>>;
   setFocusObjectId: Dispatch<SetStateAction<string | null>>;
   onCloseSidePanel: () => void;
   handleObjectManagerCopy: (item: BuildingPlacement) => void;
@@ -119,7 +118,6 @@ export function DashboardObjectManagerPanel({
   handleSelectPlacementTarget,
   selectedBuilding,
   handleObjectManagerSelect,
-  setPlacementModeEnabled,
   setFocusObjectId,
   onCloseSidePanel,
   handleObjectManagerCopy,
@@ -308,10 +306,7 @@ export function DashboardObjectManagerPanel({
             },
           });
         },
-        onMove: (item) => {
-          handleObjectManagerSelect(item.id);
-          setPlacementModeEnabled(true);
-        },
+        onMove: (item) => handleSelectPlacementTarget(item.id),
         onFocus: (item) => {
           setFocusObjectId(item.id);
           onCloseSidePanel();
@@ -467,7 +462,7 @@ export function DashboardObjectManagerPanel({
         selectedObjectSet,
         sourceConfidenceByObjectId,
         objectOutlineColor: objectOutlineColor || "#64748b",
-        onSetPlacementModeEnabled: setPlacementModeEnabled,
+        onMove: handleSelectPlacementTarget,
         onSelect: handleObjectManagerSelect,
         onToggleMultiSelect: handleObjectManagerToggleMultiSelect,
         onDelete: handleObjectManagerDelete,

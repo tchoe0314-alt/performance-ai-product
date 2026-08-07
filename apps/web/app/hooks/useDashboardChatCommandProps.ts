@@ -138,7 +138,7 @@ export function useDashboardChatCommandProps({
     commandInputRef,
     onOpenHistory,
     hasVisibleActiveJob: chatBlockingActiveJob,
-    statusText: summaryText || formatProjectStatusText(projectStatusSummary) || statusMessage,
+    statusText: statusMessage || summaryText || formatProjectStatusText(projectStatusSummary),
     commandContext: {
       mode: activePrimaryWorkflowKey,
       interaction: previewInteraction,

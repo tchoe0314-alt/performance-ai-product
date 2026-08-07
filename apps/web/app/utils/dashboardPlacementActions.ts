@@ -1,4 +1,5 @@
 import type { BuildingPlacement } from "../types";
+import { getObjectEditBlocker } from "./objectGeometry";
 import type { EngineeringSystemKey } from "./workflowConstants";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
@@ -34,20 +35,14 @@ export function runDashboardPlaceBuilding({
   position,
   activePlacementId,
   buildingPlacements,
-  siteScaleLocked,
   actions,
 }: {
   position: { x: number; y: number };
   activePlacementId: string | null;
   buildingPlacements: BuildingPlacement[];
-  siteScaleLocked: boolean;
   actions: DashboardPlacementActions;
 }) {
   actions.clearGeneratedPreview();
-  if (!siteScaleLocked) {
-    actions.setStatusMessage("Lock the site boundary before placing buildings.");
-    return;
-  }
   const lot = actions.resolveLotBounds();
   if (!lot.w || !lot.h) {
     actions.setStatusMessage("Set the site width and height before placing buildings.");
@@ -121,20 +116,14 @@ export function runDashboardPlaceObject({
   id,
   position,
   buildingPlacements,
-  siteScaleLocked,
   actions,
 }: {
   id: string;
   position: { x: number; y: number };
   buildingPlacements: BuildingPlacement[];
-  siteScaleLocked: boolean;
   actions: DashboardPlacementActions;
 }) {
   actions.clearGeneratedPreview();
-  if (!siteScaleLocked) {
-    actions.setStatusMessage("Lock the site boundary before placing objects.");
-    return;
-  }
   const lot = actions.resolveLotBounds();
   if (!lot.w || !lot.h) {
     const ok = actions.ensureSiteBoundary("Place the object again to drop it on the new site.");
@@ -189,16 +178,27 @@ export function runDashboardSelectPlacementTarget({
 }) {
   const lot = actions.resolveLotBounds();
   const target = buildingPlacements.find((item) => item.id === id);
+  if (!target) {
+    actions.setPlacementModeEnabled(false);
+    actions.setStatusMessage("Move needs input: select an existing object first.");
+    return;
+  }
   if (!lot.w || !lot.h) {
     const message = `Cannot place ${target?.label || "object"} yet: site width and depth are missing. Set or draw a site boundary first.`;
     actions.askClarification(message, "place_object_missing_site", { id });
     return;
   }
-  if (target && target.type === "site") {
+  if (target.type === "site") {
     actions.setStatusMessage("Site boundary is already configured and cannot be moved from the object tray.");
     return;
   }
-  if (target && !target.placed) {
+  const editBlocker = getObjectEditBlocker(target, "move");
+  if (editBlocker) {
+    actions.setPlacementModeEnabled(false);
+    actions.setStatusMessage(editBlocker);
+    return;
+  }
+  if (!target.placed) {
     const nextX = Math.min(Math.max(16, (lot.w - target.w) / 2), Math.max(0, lot.w - target.w));
     const nextY = Math.min(Math.max(16, (lot.h - target.d) / 2), Math.max(0, lot.h - target.d));
     actions.setBuildingPlacements((prev) =>
@@ -225,9 +225,5 @@ export function runDashboardSelectPlacementTarget({
   actions.setPreviewInteraction("edit");
   actions.setActivePlacementId(id);
   actions.setPlacementModeEnabled(true);
-  actions.setStatusMessage(
-    target
-      ? `Ready to place ${target.label}. Click on the canvas to drop it.`
-      : "Placement active. Click on the canvas to drop the object.",
-  );
+  actions.setStatusMessage(`Ready to place ${target.label}. Click on the canvas to drop it.`);
 }

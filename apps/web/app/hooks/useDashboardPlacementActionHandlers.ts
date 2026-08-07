@@ -119,11 +119,10 @@ export function useDashboardPlacementActionHandlers({
         position,
         activePlacementId,
         buildingPlacements,
-        siteScaleLocked,
         actions: dashboardPlacementActions,
       });
     },
-    [activePlacementId, buildingPlacements, dashboardPlacementActions, siteScaleLocked],
+    [activePlacementId, buildingPlacements, dashboardPlacementActions],
   );
 
   const handlePlaceObject = useCallback(
@@ -132,11 +131,10 @@ export function useDashboardPlacementActionHandlers({
         id,
         position,
         buildingPlacements,
-        siteScaleLocked,
         actions: dashboardPlacementActions,
       });
     },
-    [buildingPlacements, dashboardPlacementActions, siteScaleLocked],
+    [buildingPlacements, dashboardPlacementActions],
   );
 
   const dashboardCustomGeometryActions = useMemo(() => ({
