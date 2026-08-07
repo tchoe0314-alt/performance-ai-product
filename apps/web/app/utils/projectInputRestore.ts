@@ -224,6 +224,11 @@ export const buildAcceptedCandidatePlacements = ({
               coordinateSpace: record.correction_coordinate_space ?? record.coordinate_space,
             })
           : null;
+      // Source-level candidates (for example a parcel service summary) can be
+      // accepted as project context without containing an individual feature
+      // geometry. Do not invent a default rectangle for those records. Only
+      // accepted candidates with usable geometry belong on the canvas.
+      if (!geometry) return [];
       const sourceCandidateId = String(record.source_candidate_id ?? record.candidate_id ?? `accepted-${index + 1}`);
       const sourceType = String(record.source_type ?? "");
       const sourceProperties = record.source_properties && typeof record.source_properties === "object"
@@ -242,16 +247,16 @@ export const buildAcceptedCandidatePlacements = ({
         type,
         x: geometry?.x,
         y: geometry?.y,
-        w: geometry?.w ?? defaults.defaultW,
-        d: geometry?.d ?? defaults.defaultD,
+        w: geometry.w,
+        d: geometry.d,
         h: sourceHeight.heightFt ?? defaults.defaultH,
-        placed: Boolean(geometry),
+        placed: true,
         source,
         confidence:
           typeof record.confidence === "number" ? Math.max(0, Math.min(1, record.confidence)) : undefined,
         confirmed: true,
-        geometryType: geometry?.geometryType,
-        geometry: geometry?.points,
+        geometryType: geometry.geometryType,
+        geometry: geometry.points,
         systemDependencies: acceptedDraftDependencies(type),
         meta: {
           accepted_source_candidate: true,

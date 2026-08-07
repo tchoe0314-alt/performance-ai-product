@@ -4108,6 +4108,7 @@ function PerformanceAIDashboardView({
     setJobs,
     setJobsPanelStatusMessage,
     setSelectedJobId,
+    setSystemStatuses,
     setProjectId,
     setSiteName,
     setStatusMessage,

@@ -205,9 +205,7 @@ export function useDashboardPowerCommandHandler({
   workflowReviewDashboard,
 }: UseDashboardPowerCommandHandlerInput) {
   const tryHandleSiteProgramCommand = useCallback((message: string): boolean => {
-    const lower = message
-      .toLowerCase()
-      .replace(/\b(?:drveway|drivewy|driveay)\b/g, "driveway")
+    const lower = normalizeDashboardChatIntent(message)
       .replace(/\bada\s+walks?\b/g, "ada route");
     if (!/\b(add|create|place|make|include|put|recreate|copy|draft|draw|layout|produce)\b/.test(lower)) return false;
     const wantsDensePlan =

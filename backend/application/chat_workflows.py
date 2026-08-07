@@ -102,6 +102,17 @@ def _safe_list(value: Any) -> List[Any]:
 
 def _extract_requested_program_from_message(message: str) -> Dict[str, Any]:
     normalized = re.sub(r"\s+", " ", message.strip().lower())
+    typo_replacements = {
+        r"\b(?:parkin|parkng|prking)\b": "parking",
+        r"\b(?:drveway|drivewy|driveay)\b": "driveway",
+        r"\b(?:sanatary|sanitry)\b": "sanitary",
+        r"\bsewar\b": "sewer",
+        r"\bwatter\b": "water",
+        r"\bside\s+walks?\b": "sidewalk",
+        r"\b(?:draniage|drainange)\b": "drainage",
+    }
+    for pattern, replacement in typo_replacements.items():
+        normalized = re.sub(pattern, replacement, normalized)
     if not normalized:
         return {}
 
@@ -134,13 +145,17 @@ def _extract_requested_program_from_message(message: str) -> Dict[str, Any]:
     elif "office" in normalized and "building" in normalized:
         requested_objects.append({"type": "office_building", "label": "office building", "status": "requested_not_placed"})
 
-    parking_match = re.search(r"(\d[\d,]*)\s*(?:parking\s+spaces|parking\s+stalls|stalls|spaces)", normalized)
+    parking_match = re.search(
+        r"(\d[\d,]*)\s*(?:parking\s+)?(?:spaces|stalls|spots?|cars?)|parking\s+(?:for\s+)?(\d[\d,]*)",
+        normalized,
+    )
     if parking_match or "parking" in normalized:
+        parking_value = (parking_match.group(1) or parking_match.group(2)) if parking_match else None
         requested_objects.append(
             {
                 "type": "parking",
                 "label": "parking",
-                "stall_count": int(parking_match.group(1).replace(",", "")) if parking_match else None,
+                "stall_count": int(parking_value.replace(",", "")) if parking_value else None,
                 "status": "requested_not_placed",
             }
         )

@@ -42,7 +42,9 @@ async function createBlankSite(page: Page) {
   await boundary.getByLabel("Depth (ft)").fill("1000");
   await boundary.getByRole("button", { name: "Lock Boundary" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 5_000 });
-  await panel.getByRole("button", { name: "Minimize" }).click();
+  if (await panel.isVisible()) {
+    await panel.getByRole("button", { name: "Minimize" }).click();
+  }
   await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0, { timeout: 5_000 });
 }
 

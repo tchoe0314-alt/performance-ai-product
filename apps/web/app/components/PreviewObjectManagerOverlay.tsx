@@ -2,7 +2,8 @@
 
 import { Eye, EyeOff, Maximize2, Trash2 } from "lucide-react";
 
-import type { BuildingPlacement } from "../types";
+import type { BuildingPlacement, SiteObjectType } from "../types";
+import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 
 type ObjectManagerCounts = {
   total: number;
@@ -37,18 +38,9 @@ type PreviewObjectManagerOverlayProps = {
   getCadLayer: (item: BuildingPlacement) => string;
 };
 
-const PREVIEW_OBJECT_TYPES: Array<NonNullable<BuildingPlacement["type"]>> = [
-  "building",
-  "road",
-  "parking",
-  "sidewalk",
-  "basin",
-  "utility_corridor",
-  "hydrant",
-  "inlet",
-  "manhole",
-  "custom",
-];
+const PREVIEW_OBJECT_TYPES = Object.entries(SITE_OBJECT_CATALOG)
+  .filter(([type]) => type !== "site")
+  .map(([type, catalog]) => ({ type: type as SiteObjectType, label: catalog.label }));
 
 export function PreviewObjectManagerOverlay({
   visible,
@@ -182,14 +174,17 @@ export function PreviewObjectManagerOverlay({
               const type = event.target.value as BuildingPlacement["type"];
               onUpdatePreviewManagedObject(selectedObject, {
                 type,
-                meta: { ...(selectedObject.meta ?? {}), cad_layer: getCadLayer(selectedObject) },
+                meta: {
+                  ...(selectedObject.meta ?? {}),
+                  cad_layer: getCadLayer({ ...selectedObject, type }),
+                },
               });
             }}
             className="h-9 max-w-[132px] rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold capitalize text-slate-700"
           >
-            {PREVIEW_OBJECT_TYPES.map((type) => (
-              <option key={`preview-object-type-${type}`} value={type}>
-                {type.replace(/_/g, " ")}
+            {PREVIEW_OBJECT_TYPES.map((option) => (
+              <option key={`preview-object-type-${option.type}`} value={option.type}>
+                {option.label}
               </option>
             ))}
           </select>

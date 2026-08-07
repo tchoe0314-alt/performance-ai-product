@@ -7,6 +7,7 @@ const WORD_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bwhast\b/g, "what"],
   [/\bblockd\b/g, "blocked"],
   [/\bblok(?:ed|d)\b/g, "blocked"],
+  [/\b(?:bloced|blcoked|bocked)\b/g, "blocked"],
   [/\bchnged\b/g, "changed"],
   [/\bchang+e+d\b/g, "changed"],
   [/\bchaged\b/g, "changed"],
@@ -15,8 +16,18 @@ const WORD_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\badress\b/g, "address"],
   [/\bboundry\b/g, "boundary"],
   [/\bdrveway\b/g, "driveway"],
+  [/\bdrivewy\b/g, "driveway"],
+  [/\bdriveay\b/g, "driveway"],
   [/\bsanatary\b/g, "sanitary"],
+  [/\bsanitry\b/g, "sanitary"],
+  [/\bsewar\b/g, "sewer"],
+  [/\bwatter\b/g, "water"],
+  [/\bparkin\b/g, "parking"],
   [/\bparkng\b/g, "parking"],
+  [/\bprking\b/g, "parking"],
+  [/\bside\s+walks?\b/g, "sidewalk"],
+  [/\bdraniage\b/g, "drainage"],
+  [/\bdrainange\b/g, "drainage"],
   [/\bdeten(?:ion|tion)\b/g, "detention"],
   [/\bshud\b/g, "should"],
   [/\bnex\b/g, "next"],
@@ -30,7 +41,7 @@ export function normalizeDashboardChatIntent(message: string) {
   let normalized = message
     .toLowerCase()
     .replace(/[’']/g, "")
-    .replace(/[^a-z0-9.%+\-\s]/g, " ")
+    .replace(/[^a-z0-9.,%+\-\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   for (const [pattern, replacement] of WORD_REPLACEMENTS) {

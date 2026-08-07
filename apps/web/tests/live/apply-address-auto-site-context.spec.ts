@@ -393,6 +393,16 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
         },
       });
     }
+    if (candidateStatuses["parcel-extra-1"] === "accepted") {
+      acceptedDrafts.push({
+        object_id: "draft_parcel-extra-1",
+        object_type: "parcel_site_boundary",
+        source_candidate_id: "parcel-extra-1",
+        source_type: "official_gis",
+        source_name: "Grouped parcel service result",
+        confidence: 0.75,
+      });
+    }
     if (candidateStatuses["image-building-1"] === "accepted") {
       acceptedDrafts.push(
         {
@@ -764,6 +774,9 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/parcel\/site boundary|building footprints/i);
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/missing[\s\S]*public utility layers/i);
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/not survey\/control/i);
+  await expect(page.getByTestId("auto-site-context-evidence-level-note")).toContainText(
+    /detected feature and a missing source can both be true/i,
+  );
   await expect(page.getByTestId("auto-site-context-source-table")).toBeVisible();
   await expect(page.getByTestId("auto-site-context-status-parcel")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-roads")).toContainText("found");
@@ -799,6 +812,10 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await page.getByTestId("review-found-context").click();
   const detectedItems = page.getByTestId("detected-items-review");
   await expect(detectedItems).toBeVisible();
+  await expect(detectedItems.getByTestId("detected-item-decision-help")).toBeVisible();
+  const sourceEvidenceDetails = detectedItems.getByTestId("source-evidence-details");
+  await expect(sourceEvidenceDetails).not.toHaveAttribute("open", "");
+  await sourceEvidenceDetails.locator("summary").click();
   await expect(detectedItems).toContainText("FEMA National Flood Hazard Layer");
   await expect(detectedItems).toContainText("no features returned");
   await expect(detectedItems).not.toContainText("fema_nfhl_arcgis");
@@ -811,6 +828,9 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await detectedItems.getByRole("tab", { name: "Vision 2" }).click();
   await expect(detectedItems.getByTestId("detected-item-candidate")).toHaveCount(2);
   await expect(detectedItems.getByTestId("detected-items-page-summary")).toHaveText("Showing 1-2 of 2");
+  const visionReviewDetails = detectedItems.getByTestId("vision-review-details");
+  await expect(visionReviewDetails).not.toHaveAttribute("open", "");
+  await visionReviewDetails.locator(":scope > summary").click();
   const groundTruthWorkspace = detectedItems.getByTestId("vision-ground-truth-workspace");
   await expect(groundTruthWorkspace).toBeVisible();
   await expect(groundTruthWorkspace).toContainText("Ledger verified");
@@ -839,6 +859,14 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(detectedItems).toContainText("Detected Items · 32 To Review");
   await expect(detectedItems).toContainText("Accepted");
   await expect(detectedItems).toContainText("Rejected");
+  const geometrylessParcelCandidate = detectedItems.locator('[data-candidate-id="parcel-extra-1"]');
+  await geometrylessParcelCandidate.getByRole("button", { name: "Accept" }).click();
+  await expect(geometrylessParcelCandidate).toContainText(/accepted/i);
+  await expect(page.locator('[data-cad-object-id="draft_parcel-extra-1"]')).toHaveCount(0);
+  await expect(page.locator('option[value="draft_parcel-extra-1"]')).toHaveCount(0);
+  await geometrylessParcelCandidate.getByRole("button", { name: "Pending" }).click();
+  await expect(geometrylessParcelCandidate).toContainText(/pending/i);
+  await expect(detectedItems).toContainText("Detected Items · 32 To Review");
   const visionCandidate = detectedItems.locator('[data-candidate-id="image-building-1"]');
   await expect(visionCandidate.getByTestId("vision-candidate-correction")).toBeVisible();
   await expect(visionCandidate.getByTestId("vision-outline-quality")).toContainText("Outline quality 81%");

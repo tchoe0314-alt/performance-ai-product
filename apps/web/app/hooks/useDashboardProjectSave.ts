@@ -194,7 +194,10 @@ export function useDashboardProjectSave({
           has_result: data.project.has_result || existing.has_result,
         };
       });
-      setWorkspaceRestoreState("restored");
+      // A successful save makes the project reloadable, but it does not mean
+      // this browser session restored it. Preserve that stronger claim only
+      // when the project was actually loaded from saved state.
+      setWorkspaceRestoreState((previous) => previous === "restored" ? "restored" : "idle");
       if (typeof window !== "undefined") {
         window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, data.project.project_id);
       }

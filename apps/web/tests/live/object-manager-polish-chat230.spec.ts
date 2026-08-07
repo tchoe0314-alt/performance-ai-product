@@ -17,7 +17,17 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismPr
 }
 
 async function focusCommand(page: Page) {
+  const chatInput = page.getByTestId("civora-chat-input");
+  if (await chatInput.isVisible()) {
+    await chatInput.click();
+    await expect(chatInput).toBeFocused({ timeout: 5_000 });
+    return chatInput;
+  }
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+  if (await chatInput.isVisible()) {
+    await expect(chatInput).toBeFocused({ timeout: 5_000 });
+    return chatInput;
+  }
   const commandInput = page.getByTestId("civora-command-input");
   await expect(commandInput).toBeVisible({ timeout: 5_000 });
   const focused = await commandInput.evaluate((element) => document.activeElement === element).catch(() => false);
@@ -25,6 +35,7 @@ async function focusCommand(page: Page) {
     await commandInput.click({ force: true });
   }
   await expect(commandInput).toBeFocused({ timeout: 5_000 });
+  return commandInput;
 }
 
 function platformShortcut(key: string) {
@@ -32,9 +43,9 @@ function platformShortcut(key: string) {
 }
 
 async function runCommand(page: Page, command: string) {
-  await focusCommand(page);
-  await page.getByTestId("civora-command-input").fill(command);
-  await page.getByTestId("civora-command-input").press("Enter");
+  const input = await focusCommand(page);
+  await input.fill(command);
+  await input.press("Enter");
 }
 
 async function openDrawPanel(page: Page) {
@@ -414,6 +425,33 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-measure-width")).toContainText("ft");
     await expect(page.getByTestId("object-manager-measurement-list")).toContainText("Office Building - 28,000 sf");
     await expect(page.getByTestId("object-manager-measurement-list")).toContainText("Parking Field - 140 stalls");
+  });
+
+  test("resizing a drawn rectangle keeps canvas geometry, type, and measurements aligned", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "Set the site to 1000 ft by 1000 ft centered at 20525 Margo St Gretna NE");
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 10_000 });
+    await openDrawPanel(page);
+
+    const precision = await openCadPrecisionTools(page);
+    await precision.getByLabel("Draft command input").fill("RECTANGLE 100,100 200,200");
+    await precision.getByLabel("Draft command input").press("Enter");
+
+    const row = page.getByTestId("object-manager-row").filter({ hasText: "Command Rectangle" }).first();
+    await expect(row).toBeVisible();
+    await row.getByTestId("object-manager-select").click();
+    await row.getByTestId("object-manager-type").selectOption("lot_block");
+    await expect(page.getByTestId("preview-object-manager-type").filter({ visible: true }).first()).toHaveValue("lot_block");
+
+    await row.getByTestId("object-manager-length").fill("180");
+    await row.getByTestId("object-manager-width").fill("110");
+    await expect(row.getByTestId("object-manager-length")).toHaveValue("180");
+    await expect(row.getByTestId("object-manager-width")).toHaveValue("110");
+    await expect(page.getByTestId("object-manager-measure-total-length")).toHaveText("580 ft");
+    await expect(page.getByTestId("object-manager-measure-total-area")).toHaveText("19,800 sf");
+    await expect(page.getByTestId("object-manager-measure-width")).toHaveText("180 ft");
+    await expect(page.getByTestId("object-manager-measure-depth")).toHaveText("110 ft");
+    await expect(page.getByTestId("object-manager-measurement-list")).toContainText("180 ft x 110 ft");
   });
 
   test("select, inspect, rename, style, type, hide, show all, copy, paste, rotate, and flip work", async ({ page }) => {

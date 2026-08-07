@@ -431,7 +431,13 @@ export function PreviewCanvasHeaderControls({
         {showMap ? (
           <button
             type="button"
-            onClick={() => onSetMapLocked((prev) => !prev)}
+            data-testid="preview-map-lock-toggle"
+            aria-pressed={mapLocked}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSetMapLocked(() => !mapLocked);
+            }}
             className={`inline-flex h-8 items-center gap-2 rounded-lg border px-2.5 text-xs font-semibold transition ${
               mapLocked ? "border-slate-900 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}

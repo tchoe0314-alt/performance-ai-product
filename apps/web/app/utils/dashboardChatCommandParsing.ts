@@ -1,4 +1,5 @@
 import type { SiteObjectType } from "../types";
+import { normalizeDashboardChatIntent } from "./dashboardChatIntent";
 
 export type DashboardObjectCommandIntent =
   | { kind: "grading_context"; mode: "grading" | "drainage" | "both" }
@@ -44,8 +45,10 @@ const CHAT_OBJECT_TYPE_MAP: Record<string, SiteObjectType> = {
 };
 
 export function parseDashboardObjectCommandIntent(message: string): DashboardObjectCommandIntent | null {
-  const lower = message.toLowerCase();
-  const parkingCountCommandMatch = lower.match(/\badd\s+(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls)\b/);
+  const lower = normalizeDashboardChatIntent(message);
+  const parkingCountCommandMatch =
+    lower.match(/\b(?:add|create|place|make|put|include)\s+(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls|spots?|cars?)\b/) ??
+    lower.match(/\b(?:add|create|place|make|put|include)\s+parking\s+(?:for\s+)?(\d{1,5})(?:\s+(?:spaces|stalls|spots?|cars?))?\b/);
   const officeAreaCommandMatch = lower.match(
     /\b(?:add|create|place|make|put|include)\b[^\d]{0,48}(\d{1,3}(?:,\d{3})+|\d{3,8})\s*(?:sf|sq\s*ft|sqft|square\s*feet)\s+(?:(?:office\s+)?building|office\s+project)\b/,
   );

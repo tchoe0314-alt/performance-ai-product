@@ -1040,6 +1040,32 @@ class ApplicationChatWorkflowsTest(unittest.TestCase):
         self.assertEqual(saved_input["manual_fields"]["site_plan"]["building_program_sf"], 28000.0)
         self.assertFalse(program["construction_release_allowed"])
 
+    def test_site_setup_program_tolerates_common_user_typos_and_parking_spots(self):
+        store = RecordingProjectStore()
+
+        result = decide_chat(
+            {
+                "message": (
+                    "20525 Margo St Gretna NE, 1000 by 1000 ft centered there, with a 28000 sf office, "
+                    "140 parkin spots, detention pond, drveway, side walks, watter, sanitry, and storm sewar"
+                ),
+                "context": {"current_project": {"project_id": "project_123"}},
+            },
+            decide_chat_message=decide_chat_message,
+            project_store=store,
+            user_id="user_1",
+        )
+
+        self.assertEqual(result["action_taken"], "updated_site_dimensions_and_location_evidence")
+        self.assertFalse(result["needs_clarification"])
+        saved_meta = store.saved[-1]["latest_result"]["final_plan"]["meta"]
+        program = saved_meta["requested_site_program_v1"]
+        object_types = {item["type"] for item in program["requested_objects"]}
+        parking = next(item for item in program["requested_objects"] if item["type"] == "parking")
+        self.assertTrue({"office_building", "parking", "detention_basin", "driveway", "sidewalk"}.issubset(object_types))
+        self.assertEqual(parking["stall_count"], 140)
+        self.assertTrue({"water", "sanitary", "storm", "drainage", "roadway"}.issubset(set(program["requested_systems"])))
+
     def test_site_setup_dimensions_only_changes_site_state(self):
         store = RecordingProjectStore()
 

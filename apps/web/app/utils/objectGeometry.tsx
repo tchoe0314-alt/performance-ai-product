@@ -35,6 +35,48 @@ export const getGeometryBounds = (geometry: Array<[number, number]>) => {
   };
 };
 
+export const buildDraftObjectResizeUpdates = (
+  item: BuildingPlacement,
+  nextWidth: number,
+  nextDepth: number,
+): Partial<BuildingPlacement> => {
+  const width = Number.isFinite(nextWidth) && nextWidth > 0 ? nextWidth : item.w;
+  const depth = Number.isFinite(nextDepth) && nextDepth > 0 ? nextDepth : item.d;
+  const geometry = normalizeGeometryPoints(item.geometry);
+  if (
+    !geometry?.length ||
+    (item.geometryType !== "rect" && item.geometryType !== "polygon")
+  ) {
+    return { w: width, d: depth };
+  }
+
+  const bounds = getGeometryBounds(geometry);
+  const originX = Number.isFinite(bounds.minX) ? bounds.minX : (item.x ?? 0);
+  const originY = Number.isFinite(bounds.minY) ? bounds.minY : (item.y ?? 0);
+  const scaleX = bounds.width > 0 ? width / bounds.width : 1;
+  const scaleY = bounds.depth > 0 ? depth / bounds.depth : 1;
+  const resizedGeometry = item.geometryType === "rect"
+    ? [
+        [originX, originY],
+        [originX + width, originY],
+        [originX + width, originY + depth],
+        [originX, originY + depth],
+        [originX, originY],
+      ] as Array<[number, number]>
+    : geometry.map(([x, y]) => [
+        originX + (x - originX) * scaleX,
+        originY + (y - originY) * scaleY,
+      ] as [number, number]);
+
+  return {
+    x: originX,
+    y: originY,
+    w: width,
+    d: depth,
+    geometry: resizedGeometry,
+  };
+};
+
 export const getGeometryLength = (geometry: Array<[number, number]>, closed = false) => {
   const points = closed && geometry.length > 2 ? [...geometry, geometry[0]] : geometry;
   return points.slice(1).reduce((sum, pt, idx) => {
@@ -234,7 +276,8 @@ export const isAreaLikeDraftObject = (item: Pick<BuildingPlacement, "geometryTyp
 
 export const getDraftObjectMeasurement = (item: BuildingPlacement) => {
   const geometry = normalizeGeometryPoints(item.geometry);
-  const bounds = geometry?.length
+  const rectUsesCanonicalDimensions = item.geometryType === "rect";
+  const bounds = geometry?.length && !rectUsesCanonicalDimensions
     ? getGeometryBounds(geometry)
     : {
         minX: item.x ?? 0,
@@ -245,12 +288,14 @@ export const getDraftObjectMeasurement = (item: BuildingPlacement) => {
         depth: item.d,
       };
   const hasClosedGeometry = item.geometryType === "polygon" || item.geometryType === "rect";
-  const areaSf = geometry?.length && hasClosedGeometry
+  const areaSf = geometry?.length && hasClosedGeometry && !rectUsesCanonicalDimensions
     ? getPolygonArea(geometry)
     : isAreaLikeDraftObject(item)
       ? Math.max(0, item.w * item.d)
       : 0;
-  const lengthFt = geometry?.length
+  const lengthFt = rectUsesCanonicalDimensions
+    ? Math.max(0, 2 * (item.w + item.d))
+    : geometry?.length
     ? getGeometryLength(geometry, hasClosedGeometry)
     : item.geometryType === "polyline" || item.type === "driveway" || item.type === "road" || item.type === "sidewalk" || item.type === "utility_corridor"
       ? Math.max(item.w, item.d)

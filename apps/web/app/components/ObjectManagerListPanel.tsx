@@ -1,5 +1,6 @@
 import type { BuildingPlacement, SiteObjectType, SourceConfidenceEntry } from "../types";
 import {
+  buildDraftObjectResizeUpdates,
   CustomGeometryHandoffDetails,
   getObjectDimensionsLabel,
   getObjectDisplayType,
@@ -128,9 +129,14 @@ export function ObjectManagerListPanel({
                   onReportBlocker(blocker);
                   return;
                 }
-                onUpdate(item.id, {
-                  w: parsePositiveNumber(value) ?? item.w,
-                });
+                onUpdate(
+                  item.id,
+                  buildDraftObjectResizeUpdates(
+                    item,
+                    parsePositiveNumber(value) ?? item.w,
+                    item.d,
+                  ),
+                );
               }}
               onWidth={(value) => {
                 const blocker = getObjectEditBlocker(item, "resize");
@@ -138,9 +144,14 @@ export function ObjectManagerListPanel({
                   onReportBlocker(blocker);
                   return;
                 }
-                onUpdate(item.id, {
-                  d: parsePositiveNumber(value) ?? item.d,
-                });
+                onUpdate(
+                  item.id,
+                  buildDraftObjectResizeUpdates(
+                    item,
+                    item.w,
+                    parsePositiveNumber(value) ?? item.d,
+                  ),
+                );
               }}
               onHeight={(value) => {
                 const blocker = getObjectEditBlocker(item, "resize");

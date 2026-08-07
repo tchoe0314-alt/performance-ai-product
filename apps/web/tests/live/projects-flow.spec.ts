@@ -1000,20 +1000,23 @@ test.describe("project drawer reliability", () => {
     await page.getByRole("button", { name: "Apply address" }).click();
     await expect(page.getByTestId("auto-site-context-summary")).toContainText(/parcel\/site boundary|candidates/i, { timeout: 30_000 });
     await page.getByTestId("header-chat-button").click();
-    await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
-    await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("Generate a parking layout note.");
-    await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
-    await page.getByTestId("civora-command-input").fill("add 140 parking spaces");
-    await page.getByTestId("civora-command-input").press("Enter");
+    const chatComposer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+    await expect(chatComposer).toBeVisible();
+    await chatComposer.fill("add 140 parking spaces");
+    await chatComposer.press("Enter");
     await page.getByRole("button", { name: /^Draw$/ }).first().click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls");
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls was added as draft geometry.");
     await page.getByTestId("header-chat-button").click();
-    await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("Generate a parking layout note.");
+    await chatComposer.fill("Generate a parking layout note.");
 
     await openProjects(page);
     await page.getByRole("button", { name: "Save Project" }).click();
     await expect(page.getByTestId("project-drawer-state")).toContainText("Saved");
+    await expect(page.getByTestId("workspace-restore-status")).toHaveText(
+      "Project saved; restore available after reload",
+    );
+    await expect(page.getByTestId("workspace-restore-status")).not.toHaveText("Restored saved workspace");
     expect(store.size).toBe(1);
     const firstProjectId = Array.from(store.keys())[0];
     expect(JSON.stringify(store.get(firstProjectId)?.project_input)).toContain("123 MAIN ST");

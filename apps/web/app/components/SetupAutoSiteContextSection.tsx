@@ -115,6 +115,7 @@ export function SetupAutoSiteContextSection({
   const missingSummary = autoSiteContextFlowSummary.missingLabels.length
     ? autoSiteContextFlowSummary.missingLabels.slice(0, 4).map((label) => sourceDisplayName(label)).join(", ")
     : "source evidence not available yet";
+  const hasMixedEvidenceLevels = detectedLabels.length > 0 && autoSiteContextFlowSummary.missingLabels.length > 0;
 
   return (
     <DisclosurePanel
@@ -162,6 +163,11 @@ export function SetupAutoSiteContextSection({
           <p className="mt-1 text-emerald-800">
             Source notes: missing {missingSummary}. Use these as review context for Generate; they are not survey/control.
           </p>
+          {hasMixedEvidenceLevels ? (
+            <p className="mt-1 text-emerald-800" data-testid="auto-site-context-evidence-level-note">
+              A detected feature and a missing source can both be true: visual or public-data candidates may exist while a stronger source layer is still unavailable.
+            </p>
+          ) : null}
         </div>
         {siteIntelligenceSummary.version ? (
           <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3" data-testid="site-intelligence-summary">

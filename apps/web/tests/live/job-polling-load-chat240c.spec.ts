@@ -296,7 +296,35 @@ test("a completed staged run replaces the queued global status", async ({ page }
     updated_at: Date.now() / 1000,
     project_input: {
       input_mode: "user",
-      manual_fields: { lot: { w: 720, h: 520 } },
+      manual_fields: {
+        lot: { w: 720, h: 520 },
+        site_objects: [
+          {
+            id: "site-boundary",
+            label: "Site Boundary",
+            type: "site",
+            x: 0,
+            y: 0,
+            w: 720,
+            d: 520,
+            placed: true,
+            locked: true,
+            source: "manual_drawn",
+          },
+          {
+            id: "office-a",
+            label: "Office Building A",
+            type: "office_building",
+            x: 140,
+            y: 120,
+            w: 210,
+            d: 130,
+            placed: true,
+            source: "manual_drawn",
+            systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+          },
+        ],
+      },
       meta: { site_inputs: { site_alignment_locked: true } },
     },
   };
@@ -316,6 +344,7 @@ test("a completed staged run replaces the queued global status", async ({ page }
     can_cancel: false,
     can_retry: false,
     can_resume: false,
+    payload: { meta: { requested_system: "full" } },
     result,
   };
 
@@ -379,4 +408,17 @@ test("a completed staged run replaces the queued global status", async ({ page }
   await page.getByTestId("generate-main-action").click();
   await expect(page.getByTestId("project-status-summary")).toContainText("Generate completed", { timeout: 15_000 });
   await expect(page.getByTestId("project-status-summary")).not.toContainText("Generate queued");
+
+  await page.getByRole("button", { name: /^Draw\b/i }).filter({ visible: true }).first().click();
+  const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building A" });
+  await expect(officeRow).toHaveCount(1);
+  await officeRow.getByTestId("object-manager-bulk-select").check();
+  await page.getByTestId("object-manager-bulk-move-x").fill("20");
+  await page.getByTestId("object-manager-bulk-move-y").fill("0");
+  await page.getByTestId("object-manager-bulk-move-action").click();
+  await expect(page.getByTestId("object-manager-status")).toContainText("Moved 1 selected draft object by 20,0.");
+
+  await page.getByRole("button", { name: /^Generate\b/i }).filter({ visible: true }).first().click();
+  await expect(page.getByTestId("generate-reactive-details")).toContainText(/This edit affects|Ready for quick partial rerun/i, { timeout: 5_000 });
+  await expect(page.getByTestId("generate-reactive-details")).not.toContainText("No stale systems");
 });

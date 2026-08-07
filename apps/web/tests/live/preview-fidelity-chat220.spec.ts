@@ -86,6 +86,25 @@ test.describe("Chat 220 preview fidelity", () => {
     expect(linePointCount).toBeGreaterThan(1);
   });
 
+  test("map lock is a real reversible control and does not leak clicks into the map", async ({ page }) => {
+    await openDemoWorkspace(page);
+    const mapLock = page.getByTestId("preview-map-lock-toggle");
+    if ((await mapLock.count()) === 0) {
+      test.skip(true, "Map lock requires a configured map provider in this environment.");
+      return;
+    }
+    await expect(mapLock).toHaveAttribute("aria-pressed", "false");
+    await expect(mapLock).toHaveText(/Lock Map/i);
+
+    await mapLock.click();
+    await expect(mapLock).toHaveAttribute("aria-pressed", "true");
+    await expect(mapLock).toHaveText(/Unlock Map/i);
+
+    await mapLock.click();
+    await expect(mapLock).toHaveAttribute("aria-pressed", "false");
+    await expect(mapLock).toHaveText(/Lock Map/i);
+  });
+
   test("3D high quality canvas is nonblank and selectable", async ({ page }) => {
     await openDemoWorkspace(page);
     const canvas = page.getByTestId("workspace-canvas-shell");

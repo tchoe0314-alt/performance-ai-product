@@ -22,19 +22,40 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismPr
 }
 
 async function focusCommand(page: Page) {
+  const chatComposer = page.getByTestId("civora-chat-input");
+  if (await chatComposer.isVisible()) {
+    await chatComposer.click();
+    await expect(chatComposer).toBeFocused({ timeout: 5_000 });
+    return chatComposer;
+  }
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
-  await expect(page.getByTestId("civora-command-input")).toBeFocused({ timeout: 5_000 });
+  if (await chatComposer.isVisible()) {
+    await expect(chatComposer).toBeFocused({ timeout: 5_000 });
+    return chatComposer;
+  }
+  const commandInput = page.getByTestId("civora-command-input");
+  await expect(commandInput).toBeFocused({ timeout: 5_000 });
+  return commandInput;
 }
 
 async function runCommand(page: Page, command: string) {
-  await focusCommand(page);
-  await page.getByTestId("civora-command-input").fill(command);
-  await page.getByTestId("civora-command-input").press("Enter");
+  const input = await focusCommand(page);
+  await input.fill(command);
+  await input.press("Enter");
 }
 
 async function openDrawPanel(page: Page) {
   await page.getByRole("button", { name: /^Draw$/ }).first().click();
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/, { timeout: 5_000 });
+}
+
+async function openChatPanel(page: Page) {
+  const panel = page.getByTestId("workspace-right-panel");
+  if (!(await panel.isVisible()) || !(await panel.getByTestId("civora-chat-input").isVisible())) {
+    await page.getByRole("button", { name: /^Chat$/ }).click();
+  }
+  await expect(panel.getByTestId("civora-chat-input")).toBeVisible({ timeout: 5_000 });
+  return panel;
 }
 
 test.describe("Chat 229 command power layer and shortcuts", () => {
@@ -75,7 +96,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await runCommand(page, "add 28000 sf office building");
     await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 5_000 });
 
-    await runCommand(page, "add 140 parking spaces");
+    await runCommand(page, "add 140 parkin spots");
     await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 140 stalls"]').first()).toBeVisible({ timeout: 5_000 });
 
     await openDrawPanel(page);
@@ -109,7 +130,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
 
     await runCommand(
       page,
-      "put in a 32,000 sqft office, 165 parking spots, a detention pond, drveway, storm sewer, water, sanitary, and ADA walks",
+      "put in a 32,000 sqft office, 165 parkin spots, a detention pond, drveway, storm sewar, watter, sanitry, and ADA walks",
     );
 
     await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 32,000 sf"]').first()).toBeVisible({ timeout: 8_000 });
@@ -131,8 +152,8 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.locator('[data-cad-object-id][aria-label*="Review Grading Fall Line"]').first()).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('[data-cad-object-id][aria-label*="Review Drainage Area Cue"]').first()).toBeVisible({ timeout: 5_000 });
     await expect(page.getByText(/editable review context/i).first()).toBeVisible({ timeout: 5_000 });
-    await page.getByRole("button", { name: "Open Civora chat history" }).click();
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/not survey\/control evidence/i);
+    const chatPanel = await openChatPanel(page);
+    await expect(chatPanel).toContainText(/not survey\/control evidence/i);
 
     await page.getByRole("button", { name: /^Generate$/ }).first().click();
     await expect(page.getByTestId("generate-current-drawing-context")).toContainText("Review Grading Fall Line");
@@ -156,8 +177,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await runCommand(page, "what are these random circles and lines?");
 
     await expect(page.getByText("Civora: The preview is a review canvas", { exact: false }).first()).toBeVisible({ timeout: 5_000 });
-    await page.getByRole("button", { name: "Open Civora chat history" }).click();
-    const panel = page.getByTestId("workspace-right-panel");
+    const panel = await openChatPanel(page);
     await expect(panel).toContainText("The preview is a review canvas", { timeout: 5_000 });
     await expect(panel).toContainText("Lines are usually roads, driveways, sidewalks, utilities, or draft linework");
     await expect(panel).toContainText("Circles/points are usually hydrants, inlets, outfalls, manholes, or point markers");
@@ -170,7 +190,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await chatInput.focus();
     await expect(chatInput).toBeFocused();
     await runCommand(page, "what am I looking at?");
-    await page.getByRole("button", { name: "Open Civora chat history" }).click();
+    await openChatPanel(page);
     await expect(panel).toContainText("The preview is a review canvas", { timeout: 5_000 });
     await expect(panel).toContainText(/select, rename, hide, recolor, or delete|rename, change type\/color/i);
     await expect(panel).not.toContainText("Opened the 3D civil model workspace");
@@ -181,8 +201,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
 
     await runCommand(page, "how do I finish drawing a boundary?");
 
-    await page.getByRole("button", { name: "Open Civora chat history" }).click();
-    const panel = page.getByTestId("workspace-right-panel");
+    const panel = await openChatPanel(page);
     await expect(panel).toContainText("Draw Canvas works like this", { timeout: 5_000 });
     await expect(panel).toContainText("Draw Site Boundary");
     await expect(panel).toContainText("Press Finish to commit");
@@ -192,13 +211,29 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
   });
 
   test("state questions tolerate ordinary spelling and grammar mistakes", async ({ page }) => {
+    let orchestrateCalls = 0;
     await openDemoWorkspace(page);
+    await page.route("**/api/orchestrate", async (route) => {
+      orchestrateCalls += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
+    });
+    await page.route("**/api/jobs/orchestrate", async (route) => {
+      orchestrateCalls += 1;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
+    });
 
     await runCommand(page, "whats changeed?");
-    await page.getByRole("button", { name: "Open Civora chat history" }).click();
     const panel = page.getByTestId("workspace-right-panel");
+    await expect(panel).toBeVisible();
     await expect(panel).toContainText(/What changed|Changed\/stale systems|Last Generate|No stale generated systems|Project status/i, { timeout: 5_000 });
     await expect(panel).not.toContainText(/Before I move forward, I still need|site type or land use/i);
+
+    const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+    await composer.fill("whats bloced rn?");
+    await composer.press("Enter");
+    await expect(panel).toContainText(/Needs input|Nothing is stopping the current review workflow/i, { timeout: 5_000 });
+    await expect(composer).toHaveValue("");
+    expect(orchestrateCalls).toBe(0);
   });
 
   test("chat explains recent UI performance timings instead of guessing about lag", async ({ page }) => {
@@ -226,8 +261,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
 
     await runCommand(page, "why is the website laggy?");
 
-    await page.getByRole("button", { name: "Open Civora chat history" }).click();
-    const panel = page.getByTestId("workspace-right-panel");
+    const panel = await openChatPanel(page);
     await expect(panel).toContainText("Recent UI timings from this browser", { timeout: 5_000 });
     await expect(panel).toContainText("Preview mode 3d");
     await expect(panel).toContainText("slow, worth checking");

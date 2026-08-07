@@ -32,14 +32,26 @@ async function openPanel(page: Page, name: RegExp | string, expected: RegExp | s
 }
 
 async function focusCommand(page: Page) {
+  const chatInput = page.getByTestId("civora-chat-input");
+  if (await chatInput.isVisible()) {
+    await chatInput.click();
+    await expect(chatInput).toBeFocused({ timeout: 5_000 });
+    return chatInput;
+  }
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
-  await expect(page.getByTestId("civora-command-input")).toBeFocused({ timeout: 5_000 });
+  if (await chatInput.isVisible()) {
+    await expect(chatInput).toBeFocused({ timeout: 5_000 });
+    return chatInput;
+  }
+  const commandInput = page.getByTestId("civora-command-input");
+  await expect(commandInput).toBeFocused({ timeout: 5_000 });
+  return commandInput;
 }
 
 async function runCommand(page: Page, command: string) {
-  await focusCommand(page);
-  await page.getByTestId("civora-command-input").fill(command);
-  await page.getByTestId("civora-command-input").press("Enter");
+  const input = await focusCommand(page);
+  await input.fill(command);
+  await input.press("Enter");
 }
 
 async function mockSignedInProjectShell(page: Page) {
@@ -227,15 +239,17 @@ test.describe("Chat 231A loading states and status truth", () => {
 
     await runCommand(page, "whats blockd rn");
     await expect(page.getByText(/Needs input|Nothing is stopping the current review workflow/i).last()).toBeVisible();
-    await expect(page.getByTestId("floating-command-bar")).not.toContainText(/site type or land use|which systems to include/i);
+    const chatPanel = page.getByTestId("workspace-right-panel");
+    await expect(chatPanel.getByTestId("civora-chat-input")).toBeVisible();
+    await expect(chatPanel).not.toContainText(/site type or land use|which systems to include/i);
 
     await runCommand(page, "wut changed since i drew stuff");
     await expect(page.getByText(/Last Generate|Recent changes|Changed\/stale systems|No edits, Generate runs, or review packages/i).last()).toBeVisible();
-    await expect(page.getByTestId("floating-command-bar")).not.toContainText(/site type or land use|which systems to include/i);
+    await expect(chatPanel).not.toContainText(/site type or land use|which systems to include/i);
 
     await runCommand(page, "stamp this");
     await expect(page.getByText(/can't stamp, seal, sign, certify/i).last()).toBeVisible();
-    await expect(page.getByTestId("floating-command-bar")).toContainText(/can't stamp, seal, sign, certify/i);
+    await expect(chatPanel).toContainText(/can't stamp, seal, sign, certify/i);
   });
 
   test("AI visualization and project persistence show truthful loading, success, or blocker state", async ({ page }) => {

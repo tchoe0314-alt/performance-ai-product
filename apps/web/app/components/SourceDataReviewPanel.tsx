@@ -179,60 +179,65 @@ export function SourceDataReviewPanel({
 
   return (
     <>
-      <div className="mt-3 space-y-2">
-        {dataCapabilityRows.map((item) => (
-          <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="font-semibold text-slate-700">{item.label}</span>
-              <span
-                className={`text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                  item.status === "block" ? "text-red-600" : item.status === "idle" ? "text-slate-400" : "text-amber-600"
-                }`}
-              >
-                {item.value}
-              </span>
-            </div>
-            {item.status === "block" || item.status === "idle" ? <p className="mt-1 text-xs text-slate-500">{item.exactFix}</p> : null}
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 border-t border-slate-200 pt-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Online discovery</p>
-          <span className="text-[11px] font-semibold text-slate-500">{onlineDiscoveryRan ? sourceStatusLabel(onlineDiscoveryStatus) : "not run"}</span>
-        </div>
-        <div className="mt-3 space-y-2">
-          {onlineDiscoverySources.slice(0, 8).map((source) => (
-            <div key={source.key || source.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="flex items-start justify-between gap-3 text-sm">
-                <span className="font-semibold text-slate-700">{sourceDisplayName(source.label || source.key)}</span>
+      <details className="mt-3 rounded-xl border border-slate-200 bg-slate-50" data-testid="source-evidence-details">
+        <summary className="cursor-pointer list-none px-3 py-3 text-sm font-semibold text-slate-700">
+          Source evidence and technical details
+        </summary>
+        <div className="space-y-2 border-t border-slate-200 p-3">
+          {dataCapabilityRows.map((item) => (
+            <div key={item.key} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="font-semibold text-slate-700">{item.label}</span>
                 <span
-                  className={`shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                    Number(source.candidate_count ?? 0) > 0 ? "text-amber-700" : "text-red-600"
+                  className={`text-right text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                    item.status === "block" ? "text-red-600" : item.status === "idle" ? "text-slate-400" : "text-amber-600"
                   }`}
                 >
-                  {Number(source.candidate_count ?? 0) > 0 ? `${source.candidate_count} found` : sourceStatusLabel(source.status)}
+                  {item.value}
                 </span>
               </div>
-              <p className="mt-1 truncate text-xs font-medium text-slate-500">
-                {sourceDisplayName(source.provider || source.agency || source.source_type, "Provider not configured")}
-              </p>
-              {Number(source.candidate_count ?? 0) <= 0 ? (
-                <p className="mt-1 text-xs text-slate-500">
-                  {sourceDisplaySentence((source.blockers ?? [])[0] || `${source.label || source.key} source is missing/unavailable.`)}
-                </p>
-              ) : (
-                <p className="mt-1 text-xs text-slate-500">Candidate evidence only; review is required before use.</p>
-              )}
+              {item.status === "block" || item.status === "idle" ? <p className="mt-1 text-xs text-slate-500">{item.exactFix}</p> : null}
             </div>
           ))}
-          {!onlineDiscoverySources.length ? (
-            <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
-              Apply an address to run online source discovery.
-            </p>
-          ) : null}
         </div>
-      </div>
+        <div className="border-t border-slate-200 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Online discovery</p>
+            <span className="text-[11px] font-semibold text-slate-500">{onlineDiscoveryRan ? sourceStatusLabel(onlineDiscoveryStatus) : "not run"}</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {onlineDiscoverySources.slice(0, 8).map((source) => (
+              <div key={source.key || source.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="flex items-start justify-between gap-3 text-sm">
+                  <span className="font-semibold text-slate-700">{sourceDisplayName(source.label || source.key)}</span>
+                  <span
+                    className={`shrink-0 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                      Number(source.candidate_count ?? 0) > 0 ? "text-amber-700" : "text-red-600"
+                    }`}
+                  >
+                    {Number(source.candidate_count ?? 0) > 0 ? `${source.candidate_count} found` : sourceStatusLabel(source.status)}
+                  </span>
+                </div>
+                <p className="mt-1 truncate text-xs font-medium text-slate-500">
+                  {sourceDisplayName(source.provider || source.agency || source.source_type, "Provider not configured")}
+                </p>
+                {Number(source.candidate_count ?? 0) <= 0 ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {sourceDisplaySentence((source.blockers ?? [])[0] || `${source.label || source.key} source is missing/unavailable.`)}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-500">Candidate evidence only; review is required before use.</p>
+                )}
+              </div>
+            ))}
+            {!onlineDiscoverySources.length ? (
+              <p className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600">
+                Apply an address to run online source discovery.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </details>
       <div className="mt-4 border-t border-slate-200 pt-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -259,46 +264,53 @@ export function SourceDataReviewPanel({
           ))}
         </div>
         {visionCandidateCount ? (
-          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/60 px-3 py-3" data-testid="vision-learning-summary">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold text-slate-800">Civora Vision feedback</p>
-                <p className="mt-1 text-xs text-slate-600">
-                  {visionCandidateCount} visual candidate{visionCandidateCount === 1 ? "" : "s"}; {reviewedVisionCount} reviewed; {trainableVisionCount} rights-cleared for training.
-                </p>
-                <p className="mt-1 text-[11px] font-medium text-slate-600" data-testid="vision-inference-source-summary">
-                  {[
-                    visionInferenceCounts.learned ? `${visionInferenceCounts.learned} learned-model` : "",
-                    visionInferenceCounts.heuristic ? `${visionInferenceCounts.heuristic} heuristic estimate` : "",
-                    visionInferenceCounts.external ? `${visionInferenceCounts.external} external/other` : "",
-                  ].filter(Boolean).join("; ")}
-                  {visionInferenceCounts.heuristic ? ". Heuristic estimates are not learned inference." : "."}
-                </p>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {visionQualityReport?.quality_claim_allowed
-                    ? `Measured precision ${Math.round(Number(visionQualityReport.precision ?? 0) * 100)}% and recall ${Math.round(Number(visionQualityReport.recall ?? 0) * 100)}%.`
-                    : "Accuracy is not claimed until a rights-cleared ground-truth set is attached."}
-                </p>
+          <details className="mt-3 rounded-xl border border-sky-200 bg-sky-50/50" data-testid="vision-review-details">
+            <summary className="cursor-pointer list-none px-3 py-3 text-xs font-semibold text-sky-900">
+              Visual detection details ({visionCandidateCount})
+            </summary>
+            <div className="border-t border-sky-100 px-3 pb-3">
+              <div className="mt-3 rounded-lg border border-sky-200 bg-white px-3 py-3" data-testid="vision-learning-summary">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-800">Civora Vision feedback</p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      {visionCandidateCount} visual candidate{visionCandidateCount === 1 ? "" : "s"}; {reviewedVisionCount} reviewed; {trainableVisionCount} rights-cleared for training.
+                    </p>
+                    <p className="mt-1 text-[11px] font-medium text-slate-600" data-testid="vision-inference-source-summary">
+                      {[
+                        visionInferenceCounts.learned ? `${visionInferenceCounts.learned} learned-model` : "",
+                        visionInferenceCounts.heuristic ? `${visionInferenceCounts.heuristic} heuristic estimate` : "",
+                        visionInferenceCounts.external ? `${visionInferenceCounts.external} external/other` : "",
+                      ].filter(Boolean).join("; ")}
+                      {visionInferenceCounts.heuristic ? ". Heuristic estimates are not learned inference." : "."}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {visionQualityReport?.quality_claim_allowed
+                        ? `Measured precision ${Math.round(Number(visionQualityReport.precision ?? 0) * 100)}% and recall ${Math.round(Number(visionQualityReport.recall ?? 0) * 100)}%.`
+                        : "Accuracy is not claimed until a rights-cleared ground-truth set is attached."}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onExportVisionLearning}
+                    className="shrink-0 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
+                  >
+                    Export feedback
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={onExportVisionLearning}
-                className="shrink-0 rounded-lg border border-sky-200 bg-white px-2.5 py-2 text-[11px] font-semibold text-sky-800 hover:bg-sky-100"
-              >
-                Export feedback
-              </button>
+              <VisionGroundTruthWorkspace
+                workspace={visionReviewWorkspace}
+                selectedCandidateIds={selectedVisionCandidateIds}
+                selectedOutlines={selectedOutlines}
+                selectedFeatureType={selectedVisionFeatureType}
+                busy={Boolean(candidateDecisionInFlight)}
+                onDecision={(candidateIds, action, correction) => onCandidateDecision(candidateIds, action, correction)}
+                onClearSelection={() => setSelectedVisionCandidateIds([])}
+              />
             </div>
-          </div>
+          </details>
         ) : null}
-        <VisionGroundTruthWorkspace
-          workspace={visionReviewWorkspace}
-          selectedCandidateIds={selectedVisionCandidateIds}
-          selectedOutlines={selectedOutlines}
-          selectedFeatureType={selectedVisionFeatureType}
-          busy={Boolean(candidateDecisionInFlight)}
-          onDecision={(candidateIds, action, correction) => onCandidateDecision(candidateIds, action, correction)}
-          onClearSelection={() => setSelectedVisionCandidateIds([])}
-        />
         {candidateItems.length ? (
           <div className="mt-3 flex flex-wrap items-center gap-2" role="tablist" aria-label="Detected item views">
             {([
@@ -407,7 +419,7 @@ export function SourceDataReviewPanel({
                       <span className="font-semibold text-slate-400">Source </span>
                       <span className="break-words">
                         {sourceDisplayName(
-                          candidate.source || candidate.provider,
+                          candidate.provider || source.source_name || source.provider || candidate.source,
                           candidate.source_url ? "See source details" : "Unknown",
                         )}
                       </span>

@@ -9,12 +9,40 @@ import {
   panelErrorMessage,
 } from "../utils/dashboardStatus";
 import { summarizePlanResponse, toReadableLabel } from "../utils/formatting";
+import type { EngineeringSystemKey, SystemStatus } from "../utils/workflowConstants";
 import type { ProjectStatusSummary } from "../utils/workspaceShell";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type AppendChatMessage = (role: ChatMessage["role"], content: string, kind?: ChatMessage["kind"]) => void;
 type ProjectSummary = Pick<ProjectRecord, "project_id" | "name" | "description" | "has_result" | "updated_at">;
 type UpdateProjectStatus = (updates: Omit<ProjectStatusSummary, "updatedAt">) => void;
+
+const ALL_ENGINEERING_SYSTEMS: EngineeringSystemKey[] = [
+  "roads",
+  "parking",
+  "grading",
+  "drainage",
+  "utilities",
+];
+
+function completedSystemsForJob(job: JobSummary): EngineeringSystemKey[] {
+  if (job.job_type === "drainage_only") return ["drainage"];
+  if (job.job_type !== "orchestrate") return [];
+
+  const payloadMeta = job.payload?.meta;
+  const requestedSystem = payloadMeta && typeof payloadMeta === "object"
+    ? String((payloadMeta as Record<string, unknown>).requested_system || (payloadMeta as Record<string, unknown>).generation_target || "")
+        .trim()
+        .toLowerCase()
+    : "";
+  if (!requestedSystem || requestedSystem === "full") return ALL_ENGINEERING_SYSTEMS;
+  if (requestedSystem === "roadway") return ["roads"];
+  if (requestedSystem === "storm") return ["drainage"];
+  if (requestedSystem === "water" || requestedSystem === "sanitary") return ["utilities"];
+  return ALL_ENGINEERING_SYSTEMS.includes(requestedSystem as EngineeringSystemKey)
+    ? [requestedSystem as EngineeringSystemKey]
+    : [];
+}
 
 type PreviewRequest = {
   project_id: string | null;
@@ -52,6 +80,7 @@ type UseDashboardJobLoaderOptions = {
   setJobs: StateSetter<JobSummary[]>;
   setJobsPanelStatusMessage: (message: string) => void;
   setSelectedJobId: StateSetter<string>;
+  setSystemStatuses: StateSetter<Record<EngineeringSystemKey, SystemStatus>>;
   setProjectId: StateSetter<string>;
   setSiteName: StateSetter<string>;
   setStatusMessage: (message: string) => void;
@@ -84,6 +113,7 @@ export function useDashboardJobLoader({
   setJobs,
   setJobsPanelStatusMessage,
   setSelectedJobId,
+  setSystemStatuses,
   setProjectId,
   setSiteName,
   setStatusMessage,
@@ -338,6 +368,16 @@ export function useDashboardJobLoader({
           }
           return;
         }
+        const completedSystems = completedSystemsForJob(job);
+        if (completedSystems.length) {
+          setSystemStatuses((previous) => {
+            const next = { ...previous };
+            completedSystems.forEach((system) => {
+              next[system] = "fresh";
+            });
+            return next;
+          });
+        }
         applyBackendResult(job.result);
         requestPreviewInBackground(
           {
@@ -461,6 +501,7 @@ export function useDashboardJobLoader({
     setProjectId,
     setSiteName,
     setStatusMessage,
+    setSystemStatuses,
     siteName,
     token,
     updateProjectStatus,

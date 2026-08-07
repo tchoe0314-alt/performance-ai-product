@@ -67,10 +67,20 @@ export function useDashboardCommandUtilityActions({
   const commandFocusRequestRef = useRef(0);
 
   const focusCommandInput = useCallback(() => {
+    const findMountedInput = (kind: "chat" | "command") => {
+      const referencedInput = kind === "chat" ? chatInputRef.current : commandInputRef.current;
+      const input =
+        (referencedInput?.isConnected ? referencedInput : null) ??
+        (document.querySelector(
+          kind === "chat" ? '[data-testid="civora-chat-input"]' : '[data-testid="civora-command-input"]',
+        ) as HTMLTextAreaElement | null);
+      if (!input?.isConnected || input.getClientRects().length === 0) return null;
+      return input;
+    };
     const focusRequestId = commandFocusRequestRef.current + 1;
     commandFocusRequestRef.current = focusRequestId;
     setShortcutsOverlayOpen(false);
-    const useOpenChatComposer = activeSidePanel === "chat";
+    const useOpenChatComposer = activeSidePanel === "chat" || Boolean(findMountedInput("chat"));
     if (!useOpenChatComposer) setCommandBarExpanded(true);
     setWorkspaceChromeMinimized(true);
     setPlacementModeEnabled(false);
@@ -89,8 +99,9 @@ export function useDashboardCommandUtilityActions({
       cleanupFocusListeners();
     };
     const cancelFocusOnOutsidePointer = (event: PointerEvent) => {
-      const input = commandInputRef.current;
-      if (input && event.target === input) return;
+      const commandInput = commandInputRef.current;
+      const chatInput = chatInputRef.current;
+      if (event.target === commandInput || event.target === chatInput) return;
       focusCancelled = true;
       cleanupFocusListeners();
     };
@@ -101,14 +112,7 @@ export function useDashboardCommandUtilityActions({
         cleanupFocusListeners();
         return;
       }
-      const referencedInput = useOpenChatComposer ? chatInputRef.current : commandInputRef.current;
-      const input =
-        (referencedInput?.isConnected ? referencedInput : null) ??
-        (document.querySelector(
-          useOpenChatComposer
-            ? '[data-testid="civora-chat-input"]'
-            : '[data-testid="civora-command-input"]',
-        ) as HTMLTextAreaElement | null);
+      const input = findMountedInput("chat") ?? findMountedInput("command");
       if (input) {
         if (document.activeElement !== input) {
           input.focus({ preventScroll: true });
@@ -125,6 +129,7 @@ export function useDashboardCommandUtilityActions({
           return;
         }
       }
+      if (!input && attempt === 6) setCommandBarExpanded(true);
       if (attempt < 24) {
         window.requestAnimationFrame(() => focusMountedInput(attempt + 1));
         return;
