@@ -1,5 +1,6 @@
 import type { BuildingPlacement, CanonicalGeometryHandoffV1, SiteObjectType } from "../types";
 
+import { validatePolygon } from "./cadGeometryKernel";
 import { parsePositiveNumber, toReadableLabel } from "./formatting";
 import { SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
 
@@ -196,6 +197,21 @@ export const selectedObjectsToSemanticArea = (items: BuildingPlacement[], tolera
   if (segments.length < 3) {
     return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["Select at least three connected line segments to combine into an area."], sourceMode: "linework" as const };
   }
+  const quantizedPointKey = ([x, y]: [number, number]) => {
+    const scale = 1 / Math.max(Math.abs(tolerance), 0.000001);
+    return `${Math.round(x * scale)},${Math.round(y * scale)}`;
+  };
+  const seenSegments = new Set<string>();
+  for (const [start, end] of segments) {
+    if (pointDistance(start, end) <= 0.000001) {
+      return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["A selected segment has zero length."], sourceMode: "linework" as const };
+    }
+    const segmentKey = [quantizedPointKey(start), quantizedPointKey(end)].sort().join("|");
+    if (seenSegments.has(segmentKey)) {
+      return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["Duplicate segments conflict with the selected loop."], sourceMode: "linework" as const };
+    }
+    seenSegments.add(segmentKey);
+  }
   const remaining = [...segments];
   const [firstStart, firstEnd] = remaining.shift()!;
   const ordered: Array<[number, number]> = [firstStart, firstEnd];
@@ -219,7 +235,10 @@ export const selectedObjectsToSemanticArea = (items: BuildingPlacement[], tolera
       }
     });
     if (bestIndex < 0 || bestGap > tolerance) {
-      return { valid: false, geometry: [] as Array<[number, number]>, blockers: [`Two endpoints do not meet. Gap is ${bestGap.toFixed(2)} ft.`], sourceMode: "linework" as const };
+      return { valid: false, geometry: [] as Array<[number, number]>, blockers: [`Select one connected set of lines. Nearest gap is ${bestGap.toFixed(2)} ft.`], sourceMode: "linework" as const };
+    }
+    if (bestGap > 0.000001) {
+      return { valid: false, geometry: [] as Array<[number, number]>, blockers: [`Small gap requires permission before snapping endpoints. Gap is ${bestGap.toFixed(2)} ft.`], sourceMode: "linework" as const };
     }
     const [start, end] = remaining.splice(bestIndex, 1)[0];
     ordered.push(bestReverse ? start : end);
@@ -228,9 +247,19 @@ export const selectedObjectsToSemanticArea = (items: BuildingPlacement[], tolera
   if (closeGap > tolerance) {
     return { valid: false, geometry: [] as Array<[number, number]>, blockers: [`Shape is not closed. Final gap is ${closeGap.toFixed(2)} ft.`], sourceMode: "linework" as const };
   }
+  if (closeGap > 0.000001) {
+    return { valid: false, geometry: [] as Array<[number, number]>, blockers: [`Small gap requires permission before closing the shape. Gap is ${closeGap.toFixed(2)} ft.`], sourceMode: "linework" as const };
+  }
   const loop = ordered.slice(0, -1);
   if (loop.length < 3) {
     return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["Selected linework does not form an area."], sourceMode: "linework" as const };
+  }
+  const validation = validatePolygon(loop);
+  if (validation.selfIntersections.length) {
+    return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["The selected shape crosses itself."], sourceMode: "linework" as const };
+  }
+  if (!validation.ok) {
+    return { valid: false, geometry: [] as Array<[number, number]>, blockers: ["The selected linework does not form one valid area."], sourceMode: "linework" as const };
   }
   return { valid: true, geometry: loop, blockers: [] as string[], sourceMode: "linework" as const };
 };
