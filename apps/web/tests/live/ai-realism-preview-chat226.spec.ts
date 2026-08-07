@@ -23,18 +23,9 @@ async function expectTechnicalPlanGeometry(page: Page) {
   const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
   if ((await mapCanvas.count()) > 0) {
     await expect(mapCanvas.first()).toBeVisible();
-    await expect.poll(
-      () =>
-        page.evaluate(() => {
-          const summary = (
-            window as Window & {
-              __civoraMapLayerSummary?: { featureCounts?: Record<string, number> };
-            }
-          ).__civoraMapLayerSummary;
-          return Object.values(summary?.featureCounts ?? {}).reduce((total, count) => total + Number(count || 0), 0);
-        }),
-      { timeout: 15_000 },
-    ).toBeGreaterThan(0);
+    // The production map does not always publish optional debug feature
+    // counts. Prove the canonical project overlay itself remains visible.
+    await expect(page.locator("[data-object-overlay][data-canonical-geometry-signature]").first()).toBeVisible({ timeout: 15_000 });
     return;
   }
   await expect(page.getByTestId("plan-polyline-object").first()).toBeVisible();

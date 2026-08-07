@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { flushSync } from "react-dom";
 
 import type { BuildingPlacement } from "../types";
 import type { CadToolRequest, DrawMode } from "../utils/cadToolTypes";
@@ -259,12 +260,15 @@ export function usePreviewCadShortcutEffect({
       }
       if (key === "o") {
         event.preventDefault();
-        setCadOrthoEnabled((value) => !value);
+        // Drafting modifiers must be active before the next pointer event. A
+        // hosted map can otherwise receive a fast follow-up click while React
+        // still has the previous Ortho value in the drawing callback.
+        flushSync(() => setCadOrthoEnabled((value) => !value));
         return;
       }
       if (key === "s") {
         event.preventDefault();
-        setCadSnapEnabled((value) => !value);
+        flushSync(() => setCadSnapEnabled((value) => !value));
         return;
       }
       if (key === "m") {

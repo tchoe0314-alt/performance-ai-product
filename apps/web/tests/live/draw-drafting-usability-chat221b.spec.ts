@@ -296,6 +296,7 @@ test.describe("Chat 221B draw drafting usability", () => {
     const cadTools = page.getByTestId("draw-cad-tools-section");
     const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
     await page.keyboard.press("o");
+    await expect(page.getByLabel("Ortho")).toBeChecked();
     await cadTools.getByTestId("cad-tool-line").click();
     await clickExposedSurface(surface, 0.2, 0.32);
     await clickExposedSurface(surface, 0.48, 0.43);
