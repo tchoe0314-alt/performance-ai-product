@@ -146,7 +146,11 @@ from backend.application.production_env_validator_v1 import validate_production_
 from backend.services.artifact_service import ArtifactService
 from backend.services.auth_store import AuthStore
 from backend.services.backup_restore import hosted_backup_evidence
-from backend.services.data_lifecycle import DataLifecycleService
+from backend.services.data_lifecycle import (
+    AccountExportBusyError,
+    AccountExportLimitError,
+    DataLifecycleService,
+)
 from backend.services.support_store import SupportStore
 from backend.services.billing import build_billing_status, usage_gate
 from backend.services.database import Database
@@ -1387,6 +1391,10 @@ def export_account_data(
 ):
     try:
         archive = DATA_LIFECYCLE.create_account_export_archive(user_id=current_user["user_id"])
+    except AccountExportBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AccountExportLimitError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     path = Path(archive["path"])

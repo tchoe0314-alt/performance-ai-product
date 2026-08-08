@@ -14,6 +14,8 @@ from backend.services.auth_store import AuthStore
 from backend.services.backup_restore import DatabaseBackupService, hosted_backup_evidence
 from backend.services.data_lifecycle import (
     ACCOUNT_DELETE_CONFIRMATION,
+    AccountExportBusyError,
+    AccountExportLimitError,
     DataLifecycleService,
     cleanup_deletion_quarantine,
 )
@@ -143,6 +145,25 @@ class DataLifecycleAndBackupTests(unittest.TestCase):
             self.assertTrue(any(name.endswith("review.pdf") for name in names))
             archived_package = json.loads(bundle.read("account-data.json"))
             self.assertEqual(archived_package["content_sha256"], package["content_sha256"])
+
+    def test_account_export_preflights_limits_before_hashing_or_archiving(self) -> None:
+        upload = self.uploads / f"{self.user['user_id']}_large.bin"
+        upload.write_bytes(b"x" * 32)
+
+        with patch.dict(os.environ, {"CIVORA_ACCOUNT_EXPORT_MAX_BYTES": "8"}, clear=False):
+            with patch("backend.services.data_lifecycle._sha256_file", side_effect=AssertionError("must not hash")):
+                with self.assertRaisesRegex(AccountExportLimitError, "managed export"):
+                    self.lifecycle.create_account_export_archive(user_id=self.user["user_id"])
+
+        self.assertEqual(list(self.lifecycle.export_dir.rglob("*.zip")), [])
+
+    def test_account_export_rejects_duplicate_inflight_request(self) -> None:
+        self.lifecycle._active_exports.add(self.user["user_id"])
+        try:
+            with self.assertRaisesRegex(AccountExportBusyError, "already being prepared"):
+                self.lifecycle.create_account_export_archive(user_id=self.user["user_id"])
+        finally:
+            self.lifecycle._active_exports.clear()
 
     def test_account_deletion_blocks_shared_ownership(self) -> None:
         project = self._create_project()

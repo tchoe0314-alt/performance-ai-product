@@ -10,7 +10,12 @@ from fastapi.testclient import TestClient
 
 from backend.api.app import app
 from backend.services.auth_store import AuthStore
-from backend.services.data_lifecycle import ACCOUNT_DELETE_CONFIRMATION, DataLifecycleService
+from backend.services.data_lifecycle import (
+    ACCOUNT_DELETE_CONFIRMATION,
+    AccountExportBusyError,
+    AccountExportLimitError,
+    DataLifecycleService,
+)
 from backend.services.database import Database
 from backend.services.support_store import SupportStore
 
@@ -116,6 +121,25 @@ class AccountSupportApiTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/account/export").status_code, 401)
         self.assertEqual(self.client.get("/api/account/deletion-readiness").status_code, 401)
         self.assertEqual(self.client.get("/api/support/requests").status_code, 401)
+
+    def test_account_export_reports_busy_and_managed_export_states(self) -> None:
+        with patch.object(
+            self.lifecycle,
+            "create_account_export_archive",
+            side_effect=AccountExportBusyError("An account export is already being prepared."),
+        ):
+            busy = self.client.get("/api/account/export", headers=self.headers)
+        self.assertEqual(busy.status_code, 409)
+        self.assertIn("already being prepared", busy.json()["detail"])
+
+        with patch.object(
+            self.lifecycle,
+            "create_account_export_archive",
+            side_effect=AccountExportLimitError("Use a managed export."),
+        ):
+            managed = self.client.get("/api/account/export", headers=self.headers)
+        self.assertEqual(managed.status_code, 413)
+        self.assertIn("managed export", managed.json()["detail"])
 
 
 if __name__ == "__main__":

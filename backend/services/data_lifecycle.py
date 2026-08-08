@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 import time
 import uuid
 import zipfile
@@ -16,6 +17,14 @@ from .database import Database
 
 ACCOUNT_EXPORT_VERSION = "civora_account_export_v1"
 ACCOUNT_DELETE_CONFIRMATION = "DELETE MY CIVORA ACCOUNT"
+
+
+class AccountExportBusyError(RuntimeError):
+    pass
+
+
+class AccountExportLimitError(ValueError):
+    pass
 
 _JSON_COLUMNS = {
     "tags_json": "tags",
@@ -136,6 +145,8 @@ class DataLifecycleService:
         self.learning_paths = list(dict.fromkeys(Path(path).resolve() for path in (learning_paths or [])))
         self.export_dir.mkdir(parents=True, exist_ok=True)
         self.quarantine_dir.mkdir(parents=True, exist_ok=True)
+        self._export_lock = threading.Lock()
+        self._active_exports: set[str] = set()
 
     def _rows(self, sql: str, params: Iterable[Any] = ()) -> List[Dict[str, Any]]:
         connection = self.db.connect()
@@ -198,7 +209,13 @@ class DataLifecycleService:
         except ValueError:
             return f"external/{path.name}"
 
-    def account_export(self, *, user_id: str) -> Dict[str, Any]:
+    def account_export(
+        self,
+        *,
+        user_id: str,
+        source_files: Optional[Iterable[Path]] = None,
+        file_manifest: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         account = self._account(user_id)
         owned_projects = self._rows(
             "SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC",
@@ -257,14 +274,21 @@ class DataLifecycleService:
             (user_id,),
         )
         project_ids = [str(item.get("project_id") or "") for item in owned_projects]
-        file_manifest = [
-            {
-                "path": self._relative_storage_path(path),
-                "size_bytes": path.stat().st_size,
-                "sha256": _sha256_file(path),
-            }
-            for path in self._file_candidates(user_id=user_id, project_ids=project_ids)
-        ]
+        resolved_manifest = file_manifest
+        if resolved_manifest is None:
+            resolved_files = (
+                sorted(set(Path(path).resolve() for path in source_files))
+                if source_files is not None
+                else self._file_candidates(user_id=user_id, project_ids=project_ids)
+            )
+            resolved_manifest = [
+                {
+                    "path": self._relative_storage_path(path),
+                    "size_bytes": path.stat().st_size,
+                    "sha256": _sha256_file(path),
+                }
+                for path in resolved_files
+            ]
         data = {
             "account": account,
             "owned_projects": owned_projects,
@@ -278,7 +302,7 @@ class DataLifecycleService:
             "jobs": jobs,
             "support_requests": support_requests,
             "chat_learning_records": self._learning_records(user_id),
-            "file_manifest": file_manifest,
+            "file_manifest": resolved_manifest,
         }
         return {
             "version": ACCOUNT_EXPORT_VERSION,
@@ -290,27 +314,69 @@ class DataLifecycleService:
         }
 
     def create_account_export_archive(self, *, user_id: str) -> Dict[str, Any]:
-        package = self.account_export(user_id=user_id)
-        project_ids = [str(item.get("project_id") or "") for item in package["data"]["owned_projects"]]
-        source_files = self._file_candidates(user_id=user_id, project_ids=project_ids)
-        user_export_dir = self.export_dir / user_id
-        user_export_dir.mkdir(parents=True, exist_ok=True)
-        archive_path = user_export_dir / f"civora-account-export-{int(_now())}-{uuid.uuid4().hex[:8]}.zip"
-        max_bytes = int(os.getenv("CIVORA_ACCOUNT_EXPORT_MAX_BYTES") or str(5 * 1024 * 1024 * 1024))
-        total_bytes = sum(path.stat().st_size for path in source_files)
-        if total_bytes > max_bytes:
-            raise ValueError("Account export is too large for automatic download. Contact Civora support for a managed export.")
-        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
-            archive.writestr("account-data.json", json.dumps(package, indent=2, sort_keys=True, default=str))
-            for path in source_files:
-                archive.write(path, arcname=f"files/{self._relative_storage_path(path)}")
-        return {
-            "path": archive_path,
-            "filename": archive_path.name,
-            "package": package,
-            "archive_size_bytes": archive_path.stat().st_size,
-            "included_file_count": len(source_files),
-        }
+        normalized_user_id = str(user_id or "").strip()
+        with self._export_lock:
+            if normalized_user_id in self._active_exports:
+                raise AccountExportBusyError("An account export is already being prepared. Wait for it to finish and try again.")
+            self._active_exports.add(normalized_user_id)
+
+        archive_path: Optional[Path] = None
+        try:
+            project_ids = self._owned_project_ids(normalized_user_id)
+            source_files = self._file_candidates(user_id=normalized_user_id, project_ids=project_ids)
+            max_bytes = max(
+                1,
+                int(os.getenv("CIVORA_ACCOUNT_EXPORT_MAX_BYTES") or str(100 * 1024 * 1024)),
+            )
+            max_files = max(1, int(os.getenv("CIVORA_ACCOUNT_EXPORT_MAX_FILES") or "1000"))
+            total_bytes = sum(path.stat().st_size for path in source_files)
+            if len(source_files) > max_files or total_bytes > max_bytes:
+                raise AccountExportLimitError(
+                    "This account is too large for an immediate browser download. Send an Account data issue "
+                    "from Help so Civora operations can prepare a managed export without slowing the workspace."
+                )
+
+            user_export_dir = self.export_dir / normalized_user_id
+            user_export_dir.mkdir(parents=True, exist_ok=True)
+            archive_path = user_export_dir / f"civora-account-export-{int(_now())}-{uuid.uuid4().hex[:8]}.zip"
+            file_manifest: List[Dict[str, Any]] = []
+            with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+                for path in source_files:
+                    digest = hashlib.sha256()
+                    size_bytes = 0
+                    arcname = f"files/{self._relative_storage_path(path)}"
+                    with path.open("rb") as source, archive.open(arcname, "w", force_zip64=True) as target:
+                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                            size_bytes += len(chunk)
+                            target.write(chunk)
+                    file_manifest.append(
+                        {
+                            "path": self._relative_storage_path(path),
+                            "size_bytes": size_bytes,
+                            "sha256": digest.hexdigest(),
+                        }
+                    )
+                package = self.account_export(
+                    user_id=normalized_user_id,
+                    source_files=source_files,
+                    file_manifest=file_manifest,
+                )
+                archive.writestr("account-data.json", json.dumps(package, indent=2, sort_keys=True, default=str))
+            return {
+                "path": archive_path,
+                "filename": archive_path.name,
+                "package": package,
+                "archive_size_bytes": archive_path.stat().st_size,
+                "included_file_count": len(source_files),
+            }
+        except Exception:
+            if archive_path is not None:
+                archive_path.unlink(missing_ok=True)
+            raise
+        finally:
+            with self._export_lock:
+                self._active_exports.discard(normalized_user_id)
 
     def deletion_readiness(self, *, user_id: str) -> Dict[str, Any]:
         account = self._account(user_id)
