@@ -37,6 +37,8 @@ const publicStatus = run("public workspace smoke", [
 let authStatus = 0;
 let authSummary = "skipped: CIVORA_EMAIL and CIVORA_PASSWORD are not set";
 let authSkipped = true;
+let workflowStatus = 0;
+let loadStatus = 0;
 
 if (hasHostedCredentials) {
   authSkipped = false;
@@ -49,7 +51,33 @@ if (hasHostedCredentials) {
     "--workers=1",
     `--repeat-each=${authenticatedRepeatCount}`,
   ]);
-  authSummary = authStatus === 0 ? "passed" : "failed";
+  if (authStatus === 0) {
+    workflowStatus = run("authenticated real-workflow suite", [
+      "playwright",
+      "test",
+      "--config=playwright.config.ts",
+      "tests/live/hosted-candidate-review-stability.spec.ts",
+      "tests/live/hosted-real-source-depth.spec.ts",
+      "tests/live/hosted-real-user-source-workflow.spec.ts",
+      "tests/live/hosted-source-upload-truth.spec.ts",
+      "tests/live/hosted-realistic-user-gauntlet.spec.ts",
+      "--project=chromium",
+      "--workers=1",
+    ]);
+  }
+  // The auth-burst proof intentionally fills the limiter window, so it must
+  // remain last and cannot contaminate authenticated workflow checks.
+  if (authStatus === 0 && workflowStatus === 0) {
+    loadStatus = run("hosted load and rate-limit suite", [
+      "playwright",
+      "test",
+      "--config=playwright.config.ts",
+      "tests/live/hosted-load-stability.spec.ts",
+      "--project=chromium",
+      "--workers=1",
+    ]);
+  }
+  authSummary = authStatus === 0 && workflowStatus === 0 && loadStatus === 0 ? "passed" : "failed";
 }
 
 const report = {
@@ -67,6 +95,15 @@ const report = {
     passed_runs: !authSkipped && authStatus === 0 ? authenticatedRepeatCount : 0,
     command: `playwright test --config=playwright.config.ts tests/live/hosted-auth-smoke.spec.ts --project=chromium --workers=1 --repeat-each=${authenticatedRepeatCount}`,
   },
+  authenticated_real_workflows: {
+    status: authSkipped ? "skipped" : workflowStatus === 0 && authStatus === 0 ? "passed" : "failed",
+    command: "playwright test hosted candidate review, real files, source upload, source-backed workflow, and realistic fresh-project scenarios",
+  },
+  hosted_load_and_rate_limits: {
+    status: authSkipped ? "skipped" : loadStatus === 0 && workflowStatus === 0 && authStatus === 0 ? "passed" : "failed",
+    runs_last_to_avoid_auth_window_contamination: true,
+    command: "playwright test --config=playwright.config.ts tests/live/hosted-load-stability.spec.ts --project=chromium --workers=1",
+  },
   credentials_present: hasHostedCredentials,
   truth_label: "Hosted gauntlet reports public/authenticated website workflow health only. It does not prove construction readiness, professional approval, stamping, sealing, signing, certification, submission, or engineer-of-record status.",
 };
@@ -78,9 +115,15 @@ console.log("\n[hosted-gauntlet] summary");
 console.log(`- target: ${appUrl}`);
 console.log(`- public smoke: ${publicStatus === 0 ? "passed" : "failed"}`);
 console.log(`- authenticated smoke: ${authSummary}`);
+console.log(
+  `- authenticated real workflows: ${authSkipped ? "skipped" : authStatus === 0 && workflowStatus === 0 ? "passed" : "failed"}`,
+);
+console.log(
+  `- hosted load/rate limits: ${authSkipped ? "skipped" : authStatus === 0 && workflowStatus === 0 && loadStatus === 0 ? "passed" : "failed"}`,
+);
 console.log(`- authenticated repeat target: ${authenticatedRepeatCount}`);
 console.log(`- report: ${reportPath}`);
 
-if (publicStatus !== 0 || authStatus !== 0) {
+if (publicStatus !== 0 || authStatus !== 0 || workflowStatus !== 0 || loadStatus !== 0) {
   process.exit(1);
 }
