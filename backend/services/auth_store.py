@@ -145,6 +145,24 @@ class AuthStore:
         finally:
             connection.close()
 
+    def verify_password(self, *, user_id: str, password: str) -> bool:
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                """
+                SELECT password_salt, password_hash
+                FROM users
+                WHERE user_id = ?
+                """,
+                (str(user_id or ""),),
+            ).fetchone()
+        finally:
+            connection.close()
+        if row is None or not str(password or ""):
+            return False
+        candidate = _hash_password(password, row["password_salt"])
+        return secrets.compare_digest(candidate, row["password_hash"])
+
     def logout(self, token: str) -> None:
         token_value = str(token or "").strip()
         if not token_value:

@@ -1,0 +1,81 @@
+name: RC1 Firefox accessibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/release-candidate-1
+
+jobs:
+  firefox-accessibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install Firefox runtime
+        run: npx playwright install --with-deps firefox
+
+      - name: Build production website
+        run: npm run build
+
+      - name: Start production website
+        run: |
+          npm start -- --hostname 127.0.0.1 --port 3000 > /tmp/civora-next.log 2>&1 &
+          echo $! > /tmp/civora-next.pid
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3000/demo/workspace >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/civora-next.log
+          exit 1
+
+      - name: Run Firefox WCAG and navigation proof
+        env:
+          PLAYWRIGHT_SKIP_WEBSERVER: "1"
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+        run: >-
+          npx playwright test --config=playwright.config.ts
+          tests/live/rc1-accessibility-cross-browser.spec.ts
+          --project=firefox --workers=1
+
+      - name: Record exact-revision Firefox evidence
+        if: success()
+        run: >-
+          node -e "const fs=require('fs');
+          fs.mkdirSync('../../reports/release',{recursive:true});
+          fs.writeFileSync('../../reports/release/rc1-firefox-ci-evidence.json',
+          JSON.stringify({version:'civora_rc1_firefox_ci_evidence_v1',revision:process.env.GITHUB_SHA,status:'success',workflow:process.env.GITHUB_WORKFLOW,run_id:process.env.GITHUB_RUN_ID},null,2));"
+
+      - name: Upload exact-revision Firefox evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc1-firefox-ci-evidence
+          path: reports/release/rc1-firefox-ci-evidence.json
+          if-no-files-found: error
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc1-firefox-accessibility-artifacts
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
+            /tmp/civora-next.log
+          if-no-files-found: ignore

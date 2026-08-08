@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 import httpx
 from anyio import to_thread
+from starlette.background import BackgroundTask
 
 from parsers.chat_intent_parser import assess_design_readiness, decide_chat_message
 from backend.application.design_workflows import (
@@ -144,6 +145,9 @@ from backend.application.professional_workflows import (
 from backend.application.production_env_validator_v1 import validate_production_env_v1
 from backend.services.artifact_service import ArtifactService
 from backend.services.auth_store import AuthStore
+from backend.services.backup_restore import hosted_backup_evidence
+from backend.services.data_lifecycle import DataLifecycleService
+from backend.services.support_store import SupportStore
 from backend.services.billing import build_billing_status, usage_gate
 from backend.services.database import Database
 from backend.services.job_queue import JobQueueService
@@ -228,6 +232,8 @@ _RATE_LIMIT_DEFAULTS: Dict[str, tuple[int, int]] = {
     "planner": (40, 60),
     "preview": (120, 60),
     "export": (60, 60),
+    "account": (10, 60),
+    "support": (10, 60),
     "image": (6, 60),
 }
 _RATE_LIMIT_EVENTS: Dict[str, deque[float]] = {}
@@ -293,6 +299,14 @@ AUTH_STORE = AuthStore(DB)
 PROJECT_STORE = ProjectStore(DB)
 JOB_QUEUE = JobQueueService(DB, worker_count=0 if PROCESS_ROLE == "web" else None)
 ARTIFACTS = ArtifactService(ARTIFACT_DIR)
+SUPPORT_STORE = SupportStore(DB)
+DATA_LIFECYCLE = DataLifecycleService(
+    DB,
+    storage_dir=STORAGE_DIR,
+    upload_dir=UPLOAD_DIR,
+    artifact_dir=ARTIFACT_DIR,
+    learning_paths=(CHAT_LEARNING_PATH, CHAT_TRAINING_PATH),
+)
 
 try:
     import session_state as session_state_mod
@@ -333,6 +347,20 @@ class GeocodeResponse(BaseModel):
 class LoginPayload(BaseModel):
     email: str
     password: str
+
+
+class AccountDeletePayload(BaseModel):
+    current_password: str
+    confirmation: str
+
+
+class SupportRequestPayload(BaseModel):
+    project_id: str = ""
+    category: str = "workflow"
+    severity: str = "p2"
+    summary: str
+    details: str = ""
+    client_context: Dict[str, Any] = Field(default_factory=dict)
 
 
 class OrchestratePayload(BaseModel):
@@ -773,6 +801,7 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -1019,6 +1048,7 @@ def _runtime_debug_payload() -> Dict[str, Any]:
         "mapbox_token_present": bool(token),
         "port": os.getenv("PORT"),
         "job_queue": job_queue,
+        "recovery": _recovery_metadata(),
     }
 
 
@@ -1074,6 +1104,20 @@ def _support_metadata() -> Dict[str, Any]:
         "escalation_configured": bool(escalation_contact),
         "escalation_contact": escalation_contact,
         "user_safe_message": "Use the support contact or bug report path for pilot issues; stop relying on affected outputs when source, review, or export status is unclear.",
+    }
+
+
+def _recovery_metadata() -> Dict[str, Any]:
+    evidence = hosted_backup_evidence(os.environ)
+    return {
+        "status": evidence["status"],
+        "provider_backups_enabled": evidence["provider_backups_enabled"],
+        "owner_configured": evidence["owner_configured"],
+        "evidence_url_configured": evidence["evidence_url_configured"],
+        "restore_drill_at": evidence["restore_drill_at"],
+        "retention_days": evidence["retention_days"],
+        "missing_env_vars": evidence["missing_env_vars"],
+        "truth_label": evidence["truth_label"],
     }
 
 
@@ -1235,6 +1279,7 @@ async def health() -> Dict[str, Any]:
             "bug_report_configured": bool(_first_env_value("CIVORA_BUG_REPORT_URL", "CIVORA_BUG_REPORT_FORM_URL")),
             "bug_report_url": _first_env_value("CIVORA_BUG_REPORT_URL", "CIVORA_BUG_REPORT_FORM_URL"),
         },
+        "recovery": _recovery_metadata(),
         "alpha_review_guard": {
             "review_only": str(PRODUCT_MODE).strip().lower() != "production",
             "construction_release_enabled": False,
@@ -1325,6 +1370,95 @@ def billing_status(
     _rate_limit: None = Depends(rate_limit("auth")),
 ) -> Dict[str, Any]:
     return build_billing_status(user=current_user)
+
+
+def _cleanup_account_export(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+        path.parent.rmdir()
+    except OSError:
+        return
+
+
+@app.get("/api/account/export")
+def export_account_data(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("account")),
+):
+    try:
+        archive = DATA_LIFECYCLE.create_account_export_archive(user_id=current_user["user_id"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    path = Path(archive["path"])
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=str(archive["filename"]),
+        background=BackgroundTask(_cleanup_account_export, path),
+    )
+
+
+@app.get("/api/account/deletion-readiness")
+def account_deletion_readiness(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("account")),
+) -> Dict[str, Any]:
+    return {"success": True, **DATA_LIFECYCLE.deletion_readiness(user_id=current_user["user_id"])}
+
+
+@app.delete("/api/account")
+def delete_account(
+    payload: AccountDeletePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("account")),
+) -> Dict[str, Any]:
+    if not AUTH_STORE.verify_password(user_id=current_user["user_id"], password=payload.current_password):
+        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+    try:
+        return DATA_LIFECYCLE.delete_account(
+            user_id=current_user["user_id"],
+            confirmation=payload.confirmation,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/support/requests")
+def list_support_requests(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("support")),
+) -> Dict[str, Any]:
+    return {
+        "success": True,
+        "requests": SUPPORT_STORE.list_requests(user_id=current_user["user_id"]),
+        "support": _support_metadata(),
+    }
+
+
+@app.post("/api/support/requests")
+def create_support_request(
+    payload: SupportRequestPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("support")),
+) -> Dict[str, Any]:
+    try:
+        request_record = SUPPORT_STORE.create_request(
+            user_id=current_user["user_id"],
+            project_id=payload.project_id,
+            category=payload.category,
+            severity=payload.severity,
+            summary=payload.summary,
+            details=payload.details,
+            client_context=payload.client_context,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "success": True,
+        "request": request_record,
+        "message": f"Issue received as {request_record['request_id']}.",
+        "support": _support_metadata(),
+    }
 
 
 @app.post("/api/auth/logout")

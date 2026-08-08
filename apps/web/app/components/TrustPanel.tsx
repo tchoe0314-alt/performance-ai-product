@@ -1,3 +1,5 @@
+import { SupportAccountPanel } from "./SupportAccountPanel";
+
 const civoraDoes = [
   "Supports site planning and review workflows.",
   "Organizes source-backed context from project inputs, GIS-style sources, PDFs, imagery, and uploaded survey/topo files.",
@@ -32,7 +34,14 @@ function TrustList({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-export function TrustPanel() {
+type TrustPanelProps = {
+  token: string | null;
+  projectId?: string | null;
+  userEmail: string;
+  onAccountDeleted: () => void;
+};
+
+export function TrustPanel({ token, projectId, userEmail, onAccountDeleted }: TrustPanelProps) {
   return (
     <div className="space-y-4" data-testid="civora-trust-panel">
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -58,6 +67,12 @@ export function TrustPanel() {
           Deliver creates review-only packages with visible missing items, source notes, and review notes so a project team can hand off clearer material for professional review.
         </p>
       </div>
+      <SupportAccountPanel
+        token={token}
+        projectId={projectId}
+        userEmail={userEmail}
+        onAccountDeleted={onAccountDeleted}
+      />
     </div>
   );
 }

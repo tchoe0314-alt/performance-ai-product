@@ -301,7 +301,7 @@ export function PreviewCanvasHeaderControls({
           <summary className="flex h-8 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 shadow-sm marker:hidden hover:bg-slate-50">
             <Layers3 className="h-3.5 w-3.5" />
             Layers
-            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">
+            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
               {(sourceLayerVisibility.detectedExisting ? 1 : 0) + (sourceLayerVisibility.proposedDesign ? 1 : 0)}/2
             </span>
           </summary>

@@ -39,6 +39,7 @@ def health_response(
     release_guard: Dict[str, Any] | None = None,
     deployment: Dict[str, Any] | None = None,
     support: Dict[str, Any] | None = None,
+    recovery: Dict[str, Any] | None = None,
 ) -> Dict[str, object]:
     normalized_mode = _normalize_product_mode(product_mode)
     normalized_storage = str(storage or "sqlite").strip().lower() or "sqlite"
@@ -69,6 +70,7 @@ def health_response(
     failed_recent_count = int(queue_evidence.get("failed_recent_count", monitoring_queue.get("failed_recent_count", 0)) or 0)
     deployment_meta = deployment or {}
     support_meta = support or {}
+    recovery_meta = recovery or {}
     build_version = str(deployment_meta.get("build_version") or app_version or "").strip()
     last_deploy_time = str(deployment_meta.get("last_deploy_time") or "").strip()
     api_base_url = str(deployment_meta.get("api_base_url") or "").strip()
@@ -124,6 +126,19 @@ def health_response(
             "user_safe_message": str(
                 support_meta.get("user_safe_message")
                 or "Use the support contact or bug report path for pilot issues; stop relying on affected outputs when source, review, or export status is unclear."
+            ),
+        },
+        "recovery": {
+            "status": str(recovery_meta.get("status") or "blocked").strip().lower(),
+            "provider_backups_enabled": bool(recovery_meta.get("provider_backups_enabled")),
+            "owner_configured": bool(recovery_meta.get("owner_configured")),
+            "evidence_url_configured": bool(recovery_meta.get("evidence_url_configured")),
+            "restore_drill_at": str(recovery_meta.get("restore_drill_at") or "").strip(),
+            "retention_days": str(recovery_meta.get("retention_days") or "").strip(),
+            "missing_env_vars": list(recovery_meta.get("missing_env_vars") or []),
+            "truth_label": str(
+                recovery_meta.get("truth_label")
+                or "Hosted recovery remains blocked until provider backup evidence and a restore drill are recorded."
             ),
         },
         "alpha_review_guard": {

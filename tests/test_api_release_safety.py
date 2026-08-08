@@ -44,6 +44,9 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         self.assertNotIn("mapbox_token_prefix", payload)
         self.assertIn("storage_kind", payload)
         self.assertIn("mapbox_token_present", payload)
+        self.assertIn("recovery", payload)
+        self.assertNotIn("owner", payload["recovery"])
+        self.assertNotIn("evidence_url", payload["recovery"])
 
     def test_cron_endpoint_is_disabled_without_configured_secret(self) -> None:
         with patch.object(api_app_module, "CRON_SECRET", ""):
@@ -64,7 +67,7 @@ class ApiReleaseSafetyTest(unittest.TestCase):
 
     def test_cors_allows_deployed_frontend_origin(self) -> None:
         client = TestClient(app)
-        response = client.options(
+        preflight_response = client.options(
             "/api/health",
             headers={
                 "Origin": "https://civoraai.com",
@@ -72,8 +75,19 @@ class ApiReleaseSafetyTest(unittest.TestCase):
             },
         )
 
+        self.assertEqual(preflight_response.status_code, 200)
+        self.assertEqual(
+            preflight_response.headers.get("access-control-allow-origin"),
+            "https://civoraai.com",
+        )
+
+        response = client.get(
+            "/api/health",
+            headers={"Origin": "https://civoraai.com"},
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers.get("access-control-allow-origin"), "https://civoraai.com")
+        self.assertIn("Content-Disposition", response.headers.get("access-control-expose-headers", ""))
 
     def test_cors_blocks_unlisted_origin(self) -> None:
         client = TestClient(app)

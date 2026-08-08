@@ -99,7 +99,7 @@ export default function AppHeader({
           >
             <FolderOpen className="h-4 w-4" />
           </button>
-          <button type="button" onClick={onOpenDocs} className="hidden h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white/80 text-slate-700 transition hover:bg-slate-50 md:inline-flex" aria-label="Help">
+          <button type="button" onClick={onOpenDocs} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white/80 text-slate-700 transition hover:bg-slate-50" aria-label="Help">
             <CircleHelp className="h-4 w-4" />
           </button>
           <button

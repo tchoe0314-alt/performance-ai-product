@@ -5945,7 +5945,14 @@ function PerformanceAIDashboardView({
               wide={sidePanelForRender === "deliverables"}
               onMinimize={handleCloseSidePanel}
             >
-                {sidePanelForRender === "trust" ? <TrustPanel /> : null}
+                {sidePanelForRender === "trust" ? (
+                  <TrustPanel
+                    token={token}
+                    projectId={projectId}
+                    userEmail={effectiveUser.email}
+                    onAccountDeleted={handleLogout}
+                  />
+                ) : null}
                 {isDisciplinePanel ? (
                   <DisciplinePanelTabs
                     items={disciplinePanelLinks}

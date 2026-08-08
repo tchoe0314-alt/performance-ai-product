@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Mapping, Optional
 from urllib.parse import urlparse
 
+from backend.services.backup_restore import hosted_backup_evidence
+
 
 VALID_PRODUCT_MODES = {"development", "local", "private_alpha", "public_beta", "production"}
 PRODUCTION_MODES = {"public_beta", "production"}
@@ -65,6 +67,16 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("CIVORA_ESCALATION_CONTACT", "support", (), optional=True, description="Internal escalation contact for source-trust, safety, privacy, billing, and export incidents."),
     EnvVarSpec("CIVORA_MONITORING_OWNER", "operations", (), optional=True, description="Named owner for deployment health, queue, auth, upload, and error monitoring."),
     EnvVarSpec("CIVORA_ROLLBACK_OWNER", "operations", (), optional=True, description="Named owner authorized to roll back or disable Vercel/Railway services."),
+    EnvVarSpec("CIVORA_DATABASE_PROVIDER_BACKUPS_ENABLED", "recovery", (), optional=True, description="Confirms hosted database backups are enabled at the provider."),
+    EnvVarSpec("CIVORA_DATABASE_BACKUP_OWNER", "recovery", (), optional=True, description="Named owner for backup review and restore drills."),
+    EnvVarSpec("CIVORA_DATABASE_BACKUP_EVIDENCE_URL", "recovery", (), optional=True, description="Private evidence location for hosted backup configuration and retention."),
+    EnvVarSpec("CIVORA_DATABASE_RESTORE_DRILL_AT", "recovery", (), optional=True, description="Timestamp of the last successful hosted restore drill."),
+    EnvVarSpec("CIVORA_DATABASE_BACKUP_RETENTION_DAYS", "recovery", (), optional=True, description="Configured hosted database backup retention period."),
+    EnvVarSpec("CIVORA_TERMS_PRIVACY_READY", "legal", (), optional=True, description="Owner/counsel gate for accepted terms, privacy, and data-processing posture."),
+    EnvVarSpec("CIVORA_PILOT_TERMS_READY", "legal", (), optional=True, description="Owner/counsel gate for the controlled pilot agreement and acceptance flow."),
+    EnvVarSpec("CIVORA_DATA_RETENTION_POLICY_READY", "legal", (), optional=True, description="Owner/counsel gate for documented retention and deletion policy."),
+    EnvVarSpec("CIVORA_ENGINEER_UAT_EVIDENCE_URL", "uat", (), optional=True, description="Private evidence location for named independent engineer UAT."),
+    EnvVarSpec("CIVORA_ENGINEER_UAT_OWNER", "uat", (), optional=True, description="Named owner responsible for independent engineer UAT disposition."),
     EnvVarSpec("CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN", "safety", (), optional=True, description="Explicit owner gate. Public beta remains blocked unless this is true and operational gates are configured."),
     EnvVarSpec("CIVORA_ALLOW_LOCAL_PILOT_CORS", "cors", (), optional=True, description="Temporary QA-only flag for local frontend to live backend."),
     EnvVarSpec("CIVORA_LOCAL_PILOT_CORS_ORIGINS", "cors", (), optional=True, description="Explicit local origins allowed only when CIVORA_ALLOW_LOCAL_PILOT_CORS=true."),
@@ -506,6 +518,23 @@ def validate_production_env_v1(
         if str(env.get("CIVORA_VERCEL_ROOT") or "apps/web").strip() != "apps/web":
             warnings.append(_issue("warning", "vercel_root_expected_apps_web", "Vercel project root should be apps/web.", env_vars=["CIVORA_VERCEL_ROOT"]))
 
+    hosted_target = target not in {"", "local"}
+    backup_evidence = hosted_backup_evidence(env)
+    if hosted_target and backup_evidence["status"] != "ready":
+        backup_env_vars = list(backup_evidence.get("missing_env_vars") or [])
+        backup_env_vars.extend(
+            str(item.get("field") or "")
+            for item in backup_evidence.get("invalid_evidence") or []
+            if str(item.get("field") or "")
+        )
+        issue = _issue(
+            "blocker" if mode in PRODUCTION_MODES else "warning",
+            "hosted_backup_restore_evidence_missing",
+            "Hosted release recovery is not proven until provider backups, retention, a named owner, and a completed restore drill are recorded.",
+            env_vars=sorted(set(backup_env_vars)),
+        )
+        (blockers if mode in PRODUCTION_MODES else warnings).append(issue)
+
     if mode == "production" and _truthy(env.get("CIVORA_ALPHA_REVIEW_ONLY")):
         blockers.append(_issue("blocker", "production_review_only_flag_enabled", "Production mode conflicts with CIVORA_ALPHA_REVIEW_ONLY=true.", env_vars=["CIVORA_PRODUCT_MODE", "CIVORA_ALPHA_REVIEW_ONLY"]))
     if mode in {"private_alpha", "development", "local"} and _truthy(env.get("CIVORA_ENABLE_PUBLIC_ACCESS")):
@@ -520,6 +549,13 @@ def validate_production_env_v1(
             "monitoring_owner_missing": (not str(env.get("CIVORA_MONITORING_OWNER") or "").strip(), ["CIVORA_MONITORING_OWNER"]),
             "rollback_owner_missing": (not str(env.get("CIVORA_ROLLBACK_OWNER") or "").strip(), ["CIVORA_ROLLBACK_OWNER"]),
             "billing_legal_docs_not_ready": (not billing_legal_ready, ["CIVORA_BILLING_LEGAL_DOCS_READY"]),
+            "terms_privacy_not_ready": (not _truthy(env.get("CIVORA_TERMS_PRIVACY_READY")), ["CIVORA_TERMS_PRIVACY_READY"]),
+            "data_retention_policy_not_ready": (not _truthy(env.get("CIVORA_DATA_RETENTION_POLICY_READY")), ["CIVORA_DATA_RETENTION_POLICY_READY"]),
+            "engineer_uat_evidence_missing": (
+                not str(env.get("CIVORA_ENGINEER_UAT_EVIDENCE_URL") or "").strip()
+                or not str(env.get("CIVORA_ENGINEER_UAT_OWNER") or "").strip(),
+                ["CIVORA_ENGINEER_UAT_EVIDENCE_URL", "CIVORA_ENGINEER_UAT_OWNER"],
+            ),
             "public_beta_release_gates_not_green": (not _truthy(env.get("CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN")), ["CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN"]),
         }
         for code, (blocked, env_vars) in public_beta_gates.items():

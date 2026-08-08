@@ -388,6 +388,25 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_engineering_memory_project
         ON engineering_memory(project_id, updated_at DESC);
 
+        CREATE TABLE IF NOT EXISTS support_requests (
+            request_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            project_id TEXT,
+            category TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            details TEXT NOT NULL,
+            client_context_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'received',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY (project_id) REFERENCES projects(project_id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_support_requests_user_updated
+        ON support_requests(user_id, updated_at DESC);
+
         CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
@@ -589,6 +608,23 @@ class Database:
 
         CREATE INDEX IF NOT EXISTS idx_engineering_memory_project
         ON engineering_memory(project_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS support_requests (
+            request_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            project_id TEXT REFERENCES projects(project_id) ON DELETE SET NULL,
+            category TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            details TEXT NOT NULL,
+            client_context_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'received',
+            created_at DOUBLE PRECISION NOT NULL,
+            updated_at DOUBLE PRECISION NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_support_requests_user_updated
+        ON support_requests(user_id, updated_at DESC);
 
         CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY,

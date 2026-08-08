@@ -4,7 +4,7 @@ Use this checklist to launch and run a small, controlled Civora pilot. This is a
 
 Permanent responsibility rule: Civora never stamps, seals, signs, certifies, approves construction, submits construction documents, or acts as engineer of record. Only the licensed engineer or user can review, approve, stamp, seal, sign, submit, and take legal responsibility.
 
-For the business-operations packet covering access flow, roles, support, bug intake, data retention/deletion, confidential input, usage limits, billing readiness, and pilot terms, use [pilot-business-operations.md](/Users/tommychoe/Documents/Playground/Civora%20AI/docs/pilot-business-operations.md).
+For the business-operations packet covering access flow, roles, support, bug intake, data retention/deletion, confidential input, usage limits, billing readiness, and pilot terms, use [pilot-business-operations.md](pilot-business-operations.md).
 
 ## Pilot User List
 
@@ -57,11 +57,21 @@ Backend:
 | `CIVORA_MAX_IMAGE_UPLOAD_BYTES` | Recommended | User-facing image/map upload limit. Default is 10 MiB. |
 | `CIVORA_MAX_SURVEY_UPLOAD_BYTES` | Recommended | User-facing survey CSV upload limit. Default is 5 MiB. |
 | `CIVORA_MAX_EXISTING_CONDITIONS_UPLOAD_BYTES` | Recommended | Existing-condition and plan PDF upload limit. Default is 25 MiB. |
-| `CIVORA_SUPPORT_CONTACT_URL` or `CIVORA_SUPPORT_EMAIL` | Required before public beta | User-visible support path exposed through safe health metadata. |
-| `CIVORA_BUG_REPORT_URL` | Required before public beta | User-visible bug intake path. |
-| `CIVORA_ESCALATION_CONTACT` | Required before public beta | Internal owner for safety, source-trust, privacy, billing, and export incidents. |
-| `CIVORA_MONITORING_OWNER` | Required before public beta | Named owner for deployment health, queue, auth, upload, and error monitoring. |
-| `CIVORA_ROLLBACK_OWNER` | Required before public beta | Named owner authorized to roll back or disable Vercel/Railway services. |
+| `CIVORA_SUPPORT_CONTACT_URL` or `CIVORA_SUPPORT_EMAIL` | Required for controlled release | User-visible support path exposed through safe health metadata. |
+| `CIVORA_BUG_REPORT_URL` | Required for controlled release | User-visible bug intake path. |
+| `CIVORA_ESCALATION_CONTACT` | Required for controlled release | Internal owner for safety, source-trust, privacy, billing, and export incidents. |
+| `CIVORA_MONITORING_OWNER` | Required for controlled release | Named owner for deployment health, queue, auth, upload, and error monitoring. |
+| `CIVORA_ROLLBACK_OWNER` | Required for controlled release | Named owner authorized to roll back or disable Vercel/Railway services. |
+| `CIVORA_DATABASE_PROVIDER_BACKUPS_ENABLED` | Required for hosted controlled release | Must reflect real provider-side backups, not a local file copy. |
+| `CIVORA_DATABASE_BACKUP_OWNER` | Required for hosted controlled release | Named owner for retention and restore drills. |
+| `CIVORA_DATABASE_BACKUP_EVIDENCE_URL` | Required for hosted controlled release | Link to provider-side backup/restore evidence. |
+| `CIVORA_DATABASE_RESTORE_DRILL_AT` | Required for hosted controlled release | Timestamp of the latest completed hosted restore drill. |
+| `CIVORA_DATABASE_BACKUP_RETENTION_DAYS` | Required for hosted controlled release | Positive provider retention period. |
+| `CIVORA_ENGINEER_UAT_OWNER` | Required for controlled release | Named independent engineer/reviewer. |
+| `CIVORA_ENGINEER_UAT_EVIDENCE_URL` | Required for controlled release | Completed UAT packet and evidence. |
+| `CIVORA_PILOT_TERMS_READY` | Required for controlled release | Set only after responsible owner/counsel acceptance. |
+| `CIVORA_TERMS_PRIVACY_READY` | Required for controlled release | Set only after responsible owner/counsel acceptance. |
+| `CIVORA_DATA_RETENTION_POLICY_READY` | Required for controlled release | Set only after written retention/deletion policy acceptance. |
 | `CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN` | Required before public beta | Keep `false` until all support, privacy, billing/legal, production storage/queue, monitoring, rollback, and review-only gates are owner-accepted. |
 
 ### Local Private-Alpha Readiness Defaults
@@ -171,7 +181,7 @@ Next action:
 - DWG export is unsupported.
 - Standards require user/company acceptance before they can be used as review evidence.
 - Survey/control, datum, benchmark, and source evidence are required for production-grade review.
-- Auth, SQLite storage, and in-process jobs are private-pilot grade, not broad production infrastructure.
+- SQLite storage and in-process jobs are suitable only for local/single-instance testing. A hosted controlled release needs shared production storage, provider backups, a restore drill, and monitored job execution.
 
 ## What Users Should Test
 

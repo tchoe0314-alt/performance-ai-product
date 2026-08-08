@@ -98,6 +98,14 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
                 "bug_report_configured": True,
                 "bug_report_url": "https://support.example.test/bugs",
             },
+            recovery={
+                "status": "ready",
+                "provider_backups_enabled": True,
+                "owner_configured": True,
+                "evidence_url_configured": True,
+                "restore_drill_at": "2026-08-08T12:00:00Z",
+                "retention_days": "30",
+            },
         )
 
         self.assertEqual(data["product_mode"], "private_alpha")
@@ -123,6 +131,9 @@ class ApplicationAuthHealthWorkflowsTest(unittest.TestCase):
         self.assertEqual(data["deployment"]["user_safe_messages"], ["All visible deployment checks are reachable."])
         self.assertEqual(data["support"]["support_contact"], "https://support.example.test")
         self.assertTrue(data["support"]["bug_report_configured"])
+        self.assertEqual(data["recovery"]["status"], "ready")
+        self.assertTrue(data["recovery"]["provider_backups_enabled"])
+        self.assertEqual(data["recovery"]["retention_days"], "30")
         self.assertEqual(data["operational_summary"]["queued_count"], 0)
         self.assertEqual(data["operational_summary"]["running_count"], 0)
         self.assertTrue(data["operational_summary"]["public_beta_blocked"])

@@ -57,6 +57,7 @@ export function Preview2DOverlayStack({
             data-testid="preview-drawing-surface"
             data-draw-mode={drawMode}
             data-draft-point-count={draftPointCount}
+            role="region"
             aria-label="Drawing surface"
             className={`absolute inset-0 ${drawMode !== "select" && drawMode !== "pan" ? "z-[35]" : "z-[14]"} ${
               drawMode === "select"

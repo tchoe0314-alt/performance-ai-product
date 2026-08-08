@@ -62,5 +62,33 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
       },
     },
+    {
+      name: "firefox",
+      testMatch: /rc1-accessibility-cross-browser\.spec\.ts/,
+      use: {
+        ...devices["Desktop Firefox"],
+      },
+    },
+    {
+      name: "webkit",
+      testMatch: /rc1-accessibility-cross-browser\.spec\.ts/,
+      use: {
+        ...devices["Desktop Safari"],
+      },
+    },
+    {
+      name: "mobile-chromium",
+      testMatch: /rc1-accessibility-cross-browser\.spec\.ts/,
+      use: {
+        ...devices["Pixel 7"],
+      },
+    },
+    {
+      name: "mobile-webkit",
+      testMatch: /rc1-accessibility-cross-browser\.spec\.ts/,
+      use: {
+        ...devices["iPhone 15"],
+      },
+    },
   ],
 });

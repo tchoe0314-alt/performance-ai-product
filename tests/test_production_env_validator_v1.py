@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import unittest
 
 from fastapi.testclient import TestClient
@@ -157,7 +158,73 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
 
         self.assertFalse(report["release_blocked"])
         self.assertEqual(report["status"], "warning")
+
+    def test_hosted_backup_gate_rejects_placeholder_or_malformed_evidence(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_DATABASE_PROVIDER_BACKUPS_ENABLED": "true",
+                "CIVORA_DATABASE_BACKUP_OWNER": "ops",
+                "CIVORA_DATABASE_BACKUP_EVIDENCE_URL": "http://localhost/placeholder",
+                "CIVORA_DATABASE_RESTORE_DRILL_AT": "tomorrow",
+                "CIVORA_DATABASE_BACKUP_RETENTION_DAYS": "1",
+            }
+        )
+
+        codes = {item["code"] for item in report["warnings"]}
+        self.assertIn("hosted_backup_restore_evidence_missing", codes)
+        warning = next(item for item in report["warnings"] if item["code"] == "hosted_backup_restore_evidence_missing")
+        self.assertIn("CIVORA_DATABASE_BACKUP_EVIDENCE_URL", warning["env_vars"])
+        self.assertIn("CIVORA_DATABASE_RESTORE_DRILL_AT", warning["env_vars"])
+        self.assertIn("CIVORA_DATABASE_BACKUP_RETENTION_DAYS", warning["env_vars"])
         self.assertIn("ocr_engine_missing", {item["code"] for item in report["warnings"]})
+
+    def test_hosted_private_alpha_warns_when_backup_restore_evidence_is_missing(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+            },
+            deployment_target="railway",
+        )
+
+        self.assertFalse(report["release_blocked"])
+        self.assertIn("hosted_backup_restore_evidence_missing", {item["code"] for item in report["warnings"]})
+
+    def test_public_beta_blocks_without_backup_legal_retention_and_engineer_uat_gates(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "public_beta",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CIVORA_FRONTEND_PUBLIC_URL": "https://civoraai.com",
+                "NEXT_PUBLIC_API_BASE_URL": "https://api.civoraai.com",
+                "CIVORA_PUBLIC_API_BASE_URL": "https://api.civoraai.com",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "CIVORA_SESSION_SECRET": "session-secret",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+                "CIVORA_AI_PROVIDER": "none",
+                "CIVORA_SUPPORT_EMAIL": "support@example.com",
+                "CIVORA_BUG_REPORT_URL": "https://example.com/bugs",
+                "CIVORA_ESCALATION_CONTACT": "operations@example.com",
+                "CIVORA_MONITORING_OWNER": "monitoring-owner",
+                "CIVORA_ROLLBACK_OWNER": "rollback-owner",
+                "CIVORA_BILLING_LEGAL_DOCS_READY": "true",
+                "CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN": "true",
+            },
+            deployment_target="railway",
+        )
+
+        codes = {item["code"] for item in report["blockers"]}
+        self.assertIn("hosted_backup_restore_evidence_missing", codes)
+        self.assertIn("terms_privacy_not_ready", codes)
+        self.assertIn("data_retention_policy_not_ready", codes)
+        self.assertIn("engineer_uat_evidence_missing", codes)
 
     def test_local_private_alpha_documents_browser_qa_cors_defaults(self) -> None:
         report = validate_production_env_v1(
@@ -312,6 +379,15 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
                 "CIVORA_ROLLBACK_OWNER": "release@example.com",
                 "CIVORA_PUBLIC_BETA_RELEASE_GATES_GREEN": "true",
                 "CIVORA_BILLING_LEGAL_DOCS_READY": "true",
+                "CIVORA_DATABASE_PROVIDER_BACKUPS_ENABLED": "true",
+                "CIVORA_DATABASE_BACKUP_OWNER": "ops@example.com",
+                "CIVORA_DATABASE_BACKUP_EVIDENCE_URL": "https://provider.example.com/backups/evidence",
+                "CIVORA_DATABASE_RESTORE_DRILL_AT": datetime.now(timezone.utc).isoformat(),
+                "CIVORA_DATABASE_BACKUP_RETENTION_DAYS": "30",
+                "CIVORA_TERMS_PRIVACY_READY": "true",
+                "CIVORA_DATA_RETENTION_POLICY_READY": "true",
+                "CIVORA_ENGINEER_UAT_EVIDENCE_URL": "https://evidence.example.com/uat/rc1",
+                "CIVORA_ENGINEER_UAT_OWNER": "uat@example.com",
                 "CIVORA_OCR_ENGINE": "manual",
             }
         )
