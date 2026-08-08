@@ -38,6 +38,7 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("PERFORMANCE_AI_STORAGE_DIR", "storage", ("private_alpha", "public_beta", "production"), description="Persistent upload/artifact directory."),
     EnvVarSpec("CIVORA_PROCESS_ROLE", "queue", (), optional=True, description="Runtime process role: combined, web, or worker."),
     EnvVarSpec("CIVORA_DEDICATED_WORKER_ENABLED", "queue", (), optional=True, description="Confirms that a separately deployed worker consumes queued jobs."),
+    EnvVarSpec("CIVORA_EXTERNAL_WORKER_CONFIRMED", "queue", (), optional=True, description="Explicitly confirms that a separately deployed worker has been proven live; otherwise hosted web startup uses the isolated combined fallback."),
     EnvVarSpec("CIVORA_ENABLED_JOB_TYPES", "queue", (), optional=True, description="Comma-separated allowlist of job handlers for this service."),
     EnvVarSpec("CIVORA_DISABLED_JOB_TYPES", "queue", (), optional=True, description="Comma-separated denylist of job handlers for this service."),
     EnvVarSpec("PERFORMANCE_AI_JOB_WORKERS", "queue", (), optional=True, description="In-process job worker count. Use 0 for a web-only service."),
@@ -288,6 +289,7 @@ def validate_production_env_v1(
 
     process_role = str(env.get("CIVORA_PROCESS_ROLE") or "combined").strip().lower()
     dedicated_worker_enabled = _truthy(env.get("CIVORA_DEDICATED_WORKER_ENABLED"))
+    external_worker_confirmed = _truthy(env.get("CIVORA_EXTERNAL_WORKER_CONFIRMED"))
     enabled_job_types = {
         item.strip()
         for item in str(env.get("CIVORA_ENABLED_JOB_TYPES") or "").split(",")
@@ -356,6 +358,15 @@ def validate_production_env_v1(
                 "dedicated_worker_not_confirmed",
                 "The web service queues source-context jobs but no dedicated worker deployment is confirmed.",
                 env_vars=["CIVORA_PROCESS_ROLE", "CIVORA_DEDICATED_WORKER_ENABLED"],
+            )
+        )
+    if target in {"railway", "render", "split"} and process_role == "web" and not external_worker_confirmed:
+        blockers.append(
+            _issue(
+                "blocker",
+                "external_worker_not_confirmed",
+                "A web-only service requires explicit proof that its separate worker is live; otherwise use the isolated combined fallback.",
+                env_vars=["CIVORA_PROCESS_ROLE", "CIVORA_EXTERNAL_WORKER_CONFIRMED"],
             )
         )
     if process_role == "worker" and enabled_job_types and "source_context" not in enabled_job_types:

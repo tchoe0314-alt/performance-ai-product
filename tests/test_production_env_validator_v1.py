@@ -417,6 +417,7 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
         codes = {item["code"] for item in report["blockers"]}
         self.assertIn("split_queue_requires_postgres", codes)
         self.assertIn("dedicated_worker_not_confirmed", codes)
+        self.assertIn("external_worker_not_confirmed", codes)
 
     def test_railway_web_role_accepts_shared_postgres_and_confirmed_worker(self) -> None:
         report = validate_production_env_v1(
@@ -425,6 +426,7 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
                 "CIVORA_DEPLOYMENT_TARGET": "railway",
                 "CIVORA_PROCESS_ROLE": "web",
                 "CIVORA_DEDICATED_WORKER_ENABLED": "true",
+                "CIVORA_EXTERNAL_WORKER_CONFIRMED": "true",
                 "PERFORMANCE_AI_JOB_WORKERS": "0",
                 "DATABASE_URL": "postgresql://user:password@example.com:5432/civora",
                 "CORS_ALLOW_ORIGINS": "https://civoraai.com",
@@ -436,6 +438,7 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
         codes = {item["code"] for item in report["blockers"]}
         self.assertNotIn("split_queue_requires_postgres", codes)
         self.assertNotIn("dedicated_worker_not_confirmed", codes)
+        self.assertNotIn("external_worker_not_confirmed", codes)
         self.assertNotIn("web_process_has_local_workers", codes)
 
     def test_worker_role_requires_positive_worker_count(self) -> None:

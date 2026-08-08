@@ -17,6 +17,7 @@ def test_combined_runner_externalizes_heavy_jobs_and_keeps_file_jobs_local() -> 
     )
 
     assert web_env["CIVORA_PROCESS_ROLE"] == "web"
+    assert web_env["CIVORA_EXTERNAL_WORKER_CONFIRMED"] == "true"
     assert web_env["PERFORMANCE_AI_JOB_WORKERS"] == "0"
     assert web_env["CIVORA_DATABASE_POOL_MIN_SIZE"] == "2"
     assert web_env["CIVORA_DATABASE_POOL_MAX_SIZE"] == "6"
@@ -24,6 +25,7 @@ def test_combined_runner_externalizes_heavy_jobs_and_keeps_file_jobs_local() -> 
     assert web_env["CIVORA_DISABLED_JOB_TYPES"] == "custom_disabled"
     assert worker_env["CIVORA_PROCESS_ROLE"] == "worker"
     assert set(worker_env["CIVORA_ENABLED_JOB_TYPES"].split(",")) == {
+        "ai_visualization",
         "drainage_only",
         "export_dxf",
         "export_pdf",

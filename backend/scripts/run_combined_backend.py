@@ -9,6 +9,7 @@ from collections.abc import Mapping
 
 
 EXTERNAL_JOB_TYPES = (
+    "ai_visualization",
     "drainage_only",
     "export_dxf",
     "export_pdf",
@@ -47,6 +48,7 @@ def build_process_environments(
         {
             "CIVORA_PROCESS_ROLE": "web",
             "CIVORA_DEDICATED_WORKER_ENABLED": "true",
+            "CIVORA_EXTERNAL_WORKER_CONFIRMED": "true",
             "PERFORMANCE_AI_JOB_WORKERS": "0",
             "CIVORA_DATABASE_POOL_MIN_SIZE": "2",
             "CIVORA_DATABASE_POOL_MAX_SIZE": str(

@@ -62,6 +62,29 @@ def test_web_service_keeps_configurable_request_workers(tmp_path: Path) -> None:
     assert "--max-requests-jitter\n40\n" in output
 
 
+def test_postgres_web_service_uses_isolated_worker_fallback_until_external_worker_is_confirmed(tmp_path: Path) -> None:
+    output = _run_startup(
+        tmp_path,
+        role="web",
+        extra_env={"DATABASE_URL": "postgresql://example.invalid/civora"},
+    )
+    assert output == "python\n-m\nbackend.scripts.run_combined_backend\n"
+
+
+def test_postgres_web_service_stays_web_only_after_external_worker_confirmation(tmp_path: Path) -> None:
+    output = _run_startup(
+        tmp_path,
+        role="web",
+        extra_env={
+            "DATABASE_URL": "postgresql://example.invalid/civora",
+            "CIVORA_EXTERNAL_WORKER_CONFIRMED": "true",
+            "WEB_CONCURRENCY": "2",
+        },
+    )
+    assert output.startswith("gunicorn\n")
+    assert "--workers\n2\n" in output
+
+
 def test_worker_service_runs_dedicated_job_worker(tmp_path: Path) -> None:
     output = _run_startup(tmp_path, role="worker")
     assert output == "python\n-m\nbackend.scripts.run_job_worker\n"

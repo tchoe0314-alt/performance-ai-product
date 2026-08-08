@@ -13,6 +13,13 @@ if [ "$role" = "worker" ]; then
 fi
 
 if [ "$role" = "web" ]; then
+  external_worker_confirmed="${CIVORA_EXTERNAL_WORKER_CONFIRMED:-false}"
+  if [ -n "${DATABASE_URL:-}" ] && [ "$external_worker_confirmed" != "1" ] && [ "$external_worker_confirmed" != "true" ]; then
+    # A web-only deployment must not silently strand queued work. Until an
+    # external worker is explicitly confirmed, supervise an isolated low-
+    # priority worker beside the request process.
+    exec python -m backend.scripts.run_combined_backend
+  fi
   exec gunicorn backend.api.app:app \
     --worker-class uvicorn.workers.UvicornWorker \
     --bind "0.0.0.0:${port}" \
