@@ -75,6 +75,6 @@ The dump comparison removed comments, blank lines, and PostgreSQL's randomized `
 
 Result: provider backups are enabled, retention is configured, a separate restore completed, and the restored schema and data matched the production source at the selected recovery point.
 
-Temporary restore cleanup: pending final evidence attachment and hosted recovery-status verification. The temporary copy will be deleted after those checks; the production database, PITR bucket, schedules, and manual backup will remain intact.
+Temporary restore cleanup completed at approximately `2026-08-08T15:40:00Z`. Railway removed the sibling service and its attached temporary volume from the environment after verification. The production database remained online, and its PITR bucket, backup schedules, and manual backup remained intact.
 
 Truth boundary: this drill proves the selected hosted backup and restore procedure worked on 2026-08-08. It does not approve public release, legal terms, billing, engineering work, construction use, or future provider availability. Recovery drills must be repeated and owned operationally.
