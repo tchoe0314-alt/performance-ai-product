@@ -85,14 +85,15 @@ async function findDenseVisionProject(request: APIRequestContext, token: string)
       candidate_review_inbox_v1?: { candidates?: CandidateItem[] };
     };
     const candidates = inboxPayload.candidate_review_inbox_v1?.candidates || [];
-    const pendingVisionCandidates = candidates.filter(
-      (candidate) => isVisionCandidate(candidate) && String(candidate.status || "pending").toLowerCase() === "pending",
+    const visionCandidates = candidates.filter(isVisionCandidate);
+    const pendingVisionCandidates = visionCandidates.filter(
+      (candidate) => String(candidate.status || "pending").toLowerCase() === "pending",
     );
     if (candidates.length >= 13 && pendingVisionCandidates.length) {
       return {
         project: { ...project, ...projectDetail },
         candidateCount: candidates.length,
-        pendingVisionCount: pendingVisionCandidates.length,
+        visionCount: visionCandidates.length,
       };
     }
   }
@@ -174,7 +175,7 @@ test("hosted dense vision correction stays bounded and responsive after save", a
   await expect(review.getByTestId("detected-item-candidate")).toHaveCount(12);
   await expect(review.getByTestId("detected-items-page-summary")).toContainText(/Showing 1-12 of \d+/);
   await review.getByRole("tab", { name: /Vision \d+/ }).click();
-  await expect(review.getByTestId("detected-item-candidate")).toHaveCount(Math.min(12, denseProject.pendingVisionCount), { timeout: 15_000 });
+  await expect(review.getByTestId("detected-item-candidate")).toHaveCount(Math.min(12, denseProject.visionCount), { timeout: 15_000 });
 
   const pendingCard = review
     .getByTestId("detected-item-candidate")
@@ -195,7 +196,7 @@ test("hosted dense vision correction stays bounded and responsive after save", a
   await page.waitForTimeout(5_000);
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
-  await expect(review.getByTestId("detected-item-candidate")).toHaveCount(Math.min(12, denseProject.pendingVisionCount));
+  await expect(review.getByTestId("detected-item-candidate")).toHaveCount(Math.min(12, denseProject.visionCount));
   await expect(page).toHaveTitle(/Civora/i);
   await expect(page.locator("body")).not.toContainText(/Aw, Snap|page crashed/i);
   expect(pageErrors).toEqual([]);
