@@ -90,9 +90,11 @@ export default function PilotPage() {
         <section className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-5">
           <h2 className="text-lg font-semibold text-amber-950">Support Reports</h2>
           <p className="mt-2 text-sm leading-7 text-amber-900">
-            Use the in-app Report issue button to copy a diagnostic summary with
-            project ID, active workflow step, visible blockers, and your message.
-            Routine support can go to{" "}
+            Use the in-app Support form or the dedicated{" "}
+            <Link className="font-semibold underline" href="/support">
+              Civora support page
+            </Link>{" "}
+            to send a persisted report with a reference ID. Routine support can also go to{" "}
             <a className="font-semibold underline" href="mailto:support@civora.ai">
               support@civora.ai
             </a>

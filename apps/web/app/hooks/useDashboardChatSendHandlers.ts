@@ -104,7 +104,7 @@ export function useDashboardChatSendHandlers({
   const handleSendMessage = useCallback(() => {
     const trimmed = prompt.trim();
     if (!trimmed && !imageName) return;
-    const keepChatVisible = () => window.requestAnimationFrame(onOpenChatPanel);
+    const keepChatVisible = () => onOpenChatPanel();
     const clearStaleClarificationStatus = () => {
       setStatusMessage((current) =>
         /asking for a little more detail|site type or land use/i.test(current)

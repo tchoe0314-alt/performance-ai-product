@@ -37,7 +37,7 @@ export function FloatingLayerManager({
   return (
     <div
       data-testid="floating-layer-manager"
-      className={`absolute right-3 top-[9.75rem] z-40 w-[min(360px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl lg:top-[9rem] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}
+      className={`pointer-events-auto absolute right-3 top-[9.75rem] z-40 w-[min(360px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white/94 p-3 shadow-[0_22px_70px_-42px_rgba(15,23,42,0.72)] backdrop-blur-xl lg:top-[9rem] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[416px]"}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div>

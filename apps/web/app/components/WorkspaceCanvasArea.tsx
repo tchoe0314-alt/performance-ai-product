@@ -87,7 +87,7 @@ export function WorkspaceCanvasArea({
     <main
       data-testid="workspace-canvas-shell"
       data-site-locked={siteScaleLocked}
-      className="absolute inset-0 min-h-0 min-w-0 overflow-hidden"
+      className="pointer-events-none absolute inset-0 min-h-0 min-w-0 overflow-hidden"
     >
       <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
         <div className="contents">
@@ -146,7 +146,7 @@ export function WorkspaceCanvasArea({
             data-drawer-state={drawerOpen ? "open" : "closed"}
             data-drawer-size={drawerSize}
             data-navigation-state={sidebarVisible ? "visible" : "hidden"}
-            className="civora-workspace-canvas-frame absolute inset-y-0 z-0 overflow-hidden"
+            className="civora-workspace-canvas-frame pointer-events-auto absolute inset-y-0 z-0 overflow-hidden"
           >
             <div className="h-full w-full">
               <PreviewPanel key={previewSessionVersion} {...previewPanelProps} />

@@ -29,19 +29,31 @@ async function focusCommand(page: Page) {
     return chatComposer;
   }
   await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
-  if (await chatComposer.isVisible()) {
-    await expect(chatComposer).toBeFocused({ timeout: 5_000 });
-    return chatComposer;
-  }
   const commandInput = page.getByTestId("civora-command-input");
-  await expect(commandInput).toBeFocused({ timeout: 5_000 });
-  return commandInput;
+  await expect
+    .poll(async () => {
+      if (await chatComposer.isVisible()) return "chat";
+      if (await commandInput.isVisible()) return "command";
+      return "transitioning";
+    }, { timeout: 5_000 })
+    .not.toBe("transitioning");
+  const activeInput = (await chatComposer.isVisible()) ? chatComposer : commandInput;
+  await activeInput.click();
+  await expect(activeInput).toBeFocused({ timeout: 5_000 });
+  return activeInput;
 }
 
 async function runCommand(page: Page, command: string) {
-  const input = await focusCommand(page);
-  await input.fill(command);
-  await input.press("Enter");
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const input = await focusCommand(page);
+    try {
+      await input.fill(command);
+      await input.press("Enter");
+      return;
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
+  }
 }
 
 async function openDrawPanel(page: Page) {

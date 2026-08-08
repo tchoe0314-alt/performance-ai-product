@@ -66,7 +66,7 @@ export function FloatingObjectInspector({
           {selectedObjectConfidence.why_low_confidence || selectedObjectConfidence.next_action}
         </p>
       ) : null}
-      <div className="mt-3 grid grid-cols-3 gap-2">
+      <div className="pointer-events-auto mt-3 grid grid-cols-3 gap-2">
         <button
           type="button"
           onClick={onEdit}

@@ -181,6 +181,10 @@ export function useDashboardShellShortcuts({
       setPreviewInteraction,
       setRightRailCollapsed,
     });
+    if (panel) {
+      setRenderedSidePanel(panel);
+      setSidePanelVisible(true);
+    }
   }, [
     panelOpenProbeRef,
     setActiveSidePanel,
@@ -189,7 +193,9 @@ export function useDashboardShellShortcuts({
     setLayerManagerOpen,
     setPlacementModeEnabled,
     setPreviewInteraction,
+    setRenderedSidePanel,
     setRightRailCollapsed,
+    setSidePanelVisible,
     sidePanelCloseTimeoutRef,
   ]);
 

@@ -42,7 +42,7 @@ export function WorkspaceCanvasChromePanel({
 }: WorkspaceCanvasChromePanelProps) {
   return (
     <div
-      className={`absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200/80 bg-white/86 px-3 py-3 shadow-[0_20px_64px_-48px_rgba(15,23,42,0.62)] backdrop-blur-2xl transition-all duration-200 lg:left-[112px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[408px]"} ${sidebarVisible || hidden ? "hidden" : "opacity-100"}`}
+      className={`pointer-events-auto absolute left-3 right-3 top-3 z-40 rounded-xl border border-slate-200/80 bg-white/86 px-3 py-3 shadow-[0_20px_64px_-48px_rgba(15,23,42,0.62)] backdrop-blur-2xl transition-all duration-200 lg:left-[112px] ${rightRailCollapsed ? "lg:right-4" : "lg:right-[408px]"} ${sidebarVisible || hidden ? "hidden" : "opacity-100"}`}
       aria-hidden={hidden}
       hidden
     >

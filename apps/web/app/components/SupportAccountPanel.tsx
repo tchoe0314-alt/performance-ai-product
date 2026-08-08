@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Download, LifeBuoy, Send, Trash2 } from "lucide-react";
+import { AlertTriangle, Download, LifeBuoy, Trash2 } from "lucide-react";
 
-import { apiErrorMessage, getJson, postJson, toApiUrl } from "../../lib/api";
+import { apiErrorMessage, getJson, toApiUrl } from "../../lib/api";
+import { SupportRequestForm } from "./SupportRequestForm";
 
 
 type SupportAccountPanelProps = {
@@ -47,56 +48,12 @@ async function downloadAccountArchive(token: string): Promise<void> {
 }
 
 export function SupportAccountPanel({ token, projectId, userEmail, onAccountDeleted }: SupportAccountPanelProps) {
-  const [category, setCategory] = useState("workflow");
-  const [severity, setSeverity] = useState("p2");
-  const [summary, setSummary] = useState("");
-  const [details, setDetails] = useState("");
-  const [supportStatus, setSupportStatus] = useState("");
-  const [supportBusy, setSupportBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
   const [accountStatus, setAccountStatus] = useState("");
   const [readiness, setReadiness] = useState<DeletionReadiness | null>(null);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
-
-  const submitSupport = async () => {
-    if (!token) {
-      setSupportStatus("Sign in to submit an in-product issue, or email support@civora.ai.");
-      return;
-    }
-    if (!summary.trim()) {
-      setSupportStatus("Add a short summary first.");
-      return;
-    }
-    setSupportBusy(true);
-    setSupportStatus("Sending issue...");
-    try {
-      const response = await postJson<{ message: string }>(
-        "/api/support/requests",
-        {
-          project_id: projectId || "",
-          category,
-          severity,
-          summary: summary.trim(),
-          details: details.trim(),
-          client_context: {
-            page_url: `${window.location.origin}${window.location.pathname}`,
-            user_agent: navigator.userAgent,
-            viewport: { width: window.innerWidth, height: window.innerHeight },
-          },
-        },
-        { token },
-      );
-      setSupportStatus(response.message || "Issue received.");
-      setSummary("");
-      setDetails("");
-    } catch (error) {
-      setSupportStatus(apiErrorMessage(error, "Could not submit the issue. Email support@civora.ai instead."));
-    } finally {
-      setSupportBusy(false);
-    }
-  };
 
   const exportData = async () => {
     if (!token) {
@@ -171,46 +128,10 @@ export function SupportAccountPanel({ token, projectId, userEmail, onAccountDele
           <span className="ml-auto text-xs font-normal text-slate-500 group-open:hidden">Report a problem</span>
         </summary>
         <div className="space-y-3 border-t border-slate-100 p-4">
-          <div className="grid grid-cols-2 gap-2">
-            <label className="text-xs font-medium text-slate-600">
-              Category
-              <select className={`${fieldClass} mt-1`} value={category} onChange={(event) => setCategory(event.target.value)}>
-                <option value="workflow">Workflow</option>
-                <option value="account">Account</option>
-                <option value="data">Data</option>
-                <option value="source">Source context</option>
-                <option value="export">Export</option>
-                <option value="privacy">Privacy</option>
-                <option value="safety">Safety</option>
-                <option value="other">Other</option>
-              </select>
-            </label>
-            <label className="text-xs font-medium text-slate-600">
-              Impact
-              <select className={`${fieldClass} mt-1`} value={severity} onChange={(event) => setSeverity(event.target.value)}>
-                <option value="p2">Friction</option>
-                <option value="p1">Workflow blocked</option>
-                <option value="p0">Data or safety risk</option>
-                <option value="p3">Suggestion</option>
-              </select>
-            </label>
-          </div>
-          <label className="block text-xs font-medium text-slate-600">
-            What happened?
-            <input className={`${fieldClass} mt-1`} value={summary} maxLength={240} onChange={(event) => setSummary(event.target.value)} />
-          </label>
-          <label className="block text-xs font-medium text-slate-600">
-            Details
-            <textarea className={`${fieldClass} mt-1 min-h-24 resize-y`} value={details} maxLength={8000} onChange={(event) => setDetails(event.target.value)} />
-          </label>
-          <button type="button" disabled={supportBusy} onClick={() => void submitSupport()} className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-950 px-3 text-sm font-semibold text-white disabled:opacity-50">
-            <Send className="h-4 w-4" />
-            {supportBusy ? "Sending..." : "Send issue"}
-          </button>
+          <SupportRequestForm token={token} projectId={projectId} source="workspace_help" />
           <p className="text-xs leading-5 text-slate-500">
             Login trouble? <a className="font-semibold text-slate-700 underline" href="mailto:support@civora.ai?subject=Civora%20support">Email support@civora.ai</a>.
           </p>
-          <p aria-live="polite" className="text-xs leading-5 text-slate-600">{supportStatus}</p>
         </div>
       </details>
 
