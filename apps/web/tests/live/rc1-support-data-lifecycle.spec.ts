@@ -4,7 +4,10 @@ import { stat } from "node:fs/promises";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 
-const backendBase = "http://127.0.0.1:8002";
+const backendBase =
+  process.env.PLAYWRIGHT_API_BASE_URL ||
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  "http://127.0.0.1:8002";
 const password = "rc1-account-lifecycle-123";
 
 async function registerTemporaryUser(request: APIRequestContext) {

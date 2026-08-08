@@ -2,7 +2,11 @@ import { expect, test, type APIRequestContext, type BrowserContext, type Page } 
 
 
 const isHosted = Boolean(process.env.PLAYWRIGHT_BASE_URL && !/localhost|127\.0\.0\.1/.test(process.env.PLAYWRIGHT_BASE_URL));
-const backendBase = isHosted ? "https://api.civoraai.com" : "http://127.0.0.1:8002";
+const backendBase = isHosted
+  ? process.env.PLAYWRIGHT_API_BASE_URL || "https://api.civoraai.com"
+  : process.env.PLAYWRIGHT_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    "http://127.0.0.1:8002";
 
 async function registerUser(request: APIRequestContext, label: string) {
   const email = `rc1-${label}-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
