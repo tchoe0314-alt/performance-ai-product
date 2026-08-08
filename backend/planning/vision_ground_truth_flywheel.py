@@ -18,6 +18,7 @@ COVERAGE_VERSION = "civora_vision_ground_truth_coverage_v1"
 WORKSPACE_VERSION = "civora_vision_review_workspace_v1"
 SPLIT_REGISTRY_VERSION = "civora_vision_split_registry_v1"
 CLASS_READINESS_VERSION = "civora_vision_class_readiness_v1"
+EVENT_HASH_CANONICALIZATION = "json_browser_numeric_v1"
 
 GROUND_TRUTH_ACTIONS = {
     "accept",
@@ -45,6 +46,90 @@ def _canonical(value: Any) -> str:
 
 def _sha256(value: Any) -> str:
     return hashlib.sha256(_canonical(value).encode("utf-8")).hexdigest()
+
+
+def _browser_json_stable(value: Any) -> Any:
+    """Normalize JSON numbers that JavaScript cannot round-trip distinctly."""
+
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value) and value.is_integer():
+            return int(value)
+        return value
+    if isinstance(value, dict):
+        return {str(key): _browser_json_stable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_browser_json_stable(item) for item in value]
+    return value
+
+
+def _integral_numbers_as_floats(value: Any) -> Any:
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return value
+    if isinstance(value, int):
+        return float(value)
+    if isinstance(value, float):
+        return value
+    if isinstance(value, dict):
+        return {key: _integral_numbers_as_floats(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_integral_numbers_as_floats(item) for item in value]
+    return value
+
+
+def _legacy_browser_numeric_hash_matches(hash_payload: Dict[str, Any], claimed_hash: str) -> bool:
+    """Accept only hash-preserving legacy JSON float normalization.
+
+    Earlier events hashed validated coordinates such as ``20.0``. A browser
+    autosave serializes that same JSON number as ``20``. The transforms below
+    restore float representation only in fields that were float-valued when
+    legacy vision events were created, then require the original SHA-256 to
+    match exactly. Any semantic value change still fails closed.
+    """
+
+    if safe_str(hash_payload.get("hash_canonicalization")):
+        return False
+
+    def convert_output_geometry(payload: Dict[str, Any]) -> None:
+        for output in safe_list(payload.get("outputs")):
+            geometry = safe_dict(safe_dict(output).get("geometry"))
+            if "coordinates" in geometry:
+                geometry["coordinates"] = _integral_numbers_as_floats(geometry.get("coordinates"))
+
+    def convert_source_geometry(payload: Dict[str, Any]) -> None:
+        for snapshot in safe_list(payload.get("source_snapshots")):
+            geometry = safe_dict(safe_dict(snapshot).get("geometry"))
+            if "coordinates" in geometry:
+                geometry["coordinates"] = _integral_numbers_as_floats(geometry.get("coordinates"))
+
+    def convert_source_confidence(payload: Dict[str, Any]) -> None:
+        for snapshot in safe_list(payload.get("source_snapshots")):
+            rec = safe_dict(snapshot)
+            if isinstance(rec.get("confidence"), int) and not isinstance(rec.get("confidence"), bool):
+                rec["confidence"] = float(rec["confidence"])
+
+    def convert_frame_coordinates(payload: Dict[str, Any]) -> None:
+        for snapshot in safe_list(payload.get("source_snapshots")):
+            frame = safe_dict(safe_dict(snapshot).get("frame"))
+            for key in ("bbox_wgs84", "center_wgs84"):
+                if safe_dict(frame.get(key)):
+                    frame[key] = _integral_numbers_as_floats(frame[key])
+
+    transforms = (
+        convert_output_geometry,
+        convert_source_geometry,
+        convert_source_confidence,
+        convert_frame_coordinates,
+    )
+    for mask in range(1, 1 << len(transforms)):
+        candidate = deepcopy(hash_payload)
+        for index, transform in enumerate(transforms):
+            if mask & (1 << index):
+                transform(candidate)
+        if _sha256(candidate) == claimed_hash:
+            return True
+    return False
 
 
 def _stable_id(prefix: str, *parts: Any) -> str:
@@ -181,10 +266,11 @@ def _normalized_output(
     geometry: Dict[str, Any],
     coordinate_space: str,
 ) -> Dict[str, Any]:
+    stable_geometry = _browser_json_stable(deepcopy(geometry))
     return {
-        "annotation_id": _stable_id("gt", operation_id, index, feature_type, geometry),
+        "annotation_id": _stable_id("gt", operation_id, index, feature_type, stable_geometry),
         "feature_type": feature_type,
-        "geometry": deepcopy(geometry),
+        "geometry": stable_geometry,
         "coordinate_space": coordinate_space,
     }
 
@@ -261,6 +347,7 @@ def _build_outputs(
 def verify_ground_truth_ledger(ledger: Dict[str, Any]) -> Dict[str, Any]:
     events = [safe_dict(item) for item in safe_list(ledger.get("events"))]
     blockers: List[str] = []
+    compatibility_notes: List[str] = []
     previous_hash = "GENESIS"
     seen_event_ids: set[str] = set()
     expected_sequence = 1
@@ -277,7 +364,10 @@ def verify_ground_truth_ledger(ledger: Dict[str, Any]) -> Dict[str, Any]:
         hash_payload = {key: value for key, value in event.items() if key != "event_hash"}
         calculated_hash = _sha256(hash_payload)
         if claimed_hash != calculated_hash:
-            blockers.append("event_content_hash_mismatch")
+            if _legacy_browser_numeric_hash_matches(hash_payload, claimed_hash):
+                compatibility_notes.append(f"legacy_browser_numeric_roundtrip:{event_id}")
+            else:
+                blockers.append("event_content_hash_mismatch")
         previous_hash = claimed_hash
         expected_sequence += 1
     if safe_str(ledger.get("head_hash"), "GENESIS") != previous_hash:
@@ -287,6 +377,7 @@ def verify_ground_truth_ledger(ledger: Dict[str, Any]) -> Dict[str, Any]:
         "event_count": len(events),
         "head_hash": previous_hash,
         "blockers": sorted(set(blockers)),
+        "compatibility_notes": sorted(set(compatibility_notes)),
     }
 
 
@@ -364,8 +455,9 @@ def append_ground_truth_review_event(
         blockers.append("reviewed_geometry_missing")
     if any(safe_str(item.get("coordinate_space")) not in {"image_pixels", "EPSG:4326"} for item in outputs):
         blockers.append("reviewed_geometry_needs_imagery_registration")
-    event_payload = {
+    event_payload = _browser_json_stable({
         "version": "civora_vision_ground_truth_event_v1",
+        "hash_canonicalization": EVENT_HASH_CANONICALIZATION,
         "event_id": _stable_id("gte", operation_id),
         "operation_id": operation_id,
         "sequence": sequence,
@@ -381,7 +473,7 @@ def append_ground_truth_review_event(
         "training_blockers": sorted(set(blockers)),
         "review_required": True,
         "visible_detection_influence": False,
-    }
+    })
     event_payload["event_hash"] = _sha256(event_payload)
     ledger["events"] = [*safe_list(ledger.get("events")), event_payload]
     ledger["head_hash"] = event_payload["event_hash"]

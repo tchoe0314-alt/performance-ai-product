@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
+import json
 import unittest
 
 from backend.planning.candidate_review_inbox import apply_candidate_review_decision, build_candidate_review_inbox
@@ -28,6 +30,22 @@ def _polygon(x0: float, y0: float, x1: float, y1: float):
         "type": "Polygon",
         "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]],
     }
+
+
+def _legacy_event_hash(event):
+    payload = {key: value for key, value in event.items() if key != "event_hash"}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _geometry_coordinates_as_floats(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return float(value)
+    if isinstance(value, list):
+        return [_geometry_coordinates_as_floats(item) for item in value]
+    return value
 
 
 def _vision_meta(*, second_candidate: bool = False):
@@ -136,6 +154,78 @@ class VisionGroundTruthFlywheelTests(unittest.TestCase):
                 action="reject",
                 reviewer_id="reviewer-2",
             )
+
+    def test_new_event_hash_survives_browser_numeric_roundtrip(self) -> None:
+        meta = _vision_meta()
+        meta["candidate_review_inbox_v1"] = build_candidate_review_inbox(meta)
+        result = apply_candidate_review_decision(
+            meta,
+            candidate_ids=["candidate-1"],
+            action="redraw",
+            reviewer_id="reviewer-1",
+            corrected_feature_type="building_footprint",
+            corrected_geometry=_polygon(20.0, 20.0, 80.0, 80.0),
+            correction_coordinate_space="project_local",
+        )
+
+        ledger = result[LEDGER_VERSION]
+        event = ledger["events"][0]
+        self.assertEqual(event["hash_canonicalization"], "json_browser_numeric_v1")
+        self.assertIsInstance(event["outputs"][0]["geometry"]["coordinates"][0][0][0], int)
+        browser_roundtrip = json.loads(json.dumps(ledger))
+        validation = verify_ground_truth_ledger(browser_roundtrip)
+        self.assertTrue(validation["valid"])
+        self.assertEqual(validation["compatibility_notes"], [])
+
+    def test_legacy_browser_float_normalization_is_compatible_but_tampering_is_not(self) -> None:
+        meta = _vision_meta(second_candidate=True)
+        inbox = build_candidate_review_inbox(meta)
+        first = apply_candidate_review_decision(
+            {**meta, "candidate_review_inbox_v1": inbox},
+            candidate_ids=["candidate-1"],
+            action="redraw",
+            reviewer_id="reviewer-1",
+            corrected_feature_type="building_footprint",
+            corrected_geometry=_polygon(20.0, 20.0, 80.0, 80.0),
+            correction_coordinate_space="project_local",
+        )
+        legacy_event = deepcopy(first[LEDGER_VERSION]["events"][0])
+        legacy_event.pop("event_hash")
+        legacy_event.pop("hash_canonicalization")
+        coordinates = legacy_event["outputs"][0]["geometry"]["coordinates"]
+        legacy_event["outputs"][0]["geometry"]["coordinates"] = _geometry_coordinates_as_floats(coordinates)
+        original_hash = _legacy_event_hash(legacy_event)
+        browser_event = json.loads(json.dumps(legacy_event))
+        browser_event["outputs"][0]["geometry"]["coordinates"] = coordinates
+        browser_event["event_hash"] = original_hash
+        legacy_ledger = {
+            "version": LEDGER_VERSION,
+            "events": [browser_event],
+            "head_hash": original_hash,
+        }
+
+        validation = verify_ground_truth_ledger(legacy_ledger)
+        self.assertTrue(validation["valid"])
+        self.assertEqual(
+            validation["compatibility_notes"],
+            [f"legacy_browser_numeric_roundtrip:{browser_event['event_id']}"],
+        )
+
+        second_candidate = next(
+            candidate for candidate in inbox["candidates"] if candidate["candidate_id"] == "candidate-2"
+        )
+        appended = append_ground_truth_review_event(
+            {**meta, LEDGER_VERSION: legacy_ledger},
+            candidates=[second_candidate],
+            action="reject",
+            reviewer_id="reviewer-2",
+        )
+        self.assertEqual(len(appended["events"]), 2)
+        self.assertTrue(verify_ground_truth_ledger(appended)["valid"])
+
+        tampered = deepcopy(legacy_ledger)
+        tampered["events"][0]["outputs"][0]["geometry"]["coordinates"][0][0][0] = 21
+        self.assertFalse(verify_ground_truth_ledger(tampered)["valid"])
 
     def test_dataset_fails_closed_without_explicit_imagery_rights(self) -> None:
         meta = _vision_meta()

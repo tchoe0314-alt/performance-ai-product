@@ -189,8 +189,15 @@ test("hosted dense vision correction stays bounded and responsive after save", a
 
   const useOutline = pendingCard.getByTestId("vision-use-selected-outline");
   await expect(useOutline).toBeEnabled();
+  const reviewResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      response.url().endsWith(`/api/projects/${denseProject.project.project_id}/candidate-review`),
+  );
   await useOutline.click();
   await expect(pendingCard).toHaveAttribute("aria-busy", "true");
+  const reviewResponse = await reviewResponsePromise;
+  expect(reviewResponse.status(), "candidate correction should persist successfully").toBe(200);
   await expect(pendingCard).toContainText(/accepted/i, { timeout: 30_000 });
 
   await page.waitForTimeout(5_000);
