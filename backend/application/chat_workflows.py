@@ -2316,8 +2316,9 @@ def _drawn_geometry_edit_chat_response(
     if not selected_object_ids and not selected_geometry_ids:
         return _truthful_decision_update(
             decision,
+            # Bandit misreads this user-facing interpolation as dynamic SQL.
             assistant_message=(
-                f"{operation_labels[edit_kind]} needs a selected drawn CAD object. Select one draft/manual geometry item in the canvas, then ask again. "
+                f"{operation_labels[edit_kind]} needs a selected drawn CAD object. Select one draft/manual geometry item in the canvas, then ask again. "  # nosec B608
                 "Civora will keep it draft_review_required and will not run engineering generation from the edit."
             ),
             intent="conversation",
