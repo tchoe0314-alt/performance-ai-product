@@ -79,6 +79,8 @@ test("hosted survey upload drives source-backed preview marks without fake topo"
   await expect(addressSection.getByTestId("create-centered-site-button")).toBeEnabled({ timeout: 10_000 });
   await addressSection.getByTestId("create-centered-site-button").click();
   await expect(page.getByTestId("site-status")).toContainText(/Site Locked/i, { timeout: 30_000 });
+  const mapToggle = page.getByTestId("workspace-canvas-shell").getByTestId("preview-inner-map-toggle");
+  await expect(mapToggle).toBeEnabled({ timeout: 60_000 });
   await openPanel(page, /^Setup$/, /Address \/ Location|Site Boundary|Survey \/ Terrain/i);
 
   const surveySection = page.getByTestId("setup-survey-terrain-card");
@@ -94,8 +96,8 @@ test("hosted survey upload drives source-backed preview marks without fake topo"
   const canvas = page.getByTestId("workspace-canvas-shell");
   await canvas.getByTestId("preview-quality-high").click();
   await expect(page.getByTestId("source-survey-point").first()).toBeVisible({ timeout: 15_000 });
-  await canvas.getByTestId("preview-inner-map-toggle").click();
-  await expect(canvas.getByTestId("preview-inner-map-toggle")).toContainText("Map Off");
+  if ((await mapToggle.textContent())?.includes("Map On")) await mapToggle.click();
+  await expect(mapToggle).toContainText("Map Off");
   await expect(page.getByTestId("survey-spot-elevation").first()).toBeVisible();
   await expect(canvas).toContainText(/SOURCE EXHIBIT/i);
   await expect(canvas).toContainText(/SOURCE REVIEW/i);

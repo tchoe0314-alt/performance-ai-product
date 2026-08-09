@@ -4,7 +4,13 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-const appUrl = process.env.PLAYWRIGHT_BASE_URL || "https://civoraai.com";
+const configuredAppUrl = process.env.PLAYWRIGHT_BASE_URL || "https://civoraai.com";
+const authenticatedAppUrl = (() => {
+  const url = new URL(configuredAppUrl);
+  if (url.pathname === "/demo/workspace") url.pathname = "/";
+  url.searchParams.delete("seedDemo");
+  return url.toString();
+})();
 const hasHostedCredentials = Boolean(process.env.CIVORA_EMAIL && process.env.CIVORA_PASSWORD);
 const reportPath = resolve(process.env.HOSTED_GAUNTLET_REPORT || "playwright-artifacts/hosted-gauntlet-report.json");
 const requestedAuthenticatedRepeats = Number.parseInt(process.env.CIVORA_HOSTED_AUTH_REPEAT_COUNT || "2", 10);
@@ -17,7 +23,7 @@ const run = (label, args, extraEnv = {}) => {
     env: {
       ...process.env,
       PLAYWRIGHT_SKIP_WEBSERVER: "1",
-      PLAYWRIGHT_BASE_URL: appUrl,
+      PLAYWRIGHT_BASE_URL: authenticatedAppUrl,
       ...extraEnv,
     },
     stdio: "inherit",
@@ -77,13 +83,14 @@ if (hasHostedCredentials) {
       "--workers=1",
     ]);
   }
-  authSummary = authStatus === 0 && workflowStatus === 0 && loadStatus === 0 ? "passed" : "failed";
+  authSummary = authStatus === 0 ? "passed" : "failed";
 }
 
 const report = {
   version: "hosted_gauntlet_report_v1",
   generated_at: new Date().toISOString(),
-  target_url: appUrl,
+  target_url: authenticatedAppUrl,
+  configured_target_url: configuredAppUrl,
   success: publicStatus === 0 && !authSkipped && authStatus === 0 && workflowStatus === 0 && loadStatus === 0,
   status:
     publicStatus !== 0 || authStatus !== 0 || workflowStatus !== 0 || loadStatus !== 0
@@ -119,7 +126,7 @@ mkdirSync(dirname(reportPath), { recursive: true });
 writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 
 console.log("\n[hosted-gauntlet] summary");
-console.log(`- target: ${appUrl}`);
+console.log(`- target: ${authenticatedAppUrl}`);
 console.log(`- public smoke: ${publicStatus === 0 ? "passed" : "failed"}`);
 console.log(`- authenticated smoke: ${authSummary}`);
 console.log(
