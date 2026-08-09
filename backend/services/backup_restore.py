@@ -28,6 +28,12 @@ def _stable_digest(rows: Iterable[Any]) -> str:
     return hashlib.sha256("\n".join(serialized).encode("utf-8")).hexdigest()
 
 
+def _quote_sqlite_identifier(value: str) -> str:
+    if "\x00" in value:
+        raise ValueError("SQLite identifiers cannot contain NUL bytes.")
+    return '"' + value.replace('"', '""') + '"'
+
+
 def hosted_backup_evidence(env: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
     source = dict(os.environ if env is None else env)
     owner = str(source.get("CIVORA_DATABASE_BACKUP_OWNER") or "").strip()
@@ -131,13 +137,19 @@ class DatabaseBackupService:
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
                 ).fetchall()
             ]
-            return {
-                table: {
-                    "row_count": int(connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]),
-                    "content_sha256": _stable_digest(connection.execute(f'SELECT * FROM "{table}"').fetchall()),
+            evidence: Dict[str, Dict[str, Any]] = {}
+            for table in tables:
+                quoted_table = _quote_sqlite_identifier(table)
+                # Table names come only from sqlite_master and are quoted by the tested identifier helper.
+                count_query = "SELECT COUNT(*) FROM __TABLE__".replace("__TABLE__", quoted_table)  # nosec B608
+                content_query = "SELECT * FROM __TABLE__".replace("__TABLE__", quoted_table)  # nosec B608
+                row_count = connection.execute(count_query).fetchone()[0]
+                rows = connection.execute(content_query).fetchall()
+                evidence[table] = {
+                    "row_count": int(row_count),
+                    "content_sha256": _stable_digest(rows),
                 }
-                for table in tables
-            }
+            return evidence
         finally:
             connection.close()
 

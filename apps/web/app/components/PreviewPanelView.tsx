@@ -85,8 +85,10 @@ import {
   mapAnchoredRectPercent as resolveMapAnchoredRectPercent,
   mapLngLatToSitePoint,
   measureMapFeetPerPixel,
+  measureMapSiteFeetPerPixel,
   sitePointToPreviewPercent as resolveSitePointToPreviewPercent,
   siteRectPercent as resolveSiteRectPercent,
+  synchronizeMapViewport,
 } from "../utils/previewMapProjection";
 import {
   buildCadSegments,
@@ -398,6 +400,7 @@ export default function PreviewPanel({
   const fullscreenMapRef = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapRevision, setMapRevision] = useState(0);
+  const [reportedMapFeetPerPixel, setReportedMapFeetPerPixel] = useState<number | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapboxRequestCount, setMapboxRequestCount] = useState(0);
   const [mapboxTileCount, setMapboxTileCount] = useState(0);
@@ -539,7 +542,9 @@ export default function PreviewPanel({
   );
   const planScaleBar = useMemo(() => buildPlanScaleBar(currentSiteSize), [currentSiteSize]);
   const liveMapFeetPerPixel =
-    showMap && mapLoaded && mapRef.current ? measureMapFeetPerPixel(mapRef.current) : null;
+    showMap && mapLoaded && mapRef.current
+      ? measureMapSiteFeetPerPixel(mapRef.current, mapAnchor) ?? reportedMapFeetPerPixel
+      : null;
   const displayedScaleLengthFt = useMemo(
     () =>
       showMap && liveMapFeetPerPixel
@@ -591,6 +596,17 @@ export default function PreviewPanel({
         : buildScaleTruthLabel({ geocode, mapScaleFtPerPx, mapScaleSource }),
     [geocode, liveMapFeetPerPixel, mapScaleFtPerPx, mapScaleSource],
   );
+  const handleMapScaleUpdate = useCallback<NonNullable<PreviewPanelProps["onMapScaleUpdate"]>>(
+    (update) => {
+      setReportedMapFeetPerPixel(update.ftPerPx);
+      onMapScaleUpdate?.(update);
+    },
+    [onMapScaleUpdate],
+  );
+  useEffect(() => {
+    if (showMap && mapLoaded) return;
+    setReportedMapFeetPerPixel(null);
+  }, [mapLoaded, showMap]);
   const resolveVisualKind = useCallback(resolvePreviewVisualKind, []);
   const hoveredObject = useMemo(
     () => findPreviewHoveredObject({ hoveredObjectId, buildingPlacements, cadEntityPreviewObjects, suggestedPlacements }),
@@ -609,6 +625,16 @@ export default function PreviewPanel({
     debugWindow.__civoraMapOverlayEnabled = mapOverlayEnabled;
     debugWindow.__civoraPreviewQuality = previewQuality;
     debugWindow.__civoraMapLoaded = mapLoaded;
+    debugWindow.__civoraMapScaleProof =
+      showMap && mapLoaded && mapRef.current
+        ? {
+            geographicFeetPerPixel: measureMapFeetPerPixel(mapRef.current),
+            siteFeetPerPixel: measureMapSiteFeetPerPixel(mapRef.current, mapAnchor),
+            projection: mapRef.current.getProjection().name,
+            containerWidth: mapRef.current.getContainer().clientWidth,
+            containerHeight: mapRef.current.getContainer().clientHeight,
+          }
+        : null;
     const activeMapCenter = mapRef.current?.getCenter();
     debugWindow.__civoraMapViewport = activeMapCenter
       ? {
@@ -617,7 +643,7 @@ export default function PreviewPanel({
           zoom: mapRef.current?.getZoom() ?? null,
         }
       : null;
-  }, [geocode, mapLoaded, mapOverlayEnabled, mapRevision, mapRef, showMap, previewQuality]);
+  }, [geocode, mapAnchor, mapLoaded, mapOverlayEnabled, mapRevision, mapRef, showMap, previewQuality]);
   const selectedObject = useMemo(
     () =>
       findPreviewSelectedObject({
@@ -719,11 +745,12 @@ export default function PreviewPanel({
       if (!containerRef.current) return null;
       const rect = containerRef.current.getBoundingClientRect();
       if (showMap && mapRef.current && mapAnchor) {
+        const viewportSynchronized = synchronizeMapViewport(mapRef.current);
         const mapRect = mapRef.current.getContainer().getBoundingClientRect();
         const lngLat = mapRef.current.unproject([clientX - mapRect.left, clientY - mapRect.top]);
         const rawSitePoint = mapLngLatToSitePoint(lngLat.lat, lngLat.lng, mapAnchor);
         if (!rawSitePoint) return null;
-        return normalizePreviewPointerSitePoint({
+        const normalizedSitePoint = normalizePreviewPointerSitePoint({
           rawSitePoint,
           drawMode,
           drawingLotWidth,
@@ -731,6 +758,22 @@ export default function PreviewPanel({
           lotWidth,
           lotHeight,
         });
+        (window as unknown as Record<string, unknown>).__civoraLastMapPointerProof = {
+          clientX,
+          clientY,
+          mapRect: { x: mapRect.x, y: mapRect.y, width: mapRect.width, height: mapRect.height },
+          containerSize: {
+            width: mapRef.current.getContainer().clientWidth,
+            height: mapRef.current.getContainer().clientHeight,
+          },
+          viewportSynchronized,
+          lngLat: { lat: lngLat.lat, lng: lngLat.lng },
+          rawSitePoint,
+          normalizedSitePoint,
+          geographicFeetPerPixel: measureMapFeetPerPixel(mapRef.current),
+          siteFeetPerPixel: measureMapSiteFeetPerPixel(mapRef.current, mapAnchor),
+        };
+        return normalizedSitePoint;
       }
       return resolvePreviewPointerSitePoint({
         clientX,
@@ -2416,7 +2459,8 @@ export default function PreviewPanel({
     setMapboxTileCount,
     setMapCanvasSize,
     setMapContainerSize,
-    onMapScaleUpdate,
+    onMapScaleUpdate: handleMapScaleUpdate,
+    mapAnchor,
     onViewportFootprint,
     siteLocked,
     onViewportCenter,
@@ -2571,7 +2615,6 @@ export default function PreviewPanel({
           <PreviewCanvasControlStack
             previewMode={previewMode}
             allowEdits={allowEdits}
-            drawMode={drawMode}
             selectedObjectPresent={Boolean(selectedObject)}
             headerProps={{
               previewMode,
@@ -2975,8 +3018,6 @@ export default function PreviewPanel({
                     hoveredVertex,
                     selectedVertex,
                     hoveredSegment,
-                    lastPolylineEdit,
-                    lastRectEdit,
                     polylineInsertHintDismissed,
                     polylineSegmentRef,
                     hoveredObjectId,
@@ -3008,9 +3049,7 @@ export default function PreviewPanel({
                     onUpdateSuggested,
                     onUpdateBuilding,
                     insertVertexOnSegment,
-                    applyPolylineUndo,
                     deleteSelectedVertex,
-                    applyRectUndo,
                   },
                   suggestedObjectHitTargetsProps: {
                     suggestedPlacements: renderedSuggestedPlacements,

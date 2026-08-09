@@ -13,7 +13,8 @@ from PIL import Image, UnidentifiedImageError
 
 
 DEFAULT_CIVORA_IMAGE_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
-LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+# This is a URL-host denylist, not a listener bind.
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # nosec B104
 MIN_RENDERER_TOKEN_LENGTH = 32
 MAX_RENDERED_IMAGE_BYTES = 15 * 1024 * 1024
 MAX_RENDERED_IMAGE_PIXELS = 4_000_000

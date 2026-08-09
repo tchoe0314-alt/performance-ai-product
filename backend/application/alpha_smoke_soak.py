@@ -175,7 +175,8 @@ def fetch_runtime_debug_sample(base_url: str, *, timeout_seconds: float = 10.0, 
         headers={"Accept": "application/json", "Authorization": f"Bearer {token}"},
     )
     try:
-        response_ctx = urlopen(request, timeout=max(1.0, timeout_seconds))
+        # The normalized URL is restricted to an absolute HTTP(S) origin above.
+        response_ctx = urlopen(request, timeout=max(1.0, timeout_seconds))  # nosec B310
     except HTTPError as exc:
         if exc.code in {401, 403}:
             raise RuntimeError(f"auth_unauthorized: /api/debug/runtime rejected configured bearer token with HTTP {exc.code}.") from exc

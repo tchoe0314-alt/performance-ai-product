@@ -16,7 +16,7 @@ Use this checklist for a controlled, invite-only, review-focused release. A tech
 | --- | --- | --- |
 | `backend_regression` | Full `pytest` suite on release revision | Pending |
 | `frontend_quality` | Clean install, lint, strict typecheck, production build | Pending |
-| `security_dependency` | Dependency audit with no unresolved high/critical issue | Pending |
+| `security_dependency` | Dependency audits plus medium/high static Python security analysis | Pending |
 | `data_lifecycle` | Authenticated account export/deletion and support intake tests | Pending |
 | `backup_restore_local` | SQLite backup, restore, row-count and content-hash comparison | Pending |
 | `engineering_real_files` | Golden scenarios, real-file fixtures, expected-vs-actual checks | Pending |
@@ -31,13 +31,13 @@ Run the engineering comparison separately:
 PYTHONPATH=. python3 backend/scripts/run_rc1_engineering_validation.py
 ```
 
-Install the release audit utility outside the runtime dependency set before recording security evidence:
+Install the pinned release-audit utilities outside the runtime dependency set before recording security evidence:
 
 ```bash
-python3 -m pip install pip-audit
+python3 -m pip install -r requirements_audit.txt
 ```
 
-The RC1 evidence runner audits npm plus every pinned Python requirements set. Missing audit tooling is a failed evidence item, not a silent skip.
+The RC1 evidence runner audits npm, every pinned Python requirements set, and medium/high Bandit findings across `backend` and `scripts`. Missing audit tooling is a failed evidence item, not a silent skip.
 
 On macOS, Firefox rendering is verified by the `RC1 Firefox accessibility` GitHub Actions workflow. After that workflow succeeds on the exact RC1 commit, provide its HTTPS run URL, revision, and status when recording the cross-browser section:
 

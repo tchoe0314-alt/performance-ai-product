@@ -46,7 +46,7 @@ export function WorkspaceLeftRail({
                   className={`flex min-h-[58px] w-full flex-col items-center justify-center gap-1 border px-1.5 py-2 text-center transition ${
                     isActive
                       ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950"
+                      : "border-transparent bg-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-950"
                   }`}
                 >
                   <Icon className="h-4 w-4 shrink-0" />

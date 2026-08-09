@@ -375,24 +375,28 @@ class ProjectStore:
     ) -> List[Dict[str, Any]]:
         connection = self.db.connect()
         try:
-            lifecycle_filters = ["(p.user_id = ? OR pm.user_id = ?)"]
-            params: List[Any] = [user_id, user_id, user_id, user_id]
-            if not include_archived:
-                lifecycle_filters.append("p.archived_at IS NULL")
-            if not include_deleted:
-                lifecycle_filters.append("p.deleted_at IS NULL")
-            rows = connection.execute(
-                f"""
+            query = """
                 SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
                        p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
                        p.archived_at, p.deleted_at,
                        COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
                 FROM projects p
                 LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-                WHERE {' AND '.join(lifecycle_filters)}
+                WHERE (p.user_id = ? OR pm.user_id = ?)
+                  AND (? = 1 OR p.archived_at IS NULL)
+                  AND (? = 1 OR p.deleted_at IS NULL)
                 ORDER BY CASE WHEN p.archived_at IS NULL THEN 0 ELSE 1 END, p.updated_at DESC
-                """,
-                params,
+                """
+            rows = connection.execute(
+                query,
+                (
+                    user_id,
+                    user_id,
+                    user_id,
+                    user_id,
+                    int(include_archived),
+                    int(include_deleted),
+                ),
             ).fetchall()
             return [
                 {
@@ -1610,19 +1614,11 @@ class ProjectStore:
             if project is None:
                 raise ValueError("Project not found.")
         consent = self.get_memory_consent(user_id=user_id)
-        scope_clauses: List[str] = []
-        params: List[Any] = []
-        if consent["personal_enabled"]:
-            scope_clauses.append("(scope = 'personal' AND owner_user_id = ?)")
-            params.append(user_id)
-        if project_id:
-            scope_clauses.append("(scope = 'project' AND project_id = ?)")
-            params.append(project_id)
-            organization_id = str((project or {}).get("organization_id") or "")
-            if organization_id and consent["company_enabled"]:
-                scope_clauses.append("(scope = 'company' AND organization_id = ?)")
-                params.append(organization_id)
-        if not scope_clauses:
+        organization_id = str((project or {}).get("organization_id") or "")
+        personal_enabled = bool(consent["personal_enabled"])
+        project_enabled = bool(project_id)
+        company_enabled = bool(project_id and organization_id and consent["company_enabled"])
+        if not any((personal_enabled, project_enabled, company_enabled)):
             return {
                 "consent": consent,
                 "items": [],
@@ -1635,16 +1631,29 @@ class ProjectStore:
             }
         connection = self.db.connect()
         try:
-            rows = connection.execute(
-                f"""
+            query = """
                 SELECT memory_id, owner_user_id, organization_id, project_id, scope,
                        category, label, value_json, source, status, created_at, updated_at
                 FROM engineering_memory
-                WHERE status = 'active' AND ({' OR '.join(scope_clauses)})
+                WHERE status = 'active'
+                  AND (
+                    (? = 1 AND scope = 'personal' AND owner_user_id = ?)
+                    OR (? = 1 AND scope = 'project' AND project_id = ?)
+                    OR (? = 1 AND scope = 'company' AND organization_id = ?)
+                  )
                 ORDER BY updated_at DESC
                 LIMIT 200
-                """,
-                params,
+                """
+            rows = connection.execute(
+                query,
+                (
+                    int(personal_enabled),
+                    user_id,
+                    int(project_enabled),
+                    project_id or "",
+                    int(company_enabled),
+                    organization_id,
+                ),
             ).fetchall()
         finally:
             connection.close()

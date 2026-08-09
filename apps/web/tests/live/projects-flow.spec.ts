@@ -747,16 +747,70 @@ test.describe("project drawer reliability", () => {
     await expect(addBox).toBeEnabled();
     await addBox.click();
 
-    const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true }).first();
-    const mapCanvasBox = await mapCanvas.boundingBox();
-    expect(mapCanvasBox).not.toBeNull();
+    // Physical map scale is measured without intentional CAD snap displacement.
+    // Snap behavior has dedicated drafting coverage elsewhere in this suite.
+    const cadTools = page.getByTestId("cad-precision-tools").filter({ visible: true }).first();
+    await expect(cadTools).toBeVisible();
+    if (!(await cadTools.evaluate((element) => (element as HTMLDetailsElement).open))) {
+      await cadTools.locator("summary").click();
+    }
+    const snapToggle = cadTools.getByLabel("Snap");
+    await expect(snapToggle).toBeChecked();
+    await snapToggle.uncheck();
+    await expect(snapToggle).not.toBeChecked();
+    await cadTools.locator("summary").click();
+    await expect(cadTools).not.toHaveAttribute("open", "");
+
+    const mapSurfaceMetrics = await page.locator(".mapboxgl-map").evaluateAll((elements) =>
+      elements.map((element, index) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          index,
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+          clientWidth: element.clientWidth,
+          clientHeight: element.clientHeight,
+          display: style.display,
+          visibility: style.visibility,
+          opacity: style.opacity,
+        };
+      }),
+    );
+    console.info("[map-surface-proof]", mapSurfaceMetrics);
+    const visibleMapSurfaces = mapSurfaceMetrics.filter(
+      (item) => item.width > 0 && item.height > 0 && item.display !== "none" && item.visibility !== "hidden" && item.opacity !== "0",
+    );
+    expect(visibleMapSurfaces).toHaveLength(1);
+    const mapSurface = page.locator(".mapboxgl-map").nth(visibleMapSurfaces[0].index);
+    await expect(mapSurface).toBeVisible();
+    await expect
+      .poll(async () => {
+        return mapSurface.evaluate((element) => {
+          const canvas = element.querySelector(".mapboxgl-canvas") as HTMLCanvasElement | null;
+          if (!canvas) return null;
+          const surfaceRect = element.getBoundingClientRect();
+          const canvasRect = canvas.getBoundingClientRect();
+          return {
+            widthDelta: Math.abs(surfaceRect.width - canvasRect.width),
+            heightDelta: Math.abs(surfaceRect.height - canvasRect.height),
+            topDelta: Math.abs(surfaceRect.top - canvasRect.top),
+            leftDelta: Math.abs(surfaceRect.left - canvasRect.left),
+          };
+        });
+      })
+      .toEqual({ widthDelta: 0, heightDelta: 0, topDelta: 0, leftDelta: 0 });
+    const mapSurfaceBox = await mapSurface.boundingBox();
+    expect(mapSurfaceBox).not.toBeNull();
     const viewport = page.viewportSize();
     expect(viewport).not.toBeNull();
     const visibleMapBounds = {
-      left: Math.max(mapCanvasBox!.x, 0),
-      top: Math.max(mapCanvasBox!.y, 0),
-      right: Math.min(mapCanvasBox!.x + mapCanvasBox!.width, viewport!.width),
-      bottom: Math.min(mapCanvasBox!.y + mapCanvasBox!.height, viewport!.height),
+      left: Math.max(mapSurfaceBox!.x, 0),
+      top: Math.max(mapSurfaceBox!.y, 0),
+      right: Math.min(mapSurfaceBox!.x + mapSurfaceBox!.width, viewport!.width),
+      bottom: Math.min(mapSurfaceBox!.y + mapSurfaceBox!.height, viewport!.height),
     };
     const visibleMapWidth = visibleMapBounds.right - visibleMapBounds.left;
     const visibleMapHeight = visibleMapBounds.bottom - visibleMapBounds.top;
@@ -770,6 +824,22 @@ test.describe("project drawer reliability", () => {
       x: visibleMapBounds.left + visibleMapWidth * 0.62,
       y: visibleMapBounds.top + visibleMapHeight * 0.68,
     };
+    await expect
+      .poll(async () => {
+        const surfaceHeight = await mapSurface.evaluate((element) => element.clientHeight);
+        const proofHeight = await page.evaluate(
+          () =>
+            Number(
+              (window as unknown as { __civoraMapScaleProof?: { containerHeight?: number } }).__civoraMapScaleProof
+                ?.containerHeight,
+            ),
+        );
+        return Math.abs(surfaceHeight - proofHeight);
+      })
+      .toBeLessThanOrEqual(1);
+    const drawingScaleText = (await page.getByTestId("canvas-scale-source").textContent()) ?? "";
+    const drawingFeetPerPixel = Number(drawingScaleText.match(/([\d.]+)\s+FT\/PX/i)?.[1]);
+    expect(drawingFeetPerPixel).toBeGreaterThan(0);
     const readCursor = async (point: { x: number; y: number }) => {
       await page.mouse.move(point.x, point.y);
       await page.evaluate(
@@ -785,14 +855,45 @@ test.describe("project drawer reliability", () => {
       return { x: Number(match![1]), y: Number(match![2]) };
     };
     const firstSitePoint = await readCursor(first);
+    const firstPointerProof = await page.evaluate(
+      () => (window as unknown as { __civoraLastMapPointerProof?: Record<string, unknown> }).__civoraLastMapPointerProof,
+    );
+    const mapBoxAfterFirstMove = await mapSurface.boundingBox();
+    expect(mapBoxAfterFirstMove).not.toBeNull();
+    expect(Math.abs(mapBoxAfterFirstMove!.x - mapSurfaceBox!.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(mapBoxAfterFirstMove!.y - mapSurfaceBox!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(mapBoxAfterFirstMove!.width - mapSurfaceBox!.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(mapBoxAfterFirstMove!.height - mapSurfaceBox!.height)).toBeLessThanOrEqual(1);
     await page.mouse.click(first.x, first.y);
     const secondSitePoint = await readCursor(second);
+    const secondPointerProof = await page.evaluate(
+      () => (window as unknown as { __civoraLastMapPointerProof?: Record<string, unknown> }).__civoraLastMapPointerProof,
+    );
+    const mapBoxAfterDraftMove = await mapSurface.boundingBox();
+    expect(mapBoxAfterDraftMove).not.toBeNull();
+    expect(Math.abs(mapBoxAfterDraftMove!.x - mapSurfaceBox!.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(mapBoxAfterDraftMove!.y - mapSurfaceBox!.y)).toBeLessThanOrEqual(1);
+    expect(Math.abs(mapBoxAfterDraftMove!.width - mapSurfaceBox!.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(mapBoxAfterDraftMove!.height - mapSurfaceBox!.height)).toBeLessThanOrEqual(1);
     await page.mouse.click(second.x, second.y);
     await expect(page.getByText("Custom Rectangle 1").filter({ visible: true }).first()).toBeVisible();
 
-    const scaleText = (await page.getByTestId("canvas-scale-source").textContent()) ?? "";
-    const feetPerPixel = Number(scaleText.match(/([\d.]+)\s+FT\/PX/i)?.[1]);
-    expect(feetPerPixel).toBeGreaterThan(0);
+    await expect
+      .poll(async () => {
+        const surfaceHeight = await mapSurface.evaluate((element) => element.clientHeight);
+        const proofHeight = await page.evaluate(
+          () =>
+            Number(
+              (window as unknown as { __civoraMapScaleProof?: { containerHeight?: number } }).__civoraMapScaleProof
+                ?.containerHeight,
+            ),
+        );
+        return Math.abs(surfaceHeight - proofHeight);
+      })
+      .toBeLessThanOrEqual(1);
+    const currentScaleText = (await page.getByTestId("canvas-scale-source").textContent()) ?? "";
+    const currentFeetPerPixel = Number(currentScaleText.match(/([\d.]+)\s+FT\/PX/i)?.[1]);
+    expect(currentFeetPerPixel).toBeGreaterThan(0);
     const mapViewport = await page.evaluate(() =>
       (window as unknown as {
         __civoraMapViewport?: { lat?: number; zoom?: number };
@@ -811,23 +912,46 @@ test.describe("project drawer reliability", () => {
     expect(dimensions).not.toBeNull();
     const actualWidth = Number(dimensions![1]);
     const actualDepth = Number(dimensions![2]);
-    const expectedWidth = Math.abs(second.x - first.x) * feetPerPixel;
+    const expectedWidth = Math.abs(second.x - first.x) * drawingFeetPerPixel;
+    const expectedDepth = Math.abs(second.y - first.y) * drawingFeetPerPixel;
     const pointerWidth = Math.abs(secondSitePoint.x - firstSitePoint.x);
     const pointerDepth = Math.abs(secondSitePoint.y - firstSitePoint.y);
+    const mapScaleProof = await page.evaluate(
+      () =>
+        (window as unknown as {
+          __civoraMapScaleProof?: Record<string, unknown>;
+        }).__civoraMapScaleProof,
+    );
     console.info("[map-geometry-proof]", {
-      mapCanvasBox,
-      feetPerPixel,
+      mapSurfaceBox,
+      drawingFeetPerPixel,
+      currentFeetPerPixel,
+      mapScaleProof,
       first,
       second,
       firstSitePoint,
       secondSitePoint,
+      firstPointerProof,
+      secondPointerProof,
       actualWidth,
       actualDepth,
       expectedWidth,
+      expectedDepth,
     });
     expect(Math.abs(actualWidth - pointerWidth)).toBeLessThanOrEqual(6);
     expect(Math.abs(actualDepth - pointerDepth)).toBeLessThanOrEqual(6);
+    const firstPointerScale = Number(firstPointerProof?.siteFeetPerPixel);
+    const secondPointerScale = Number(secondPointerProof?.siteFeetPerPixel);
+    expect(Math.abs(firstPointerScale - drawingFeetPerPixel)).toBeLessThanOrEqual(drawingFeetPerPixel * 0.03);
+    expect(Math.abs(secondPointerScale - drawingFeetPerPixel)).toBeLessThanOrEqual(drawingFeetPerPixel * 0.03);
+    const geographicScale = Number(mapScaleProof?.geographicFeetPerPixel);
+    const siteScale = Number(mapScaleProof?.siteFeetPerPixel);
+    expect(geographicScale).toBeGreaterThan(0);
+    expect(siteScale).toBeGreaterThan(0);
+    expect(Math.abs(siteScale - geographicScale)).toBeLessThanOrEqual(geographicScale * 0.03);
+    expect(Math.abs(currentFeetPerPixel - siteScale)).toBeLessThanOrEqual(siteScale * 0.05);
     expect(Math.abs(actualWidth - expectedWidth)).toBeLessThanOrEqual(Math.max(8, expectedWidth * 0.03));
+    expect(Math.abs(actualDepth - expectedDepth)).toBeLessThanOrEqual(Math.max(8, expectedDepth * 0.03));
   });
 
   test("ignores address discovery that finishes after New Project", async ({ page }) => {

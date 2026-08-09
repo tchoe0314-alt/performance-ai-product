@@ -63,8 +63,6 @@ type PreviewEditableObjectHitTargetsProps = {
   hoveredVertex: SelectionIndex;
   selectedVertex: SelectionIndex;
   hoveredSegment: SelectionIndex;
-  lastPolylineEdit: LastPolylineEdit | null;
-  lastRectEdit: LastRectEdit | null;
   polylineInsertHintDismissed: boolean;
   polylineSegmentRef?: Ref<SVGSVGElement>;
   hoveredObjectId: string | null;
@@ -104,9 +102,7 @@ type PreviewEditableObjectHitTargetsProps = {
     item: BuildingPlacement,
     index: number,
   ) => void;
-  applyPolylineUndo: () => void;
   deleteSelectedVertex: () => void;
-  applyRectUndo: () => void;
 };
 
 export function PreviewEditableObjectHitTargets({
@@ -129,8 +125,6 @@ export function PreviewEditableObjectHitTargets({
   hoveredVertex,
   selectedVertex,
   hoveredSegment,
-  lastPolylineEdit,
-  lastRectEdit,
   polylineInsertHintDismissed,
   polylineSegmentRef,
   hoveredObjectId,
@@ -162,9 +156,7 @@ export function PreviewEditableObjectHitTargets({
   onUpdateSuggested,
   onUpdateBuilding,
   insertVertexOnSegment,
-  applyPolylineUndo,
   deleteSelectedVertex,
-  applyRectUndo,
 }: PreviewEditableObjectHitTargetsProps) {
   return (
     <>
@@ -250,6 +242,11 @@ export function PreviewEditableObjectHitTargets({
               : allowItemInteraction
                 ? passiveOverlayPointerEvents
                 : "pointer-events-none";
+          const selectPolylineSegment = () => {
+            if (drawingOwnsCanvasHits || !allowItemInteraction) return;
+            setSelectedVertex(null);
+            onSelectBuilding(item.id);
+          };
           return (
             <div
               key={item.id}
@@ -299,47 +296,75 @@ export function PreviewEditableObjectHitTargets({
                 onSelectBuilding(item.id);
               }}
             >
-              {useSegmentHitTargets
-                ? localPolylinePoints.slice(0, -1).map((point, segmentIndex) => {
+              {useSegmentHitTargets ? (
+                <svg
+                  className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                >
+                  {localPolylinePoints.slice(0, -1).map((point, segmentIndex) => {
                     const next = localPolylinePoints[segmentIndex + 1];
                     if (!next) return null;
-                    const dx = next.x - point.x;
-                    const dy = next.y - point.y;
-                    const length = Math.max(Math.hypot(dx, dy), 1);
-                    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
                     return (
-                      <button
+                      <line
                         key={`polyline-hit-${item.id}-${segmentIndex}`}
-                        type="button"
-                        data-cad-object-hit-id={item.id}
-                        aria-label={`Select ${item.label || item.type || "Draft object"} segment ${segmentIndex + 1}`}
-                        className="pointer-events-auto absolute appearance-none border-0 p-0"
-                        style={{
-                          left: `${point.x}%`,
-                          top: `${point.y}%`,
-                          width: `${length}%`,
-                          height: "12%",
-                          minHeight: "12px",
-                          transform: `translateY(-50%) rotate(${angle}deg)`,
-                          transformOrigin: "left center",
-                          backgroundColor: "rgba(15,23,42,0.001)",
-                          cursor: caps.movable ? "grab" : "default",
-                        }}
+                        className="pointer-events-auto"
+                        x1={point.x}
+                        y1={point.y}
+                        x2={next.x}
+                        y2={next.y}
+                        stroke="rgba(15,23,42,0.001)"
+                        strokeWidth={10}
+                        strokeLinecap="round"
+                        vectorEffect="non-scaling-stroke"
+                        pointerEvents="stroke"
+                        style={{ cursor: caps.movable ? "grab" : "default" }}
                         onMouseDown={(event) => {
-                          if (drawingOwnsCanvasHits || !allowItemInteraction) return;
                           event.stopPropagation();
-                          setSelectedVertex(null);
-                          onSelectBuilding(item.id);
+                          selectPolylineSegment();
                         }}
                         onMouseEnter={() => {
                           if (drawingOwnsCanvasHits || !allowItemInteraction) return;
                           setHoveredObjectId(item.id);
                         }}
+                        onMouseLeave={() => setHoveredObjectId(null)}
                         onClick={(event) => {
-                          if (drawingOwnsCanvasHits || !allowItemInteraction) return;
                           event.stopPropagation();
-                          setSelectedVertex(null);
-                          onSelectBuilding(item.id);
+                          selectPolylineSegment();
+                        }}
+                      />
+                    );
+                  })}
+                </svg>
+              ) : null}
+              {useSegmentHitTargets
+                ? localPolylinePoints.slice(0, -1).map((point, segmentIndex) => {
+                    const next = localPolylinePoints[segmentIndex + 1];
+                    if (!next) return null;
+                    return (
+                      <button
+                        key={`polyline-focus-${item.id}-${segmentIndex}`}
+                        type="button"
+                        data-cad-object-hit-id={item.id}
+                        aria-label={`Select ${item.label || item.type || "Draft object"} segment ${segmentIndex + 1}`}
+                        className="pointer-events-auto absolute h-6 w-6 -translate-x-1/2 -translate-y-1/2 appearance-none border-0 bg-transparent p-0"
+                        style={{
+                          left: `${(point.x + next.x) / 2}%`,
+                          top: `${(point.y + next.y) / 2}%`,
+                          cursor: caps.movable ? "grab" : "default",
+                        }}
+                        onMouseDown={(event) => {
+                          event.stopPropagation();
+                          selectPolylineSegment();
+                        }}
+                        onMouseEnter={() => {
+                          if (drawingOwnsCanvasHits || !allowItemInteraction) return;
+                          setHoveredObjectId(item.id);
+                        }}
+                        onMouseLeave={() => setHoveredObjectId(null)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          selectPolylineSegment();
                         }}
                       />
                     );
@@ -397,8 +422,6 @@ export function PreviewEditableObjectHitTargets({
                 hoveredVertex={hoveredVertex}
                 selectedVertex={selectedVertex}
                 hoveredSegment={hoveredSegment}
-                lastPolylineEditId={lastPolylineEdit?.id ?? null}
-                lastRectEditId={lastRectEdit?.id ?? null}
                 polylineInsertHintDismissed={polylineInsertHintDismissed}
                 segmentRef={polylineSegmentRef}
                 onVertexHover={setHoveredVertex}
@@ -432,20 +455,10 @@ export function PreviewEditableObjectHitTargets({
                   event.stopPropagation();
                   insertVertexOnSegment(event, target, idx);
                 }}
-                onPolylineUndo={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  applyPolylineUndo();
-                }}
                 onDeleteVertex={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
                   deleteSelectedVertex();
-                }}
-                onRectUndo={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  applyRectUndo();
                 }}
                 onRotateMouseDown={(event) => handleBuildingMouseDown(event, item, "rotate")}
                 onRotateClick={(event) => {

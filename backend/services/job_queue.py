@@ -746,18 +746,19 @@ class JobQueueService:
         if not self._handlers:
             return None
         job_types = sorted(self._handlers.keys())
-        placeholders = ",".join("?" for _ in job_types)
+        query = """
+                SELECT job_id
+                FROM jobs
+                WHERE status = 'queued'
+                  AND job_type IN (SELECT value FROM json_each(?))
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
         connection = self.db.connect()
         try:
             row = connection.execute(
-                f"""
-                SELECT job_id
-                FROM jobs
-                WHERE status = 'queued' AND job_type IN ({placeholders})
-                ORDER BY created_at ASC
-                LIMIT 1
-                """,
-                tuple(job_types),
+                query,
+                (json.dumps(job_types),),
             ).fetchone()
             if row is None:
                 return None

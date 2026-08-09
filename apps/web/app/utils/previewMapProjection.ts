@@ -158,3 +158,35 @@ export function measureMapFeetPerPixel(targetMap: mapboxgl.Map | null) {
   const feetPerPixel = (distanceMeters * 3.28084) / (sampleHalfWidthPx * 2);
   return Number.isFinite(feetPerPixel) && feetPerPixel > 0 ? feetPerPixel : null;
 }
+
+export function measureMapSiteFeetPerPixel(targetMap: mapboxgl.Map | null, mapAnchor: MapAnchor | null) {
+  if (!targetMap || !mapAnchor) return null;
+  const container = targetMap.getContainer();
+  const width = Math.max(container.clientWidth, 1);
+  const height = Math.max(container.clientHeight, 1);
+  const sampleHalfWidthPx = Math.min(50, Math.max(1, width / 4));
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const west = targetMap.unproject([centerX - sampleHalfWidthPx, centerY]);
+  const east = targetMap.unproject([centerX + sampleHalfWidthPx, centerY]);
+  const westSite = mapLngLatToSite({ lat: west.lat, lng: west.lng }, mapAnchor);
+  const eastSite = mapLngLatToSite({ lat: east.lat, lng: east.lng }, mapAnchor);
+  if (!westSite || !eastSite) return null;
+  const distanceFeet = Math.hypot(eastSite.x - westSite.x, eastSite.y - westSite.y);
+  const feetPerPixel = distanceFeet / (sampleHalfWidthPx * 2);
+  return Number.isFinite(feetPerPixel) && feetPerPixel > 0 ? feetPerPixel : null;
+}
+
+export function synchronizeMapViewport(targetMap: mapboxgl.Map | null) {
+  if (!targetMap || typeof window === "undefined") return false;
+  const container = targetMap.getContainer();
+  const canvas = targetMap.getCanvas();
+  const pixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+  const renderedWidth = canvas.width / pixelRatio;
+  const renderedHeight = canvas.height / pixelRatio;
+  const widthChanged = Math.abs(renderedWidth - container.clientWidth) > 1;
+  const heightChanged = Math.abs(renderedHeight - container.clientHeight) > 1;
+  if (!widthChanged && !heightChanged) return false;
+  targetMap.resize();
+  return true;
+}

@@ -224,32 +224,30 @@ class SupportStore:
             raise ValueError("Choose a supported support-request status.")
         if normalized_severity and normalized_severity not in SUPPORT_SEVERITIES:
             raise ValueError("Severity must be P0, P1, P2, or P3.")
-        clauses: List[str] = []
-        params: List[Any] = []
-        if normalized_status:
-            clauses.append("sr.status = ?")
-            params.append(normalized_status)
-        if normalized_severity:
-            clauses.append("sr.severity = ?")
-            params.append(normalized_severity)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        params.append(max(1, min(500, int(limit or 100))))
-        connection = self.db.connect()
-        try:
-            rows = connection.execute(
-                f"""
+        query = """
                 SELECT sr.request_id, sr.user_id, u.email AS user_email, sr.project_id,
                        sr.category, sr.severity, sr.summary, sr.status,
                        sr.created_at, sr.updated_at
                 FROM support_requests sr
                 JOIN users u ON u.user_id = sr.user_id
-                {where}
+                WHERE (? = '' OR sr.status = ?)
+                  AND (? = '' OR sr.severity = ?)
                 ORDER BY
                     CASE sr.severity WHEN 'p0' THEN 0 WHEN 'p1' THEN 1 WHEN 'p2' THEN 2 ELSE 3 END,
                     sr.updated_at ASC
                 LIMIT ?
-                """,
-                tuple(params),
+                """
+        connection = self.db.connect()
+        try:
+            rows = connection.execute(
+                query,
+                (
+                    normalized_status,
+                    normalized_status,
+                    normalized_severity,
+                    normalized_severity,
+                    max(1, min(500, int(limit or 100))),
+                ),
             ).fetchall()
         finally:
             connection.close()

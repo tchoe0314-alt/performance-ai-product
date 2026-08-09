@@ -39,7 +39,8 @@ def _worker_health_payload(job_queue: Any) -> dict[str, Any]:
 def build_health_server(
     job_queue: Any,
     *,
-    host: str = "0.0.0.0",
+    # The worker health listener must accept container ingress.
+    host: str = "0.0.0.0",  # nosec B104
     port: int | None = None,
 ) -> ThreadingHTTPServer:
     class WorkerHealthHandler(BaseHTTPRequestHandler):

@@ -10,7 +10,8 @@ from backend.services.backup_restore import hosted_backup_evidence
 
 VALID_PRODUCT_MODES = {"development", "local", "private_alpha", "public_beta", "production"}
 PRODUCTION_MODES = {"public_beta", "production"}
-LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+# These values identify local URL hosts; this is not a listener bind.
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # nosec B104
 SECRET_MARKERS = ("KEY", "SECRET", "TOKEN", "PASSWORD", "DATABASE_URL", "POSTGRES", "REDIS_URL")
 RECOGNIZED_BILLING_PROVIDERS = {"none", "disabled", "off", "stripe"}
 

@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import os
 import shutil
+import sqlite3
 import tempfile
 import unittest
 import zipfile
@@ -397,6 +398,21 @@ class DataLifecycleAndBackupTests(unittest.TestCase):
         self.assertGreater(report["table_count"], 0)
         self.assertTrue(Path(report["backup_path"]).is_file())
         self.assertTrue((self.root / "backup-report.json").is_file())
+
+    def test_sqlite_backup_evidence_quotes_discovered_table_names(self) -> None:
+        path = self.root / "quoted-table.sqlite3"
+        connection = sqlite3.connect(path)
+        try:
+            connection.execute('CREATE TABLE "review""items" (value TEXT NOT NULL)')
+            connection.execute('INSERT INTO "review""items" (value) VALUES (?)', ("source-backed",))
+            connection.commit()
+        finally:
+            connection.close()
+
+        evidence = DatabaseBackupService._sqlite_table_evidence(path)
+
+        self.assertEqual(evidence['review"items']["row_count"], 1)
+        self.assertEqual(len(evidence['review"items']["content_sha256"]), 64)
 
     def test_hosted_backup_evidence_stays_blocked_without_external_proof(self) -> None:
         blocked = hosted_backup_evidence({})

@@ -137,6 +137,7 @@ def _section_commands(*, skip_install: bool, hosted_base_url: str) -> Dict[str, 
         "security_dependency": [
             (("npm", "audit", "--audit-level=moderate"), WEB),
             ((python, "-m", "pip", "check"), ROOT),
+            ((python, "-m", "bandit", "-r", "backend", "scripts", "-ll"), ROOT),
             ((python, "-m", "pip_audit", "-r", "requirements_backend.txt", "--no-deps", "--disable-pip", "--progress-spinner", "off"), ROOT),
             ((python, "-m", "pip_audit", "-r", "requirements_imagery_gateway.txt", "--no-deps", "--disable-pip", "--progress-spinner", "off"), ROOT),
             ((python, "-m", "pip_audit", "-r", "requirements_ai_renderer.txt", "--no-deps", "--disable-pip", "--progress-spinner", "off"), ROOT),

@@ -4,8 +4,8 @@ import { useEffect, useRef } from "react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import mapboxgl from "mapbox-gl";
 
-import { siteToRelativePoint, type SiteSize } from "../utils/geometryTransforms";
-import { measureMapFeetPerPixel } from "../utils/previewMapProjection";
+import { siteToRelativePoint, type MapAnchor, type SiteSize } from "../utils/geometryTransforms";
+import { measureMapFeetPerPixel, measureMapSiteFeetPerPixel } from "../utils/previewMapProjection";
 import type { PreviewPanelProps } from "./previewPanelTypes";
 
 type MutableRef<T> = { current: T };
@@ -37,6 +37,7 @@ type PreviewMapRuntimeOptions = {
   setMapCanvasSize: Dispatch<SetStateAction<MapSize | null>>;
   setMapContainerSize: Dispatch<SetStateAction<MapSize | null>>;
   onMapScaleUpdate?: PreviewPanelProps["onMapScaleUpdate"];
+  mapAnchor: MapAnchor | null;
   onViewportFootprint?: PreviewPanelProps["onViewportFootprint"];
   siteLocked?: boolean;
   onViewportCenter?: PreviewPanelProps["onViewportCenter"];
@@ -86,6 +87,7 @@ export function usePreviewMapRuntime({
   setMapCanvasSize,
   setMapContainerSize,
   onMapScaleUpdate,
+  mapAnchor,
   onViewportFootprint,
   siteLocked,
   onViewportCenter,
@@ -255,7 +257,7 @@ export function usePreviewMapRuntime({
     const map = mapRef.current;
     const reportScale = () => {
       if (!onMapScaleUpdate) return;
-      const ftPerPx = measureMapFeetPerPixel(map);
+      const ftPerPx = measureMapSiteFeetPerPixel(map, mapAnchor) ?? measureMapFeetPerPixel(map);
       if (ftPerPx) {
         onMapScaleUpdate({ ftPerPx, source: "mapbox" });
       }
@@ -302,6 +304,9 @@ export function usePreviewMapRuntime({
     map.on("zoomend", reportViewport);
     map.on("moveend", reportCenter);
     map.on("zoomend", reportCenter);
+    map.on("resize", reportScale);
+    map.on("resize", reportViewport);
+    map.on("resize", reportCenter);
     const requestMapOverlayUpdate = () => setMapRevision((value) => value + 1);
     map.on("move", requestMapOverlayUpdate);
     map.on("zoom", requestMapOverlayUpdate);
@@ -361,12 +366,15 @@ export function usePreviewMapRuntime({
       map.off("zoomend", reportViewport);
       map.off("moveend", reportCenter);
       map.off("zoomend", reportCenter);
+      map.off("resize", reportScale);
+      map.off("resize", reportViewport);
+      map.off("resize", reportCenter);
       map.off("move", requestMapOverlayUpdate);
       map.off("zoom", requestMapOverlayUpdate);
       map.off("pitch", requestMapOverlayUpdate);
       map.off("rotate", requestMapOverlayUpdate);
     };
-  }, [currentSiteSize, latLngToSite, lotHeight, lotWidth, mapAvailable, mapLoaded, mapPanMode, mapRef, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, scheduleCursorSitePoint, selectedBuildingId, onSelectBuilding, setMapRevision, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
+  }, [currentSiteSize, latLngToSite, lotHeight, lotWidth, mapAnchor, mapAvailable, mapLoaded, mapPanMode, mapRef, onMapScaleUpdate, onPlaceBuilding, onPlaceObject, placementMode, scheduleCursorSitePoint, selectedBuildingId, onSelectBuilding, setMapRevision, showHover, onViewportCenter, onViewportFootprint, siteLocked]);
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded || !mapRef.current) return;
@@ -379,17 +387,61 @@ export function usePreviewMapRuntime({
 
   useEffect(() => {
     if (!mapAvailable || !mapLoaded) return;
-    const handle = window.setTimeout(() => {
-      const now = Date.now();
-      if (now - lastMapResizeRef.current < 140) return;
-      lastMapResizeRef.current = now;
-      mapRef.current?.resize();
-      if (previewFullscreenOpen) {
-        fullscreenMapRef.current?.resize();
-      }
-    }, 160);
-    return () => window.clearTimeout(handle);
-  }, [fullscreenMapRef, lastMapResizeRef, mapAvailable, mapLoaded, mapRef, previewFullscreenOpen]);
+    const container = mapContainerRef.current;
+    if (!container) return;
+    let frame: number | null = null;
+    let settledFrame: number | null = null;
+    const resizeMaps = () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      if (settledFrame !== null) window.cancelAnimationFrame(settledFrame);
+      frame = window.requestAnimationFrame(() => {
+        frame = null;
+        lastMapResizeRef.current = Date.now();
+        mapRef.current?.resize();
+        if (previewFullscreenOpen) fullscreenMapRef.current?.resize();
+        setMapRevision((value) => value + 1);
+        settledFrame = window.requestAnimationFrame(() => {
+          settledFrame = null;
+          const map = mapRef.current;
+          if (!map) return;
+          const ftPerPx = measureMapSiteFeetPerPixel(map, mapAnchor) ?? measureMapFeetPerPixel(map);
+          if (ftPerPx) onMapScaleUpdate?.({ ftPerPx, source: "mapbox" });
+          setMapRevision((value) => value + 1);
+        });
+      });
+    };
+    resizeMaps();
+    if (typeof ResizeObserver === "undefined") {
+      const handle = window.setTimeout(resizeMaps, 160);
+      return () => {
+        window.clearTimeout(handle);
+        if (frame !== null) window.cancelAnimationFrame(frame);
+        if (settledFrame !== null) window.cancelAnimationFrame(settledFrame);
+      };
+    }
+    const observer = new ResizeObserver(resizeMaps);
+    observer.observe(container);
+    if (previewFullscreenOpen && fullscreenMapContainerRef.current) {
+      observer.observe(fullscreenMapContainerRef.current);
+    }
+    return () => {
+      observer.disconnect();
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      if (settledFrame !== null) window.cancelAnimationFrame(settledFrame);
+    };
+  }, [
+    fullscreenMapContainerRef,
+    fullscreenMapRef,
+    lastMapResizeRef,
+    mapAvailable,
+    mapContainerRef,
+    mapLoaded,
+    mapAnchor,
+    mapRef,
+    onMapScaleUpdate,
+    previewFullscreenOpen,
+    setMapRevision,
+  ]);
 
   useEffect(() => {
     if (!showMap || !previewFullscreenOpen) return;

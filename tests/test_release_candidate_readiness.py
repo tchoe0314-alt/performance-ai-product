@@ -7,7 +7,7 @@ from backend.application.release_candidate_readiness import (
     TECHNICAL_EVIDENCE_KEYS,
     build_rc1_readiness_report,
 )
-from backend.scripts.run_rc1_verification import _firefox_ci_evidence
+from backend.scripts.run_rc1_verification import _firefox_ci_evidence, _section_commands
 
 
 def _technical_manifest(success: bool = True):
@@ -46,6 +46,14 @@ def _controlled_release_env():
 
 
 class ReleaseCandidateReadinessTests(unittest.TestCase):
+    def test_security_evidence_includes_static_python_analysis(self) -> None:
+        commands = _section_commands(skip_install=True, hosted_base_url="")["security_dependency"]
+
+        command_tokens = [tuple(command) for command, _cwd in commands]
+        self.assertTrue(
+            any(tokens[1:] == ("-m", "bandit", "-r", "backend", "scripts", "-ll") for tokens in command_tokens)
+        )
+
     def test_missing_evidence_blocks_technical_rc(self) -> None:
         report = build_rc1_readiness_report(evidence_manifest={}, env={})
 

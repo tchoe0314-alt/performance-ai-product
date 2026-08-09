@@ -23,8 +23,6 @@ type PreviewSelectionAffordancesProps = {
   hoveredVertex: SelectionIndex;
   selectedVertex: SelectionIndex;
   hoveredSegment: SelectionIndex;
-  lastPolylineEditId?: string | null;
-  lastRectEditId?: string | null;
   polylineInsertHintDismissed: boolean;
   segmentRef?: Ref<SVGSVGElement>;
   onVertexHover: (vertex: Exclude<SelectionIndex, null> | null) => void;
@@ -32,9 +30,7 @@ type PreviewSelectionAffordancesProps = {
   onVertexMouseDown: (event: ReactMouseEvent<HTMLButtonElement>, item: BuildingPlacement, index: number) => void;
   onSegmentMouseDown: (event: ReactMouseEvent<SVGLineElement>) => void;
   onSegmentClick: (event: ReactMouseEvent<SVGLineElement>, item: BuildingPlacement, index: number) => void;
-  onPolylineUndo: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onDeleteVertex: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-  onRectUndo: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onRotateMouseDown: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onRotateClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onResizeMouseDown: (event: ReactMouseEvent<HTMLButtonElement>) => void;
@@ -58,8 +54,6 @@ export function PreviewSelectionAffordances({
   hoveredVertex,
   selectedVertex,
   hoveredSegment,
-  lastPolylineEditId,
-  lastRectEditId,
   polylineInsertHintDismissed,
   segmentRef,
   onVertexHover,
@@ -67,9 +61,7 @@ export function PreviewSelectionAffordances({
   onVertexMouseDown,
   onSegmentMouseDown,
   onSegmentClick,
-  onPolylineUndo,
   onDeleteVertex,
-  onRectUndo,
   onRotateMouseDown,
   onRotateClick,
   onResizeMouseDown,
@@ -156,18 +148,9 @@ export function PreviewSelectionAffordances({
         </svg>
       ) : null}
       {isEditableVertexGeometry ? (
-        <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
+        <div className="pointer-events-none absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-amber-700 shadow">
           Vertex edit
         </div>
-      ) : null}
-      {isEditableVertexGeometry && lastPolylineEditId === item.id ? (
-        <button
-          type="button"
-          className="absolute -bottom-10 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow"
-          onClick={onPolylineUndo}
-        >
-          Undo
-        </button>
       ) : null}
       {isEditableVertexGeometry && selectedVertex?.id === item.id ? (
         <button
@@ -178,17 +161,8 @@ export function PreviewSelectionAffordances({
           Delete vertex
         </button>
       ) : null}
-      {!isPolyline && lastRectEditId === item.id ? (
-        <button
-          type="button"
-          className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow"
-          onClick={onRectUndo}
-        >
-          Undo
-        </button>
-      ) : null}
       {isEditableVertexGeometry && !polylineInsertHintDismissed && isSegmentEditableType(item, isPolygon) ? (
-        <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
+        <div className="pointer-events-none absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
           Click a segment to add a vertex
         </div>
       ) : null}
@@ -230,12 +204,12 @@ export function PreviewSelectionAffordances({
         </button>
       ) : null}
       {showObjectLabel && caps.movable && !isPolyline ? (
-        <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
+        <div className="pointer-events-none absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
           Snap 5ft
         </div>
       ) : null}
       {showObjectLabel && typeof item.x === "number" && typeof item.y === "number" ? (
-        <div className="absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
+        <div className="pointer-events-none absolute -bottom-12 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold text-slate-600 shadow">
           X {item.x.toFixed(1)} ft • Y {item.y.toFixed(1)} ft
         </div>
       ) : null}

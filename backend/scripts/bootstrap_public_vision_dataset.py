@@ -329,7 +329,8 @@ def _select_usgs_records(records: Iterable[Dict[str, Any]]) -> List[Dict[str, An
 def _download_image(url: str, destination: Path) -> None:
     _require_allowed_https(url)
     request = Request(url, headers={"User-Agent": "CivoraVisionBootstrap/1.0 (support@civora.ai)"})
-    with urlopen(request, timeout=90) as response:
+    # URL is restricted to the approved HTTPS host allowlist above.
+    with urlopen(request, timeout=90) as response:  # nosec B310
         content_type = str(response.headers.get("content-type") or "").lower()
         if not content_type.startswith("image/"):
             raise SystemExit(f"Expected an image from {urlsplit(url).hostname}; received {content_type or 'unknown'}.")
@@ -343,7 +344,8 @@ def _download_file(url: str, destination: Path) -> None:
     normalized = normalize_microsoft_partition_url(url)
     _require_allowed_https(normalized)
     request = Request(normalized, headers={"User-Agent": "CivoraVisionBootstrap/1.0 (support@civora.ai)"})
-    with urlopen(request, timeout=180) as response, tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as handle:
+    # The normalized URL is restricted to the approved HTTPS host allowlist above.
+    with urlopen(request, timeout=180) as response, tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as handle:  # nosec B310
         shutil.copyfileobj(response, handle)
         temp_path = Path(handle.name)
     temp_path.replace(destination)
@@ -352,14 +354,16 @@ def _download_file(url: str, destination: Path) -> None:
 def _download_text(url: str) -> str:
     _require_allowed_https(url)
     request = Request(url, headers={"User-Agent": "CivoraVisionBootstrap/1.0 (support@civora.ai)"})
-    with urlopen(request, timeout=90) as response:
+    # URL is restricted to the approved HTTPS host allowlist above.
+    with urlopen(request, timeout=90) as response:  # nosec B310
         return response.read().decode("utf-8-sig")
 
 
 def _download_json(url: str) -> Dict[str, Any]:
     _require_allowed_https(url)
     request = Request(url, headers={"User-Agent": "CivoraVisionBootstrap/1.0 (support@civora.ai)"})
-    with urlopen(request, timeout=90) as response:
+    # URL is restricted to the approved HTTPS host allowlist above.
+    with urlopen(request, timeout=90) as response:  # nosec B310
         value = json.loads(response.read().decode("utf-8"))
     if not isinstance(value, dict):
         raise SystemExit("Expected a JSON object from the approved imagery catalog.")

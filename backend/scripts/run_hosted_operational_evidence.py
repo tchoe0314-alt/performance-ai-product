@@ -36,6 +36,13 @@ def _safe_base_url(value: str) -> str:
 
 
 def _json_request(url: str, *, method: str = "GET", payload: Dict[str, Any] | None = None, token: str = "", timeout: float = 30.0) -> Dict[str, Any]:
+    parsed_url = urlparse(url)
+    is_local = parsed_url.hostname in {"localhost", "127.0.0.1"}
+    allowed_schemes = {"http", "https"} if is_local else {"https"}
+    if parsed_url.scheme not in allowed_schemes or not parsed_url.netloc or parsed_url.username or parsed_url.password:
+        raise ValueError("Hosted request URL must use an approved HTTP(S) origin without embedded credentials.")
+    if not parsed_url.path.startswith("/api/"):
+        raise ValueError("Hosted operational evidence may only request Civora API routes.")
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     headers = {"Accept": "application/json", "User-Agent": "Civora-RC1-Operational-Evidence/1"}
     if body is not None:
@@ -44,7 +51,8 @@ def _json_request(url: str, *, method: str = "GET", payload: Dict[str, Any] | No
         headers["Authorization"] = f"Bearer {token}"
     request = Request(url, data=body, method=method, headers=headers)
     try:
-        with urlopen(request, timeout=timeout) as response:
+        # Scheme, origin form, credentials, and API path are validated above.
+        with urlopen(request, timeout=timeout) as response:  # nosec B310
             decoded = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
         raise RuntimeError(f"Hosted request failed with HTTP {exc.code} at {urlparse(url).path}.") from exc

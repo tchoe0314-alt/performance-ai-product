@@ -166,9 +166,9 @@ else
       if [[ -n "$PORT" ]]; then
         printf '\n[run] selected Playwright server on http://127.0.0.1:%s\n' "$PORT"
         (
-          cd "$WEB_DIR" &&
-            NEXT_DIST_DIR="$RELEASE_DIST_DIR" \
-              npx next start --hostname 127.0.0.1 --port "$PORT"
+          cd "$WEB_DIR" || exit 1
+          exec env NEXT_DIST_DIR="$RELEASE_DIST_DIR" \
+            "$WEB_DIR/node_modules/.bin/next" start --hostname 127.0.0.1 --port "$PORT"
         ) &
         SERVER_PID=$!
 
