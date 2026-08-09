@@ -84,6 +84,13 @@ const report = {
   version: "hosted_gauntlet_report_v1",
   generated_at: new Date().toISOString(),
   target_url: appUrl,
+  success: publicStatus === 0 && !authSkipped && authStatus === 0 && workflowStatus === 0 && loadStatus === 0,
+  status:
+    publicStatus !== 0 || authStatus !== 0 || workflowStatus !== 0 || loadStatus !== 0
+      ? "failed"
+      : authSkipped
+        ? "blocked"
+        : "passed",
   public_smoke: {
     status: publicStatus === 0 ? "passed" : "failed",
     command: "playwright test --config=playwright.config.ts tests/live/hosted-public-workspace-smoke.spec.ts --project=chromium --workers=1",
@@ -124,6 +131,10 @@ console.log(
 console.log(`- authenticated repeat target: ${authenticatedRepeatCount}`);
 console.log(`- report: ${reportPath}`);
 
-if (publicStatus !== 0 || authStatus !== 0 || workflowStatus !== 0 || loadStatus !== 0) {
+if (authSkipped) {
+  console.error("[hosted-gauntlet] blocked: CIVORA_EMAIL and CIVORA_PASSWORD are required for full hosted release evidence.");
+}
+
+if (publicStatus !== 0 || authSkipped || authStatus !== 0 || workflowStatus !== 0 || loadStatus !== 0) {
   process.exit(1);
 }

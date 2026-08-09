@@ -53,7 +53,7 @@ Run the release decision after an evidence manifest has been created:
 
 ```bash
 PYTHONPATH=. python3 backend/scripts/run_rc1_readiness.py \
-  --evidence reports/release/rc1-evidence-manifest.json \
+  --evidence-manifest reports/release/rc1-evidence-manifest.json \
   --output reports/release/rc1-readiness.json
 ```
 
