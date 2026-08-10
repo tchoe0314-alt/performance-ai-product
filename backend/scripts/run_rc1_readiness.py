@@ -29,6 +29,7 @@ def _revision() -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Aggregate Civora RC1 technical, operational, human, legal, and billing gates.")
     parser.add_argument("--evidence-manifest", default="reports/release/rc1-evidence-manifest.json")
+    parser.add_argument("--hosted-operational-evidence", default="reports/release/hosted-operational-evidence.json")
     parser.add_argument("--output", default="reports/release/rc1-readiness-report.json")
     parser.add_argument("--fail-on-technical-blocked", action="store_true")
     parser.add_argument("--fail-on-release-blocked", action="store_true")
@@ -36,6 +37,7 @@ def main() -> None:
 
     report = run_rc1_readiness(
         evidence_manifest_path=Path(args.evidence_manifest),
+        hosted_operational_evidence_path=Path(args.hosted_operational_evidence),
         output_path=Path(args.output),
         revision=_revision(),
     )

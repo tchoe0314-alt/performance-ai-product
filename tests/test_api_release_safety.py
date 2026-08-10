@@ -48,6 +48,26 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         self.assertNotIn("owner", payload["recovery"])
         self.assertNotIn("evidence_url", payload["recovery"])
 
+    def test_runtime_debug_payload_exposes_owner_presence_without_owner_identity(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_ESCALATION_CONTACT": "escalation@example.test",
+                "CIVORA_MONITORING_OWNER": "monitoring@example.test",
+                "CIVORA_ROLLBACK_OWNER": "rollback@example.test",
+            },
+            clear=False,
+        ):
+            payload = _runtime_debug_payload()
+
+        self.assertTrue(payload["operations"]["escalation_owner_configured"])
+        self.assertTrue(payload["operations"]["monitoring_owner_configured"])
+        self.assertTrue(payload["operations"]["rollback_owner_configured"])
+        serialized = str(payload["operations"])
+        self.assertNotIn("escalation@example.test", serialized)
+        self.assertNotIn("monitoring@example.test", serialized)
+        self.assertNotIn("rollback@example.test", serialized)
+
     def test_cron_endpoint_is_disabled_without_configured_secret(self) -> None:
         with patch.object(api_app_module, "CRON_SECRET", ""):
             with self.assertRaises(HTTPException) as ctx:

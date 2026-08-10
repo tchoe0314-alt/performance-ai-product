@@ -1053,6 +1053,7 @@ def _runtime_debug_payload() -> Dict[str, Any]:
         "port": os.getenv("PORT"),
         "job_queue": job_queue,
         "recovery": _recovery_metadata(),
+        "operations": _operations_metadata(),
     }
 
 
@@ -1122,6 +1123,15 @@ def _recovery_metadata() -> Dict[str, Any]:
         "retention_days": evidence["retention_days"],
         "missing_env_vars": evidence["missing_env_vars"],
         "truth_label": evidence["truth_label"],
+    }
+
+
+def _operations_metadata() -> Dict[str, Any]:
+    return {
+        "escalation_owner_configured": bool(_first_env_value("CIVORA_ESCALATION_CONTACT")),
+        "monitoring_owner_configured": bool(_first_env_value("CIVORA_MONITORING_OWNER")),
+        "rollback_owner_configured": bool(_first_env_value("CIVORA_ROLLBACK_OWNER")),
+        "truth_label": "Authenticated runtime evidence reports configuration presence only; it does not expose owner identities or self-approve operational responsibility.",
     }
 
 

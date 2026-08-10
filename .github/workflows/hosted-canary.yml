@@ -1,0 +1,80 @@
+name: Hosted canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      require_authenticated:
+        description: Require configured authenticated canary credentials
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 * * * *"
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: civora-hosted-canary
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  hosted-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Wait for deployment and run hosted canary
+        env:
+          CIVORA_CANARY_EMAIL: ${{ secrets.CIVORA_CANARY_EMAIL }}
+          CIVORA_CANARY_PASSWORD: ${{ secrets.CIVORA_CANARY_PASSWORD }}
+        run: |
+          args=(
+            --frontend-url https://civoraai.com
+            --api-base-url https://api.civoraai.com
+            --expected-revision "$GITHUB_SHA"
+            --expected-product-mode private_alpha
+            --attempts 12
+            --retry-delay-seconds 10
+            --required-consecutive-successes 2
+            --output reports/release/hosted-canary.json
+          )
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.require_authenticated }}" == "true" ]]; then
+            args+=(--require-authenticated)
+          fi
+          python backend/scripts/run_hosted_canary.py "${args[@]}"
+
+      - name: Write canary summary
+        if: always()
+        run: |
+          if [[ -f reports/release/hosted-canary.json ]]; then
+            python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          report = json.loads(Path("reports/release/hosted-canary.json").read_text())
+          print("## Civora hosted canary")
+          print(f"- Status: `{report.get('status', 'missing')}`")
+          print(f"- Hosted revision: `{report.get('hosted_revision', 'missing')}`")
+          print(f"- Public checks: `{report.get('public_checks_ready', False)}`")
+          print(f"- Authenticated checks: `{report.get('authenticated_checks_status', 'not captured')}`")
+          print(f"- Public blockers: `{len(report.get('public_blockers') or [])}`")
+          print(f"- Authenticated blockers: `{len(report.get('authenticated_blockers') or [])}`")
+          PY
+          fi
+
+      - name: Upload redacted canary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-canary-${{ github.run_id }}
+          path: reports/release/hosted-canary.json
+          if-no-files-found: error
+          retention-days: 30

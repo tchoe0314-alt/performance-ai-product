@@ -39,6 +39,11 @@ def _runtime() -> dict:
             "restore_drill_at": "2026-08-08T12:00:00Z",
             "retention_days": 30,
         },
+        "operations": {
+            "escalation_owner_configured": True,
+            "monitoring_owner_configured": True,
+            "rollback_owner_configured": True,
+        },
     }
 
 
@@ -90,6 +95,20 @@ class HostedOperationalEvidenceTests(unittest.TestCase):
 
         self.assertFalse(report["revision_matches"])
         self.assertIn("hosted_revision_mismatch", {item["code"] for item in report["runtime_blockers"]})
+
+    def test_missing_operational_owners_remain_blocked(self) -> None:
+        runtime = _runtime()
+        runtime["operations"]["monitoring_owner_configured"] = False
+
+        report = build_hosted_operational_evidence(
+            health=_health(),
+            runtime=runtime,
+            expected_revision="abcdef123456",
+            base_url="https://api.example.test",
+        )
+
+        self.assertFalse(report["operational_configuration_ready"])
+        self.assertIn("monitoring_owner_missing", {item["code"] for item in report["operational_blockers"]})
 
     def test_code_rollback_rehearsal_does_not_claim_provider_rollback(self) -> None:
         report = build_code_rollback_rehearsal_report(

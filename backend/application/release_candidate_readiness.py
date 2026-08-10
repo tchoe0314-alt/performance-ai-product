@@ -58,14 +58,32 @@ def _load_json(path: Optional[Path]) -> Dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _revision_matches(expected: str, actual: str) -> bool:
+    expected_clean = str(expected or "").strip().lower()
+    actual_clean = str(actual or "").strip().lower()
+    if len(expected_clean) < 7 or len(actual_clean) < 7:
+        return False
+    return expected_clean.startswith(actual_clean) or actual_clean.startswith(expected_clean)
+
+
 def build_rc1_readiness_report(
     *,
     evidence_manifest: Optional[Dict[str, Any]] = None,
+    hosted_operational_evidence: Optional[Dict[str, Any]] = None,
     env: Optional[Mapping[str, str]] = None,
     revision: str = "",
 ) -> Dict[str, Any]:
     source_env = dict(os.environ if env is None else env)
     manifest = deepcopy(evidence_manifest or {})
+    hosted_report = deepcopy(hosted_operational_evidence or {})
+    report_revision = revision or str(manifest.get("revision") or "")
+    hosted_expected_revision = str(hosted_report.get("expected_revision") or "")
+    hosted_evidence_accepted = (
+        bool(hosted_report.get("success"))
+        and bool(hosted_report.get("revision_matches"))
+        and _revision_matches(report_revision, hosted_expected_revision)
+    )
+    hosted_checks = dict(hosted_report.get("checks") or {}) if hosted_evidence_accepted else {}
     evidence = dict(manifest.get("evidence") or {})
     technical_blockers = []
     for key in TECHNICAL_EVIDENCE_KEYS:
@@ -89,12 +107,33 @@ def build_rc1_readiness_report(
 
     support_contact = _first(source_env, "CIVORA_SUPPORT_CONTACT_URL", "CIVORA_SUPPORT_EMAIL", "CIVORA_SUPPORT_CONTACT")
     bug_report = _first(source_env, "CIVORA_BUG_REPORT_URL", "CIVORA_BUG_REPORT_FORM_URL")
-    operational_checks = {
+    env_operational_checks = {
         "support_contact": bool(support_contact),
         "bug_report": bool(bug_report),
         "escalation_owner": bool(_first(source_env, "CIVORA_ESCALATION_CONTACT")),
         "monitoring_owner": bool(_first(source_env, "CIVORA_MONITORING_OWNER")),
         "rollback_owner": bool(_first(source_env, "CIVORA_ROLLBACK_OWNER")),
+    }
+    hosted_operational_checks = {
+        "support_contact": bool(hosted_checks.get("support_contact_configured")),
+        "bug_report": bool(hosted_checks.get("bug_report_configured")),
+        "escalation_owner": bool(hosted_checks.get("escalation_owner_configured")),
+        "monitoring_owner": bool(hosted_checks.get("monitoring_owner_configured")),
+        "rollback_owner": bool(hosted_checks.get("rollback_owner_configured")),
+    }
+    operational_checks = {
+        key: bool(env_operational_checks[key] or hosted_operational_checks[key])
+        for key in env_operational_checks
+    }
+    operational_evidence_sources = {
+        key: (
+            "environment"
+            if env_operational_checks[key]
+            else "hosted_exact_revision"
+            if hosted_operational_checks[key]
+            else "missing"
+        )
+        for key in operational_checks
     }
     operational_blockers = [
         _record(f"{key}_missing", f"Controlled release needs a configured {key.replace('_', ' ')}.")
@@ -102,7 +141,14 @@ def build_rc1_readiness_report(
         if not ready
     ]
     backup = hosted_backup_evidence(source_env)
-    if backup["status"] != "ready":
+    hosted_backup_ready = bool(
+        hosted_evidence_accepted
+        and hosted_checks.get("provider_backups_enabled")
+        and hosted_checks.get("backup_owner_configured")
+        and hosted_checks.get("backup_evidence_url_configured")
+        and hosted_checks.get("restore_drill_at")
+    )
+    if backup["status"] != "ready" and not hosted_backup_ready:
         operational_blockers.append(
             _record(
                 "hosted_backup_restore_not_proven",
@@ -155,7 +201,7 @@ def build_rc1_readiness_report(
     return {
         "version": RC1_READINESS_VERSION,
         "generated_at": time.time(),
-        "revision": revision or str(manifest.get("revision") or ""),
+        "revision": report_revision,
         "technical_rc_ready": technical_ready,
         "controlled_invite_only_release_allowed": controlled_release_allowed,
         "controlled_paid_release_allowed": paid_release_allowed,
@@ -164,8 +210,17 @@ def build_rc1_readiness_report(
         "evidence": evidence,
         "technical_blockers": technical_blockers,
         "operational_checks": operational_checks,
+        "operational_evidence_sources": operational_evidence_sources,
         "operational_blockers": operational_blockers,
         "hosted_backup_evidence": backup,
+        "hosted_operational_evidence": {
+            "provided": bool(hosted_report),
+            "accepted": hosted_evidence_accepted,
+            "expected_revision": hosted_expected_revision,
+            "hosted_revision": str(hosted_report.get("hosted_revision") or ""),
+            "status": str(hosted_report.get("status") or "missing"),
+            "backup_accepted": hosted_backup_ready,
+        },
         "human_checks": human_checks,
         "human_blockers": human_blockers,
         "billing_checks": billing_checks,
@@ -187,12 +242,14 @@ def build_rc1_readiness_report(
 def run_rc1_readiness(
     *,
     evidence_manifest_path: Optional[Path],
+    hosted_operational_evidence_path: Optional[Path] = None,
     output_path: Path,
     env: Optional[Mapping[str, str]] = None,
     revision: str = "",
 ) -> Dict[str, Any]:
     report = build_rc1_readiness_report(
         evidence_manifest=_load_json(evidence_manifest_path),
+        hosted_operational_evidence=_load_json(hosted_operational_evidence_path),
         env=env,
         revision=revision,
     )

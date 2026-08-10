@@ -25,6 +25,8 @@ Required configuration:
 - `CIVORA_MONITORING_OWNER`
 - `CIVORA_ROLLBACK_OWNER`
 
+The hourly hosted canary and its redacted evidence are documented in [hosted-canary.md](hosted-canary.md). Repeated transient failures still require investigation even if a later retry succeeds.
+
 ## Severity
 
 | Severity | Examples | Immediate action |

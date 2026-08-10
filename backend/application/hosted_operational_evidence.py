@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
 
 
-HOSTED_OPERATIONAL_EVIDENCE_VERSION = "civora_hosted_operational_evidence_v1"
+HOSTED_OPERATIONAL_EVIDENCE_VERSION = "civora_hosted_operational_evidence_v2"
 
 
 def _record(code: str, message: str, *, area: str) -> Dict[str, str]:
@@ -46,6 +46,7 @@ def build_hosted_operational_evidence(
     deployment = _mapping(health_payload.get("deployment"))
     support = _mapping(health_payload.get("support"))
     recovery = _mapping(runtime_payload.get("recovery") or health_payload.get("recovery"))
+    operations = _mapping(runtime_payload.get("operations"))
     monitoring = _mapping(runtime_payload.get("monitoring"))
     process = _mapping(monitoring.get("process"))
     runtime_queue = _mapping(runtime_payload.get("job_queue"))
@@ -115,6 +116,12 @@ def build_hosted_operational_evidence(
         operational_blockers.append(_record("backup_owner_missing", "A hosted database backup owner is not configured.", area="recovery"))
     if not bool(recovery.get("evidence_url_configured")):
         operational_blockers.append(_record("backup_evidence_url_missing", "Hosted backup evidence is not attached.", area="recovery"))
+    if not bool(operations.get("escalation_owner_configured")):
+        operational_blockers.append(_record("escalation_owner_missing", "A hosted escalation owner is not configured.", area="ownership"))
+    if not bool(operations.get("monitoring_owner_configured")):
+        operational_blockers.append(_record("monitoring_owner_missing", "A hosted monitoring owner is not configured.", area="ownership"))
+    if not bool(operations.get("rollback_owner_configured")):
+        operational_blockers.append(_record("rollback_owner_missing", "A hosted rollback owner is not configured.", area="ownership"))
 
     runtime_ready = not runtime_blockers
     operations_ready = not operational_blockers
@@ -148,6 +155,9 @@ def build_hosted_operational_evidence(
             "backup_evidence_url_configured": bool(recovery.get("evidence_url_configured")),
             "restore_drill_at": str(recovery.get("restore_drill_at") or ""),
             "backup_retention_days": recovery.get("retention_days"),
+            "escalation_owner_configured": bool(operations.get("escalation_owner_configured")),
+            "monitoring_owner_configured": bool(operations.get("monitoring_owner_configured")),
+            "rollback_owner_configured": bool(operations.get("rollback_owner_configured")),
         },
         "construction_ready": False,
         "truth_label": "This report proves selected hosted runtime and configuration facts without storing credentials. It cannot self-approve provider recovery, human ownership, legal terms, billing, professional review, or construction use.",

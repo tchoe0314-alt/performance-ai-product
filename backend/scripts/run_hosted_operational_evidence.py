@@ -16,7 +16,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.application.hosted_operational_evidence import build_hosted_operational_evidence
+from backend.application.hosted_operational_evidence import (
+    HOSTED_OPERATIONAL_EVIDENCE_VERSION,
+    build_hosted_operational_evidence,
+)
 
 
 def _revision() -> str:
@@ -103,7 +106,7 @@ def main() -> None:
         )
     except Exception as exc:
         report = {
-            "version": "civora_hosted_operational_evidence_v1",
+            "version": HOSTED_OPERATIONAL_EVIDENCE_VERSION,
             "success": False,
             "status": "blocked",
             "hosted_runtime_ready": False,

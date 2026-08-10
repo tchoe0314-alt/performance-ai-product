@@ -45,6 +45,27 @@ def _controlled_release_env():
     }
 
 
+def _hosted_operational_report(revision: str = "rc1-test"):
+    return {
+        "success": True,
+        "status": "ready",
+        "expected_revision": revision,
+        "hosted_revision": revision,
+        "revision_matches": True,
+        "checks": {
+            "support_contact_configured": True,
+            "bug_report_configured": True,
+            "escalation_owner_configured": True,
+            "monitoring_owner_configured": True,
+            "rollback_owner_configured": True,
+            "provider_backups_enabled": True,
+            "backup_owner_configured": True,
+            "backup_evidence_url_configured": True,
+            "restore_drill_at": "2026-08-08T12:00:00Z",
+        },
+    }
+
+
 class ReleaseCandidateReadinessTests(unittest.TestCase):
     def test_security_evidence_includes_static_python_analysis(self) -> None:
         commands = _section_commands(skip_install=True, hosted_base_url="")["security_dependency"]
@@ -82,6 +103,30 @@ class ReleaseCandidateReadinessTests(unittest.TestCase):
         self.assertFalse(report["public_beta_allowed"])
         self.assertFalse(report["operational_blockers"])
         self.assertFalse(report["human_blockers"])
+
+    def test_exact_revision_hosted_evidence_clears_machine_observable_operations(self) -> None:
+        report = build_rc1_readiness_report(
+            evidence_manifest=_technical_manifest(),
+            hosted_operational_evidence=_hosted_operational_report(),
+            env={},
+        )
+
+        self.assertTrue(report["technical_rc_ready"])
+        self.assertFalse(report["operational_blockers"])
+        self.assertTrue(report["hosted_operational_evidence"]["accepted"])
+        self.assertEqual(report["operational_evidence_sources"]["monitoring_owner"], "hosted_exact_revision")
+        self.assertFalse(report["controlled_invite_only_release_allowed"])
+        self.assertTrue(report["human_blockers"])
+
+    def test_stale_hosted_evidence_does_not_clear_operations(self) -> None:
+        report = build_rc1_readiness_report(
+            evidence_manifest=_technical_manifest(),
+            hosted_operational_evidence=_hosted_operational_report("older-revision"),
+            env={},
+        )
+
+        self.assertFalse(report["hosted_operational_evidence"]["accepted"])
+        self.assertTrue(report["operational_blockers"])
 
     def test_any_failed_technical_evidence_blocks_release(self) -> None:
         manifest = _technical_manifest()
