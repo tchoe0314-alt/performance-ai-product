@@ -20,6 +20,17 @@ EXTERNAL_JOB_TYPES = (
 )
 
 
+def _positive_poll_seconds(source: Mapping[str, str], default: float = 1.0) -> str:
+    raw_value = str(source.get("PERFORMANCE_AI_RESUME_POLL_SECONDS") or "").strip()
+    try:
+        value = float(raw_value)
+    except Exception:
+        value = default
+    if value <= 0:
+        value = default
+    return f"{value:g}"
+
+
 def build_process_environments(
     source: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
@@ -33,9 +44,7 @@ def build_process_environments(
             "CIVORA_WORKER_HEALTH_ENABLED": "false",
             "PERFORMANCE_AI_JOB_WORKERS": str(base.get("CIVORA_EXTERNAL_JOB_WORKERS") or "1"),
             "PERFORMANCE_AI_RESUME_PENDING_JOBS": "true",
-            "PERFORMANCE_AI_RESUME_POLL_SECONDS": str(
-                base.get("PERFORMANCE_AI_RESUME_POLL_SECONDS") or "1"
-            ),
+            "PERFORMANCE_AI_RESUME_POLL_SECONDS": _positive_poll_seconds(base),
             "CIVORA_DATABASE_POOL_MIN_SIZE": "1",
             "CIVORA_DATABASE_POOL_MAX_SIZE": str(
                 base.get("CIVORA_WORKER_DATABASE_POOL_MAX_SIZE") or "2"

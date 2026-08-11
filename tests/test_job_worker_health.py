@@ -5,7 +5,7 @@ import threading
 import urllib.error
 import urllib.request
 
-from backend.scripts.run_job_worker import build_health_server
+from backend.scripts.run_job_worker import build_health_server, normalize_worker_poll_seconds
 
 
 class _FakeJobQueue:
@@ -21,6 +21,13 @@ class _FakeJobQueue:
                 "stale_count": 0,
             },
         }
+
+
+def test_worker_polling_cannot_be_disabled_by_zero_or_invalid_interval() -> None:
+    assert normalize_worker_poll_seconds("0") == "1"
+    assert normalize_worker_poll_seconds("-5") == "1"
+    assert normalize_worker_poll_seconds("invalid") == "1"
+    assert normalize_worker_poll_seconds("0.25") == "0.25"
 
 
 def test_worker_health_server_reports_safe_aggregate_status() -> None:

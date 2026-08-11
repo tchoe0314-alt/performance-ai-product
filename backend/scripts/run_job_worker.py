@@ -9,10 +9,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 
+def normalize_worker_poll_seconds(value: object, default: float = 1.0) -> str:
+    try:
+        poll_seconds = float(str(value or "").strip())
+    except Exception:
+        poll_seconds = default
+    if poll_seconds <= 0:
+        poll_seconds = default
+    return f"{poll_seconds:g}"
+
+
 os.environ.setdefault("CIVORA_PROCESS_ROLE", "worker")
 os.environ.setdefault("PERFORMANCE_AI_JOB_WORKERS", "1")
 os.environ.setdefault("PERFORMANCE_AI_RESUME_PENDING_JOBS", "true")
-os.environ.setdefault("PERFORMANCE_AI_RESUME_POLL_SECONDS", "1")
+os.environ["PERFORMANCE_AI_RESUME_POLL_SECONDS"] = normalize_worker_poll_seconds(
+    os.environ.get("PERFORMANCE_AI_RESUME_POLL_SECONDS")
+)
 
 from backend.api.app import JOB_QUEUE, register_job_handlers  # noqa: E402
 
