@@ -70,9 +70,11 @@ If the API is intentionally deployed as `CIVORA_PROCESS_ROLE=web`, set
 successfully completed a queued hosted job on the same Postgres database, and
 set `CIVORA_EXTERNAL_WORKER_HEALTH_URL` to its HTTPS `/api/health` endpoint.
 Web startup verifies that the endpoint reports a live worker with the
-`source_context` handler. When that proof is missing or unhealthy, startup
-automatically uses the process-isolated combined supervisor so queued work
-cannot remain stranded.
+`source_context` handler. It also starts an isolated recovery worker beside
+Gunicorn by default (`CIVORA_COLOCATED_WORKER_ENABLED=true`). Postgres job claims
+are atomic, so the workers can safely share the queue. This prevents a stale or
+misconfigured external worker from stranding hosted jobs. Disable the recovery
+worker only after the external health and shared-database path are proven.
 
 The services must use the same production database. Each sibling process uses a bounded Postgres connection pool: six web connections and two worker connections by default, with eight bounded web request threads. Override them with `CIVORA_WEB_DATABASE_POOL_MAX_SIZE`, `CIVORA_WORKER_DATABASE_POOL_MAX_SIZE`, and `CIVORA_ANYIO_THREAD_LIMIT` only after checking the hosted database connection limit. When `combined` mode detects Postgres, the container automatically supervises a request-only API process plus an isolated worker for every queued job type. The worker runs at niceness 10 by default so interactive API traffic keeps CPU priority on a shared Railway container; `CIVORA_WORKER_NICE_LEVEL` can override the value from 0 through 19. Both sibling processes share the same mounted files, so PDF analysis and artifact exports stay available without running numerical work in the request process. Set `CIVORA_COMBINED_PROCESS_ISOLATION=false` only for diagnosis. A separately deployed `worker` service remains supported. It exposes a minimal `/api/health` endpoint on `PORT` so Railway can verify it without exposing job payloads or user data.
 

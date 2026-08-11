@@ -41,6 +41,7 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("CIVORA_DEDICATED_WORKER_ENABLED", "queue", (), optional=True, description="Confirms that a separately deployed worker consumes queued jobs."),
     EnvVarSpec("CIVORA_EXTERNAL_WORKER_CONFIRMED", "queue", (), optional=True, description="Explicitly confirms that a separately deployed worker has been proven live; otherwise hosted web startup uses the isolated combined fallback."),
     EnvVarSpec("CIVORA_EXTERNAL_WORKER_HEALTH_URL", "queue", (), optional=True, description="Health URL for a separately deployed worker. Web-only startup verifies this endpoint before trusting the worker."),
+    EnvVarSpec("CIVORA_COLOCATED_WORKER_ENABLED", "queue", (), optional=True, description="Keeps a recovery worker beside hosted web by default so queued jobs cannot be stranded by external worker drift."),
     EnvVarSpec("CIVORA_ENABLED_JOB_TYPES", "queue", (), optional=True, description="Comma-separated allowlist of job handlers for this service."),
     EnvVarSpec("CIVORA_DISABLED_JOB_TYPES", "queue", (), optional=True, description="Comma-separated denylist of job handlers for this service."),
     EnvVarSpec("PERFORMANCE_AI_JOB_WORKERS", "queue", (), optional=True, description="In-process job worker count. Use 0 for a web-only service."),

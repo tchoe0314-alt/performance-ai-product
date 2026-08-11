@@ -71,7 +71,7 @@ def test_postgres_web_service_uses_isolated_worker_fallback_until_external_worke
     assert output == "python\n-m\nbackend.scripts.run_combined_backend\n"
 
 
-def test_postgres_web_service_stays_web_only_after_external_worker_confirmation(tmp_path: Path) -> None:
+def test_postgres_web_service_keeps_recovery_worker_after_external_worker_confirmation(tmp_path: Path) -> None:
     output = _run_startup(
         tmp_path,
         role="web",
@@ -79,6 +79,21 @@ def test_postgres_web_service_stays_web_only_after_external_worker_confirmation(
             "DATABASE_URL": "postgresql://example.invalid/civora",
             "CIVORA_EXTERNAL_WORKER_CONFIRMED": "true",
             "CIVORA_EXTERNAL_WORKER_HEALTH_URL": "https://worker.example.invalid/api/health",
+            "WEB_CONCURRENCY": "2",
+        },
+    )
+    assert output == "python\n-m\nbackend.scripts.run_combined_backend\n"
+
+
+def test_postgres_web_service_can_disable_recovery_worker_after_external_worker_confirmation(tmp_path: Path) -> None:
+    output = _run_startup(
+        tmp_path,
+        role="web",
+        extra_env={
+            "DATABASE_URL": "postgresql://example.invalid/civora",
+            "CIVORA_EXTERNAL_WORKER_CONFIRMED": "true",
+            "CIVORA_EXTERNAL_WORKER_HEALTH_URL": "https://worker.example.invalid/api/health",
+            "CIVORA_COLOCATED_WORKER_ENABLED": "false",
             "WEB_CONCURRENCY": "2",
         },
     )

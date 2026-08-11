@@ -13,6 +13,7 @@ if [ "$role" = "worker" ]; then
 fi
 
 if [ "$role" = "web" ]; then
+  colocated_worker_enabled="${CIVORA_COLOCATED_WORKER_ENABLED:-true}"
   external_worker_confirmed="${CIVORA_EXTERNAL_WORKER_CONFIRMED:-false}"
   external_worker_health_url="${CIVORA_EXTERNAL_WORKER_HEALTH_URL:-}"
   external_worker_is_live="false"
@@ -38,10 +39,14 @@ PY
       external_worker_is_live="true"
     fi
   fi
+  if [ -n "${DATABASE_URL:-}" ] && { [ "$colocated_worker_enabled" = "1" ] || [ "$colocated_worker_enabled" = "true" ]; }; then
+    # Keep one recovery worker beside the request process by default. Postgres
+    # job claims are atomic, so a healthy external worker can share the queue;
+    # if that service disappears or points at the wrong database, hosted work
+    # still progresses instead of remaining queued indefinitely.
+    exec python -m backend.scripts.run_combined_backend
+  fi
   if [ -n "${DATABASE_URL:-}" ] && [ "$external_worker_is_live" != "true" ]; then
-    # A web-only deployment must not silently strand queued work. Until an
-    # external worker is both configured and live, supervise an isolated
-    # low-priority worker beside the request process.
     exec python -m backend.scripts.run_combined_backend
   fi
   exec gunicorn backend.api.app:app \
