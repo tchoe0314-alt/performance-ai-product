@@ -78,11 +78,24 @@ def test_postgres_web_service_stays_web_only_after_external_worker_confirmation(
         extra_env={
             "DATABASE_URL": "postgresql://example.invalid/civora",
             "CIVORA_EXTERNAL_WORKER_CONFIRMED": "true",
+            "CIVORA_EXTERNAL_WORKER_HEALTH_URL": "https://worker.example.invalid/api/health",
             "WEB_CONCURRENCY": "2",
         },
     )
     assert output.startswith("gunicorn\n")
     assert "--workers\n2\n" in output
+
+
+def test_postgres_web_service_falls_back_when_confirmation_has_no_health_url(tmp_path: Path) -> None:
+    output = _run_startup(
+        tmp_path,
+        role="web",
+        extra_env={
+            "DATABASE_URL": "postgresql://example.invalid/civora",
+            "CIVORA_EXTERNAL_WORKER_CONFIRMED": "true",
+        },
+    )
+    assert output == "python\n-m\nbackend.scripts.run_combined_backend\n"
 
 
 def test_worker_service_runs_dedicated_job_worker(tmp_path: Path) -> None:

@@ -427,6 +427,7 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
                 "CIVORA_PROCESS_ROLE": "web",
                 "CIVORA_DEDICATED_WORKER_ENABLED": "true",
                 "CIVORA_EXTERNAL_WORKER_CONFIRMED": "true",
+                "CIVORA_EXTERNAL_WORKER_HEALTH_URL": "https://worker.example.com/api/health",
                 "PERFORMANCE_AI_JOB_WORKERS": "0",
                 "DATABASE_URL": "postgresql://user:password@example.com:5432/civora",
                 "CORS_ALLOW_ORIGINS": "https://civoraai.com",
@@ -439,7 +440,26 @@ class ProductionEnvValidatorV1Test(unittest.TestCase):
         self.assertNotIn("split_queue_requires_postgres", codes)
         self.assertNotIn("dedicated_worker_not_confirmed", codes)
         self.assertNotIn("external_worker_not_confirmed", codes)
+        self.assertNotIn("external_worker_health_url_missing", codes)
         self.assertNotIn("web_process_has_local_workers", codes)
+
+    def test_railway_web_role_rejects_stale_confirmation_without_worker_health_url(self) -> None:
+        report = validate_production_env_v1(
+            {
+                "CIVORA_PRODUCT_MODE": "private_alpha",
+                "CIVORA_DEPLOYMENT_TARGET": "railway",
+                "CIVORA_PROCESS_ROLE": "web",
+                "CIVORA_DEDICATED_WORKER_ENABLED": "true",
+                "CIVORA_EXTERNAL_WORKER_CONFIRMED": "true",
+                "PERFORMANCE_AI_JOB_WORKERS": "0",
+                "DATABASE_URL": "postgresql://user:password@example.com:5432/civora",
+                "CORS_ALLOW_ORIGINS": "https://civoraai.com",
+                "PERFORMANCE_AI_STORAGE_DIR": "/data",
+            },
+            deployment_target="railway",
+        )
+
+        self.assertIn("external_worker_health_url_missing", {item["code"] for item in report["blockers"]})
 
     def test_worker_role_requires_positive_worker_count(self) -> None:
         report = validate_production_env_v1(
