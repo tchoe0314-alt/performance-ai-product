@@ -313,7 +313,7 @@ export function PreviewRectObjects({
                 </g>
               ) : null}
               {isHighQuality && visualKind === "building" && !isFallbackBounds ? (
-                <g data-testid="professional-building-cues" opacity={selected ? 0.72 : 0.28}>
+                <g data-testid="professional-building-cues" opacity={selected ? 0.78 : 0.56}>
                   <g data-testid="plan-building-entry-cues">
                     <line
                       x1={rect.left + rect.width * 0.43}
@@ -353,13 +353,13 @@ export function PreviewRectObjects({
                 </g>
               ) : null}
               {isHighQuality && visualKind === "parking" && !isFallbackBounds && hasParkingGeometryEvidence(item) ? (
-                <g data-testid="plan-parking-stall-cues" opacity={cadReferenceMode ? 0.86 : 0.72}>
+                <g data-testid="plan-parking-stall-cues" opacity={cadReferenceMode ? 0.86 : 0.86}>
                   <line
                     x1={rect.left + rect.width * 0.08}
                     y1={rect.top + rect.height * 0.5}
                     x2={rect.left + rect.width * 0.92}
                     y2={rect.top + rect.height * 0.5}
-                    stroke={cadReferenceMode ? "rgba(248,250,252,0.72)" : "rgba(71,85,105,0.18)"}
+                    stroke={cadReferenceMode ? "rgba(248,250,252,0.72)" : "rgba(51,65,85,0.36)"}
                     strokeWidth={0.022}
                     strokeDasharray="0.42 0.34"
                   />
@@ -372,7 +372,7 @@ export function PreviewRectObjects({
                         y1={rect.top + rect.height * 0.16}
                         x2={x}
                         y2={rect.top + rect.height * 0.84}
-                        stroke={cadReferenceMode ? "rgba(248,250,252,0.68)" : "rgba(71,85,105,0.16)"}
+                        stroke={cadReferenceMode ? "rgba(248,250,252,0.68)" : "rgba(51,65,85,0.34)"}
                         strokeWidth={0.018}
                       />
                     );

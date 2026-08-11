@@ -30,17 +30,17 @@ type Preview3DCanvasProps = {
 };
 
 const layerPalette: Record<string, { top: string; side: string; line: string }> = {
-  BUILDING: { top: "#e8edf2", side: "#8e9dad", line: "#27364a" },
-  STRUCTURE: { top: "#dcc79f", side: "#b58d4f", line: "#735426" },
-  ROAD: { top: "#7f8a96", side: "#65717e", line: "#f8fafc" },
-  PARKING: { top: "#aab4bf", side: "#8794a2", line: "#f8fafc" },
-  LOT: { top: "#f8fafc", side: "#e2e8f0", line: "#94a3b8" },
-  SIDEWALK: { top: "#d6d3d1", side: "#a8a29e", line: "#78716c" },
-  DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
+  BUILDING: { top: "#cbd5df", side: "#748496", line: "#1f2937" },
+  STRUCTURE: { top: "#d8bd8d", side: "#a9793d", line: "#5f431f" },
+  ROAD: { top: "#4b5563", side: "#374151", line: "#f8fafc" },
+  PARKING: { top: "#66727f", side: "#4b5563", line: "#f8fafc" },
+  LOT: { top: "#d8e2d3", side: "#bdcbb7", line: "#61715d" },
+  SIDEWALK: { top: "#cfc7bb", side: "#a79e90", line: "#625a50" },
+  DRAINAGE: { top: "#3fa4ba", side: "#177d97", line: "#dff7fb" },
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
   CONSTRAINT: { top: "#f8b4a5", side: "#f97360", line: "#9f3412" },
-  TERRAIN: { top: "#cbdcbd", side: "#9fb78c", line: "#4f713f" },
-  LANDSCAPE: { top: "#93bb64", side: "#6f944f", line: "#365314" },
+  TERRAIN: { top: "#98aa88", side: "#738665", line: "#405b35" },
+  LANDSCAPE: { top: "#7ba654", side: "#5e843f", line: "#2f4b1f" },
 };
 
 const resolveLayerPalette = (item: Preview3DItem, layer: string) => {
@@ -55,11 +55,11 @@ const resolveLayerPalette = (item: Preview3DItem, layer: string) => {
 };
 
 const layerSurfaceLift = (layer: string) => {
-  if (layer === "SIDEWALK") return 0.28;
-  if (layer === "PARKING") return 0.22;
-  if (layer === "ROAD") return 0.16;
-  if (layer === "LANDSCAPE") return 0.12;
-  if (layer === "LOT") return 0.04;
+  if (layer === "SIDEWALK") return 0.4;
+  if (layer === "PARKING") return 0.32;
+  if (layer === "ROAD") return 0.24;
+  if (layer === "LANDSCAPE") return 0.18;
+  if (layer === "LOT") return 0.06;
   return 0;
 };
 
@@ -141,15 +141,15 @@ const surfaceExtrudeDepth = (heightFt: number, layer: string) => {
 };
 
 const flatPlanOpacity = (layer: string, state: string) => {
-  if (layer === "LOT") return 0.018;
-  if (layer === "PARKING") return state === "low" ? 0.9 : 0.98;
-  if (layer === "ROAD") return state === "low" ? 0.88 : 0.98;
-  if (layer === "SIDEWALK") return state === "low" ? 0.78 : 0.92;
-  if (layer === "LANDSCAPE") return state === "low" ? 0.42 : 0.58;
-  if (state === "low") return 0.5;
-  if (state === "imported") return 0.58;
-  if (state === "stale") return 0.5;
-  return 0.62;
+  if (layer === "LOT") return 0.12;
+  if (layer === "PARKING") return state === "low" ? 0.82 : 0.96;
+  if (layer === "ROAD") return state === "low" ? 0.84 : 0.98;
+  if (layer === "SIDEWALK") return state === "low" ? 0.76 : 0.92;
+  if (layer === "LANDSCAPE") return state === "low" ? 0.58 : 0.76;
+  if (state === "low") return 0.68;
+  if (state === "imported") return 0.74;
+  if (state === "stale") return 0.66;
+  return 0.82;
 };
 
 const isDenseConceptLot = (item: Preview3DItem) =>
@@ -558,17 +558,17 @@ export default function Preview3DCanvas({
     const height = Math.max(mount.clientHeight, 320);
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(previewQuality === "high" ? "#dde4e9" : "#e5eaed");
+    scene.background = new THREE.Color(previewQuality === "high" ? "#cbd4da" : "#d7dee2");
 
     const renderer = new THREE.WebGLRenderer({ antialias: previewQuality === "high", preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, previewQuality === "high" ? 2 : 1.35));
     renderer.setSize(width, height);
     renderer.shadowMap.enabled = previewQuality === "high";
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = previewQuality === "high" ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
     rendererRef.current = renderer;
     mount.appendChild(renderer.domElement);
 
-    const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 5000);
+    const camera = new THREE.PerspectiveCamera(34, width / height, 0.1, 5000);
     const maxSpan = Math.max(modelBounds.spanX, modelBounds.spanY);
     const maxObjectHeight = Math.max(
       12,
@@ -576,8 +576,8 @@ export default function Preview3DCanvas({
         .filter((item) => !item.terrainSample)
         .map((item) => displayHeightForLayer(item, normalizePreview3DItemLayer(item))),
     );
-    camera.position.set(maxSpan * 0.78, Math.max(maxSpan * 0.66, maxObjectHeight * 3.1), maxSpan * 1.03);
-    camera.zoom = previewQuality === "high" ? 1.1 : 1.06;
+    camera.position.set(maxSpan * 0.82, Math.max(maxSpan * 1.02, maxObjectHeight * 3.4), maxSpan * 1.04);
+    camera.zoom = previewQuality === "high" ? 0.96 : 0.94;
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
 
@@ -587,17 +587,17 @@ export default function Preview3DCanvas({
     controls.enableZoom = true;
     controls.minDistance = Math.max(maxSpan * 0.14, 25);
     controls.maxDistance = Math.max(maxSpan * 2.6, 300);
-    controls.target.set(0, Math.min(maxObjectHeight * 0.18, maxSpan * 0.08), 0);
+    controls.target.set(0, Math.min(maxObjectHeight * 0.12, maxSpan * 0.055), 0);
     controls.update();
     controlsRef.current = controls;
 
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = previewQuality === "high" ? 1 : 0.98;
+    renderer.toneMappingExposure = previewQuality === "high" ? 0.86 : 0.9;
 
-    const ambient = new THREE.HemisphereLight("#f8fbff", "#7f9182", previewQuality === "high" ? 0.98 : 1.08);
+    const ambient = new THREE.HemisphereLight("#edf4f8", "#526151", previewQuality === "high" ? 0.64 : 0.72);
     scene.add(ambient);
-    const sun = new THREE.DirectionalLight("#fff7ed", previewQuality === "high" ? 2.05 : 1.5);
+    const sun = new THREE.DirectionalLight("#fff4df", previewQuality === "high" ? 1.42 : 1.22);
     sun.position.set(maxSpan * 0.42, maxSpan * 0.95, maxSpan * 0.52);
     sun.castShadow = previewQuality === "high";
     sun.shadow.mapSize.width = previewQuality === "high" ? 2048 : 1024;
@@ -610,6 +610,9 @@ export default function Preview3DCanvas({
     sun.shadow.camera.far = maxSpan * 3;
     sun.shadow.bias = -0.0003;
     scene.add(sun);
+    const fill = new THREE.DirectionalLight("#dbeafe", previewQuality === "high" ? 0.32 : 0.24);
+    fill.position.set(-maxSpan * 0.58, maxSpan * 0.42, -maxSpan * 0.36);
+    scene.add(fill);
 
     const root = new THREE.Group();
     root.rotation.x = 0;
@@ -750,8 +753,13 @@ export default function Preview3DCanvas({
       terrainGeometry.computeVertexNormals();
     }
     const terrainMaterial = new THREE.MeshStandardMaterial({
-      color: terrainState.mode === "fallback" ? "#cad6cd" : "#bfd2b8",
-      roughness: 0.9,
+      color:
+        terrainState.mode === "fallback"
+          ? "#a8b2a7"
+          : terrainState.mode === "flat-source"
+            ? "#9faa94"
+            : "#8fa17f",
+      roughness: 0.96,
       metalness: 0,
       wireframe: previewQuality === "standard" && terrainState.mode === "terrain",
       transparent: false,
@@ -769,16 +777,16 @@ export default function Preview3DCanvas({
     ];
     const siteBoundary = new THREE.LineLoop(
       new THREE.BufferGeometry().setFromPoints(siteBoundaryPoints),
-      new THREE.LineBasicMaterial({ color: "#334155", transparent: true, opacity: 0.48 }),
+      new THREE.LineBasicMaterial({ color: "#263548", transparent: true, opacity: 0.74 }),
     );
     siteBoundary.name = "civil-3d-site-boundary";
     root.add(siteBoundary);
 
     if (previewQuality === "high" && terrainState.mode === "terrain") {
       const terrainLineMaterial = new THREE.LineBasicMaterial({
-        color: "#6f8f54",
+        color: "#496b3d",
         transparent: true,
-        opacity: 0.24,
+        opacity: 0.38,
       });
       const referenceCount = 7;
       for (let lineIndex = 1; lineIndex < referenceCount; lineIndex += 1) {
@@ -835,16 +843,17 @@ export default function Preview3DCanvas({
       const isFlatPlanLayer = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK" || layer === "LANDSCAPE";
       const preserveSolidMassing = layer === "BUILDING" || layer === "STRUCTURE";
       const visualLift = layerSurfaceLift(layer);
+      const planOpacity = flatPlanOpacity(layer, state);
       const cadMaterial = new THREE.MeshStandardMaterial({
         color: layer === "LOT" ? palette.top : state === "blocked" ? "#dc2626" : item.unsupported ? "#f59e0b" : palette.top,
         roughness: layer === "ROAD" || layer === "PARKING" ? 0.86 : layer === "DRAINAGE" ? 0.42 : 0.72,
-        transparent: isFlatPlanLayer || item.unsupported || layer === "CONSTRAINT" || (!preserveSolidMassing && (state === "low" || state === "imported" || state === "stale")),
-        depthWrite: !isFlatPlanLayer,
+        transparent: (isFlatPlanLayer && planOpacity < 0.995) || item.unsupported || layer === "CONSTRAINT" || (!preserveSolidMassing && (state === "low" || state === "imported" || state === "stale")),
+        depthWrite: layer !== "LOT",
         polygonOffset: isFlatPlanLayer,
         polygonOffsetFactor: isFlatPlanLayer ? -1 : 0,
         polygonOffsetUnits: isFlatPlanLayer ? -1 : 0,
         opacity: isFlatPlanLayer
-          ? flatPlanOpacity(layer, state)
+          ? planOpacity
           : item.unsupported
           ? 0.62
           : preserveSolidMassing
@@ -928,7 +937,7 @@ export default function Preview3DCanvas({
             [outerGeometry, shelfGeometry, waterGeometry].forEach((geometry) => geometry.rotateX(-Math.PI / 2));
             const outer = new THREE.Mesh(
               outerGeometry,
-              new THREE.MeshStandardMaterial({ color: "#759463", roughness: 0.92, transparent: true, opacity: 0.96, side: THREE.DoubleSide }),
+              new THREE.MeshStandardMaterial({ color: "#648653", roughness: 0.92, transparent: true, opacity: 0.98, side: THREE.DoubleSide }),
             );
             outer.position.y = baseY + 0.32;
             outer.userData = object.userData;
@@ -936,7 +945,7 @@ export default function Preview3DCanvas({
             object.add(outer);
             const shelf = new THREE.Mesh(
               shelfGeometry,
-              new THREE.MeshStandardMaterial({ color: "#9bc47d", roughness: 0.9, transparent: true, opacity: 0.98, side: THREE.DoubleSide }),
+              new THREE.MeshStandardMaterial({ color: "#86b367", roughness: 0.9, transparent: true, opacity: 0.98, side: THREE.DoubleSide }),
             );
             shelf.position.y = baseY + 0.46;
             shelf.userData = object.userData;
@@ -944,7 +953,7 @@ export default function Preview3DCanvas({
             const water = new THREE.Mesh(
               waterGeometry,
               new THREE.MeshStandardMaterial({
-                color: "#24a9cf",
+                color: "#1595b5",
                 roughness: 0.28,
                 metalness: 0.02,
                 transparent: true,
@@ -960,7 +969,7 @@ export default function Preview3DCanvas({
                 new THREE.BufferGeometry().setFromPoints(
                   ringPoints.map(([x, y]) => toScene(x, y, baseY + 0.36 + ringIndex * 0.14)),
                 ),
-                new THREE.LineBasicMaterial({ color: ringIndex === 2 ? "#0e7490" : "#4d7c5a", transparent: true, opacity: 0.58 }),
+                new THREE.LineBasicMaterial({ color: ringIndex === 2 ? "#075f78" : "#365f40", transparent: true, opacity: 0.78 }),
               );
               object.add(ring);
             });
@@ -1006,7 +1015,7 @@ export default function Preview3DCanvas({
             }
             if (layer === "BUILDING") {
               const roofMaterial = new THREE.MeshStandardMaterial({
-                color: roofProfile === "tower" ? "#111827" : roofProfile === "dome" ? "#6b7280" : "#d1d5db",
+                color: roofProfile === "tower" ? "#111827" : roofProfile === "dome" ? "#5f6772" : "#aeb9c5",
                 roughness: 0.78,
                 metalness: roofProfile === "dome" ? 0.03 : 0,
               });
@@ -1208,17 +1217,17 @@ export default function Preview3DCanvas({
           {
             points: outerPoints,
             y: baseY + 0.32,
-            material: new THREE.MeshStandardMaterial({ color: "#759463", roughness: 0.92, side: THREE.DoubleSide }),
+            material: new THREE.MeshStandardMaterial({ color: "#648653", roughness: 0.92, side: THREE.DoubleSide }),
           },
           {
             points: shelfPoints,
             y: baseY + 0.46,
-            material: new THREE.MeshStandardMaterial({ color: "#9bc47d", roughness: 0.9, side: THREE.DoubleSide }),
+            material: new THREE.MeshStandardMaterial({ color: "#86b367", roughness: 0.9, side: THREE.DoubleSide }),
           },
           {
             points: waterPoints,
             y: baseY + 0.6,
-            material: new THREE.MeshStandardMaterial({ color: "#24a9cf", roughness: 0.28, transparent: true, opacity: 0.9, side: THREE.DoubleSide }),
+            material: new THREE.MeshStandardMaterial({ color: "#1595b5", roughness: 0.28, transparent: true, opacity: 0.94, side: THREE.DoubleSide }),
           },
         ];
         layers.forEach((basinLayer, layerIndex) => {
@@ -1233,7 +1242,7 @@ export default function Preview3DCanvas({
             new THREE.BufferGeometry().setFromPoints(
               basinLayer.points.map(([x, y]) => toScene(x, y, basinLayer.y + 0.04)),
             ),
-            new THREE.LineBasicMaterial({ color: layerIndex === 2 ? "#0e7490" : "#4d7c5a", transparent: true, opacity: 0.62 }),
+            new THREE.LineBasicMaterial({ color: layerIndex === 2 ? "#075f78" : "#365f40", transparent: true, opacity: 0.78 }),
           );
           object.add(rim);
         });
@@ -1280,10 +1289,12 @@ export default function Preview3DCanvas({
         const geometry = new THREE.BoxGeometry(Math.max(item.w, 1), heightFt, Math.max(item.h, 1));
         const flatPlanSurface = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK";
         const material = flatPlanSurface
-          ? new THREE.MeshBasicMaterial({
+          ? new THREE.MeshStandardMaterial({
               color: palette.top,
-              transparent: true,
-              depthWrite: false,
+              roughness: layer === "ROAD" || layer === "PARKING" ? 0.94 : 0.88,
+              metalness: 0,
+              transparent: flatPlanOpacity(layer, state) < 0.995,
+              depthWrite: layer !== "LOT",
               polygonOffset: true,
               polygonOffsetFactor: -1,
               polygonOffsetUnits: -1,
@@ -1303,7 +1314,7 @@ export default function Preview3DCanvas({
 
         if (layer === "BUILDING") {
           const roofMaterial = new THREE.MeshStandardMaterial({
-            color: roofProfile === "tower" ? "#111827" : roofProfile === "dome" ? "#6b7280" : "#d1d5db",
+            color: roofProfile === "tower" ? "#111827" : roofProfile === "dome" ? "#5f6772" : "#aeb9c5",
             roughness: 0.78,
             metalness: roofProfile === "dome" ? 0.03 : 0,
           });
@@ -1548,7 +1559,8 @@ export default function Preview3DCanvas({
         !suppressContradictoryGradingBadge &&
         (object.userData.blockers.length > 0 ||
         /low|missing|review/i.test(String(object.userData.confidence)));
-      if (needsBadge && visibleLabelCount < maxVisibleLabels) {
+      const showSelectedLabel = selectedItemId === id;
+      if (needsBadge && showSelectedLabel && visibleLabelCount < maxVisibleLabels) {
         const sprite = createTextSprite(needsBadge ? `${item.label} | review` : item.label, needsBadge ? "#b45309" : "#0f172a");
         sprite.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + heightFt + 8));
         object.add(sprite);

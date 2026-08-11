@@ -88,6 +88,18 @@ export const resolveSourceState = (item: BuildingPlacement): PreviewSourceState 
   if (statusText.includes("import") || item.source === "detected_from_image") return "imported";
   const hasPathGeometry = hasExplicitFootprintGeometry(item);
   const isRectLike = !item.geometryType || item.geometryType === "rect";
+  const generatedReviewRect =
+    isRectLike &&
+    item.w > 0 &&
+    item.d > 0 &&
+    Boolean(
+      meta.generated_review_concept ||
+        meta.visual_concept_only ||
+        meta.command_generated ||
+        meta.semantic_object_type ||
+        meta.canonical_object_type,
+    );
+  if (generatedReviewRect) return "inferred";
   const sourceBackedRect =
     isRectLike &&
     (item.source === "user" ||

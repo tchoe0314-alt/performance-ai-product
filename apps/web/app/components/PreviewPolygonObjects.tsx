@@ -136,7 +136,7 @@ export function PreviewPolygonObjects({
               {isHighQuality && visualKind === "parking" && !isFallbackBounds && supportsParkingModuleRendering(item) ? (
                 <g
                   data-testid="plan-parking-stall-cues"
-                  opacity={cadReferenceMode ? 0.86 : 0.68}
+                  opacity={cadReferenceMode ? 0.86 : 0.84}
                   clipPath={`url(#${parkingClipId})`}
                 >
                   <line
@@ -159,8 +159,8 @@ export function PreviewPolygonObjects({
                         y1={bounds.minY + (bounds.maxY - bounds.minY) * 0.16}
                         x2={x}
                         y2={bounds.maxY - (bounds.maxY - bounds.minY) * 0.16}
-                        stroke={cadReferenceMode ? "rgba(248,250,252,0.68)" : "rgba(71,85,105,0.16)"}
-                        strokeWidth={0.018}
+                        stroke={cadReferenceMode ? "rgba(248,250,252,0.68)" : "rgba(51,65,85,0.34)"}
+                        strokeWidth={0.024}
                       />
                     );
                   })}
@@ -206,11 +206,11 @@ export function PreviewPolygonObjects({
                 />
               ) : null}
               {isHighQuality && isBuildingSurface ? (
-                <g data-testid="plan-building-entry-cues" opacity={cadReferenceMode ? 0.86 : 0.52} pointerEvents="none">
+                <g data-testid="plan-building-entry-cues" opacity={cadReferenceMode ? 0.86 : 0.68} pointerEvents="none">
                   <polyline
                     points={innerPolygonPoints}
                     fill="none"
-                    stroke={cadReferenceMode ? "rgba(248,250,252,0.72)" : "rgba(15,23,42,0.2)"}
+                    stroke={cadReferenceMode ? "rgba(248,250,252,0.72)" : "rgba(15,23,42,0.34)"}
                     strokeWidth={cadReferenceMode ? 0.04 : 0.032}
                     strokeLinejoin="round"
                   />

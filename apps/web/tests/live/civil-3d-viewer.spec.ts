@@ -45,25 +45,37 @@ test.describe("Civil 3D model viewer", () => {
 
     const pixelSignal = await page.getByTestId("civil-3d-canvas-mount").locator("canvas").evaluate((canvas: HTMLCanvasElement) => {
       const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true }) || canvas.getContext("webgl", { preserveDrawingBuffer: true });
-      if (!gl) return { colored: 0, samples: 0 };
+      if (!gl) return { colored: 0, samples: 0, dark: 0, midTone: 0, minLuminance: 255, maxLuminance: 0 };
       const width = canvas.width;
       const height = canvas.height;
       const pixels = new Uint8Array(width * height * 4);
       gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
       let colored = 0;
       let samples = 0;
+      let dark = 0;
+      let midTone = 0;
+      let minLuminance = 255;
+      let maxLuminance = 0;
       const step = Math.max(4, Math.floor(pixels.length / 4000));
       for (let i = 0; i < pixels.length; i += step * 4) {
         samples += 1;
         const r = pixels[i];
         const g = pixels[i + 1];
         const b = pixels[i + 2];
+        const luminance = r * 0.2126 + g * 0.7152 + b * 0.0722;
+        minLuminance = Math.min(minLuminance, luminance);
+        maxLuminance = Math.max(maxLuminance, luminance);
+        if (luminance < 155) dark += 1;
+        if (luminance >= 70 && luminance <= 220) midTone += 1;
         if (Math.max(r, g, b) - Math.min(r, g, b) > 8) colored += 1;
       }
-      return { colored, samples };
+      return { colored, samples, dark, midTone, minLuminance, maxLuminance };
     });
     expect(pixelSignal.samples).toBeGreaterThan(0);
-    expect(pixelSignal.colored).toBeGreaterThan(12);
+    expect(pixelSignal.colored).toBeGreaterThan(24);
+    expect(pixelSignal.dark).toBeGreaterThan(8);
+    expect(pixelSignal.midTone).toBeGreaterThan(40);
+    expect(pixelSignal.maxLuminance - pixelSignal.minLuminance).toBeGreaterThan(48);
   });
 
   test("selecting a 3D object updates the 3D inspector", async ({ page }) => {
