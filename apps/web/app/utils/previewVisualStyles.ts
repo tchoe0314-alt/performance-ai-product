@@ -47,7 +47,7 @@ export function resolvePreviewSvgVisualStyle(
   const stateStroke = (fallback: string) => (
     selected ? "#0f766e" : blocked ? "#dc2626" : sourceState === "fallback" ? "#64748b" : customStroke ?? fallback
   );
-  const stateOpacity = blocked ? 0.9 : fallbackBounds ? 0.34 : reviewConcept ? 0.62 : lowConfidence ? 0.76 : 1;
+  const stateOpacity = blocked ? 0.9 : fallbackBounds ? 0.64 : reviewConcept ? 0.72 : lowConfidence ? 0.82 : 1;
   const reviewWidth = (normal: number, selectedWidth: number) =>
     reviewConcept ? (selected ? selectedWidth * 0.78 : normal * 0.82) : selected ? selectedWidth : normal;
 
@@ -88,12 +88,12 @@ export function resolvePreviewSvgVisualStyle(
 
   if (!options.highQuality) {
     const standardPalette: Record<string, { fill: string; stroke: string }> = {
-      building: { fill: "rgba(255, 255, 255, 0.38)", stroke: "#111827" },
-      parking: { fill: "rgba(248, 250, 252, 0.14)", stroke: "#64748b" },
-      road: { fill: "rgba(71, 85, 105, 0.065)", stroke: "#334155" },
+      building: { fill: "rgba(255, 255, 255, 0.74)", stroke: "#111827" },
+      parking: { fill: "rgba(226, 232, 240, 0.28)", stroke: "#64748b" },
+      road: { fill: "rgba(71, 85, 105, 0.22)", stroke: "#334155" },
       water: { fill: "rgba(125, 211, 252, 0.24)", stroke: "#0369a1" },
-      landscape: { fill: "rgba(220, 252, 231, 0.14)", stroke: "#15803d" },
-      sidewalk: { fill: "rgba(248, 250, 252, 0.36)", stroke: "#94a3b8" },
+      landscape: { fill: "rgba(220, 252, 231, 0.28)", stroke: "#15803d" },
+      sidewalk: { fill: "rgba(248, 250, 252, 0.58)", stroke: "#94a3b8" },
       utility: { fill: "rgba(59, 130, 246, 0.035)", stroke: "#1d4ed8" },
       lot: { fill: "rgba(255, 255, 255, 0.05)", stroke: "#475569" },
       contour: { fill: "rgba(250, 204, 21, 0.01)", stroke: "#ca8a04" },

@@ -49,7 +49,7 @@ test.describe("Chat 234 preview realism truth pass", () => {
     if (liveMapVisible) {
       await expect(page.locator(".mapboxgl-canvas")).toHaveCount(1);
       await expect(page.locator(".mapboxgl-canvas")).toBeVisible();
-      await expect(page.getByTestId("plan-road-corridor")).toHaveCount(0);
+      await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
       await expect(page.getByTestId("professional-building-footprint")).toHaveCount(0);
     } else {
       await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
@@ -78,5 +78,19 @@ test.describe("Chat 234 preview realism truth pass", () => {
     expect(bodyText).not.toMatch(/construction-ready|\bstamp\b|\bseal\b|certify|certified|approved for construction|engineer of record/i);
     expect(pageErrors).toEqual([]);
     expect(consoleErrors.filter((message) => !message.includes("ERR_CONNECTION_REFUSED"))).toEqual([]);
+  });
+
+  test("keeps road width and the interactive site extent aligned in both quality modes", async ({ page }) => {
+    await openDemoWorkspace(page);
+
+    await setPreviewQuality(page, "standard");
+    const standardCorridor = page.getByTestId("plan-road-corridor").first();
+    await expect(standardCorridor).toBeVisible();
+    expect(Number(await standardCorridor.getAttribute("stroke-width"))).toBeGreaterThan(0.75);
+
+    await setPreviewQuality(page, "high");
+    await expect(page.getByTestId("canonical-site-boundary")).toHaveAttribute("width", "97.6");
+    await expect(page.getByTestId("survey-base-plan-frame")).toBeVisible();
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/CONCEPT PLAN/i);
   });
 });

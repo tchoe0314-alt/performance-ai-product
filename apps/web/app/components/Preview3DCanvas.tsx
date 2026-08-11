@@ -30,7 +30,7 @@ type Preview3DCanvasProps = {
 };
 
 const layerPalette: Record<string, { top: string; side: string; line: string }> = {
-  BUILDING: { top: "#dfe6ee", side: "#9aa8b8", line: "#334155" },
+  BUILDING: { top: "#e8edf2", side: "#8e9dad", line: "#27364a" },
   STRUCTURE: { top: "#dcc79f", side: "#b58d4f", line: "#735426" },
   ROAD: { top: "#7f8a96", side: "#65717e", line: "#f8fafc" },
   PARKING: { top: "#aab4bf", side: "#8794a2", line: "#f8fafc" },
@@ -39,7 +39,7 @@ const layerPalette: Record<string, { top: string; side: string; line: string }> 
   DRAINAGE: { top: "#6bb7c8", side: "#3b8ca2", line: "#dff7fb" },
   UTILITY: { top: "#6d5bd0", side: "#4f46e5", line: "#ede9fe" },
   CONSTRAINT: { top: "#f8b4a5", side: "#f97360", line: "#9f3412" },
-  TERRAIN: { top: "#d7e7c6", side: "#adc894", line: "#5c7f46" },
+  TERRAIN: { top: "#cbdcbd", side: "#9fb78c", line: "#4f713f" },
   LANDSCAPE: { top: "#93bb64", side: "#6f944f", line: "#365314" },
 };
 
@@ -413,10 +413,14 @@ export default function Preview3DCanvas({
 
   const modelBounds = useMemo(() => {
     if (!items.length) return { minX: 0, minY: 0, maxX: 240, maxY: 160, spanX: 240, spanY: 160 };
-    const minX = Math.min(...items.map((item) => item.x));
-    const minY = Math.min(...items.map((item) => item.y));
-    const maxX = Math.max(...items.map((item) => item.x + item.w));
-    const maxY = Math.max(...items.map((item) => item.y + item.h));
+    const siteExtent = items.find(
+      (item) => normalizePreview3DItemLayer(item) === "TERRAIN" && !item.terrainSample && item.w > 0 && item.h > 0,
+    );
+    const framingItems = siteExtent ? [siteExtent] : items.filter((item) => !item.terrainSample);
+    const minX = Math.min(...framingItems.map((item) => item.x));
+    const minY = Math.min(...framingItems.map((item) => item.y));
+    const maxX = Math.max(...framingItems.map((item) => item.x + item.w));
+    const maxY = Math.max(...framingItems.map((item) => item.y + item.h));
     return {
       minX,
       minY,
@@ -524,7 +528,7 @@ export default function Preview3DCanvas({
     const height = Math.max(mount.clientHeight, 320);
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color(previewQuality === "high" ? "#e7ebef" : "#e9edf0");
+    scene.background = new THREE.Color(previewQuality === "high" ? "#dde4e9" : "#e5eaed");
 
     const renderer = new THREE.WebGLRenderer({ antialias: previewQuality === "high", preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, previewQuality === "high" ? 2 : 1.35));
@@ -716,7 +720,7 @@ export default function Preview3DCanvas({
       terrainGeometry.computeVertexNormals();
     }
     const terrainMaterial = new THREE.MeshStandardMaterial({
-      color: terrainState.mode === "fallback" ? "#d5ddd8" : "#c6d8c1",
+      color: terrainState.mode === "fallback" ? "#cad6cd" : "#bfd2b8",
       roughness: 0.9,
       metalness: 0,
       wireframe: previewQuality === "standard" && terrainState.mode === "terrain",
@@ -814,11 +818,12 @@ export default function Preview3DCanvas({
       };
 
       const isFlatPlanLayer = layer === "ROAD" || layer === "PARKING" || layer === "LOT" || layer === "SIDEWALK" || layer === "LANDSCAPE";
+      const preserveSolidMassing = layer === "BUILDING" || layer === "STRUCTURE";
       const visualLift = layerSurfaceLift(layer);
       const cadMaterial = new THREE.MeshStandardMaterial({
         color: layer === "LOT" ? palette.top : state === "blocked" ? "#dc2626" : item.unsupported ? "#f59e0b" : palette.top,
         roughness: layer === "ROAD" || layer === "PARKING" ? 0.86 : layer === "DRAINAGE" ? 0.42 : 0.72,
-        transparent: isFlatPlanLayer || item.unsupported || layer === "CONSTRAINT" || state === "low" || state === "imported" || state === "stale",
+        transparent: isFlatPlanLayer || item.unsupported || layer === "CONSTRAINT" || (!preserveSolidMassing && (state === "low" || state === "imported" || state === "stale")),
         depthWrite: !isFlatPlanLayer,
         polygonOffset: isFlatPlanLayer,
         polygonOffsetFactor: isFlatPlanLayer ? -1 : 0,
@@ -827,6 +832,8 @@ export default function Preview3DCanvas({
           ? flatPlanOpacity(layer, state)
           : item.unsupported
           ? 0.62
+          : preserveSolidMassing
+            ? 1
           : state === "low"
             ? layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK"
               ? 0.82

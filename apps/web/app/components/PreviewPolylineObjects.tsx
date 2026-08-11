@@ -74,7 +74,7 @@ export function PreviewPolylineObjects({
             (isCorridorLine ? Math.max(Math.min(item.w, item.d), 18) : null);
           const corridorStrokeWidth =
             corridorWidthFt && isCorridorLine
-              ? Math.max(0.24, Math.min(1.12, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100 * 0.3))
+              ? Math.max(0.8, Math.min(6.5, (corridorWidthFt / Math.max(currentSiteSize.width, currentSiteSize.height, 1)) * 100))
               : visualStyle.strokeWidth;
           const parsedPoints = points.map(parseSvgPoint).filter((point): point is { x: number; y: number } => Boolean(point));
           const roadEdgeSegments =
@@ -95,16 +95,26 @@ export function PreviewPolylineObjects({
 
           return (
             <g key={`poly-${item.id}`} data-semantic-layer={semanticLayerForPlacement(item)}>
-              {isHighQuality && isCorridorLine ? (
+              {isCorridorLine ? (
                 <polyline
                   data-testid="plan-road-corridor"
                   points={points.join(" ")}
                   fill="none"
-                  stroke={cadReferenceMode ? "rgba(248,250,252,0.18)" : sourceState === "fallback" ? "rgba(100,116,139,0.13)" : "rgba(15, 23, 42, 0.095)"}
+                  stroke={
+                    cadReferenceMode
+                      ? "rgba(248,250,252,0.18)"
+                      : sourceState === "fallback"
+                        ? isHighQuality
+                          ? "rgba(100,116,139,0.2)"
+                          : "rgba(100,116,139,0.28)"
+                        : isHighQuality
+                          ? "rgba(51,65,85,0.3)"
+                          : "rgba(51,65,85,0.38)"
+                  }
                   strokeWidth={cadReferenceMode ? Math.max(0.24, corridorStrokeWidth * 0.72) : corridorStrokeWidth}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  strokeDasharray={sourceState === "fallback" ? "1.4 1" : undefined}
+                  strokeDasharray={sourceState === "fallback" ? "1.4 0.8" : undefined}
                 />
               ) : null}
               {roadEdgeSegments.length ? (
