@@ -100,8 +100,8 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
   if (!(await siteDetails.evaluate((element) => element.hasAttribute("open")))) {
     await siteDetails.locator("summary").click();
   }
-  await page.getByRole("button", { name: "Use 1000 ft x 1000 ft" }).click();
-  await page.getByRole("button", { name: "Lock Boundary" }).click();
+  await page.getByRole("button", { name: "Use 1000 x 1000 ft" }).click();
+  await page.getByRole("button", { name: "Use this site" }).click();
   await expect(page.getByText("SITE LOCKED").first()).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: /^Generate$/ }).first().click();
   await expect(page.getByTestId("generate-reactive-details")).toBeVisible();

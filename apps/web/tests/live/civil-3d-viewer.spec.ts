@@ -1,6 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
   const params = new URLSearchParams(query);
   if (!params.has("seedDemo")) {
@@ -19,7 +21,7 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
   // Object labels stay quiet in 2D until hover/selection. Prove the seeded
   // semantic model is loaded without forcing plan labels to remain visible.
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/\d+ project object\(s\)/, { timeout: 30_000 });
+  await expect.poll(() => page.locator("[data-object-overlay='true']").count(), { timeout: 30_000 }).toBeGreaterThan(0);
 }
 
 async function open3D(page: Page) {
@@ -83,12 +85,12 @@ test.describe("Civil 3D model viewer", () => {
     const initialCount = await objectButtons.count();
     expect(initialCount).toBeGreaterThan(0);
 
-    await page.getByTestId("preview-quality-high").click();
+    await setPreviewQuality(page, "high");
     await expect(page.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText(/visual preview only/i);
+    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText(/visual preview/i);
     expect(await objectButtons.count()).toBe(initialCount);
 
-    await page.getByTestId("preview-quality-standard").click();
+    await setPreviewQuality(page, "standard");
     await expect(page.getByTestId("preview-quality-standard")).toHaveAttribute("aria-pressed", "true");
     expect(await objectButtons.count()).toBe(initialCount);
   });

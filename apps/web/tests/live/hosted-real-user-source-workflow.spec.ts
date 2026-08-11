@@ -95,7 +95,7 @@ test("hosted real user can set up site, upload real sources, generate, and deliv
   }
   await page.getByLabel("Site width in feet").fill("1000");
   await page.getByLabel("Site depth in feet").fill("1000");
-  await addressSection.getByTestId("create-centered-site-button").click();
+  await siteBox.getByTestId("create-centered-site-button").click();
   await expect(page.getByTestId("site-status")).toContainText(/Site Locked/i, { timeout: 30_000 });
   await shot(page, testInfo, "02-site-locked");
 

@@ -292,7 +292,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
   test("Generate partial runs say started with skipped systems", async ({ page }) => {
     await openDemoWorkspace(page, "debugPreview=1&seedDemo=1");
     page.on("dialog", async (dialog) => dialog.accept());
-    await openWorkspacePanel(page, "Generate", /Generate systems/i);
+    await openWorkspacePanel(page, "Generate", /Generate project systems/i);
     const systemDetails = page.getByTestId("generate-system-details");
     if (!(await systemDetails.evaluate((element) => element.hasAttribute("open")))) {
       await systemDetails.locator("summary").click();
@@ -301,69 +301,14 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await expect(page.getByTestId("generate-flow-summary")).toContainText("Started, with skipped systems", { timeout: 10_000 });
   });
 
-  test("Jobs panel shows refresh failure, stale warning, and status-specific detail", async ({ page }) => {
+  test("Projects keeps internal job plumbing out of the workspace", async ({ page }) => {
     await mockSignedInShell(page);
-    let jobsFail = false;
-    const staleUpdatedAt = Math.floor(Date.now() / 1000) - 3600;
-    await page.unroute("**/api/jobs**");
-    await page.route("**/api/jobs**", async (route) => {
-      if (jobsFail) {
-        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "jobs backend unavailable" }) });
-        return;
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          success: true,
-          jobs: [
-            {
-              job_id: "job-stale",
-              job_type: "orchestrate",
-              status: "running",
-              progress: 42,
-              updated_at: staleUpdatedAt,
-              created_at: staleUpdatedAt,
-              can_cancel: true,
-              can_retry: false,
-              can_resume: false,
-            },
-            {
-              job_id: "job-source-complete",
-              job_type: "source_context",
-              status: "completed",
-              progress: 100,
-              stage_detail: "Source lookup complete. 18 items are ready for review.",
-              updated_at: staleUpdatedAt - 10,
-              created_at: staleUpdatedAt - 20,
-              can_cancel: false,
-              can_retry: false,
-              can_resume: false,
-            },
-          ],
-        }),
-      });
-    });
-
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
     await page.getByTestId("header-projects-button").click();
-    await page.getByRole("button", { name: "Open Jobs" }).click();
-    await page.getByTestId("async-jobs-panel").getByRole("button", { name: "Refresh" }).click();
-    await expect(page.getByTestId("jobs-stale-warning")).toContainText("Backend status is stale", { timeout: 30_000 });
-    await expect(page.getByTestId("job-detail-drawer")).toContainText("Running. Civora has not recorded the next stage detail yet.");
-    await page.getByRole("button", {
-      name: "job-source-complete source context completed Source lookup complete. 18 items are ready for review.",
-    }).click();
-    await expect(page.getByTestId("job-detail-drawer")).toContainText("job-source-complete");
-    await expect(page.getByTestId("job-detail-drawer")).toContainText("Source lookup complete. 18 items are ready for review.");
-    jobsFail = true;
-    await page.getByTestId("async-jobs-panel").getByRole("button", { name: "Refresh" }).click();
-    await expect(page.getByTestId("jobs-refresh-status")).toContainText("Job refresh failed", { timeout: 30_000 });
-    jobsFail = false;
-    await page.getByTestId("async-jobs-panel").getByRole("button", { name: "Refresh" }).click();
-    await expect(page.getByTestId("jobs-refresh-status")).toContainText("Jobs refreshed.", { timeout: 30_000 });
-    await expect(page.getByTestId("jobs-refresh-status")).not.toContainText("Job refresh failed");
+    await expect(page.getByTestId("projects-drawer")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open Jobs" })).toHaveCount(0);
+    await expect(page.getByTestId("async-jobs-panel")).toHaveCount(0);
   });
 
   test("export download failures set visible deliver/export status", async ({ page }) => {
@@ -386,9 +331,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
     await page.getByTestId("header-chat-button").click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Command Center|Conversation/i);
-    const input = page
-      .getByTestId("workspace-right-panel")
-      .getByPlaceholder("Message Civora AI with what you want to create or change...");
+    const input = page.getByTestId("civora-command-input");
     await input.fill("Tell me something unusual about this workspace qzx-backend-only");
     await input.press("Enter");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/retry your message|could not reach the backend|could not finish/i, { timeout: 30_000 });

@@ -24,7 +24,7 @@ export type CadHistoryEntry = {
   after: BuildingPlacement;
 };
 
-export const BALANCED_CANVAS_SCALE = 0.58;
+export const BALANCED_CANVAS_SCALE = 1;
 
 export type CadCommandHistoryEntry = {
   id: string;
@@ -219,6 +219,7 @@ export type PreviewPanelProps = {
   currentProjectId?: string | null;
   previewMode: "2d" | "3d";
   previewInteraction: "static" | "edit";
+  draftingWorkspaceActive?: boolean;
   previewQuality: "standard" | "high";
   systemStatuses: EngineeringSystemStatuses;
   hasTerrainSource: boolean;
@@ -265,6 +266,7 @@ export type PreviewPanelProps = {
   onRestoreBuilding?: (snapshot: BuildingPlacement) => void;
   externalRectUndo?: { id: string; snapshot: BuildingPlacement; action: "update" | "delete" | "add"; ts: number } | null;
   onSelectBuilding: (id: string | null) => void;
+  onOpenObjectInspector?: (id: string) => void;
   onSelectObjects?: (ids: string[]) => void;
   analysisPaths?: Array<{
     id: string;

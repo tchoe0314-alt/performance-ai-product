@@ -33,7 +33,7 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
 
 async function askChat(page: Page, question: string, expected: RegExp) {
   await page.getByTestId("header-chat-button").click();
-  const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+  const input = page.getByTestId("civora-command-input");
   await input.fill(question);
   await input.press("Enter");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
@@ -43,7 +43,7 @@ test.describe("Generate and Deliver product flow", () => {
   test("Generate uses Auto Site Context notes and Deliver makes a review-only package", async ({ page }) => {
     await openDemoWorkspace(page);
 
-    await openWorkspacePanel(page, "Generate", /Generate systems/i);
+    await openWorkspacePanel(page, "Generate", /Generate project systems/i);
     await expect(page.getByTestId("generate-auto-site-context")).toContainText(/review-required source candidate/i);
     await expect(page.getByTestId("generate-auto-site-context")).toContainText(/Sources still needed/i);
     await page.getByTestId("generate-main-action").click();

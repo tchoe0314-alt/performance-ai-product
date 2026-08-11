@@ -155,8 +155,8 @@ test.describe("Chat 231A loading states and status truth", () => {
     });
     await openDemoWorkspace(page);
 
-    await expect(page.getByTestId("floating-command-bar")).toHaveCount(0);
-    await expect(page.getByTestId("civora-command-input")).toHaveCount(0);
+    await expect(page.getByTestId("floating-command-bar")).toHaveCount(1);
+    await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
 
     await openPanel(page, /^Setup$/, /Setup|Address \/ Location|Site Boundary/i);
     await expect(page.getByTestId("project-status-summary")).toContainText(/needs review|ready|blocked|working/i);
@@ -175,7 +175,7 @@ test.describe("Chat 231A loading states and status truth", () => {
 
     await page.keyboard.press("G");
     await expect(page.getByTestId("project-status-summary")).toContainText(/Ready/i);
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
 
     await page.keyboard.press("D");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/i);
@@ -214,7 +214,7 @@ test.describe("Chat 231A loading states and status truth", () => {
   test("generate and deliver loading states resolve to review or blocker summaries", async ({ page }) => {
     await openDemoWorkspace(page);
 
-    await openPanel(page, "Generate", /Generate systems/i);
+    await openPanel(page, "Generate", /Generate project systems/i);
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("project-status-summary")).toContainText(/working|needs review/i, { timeout: 5_000 });
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input/i, { timeout: 10_000 });
@@ -240,7 +240,8 @@ test.describe("Chat 231A loading states and status truth", () => {
     await runCommand(page, "whats blockd rn");
     await expect(page.getByText(/Needs input|Nothing is stopping the current review workflow/i).last()).toBeVisible();
     const chatPanel = page.getByTestId("workspace-right-panel");
-    await expect(chatPanel.getByTestId("civora-chat-input")).toBeVisible();
+    await expect(page.getByTestId("civora-command-input")).toBeVisible();
+    await expect(chatPanel).toContainText(/Conversation and assisted workflow control/i);
     await expect(chatPanel).not.toContainText(/site type or land use|which systems to include/i);
 
     await runCommand(page, "wut changed since i drew stuff");
@@ -274,10 +275,8 @@ test.describe("Chat 231A loading states and status truth", () => {
     await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock");
     await runCommand(page, "create AI visualization");
     await expect(page.getByTestId("preview-quality-high").first()).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
-    await expect(page.getByTestId("project-status-summary")).toContainText(/Ready: Plan Sheet view on/i);
-    await expect(page.getByTestId("ai-realism-off").first()).toHaveAttribute("aria-pressed", "true");
-    await page.getByRole("button", { name: "Minimize" }).click();
-    await page.getByTestId("ai-realism-on").first().click();
+    await expect(page.getByTestId("project-status-summary")).toContainText(/Ready: Plan Sheet view on|AI visualization/i);
+    await expect(page.getByTestId("ai-realism-on").first()).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("ai-realism-image")).toBeVisible({ timeout: 10_000 });
 
     await runCommand(page, "turn AI visualization off");

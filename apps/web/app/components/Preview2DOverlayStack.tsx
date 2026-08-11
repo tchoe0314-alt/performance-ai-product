@@ -48,6 +48,7 @@ export function Preview2DOverlayStack({
   suggestedObjectHitTargetsProps,
   analysisPathsOverlayProps,
 }: Preview2DOverlayStackProps) {
+  const interactionBounds = planCanvasLayersProps.overlayBoundsResolved;
   return (
     <>
       <PreviewPlanCanvasLayers {...planCanvasLayersProps} />
@@ -71,8 +72,12 @@ export function Preview2DOverlayStack({
           />
           <div
             data-testid="preview-drawing-overlays"
-            className={`${overlayPointerEvents} absolute inset-0 z-[15]`}
+            className={`${overlayPointerEvents} absolute z-[15]`}
             style={{
+              left: interactionBounds?.left ?? 0,
+              top: interactionBounds?.top ?? 0,
+              width: interactionBounds?.width ?? "100%",
+              height: interactionBounds?.height ?? "100%",
               transformOrigin: "top left",
               transform: viewportTransformStyle.transform,
             }}

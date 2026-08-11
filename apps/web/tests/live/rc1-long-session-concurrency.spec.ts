@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { setPreviewQuality } from "./testUiHelpers";
 
 
 const isHosted = Boolean(process.env.PLAYWRIGHT_BASE_URL && !/localhost|127\.0\.0\.1/.test(process.env.PLAYWRIGHT_BASE_URL));
@@ -145,8 +146,8 @@ test.describe("RC1 long-session and concurrent-user stability", () => {
       await expect(canvasA).toBeVisible({ timeout: 30_000 });
       await expect(canvasA.getByTestId("preview-mode-3d")).toBeEnabled();
       for (let iteration = 0; iteration < 6; iteration += 1) {
-        await canvasA.getByTestId("preview-quality-high").click();
-        await canvasA.getByTestId("preview-quality-standard").click();
+        await setPreviewQuality(sessionA.page, "high");
+        await setPreviewQuality(sessionA.page, "standard");
         await canvasA.getByTestId("preview-mode-3d").click();
         await expect(canvasA.getByTestId("preview-mode-2d")).toBeVisible();
         await canvasA.getByTestId("preview-mode-2d").click();

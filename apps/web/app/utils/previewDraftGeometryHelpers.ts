@@ -53,9 +53,9 @@ export function buildDraftGeometryFinishBlockedReason(drawMode: DrawMode) {
   return "Draw at least two line points before Finish.";
 }
 
-export function buildDrawToolLabel(mode: DrawMode) {
+export function buildDrawToolLabel(mode: DrawMode, autoFinishPointCount: number | null = null) {
   if (mode === "site") return "Draw Site Boundary";
-  if (mode === "polyline") return "Add Line";
+  if (mode === "polyline") return autoFinishPointCount === null ? "Add Polyline" : "Add Line";
   if (mode === "polygon") return "Add Area";
   if (mode === "rect") return "Add Box";
   if (mode === "point") return "Add Point";
@@ -63,9 +63,17 @@ export function buildDrawToolLabel(mode: DrawMode) {
   return "Select";
 }
 
-export function buildDrawToolDetail(drawMode: DrawMode, draftPointCount: number) {
+export function buildDrawToolDetail(
+  drawMode: DrawMode,
+  draftPointCount: number,
+  autoFinishPointCount: number | null = null,
+) {
   if (drawMode === "site") return "Pick three or more boundary points, then Finish.";
-  if (drawMode === "polyline") return "Pick two points; the draft line finishes automatically.";
+  if (drawMode === "polyline") {
+    return autoFinishPointCount === null
+      ? "Pick two or more connected points, then Finish."
+      : "Pick two points; the draft line finishes automatically.";
+  }
   if (drawMode === "polygon") return "Pick three or more area vertices, then Finish.";
   if (drawMode === "rect") {
     return draftPointCount ? "Pick the opposite box corner." : "Pick the first box corner.";
@@ -130,12 +138,14 @@ export function buildDraftPrecisionReadout({
 }
 
 export function buildDraftGeometryViewModel({
+  autoFinishPointCount,
   cursorPoint,
   draftPoints,
   draftPreviewPoint,
   drawMode,
   finishPreviewPoint,
 }: {
+  autoFinishPointCount: number | null;
   cursorPoint: DraftPoint | null;
   draftPoints: DraftPoint[];
   draftPreviewPoint: DraftPoint | null;
@@ -162,8 +172,8 @@ export function buildDraftGeometryViewModel({
       ? buildDraftGeometryFinishBlockedReason(drawMode)
       : null;
   return {
-    activeDrawToolDetail: buildDrawToolDetail(drawMode, draftPointCount),
-    activeDrawToolLabel: buildDrawToolLabel(drawMode),
+    activeDrawToolDetail: buildDrawToolDetail(drawMode, draftPointCount, autoFinishPointCount),
+    activeDrawToolLabel: buildDrawToolLabel(drawMode, autoFinishPointCount),
     canFinishDraftGeometry,
     draftPointCount,
     draftPrecisionReadout: buildDraftPrecisionReadout({

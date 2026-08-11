@@ -10,6 +10,9 @@ export function buildBalancedPreviewCanvasView(
   rect: { width: number; height: number } | null | undefined,
   balancedScale: number,
 ): PreviewCanvasView {
+  if (balancedScale >= 0.999) {
+    return { scale: 1, offsetX: 0, offsetY: 0 };
+  }
   const offsetX = rect ? Math.max(24, rect.width * (1 - balancedScale) * 0.5) : 36;
   const offsetY = rect ? Math.max(16, rect.height * (1 - balancedScale) * 0.08) : 24;
   return { scale: balancedScale, offsetX, offsetY };

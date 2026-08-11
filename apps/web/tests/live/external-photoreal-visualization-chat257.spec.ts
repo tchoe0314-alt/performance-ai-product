@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 const EXTERNAL_IMAGE =
   "data:image/svg+xml;charset=utf-8," +
   encodeURIComponent(
@@ -170,7 +172,7 @@ async function openSeededWorkspace(page: Page) {
   });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await page.getByTestId("preview-quality-high").click();
+  await setPreviewQuality(page, "high");
   await expect(page.getByTestId("ai-realism-on")).toBeVisible();
 }
 

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { setPreviewQuality } from "./testUiHelpers";
 
 test.use({ video: "on", screenshot: "on" });
 
@@ -251,14 +252,14 @@ test.describe("hostile-use UI recovery", () => {
     const depths = page.getByLabel("Site depth in feet");
     await widths.fill("-10");
     await depths.fill("0");
-    await page.getByRole("button", { name: "Lock Boundary" }).click();
+    await page.getByRole("button", { name: "Use this site" }).click();
     await expect(page.getByTestId("project-status-summary")).toContainText("Apply site needs size");
     await expect(page.getByTestId("site-status")).toContainText("Site Editable");
     await widths.fill("450");
     await depths.fill("275");
     await expect(widths).toHaveValue("450");
     await expect(depths).toHaveValue("275");
-    await page.getByRole("button", { name: "Lock Boundary" }).click();
+    await page.getByRole("button", { name: "Use this site" }).click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 20_000 });
     await openPanel(page, /^Setup$/);
     await expect(page.getByTestId("setup-site-box-controls")).toContainText("450 ft x 275 ft");
@@ -268,8 +269,9 @@ test.describe("hostile-use UI recovery", () => {
       for (const panel of [/^Setup$/, /^Draw$/, /^Generate$/, /^Deliver$/]) {
         await openPanel(page, panel);
       }
-      await page.getByRole("button", { name: "Hide left sidebar" }).click();
-      await page.getByRole("button", { name: "Show left sidebar" }).click();
+      await page.getByTestId("workspace-right-panel").getByRole("button", { name: "Minimize" }).click();
+      await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
+      await openPanel(page, /^Setup$/);
     }
     expect(Date.now() - started).toBeLessThan(12_000);
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(1);
@@ -277,11 +279,9 @@ test.describe("hostile-use UI recovery", () => {
 
     const mode3d = page.getByTestId("preview-mode-3d").filter({ visible: true }).first();
     const mode2d = page.getByTestId("preview-mode-2d").filter({ visible: true }).first();
-    const qualityHigh = page.getByTestId("preview-quality-high").filter({ visible: true }).first();
-    const qualityStandard = page.getByTestId("preview-quality-standard").filter({ visible: true }).first();
     for (let pass = 0; pass < 2; pass += 1) {
-      await qualityHigh.click();
-      await qualityStandard.click();
+      await setPreviewQuality(page, "high");
+      await setPreviewQuality(page, "standard");
       await mode3d.click();
       await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 30_000 });
       await mode2d.click();

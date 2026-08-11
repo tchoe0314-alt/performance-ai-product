@@ -57,7 +57,7 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
   }
   await page.getByLabel("Site width in feet").fill("1000");
   await page.getByLabel("Site depth in feet").fill("1000");
-  await addressSection.getByTestId("create-centered-site-button").click();
+  await siteSection.getByTestId("create-centered-site-button").click();
 
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 60_000 });
   await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
@@ -66,9 +66,9 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
   await expect(refreshedSiteSection).toContainText("1000 ft x 1000 ft");
   await expect(refreshedAddressSection).toContainText(/Applied|Local/i);
 
-  await refreshedSiteSection.getByRole("button", { name: "Change Boundary" }).click();
+  await refreshedSiteSection.getByRole("button", { name: "Edit site" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Editable");
-  await refreshedSiteSection.getByRole("button", { name: "Lock Boundary" }).click();
+  await refreshedSiteSection.getByRole("button", { name: "Use this site" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
 
   await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();

@@ -12,7 +12,7 @@ test("setup opens clean sections and direct setup actions", async ({ page, baseU
   await expect(page.getByTestId("setup-address-truth")).toContainText("Address / Location");
   await expect(page.getByTestId("setup-site-box-controls")).toContainText("Site Boundary");
   await expect(page.getByTestId("setup-survey-terrain-card")).toContainText("Survey / Terrain / Sources");
-  await expect(page.getByTestId("setup-detect-inside-site")).toContainText("Auto Site Context Results");
+  await expect(page.getByTestId("setup-detect-inside-site")).toContainText("Site Context");
   await expect(
     page.getByRole("button", { name: /Apply Address|Start a blank site|Draw Site Boundary|Detect again/i }).first(),
   ).toBeVisible();

@@ -178,11 +178,11 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(cadTools).toBeVisible();
     await expectTopmost(addLine, "Add Line");
     await addLine.click();
-    await expect(page.getByTestId("draw-active-tool-detail")).toContainText(/two points.*finishes automatically/i);
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE tool active|LINE active/i);
+    await expect(page.getByTestId("draw-active-tool-detail")).toContainText(/pick 2 points.*create the draft object/i);
+    await expect(page.getByTestId("draw-active-tool")).toContainText(/LINE|ADD LINE/i);
     await clickExposedSurface(surface, 0.22, 0.34);
     await clickExposedSurface(surface, 0.42, 0.34);
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE created|Custom Line/i);
+    await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ }).first()).toBeVisible();
 
     await (await revealCadTool(page, "measure")).click();
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DIST selected .*Custom Line.*ft total.*first angle/i);
@@ -214,7 +214,6 @@ test.describe("Chat 221B draw drafting usability", () => {
     await expect(finish).toBeEnabled();
     await finish.click();
 
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/BOX created|Custom Box|manual_drawn/i);
     await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom|Box|Rectangle/ }).first()).toBeVisible();
   });
 
@@ -292,6 +291,7 @@ test.describe("Chat 221B draw drafting usability", () => {
   test("ortho constrains click-drawn linework before grid snap", async ({ page }) => {
     await openDemoWorkspace(page);
     await openDrawPanel(page);
+    await openCadPrecisionTools(page);
 
     const cadTools = page.getByTestId("draw-cad-tools-section");
     const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();

@@ -188,8 +188,8 @@ export function DeliverPanel({
       <PanelCard testId="deliver-review-package-flow">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Deliver</p>
-            <p className="mt-1 text-sm font-semibold text-slate-950">Package your current project for review.</p>
+            <p className="text-sm font-semibold text-slate-950">Review package</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Package the current plan, sources, results, and notes.</p>
           </div>
           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
             reviewPackageFlowSummary?.blocked ? "bg-amber-50 text-amber-700" : reviewPackageFlowSummary ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
@@ -201,7 +201,7 @@ export function DeliverPanel({
           type="button"
           aria-label="Make Review Package"
           onClick={onMakeReviewPackage}
-          className="mt-4 flex w-full items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-3 py-3 text-center text-sm font-semibold text-white shadow-[0_14px_30px_-24px_rgba(37,99,235,0.85)] transition hover:bg-blue-700"
+          className="mt-4 flex w-full items-center justify-center rounded-[7px] border border-blue-600 bg-blue-600 px-3 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700"
         >
           Make a review package
         </button>
@@ -228,8 +228,12 @@ export function DeliverPanel({
         ) : null}
       </PanelCard>
 
-      <PanelCard testId="deliver-package-contents">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Package Contents</p>
+      <DisclosurePanel
+        testId="deliver-package-contents"
+        title="Package contents"
+        subtitle="What will be included and what is still missing"
+        status={visiblePackageMissing.length ? `${visiblePackageMissing.length} missing` : "Ready"}
+      >
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
           <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
             <p className="font-semibold uppercase tracking-[0.12em] text-emerald-700">Included</p>
@@ -271,15 +275,15 @@ export function DeliverPanel({
             </div>
           ))}
         </div>
-      </PanelCard>
+      </DisclosurePanel>
 
       <PanelCard testId="deliver-export-actions">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Exports</p>
+        <p className="text-sm font-semibold text-slate-900">Exports</p>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <button
             type="button"
             onClick={onPlanSheetExportPdf}
-            className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="rounded-[7px] border border-slate-200 bg-white px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             Review PDF
           </button>
@@ -288,7 +292,7 @@ export function DeliverPanel({
             aria-label="Export DXF"
             onClick={onExportDxf}
             title={exportBlockReason || "Download DXF review export"}
-            className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="rounded-[7px] border border-slate-200 bg-white px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             DXF
           </button>
@@ -296,14 +300,14 @@ export function DeliverPanel({
             type="button"
             onClick={onExportReport}
             title={exportBlockReason || "Download review report"}
-            className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="rounded-[7px] border border-slate-200 bg-white px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             Report
           </button>
           <button
             type="button"
             onClick={onOpenQuantities}
-            className="rounded-xl border border-slate-200 bg-white px-2 py-3 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="rounded-[7px] border border-slate-200 bg-white px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             Quantities
           </button>

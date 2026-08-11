@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 async function runChatCommand(page: Page, command: string) {
   await page.getByRole("button", { name: "Chat" }).first().click();
-  const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+  const input = page.getByPlaceholder("Describe a change or enter a command...");
   await input.fill(command);
   await input.press("Enter");
 }
@@ -51,7 +53,7 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.locator('[data-cad-object-id][aria-label*="Frontage Landscape Buffer"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Contour 1025"]').first()).toBeVisible();
 
-  await canvas.getByTestId("preview-quality-high").click();
+  await setPreviewQuality(page, "high");
   await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
   await expect(page.getByTestId("plan-building-entry-cues").first()).toBeVisible();
   await expect(page.getByTestId("professional-parking-field").first()).toBeVisible();
@@ -147,7 +149,7 @@ test("understands recreate-the-image wording without a prebuilt site", async ({ 
   await expect(objectPanel).toContainText("Water Main Loop");
   await expect(objectPanel).toContainText("B1-1");
 
-  await canvas.getByTestId("preview-quality-high").click();
+  await setPreviewQuality(page, "high");
   await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
   await expect(page.getByTestId("survey-base-plan-frame").first()).toBeVisible();
 
@@ -188,8 +190,8 @@ test("creates an urbanization campus plan with colored sheet objects and 3D mass
   await expect(page.locator("body")).toContainText(/Urbanization\/campus review model created/i);
   await expect(page.locator("body")).not.toContainText(/site type or land use|which systems to include/i);
 
-  await canvas.getByTestId("preview-quality-high").click();
-  await expect(canvas).toContainText(/Plan Sheet/i);
+  await setPreviewQuality(page, "high");
+  await expect(canvas).toContainText(/CONCEPT PLAN/i);
   await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
   await expect(page.getByTestId("plan-building-entry-cues").first()).toBeVisible();
   await expect(page.getByTestId("plan-road-edge-lines").first()).toBeVisible();

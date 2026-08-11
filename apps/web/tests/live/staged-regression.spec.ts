@@ -55,9 +55,7 @@ async function ensureArtifactDir(): Promise<string> {
 }
 
 async function waitForComposer(page: Page) {
-  const composer = page.getByPlaceholder(
-    "Message Civora AI with what you want to create or change...",
-  );
+  const composer = page.getByTestId("civora-command-input");
   const chatControls = [
     page.getByRole("banner").getByRole("button", { name: "Chat" }),
     page.getByRole("button", { name: "Open chat from sidebar command" }),

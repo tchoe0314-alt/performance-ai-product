@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 const PRIVATE_RENDER =
   "data:image/svg+xml;charset=utf-8," +
   encodeURIComponent(
@@ -144,7 +146,7 @@ test("private hybrid visualization is distinct, source-traced, and visual-only",
   });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await page.getByTestId("preview-quality-high").click();
+  await setPreviewQuality(page, "high");
   await page.getByTestId("ai-realism-on").click();
 
   await expect(page.getByTestId("ai-realism-image")).toBeVisible({ timeout: 20_000 });

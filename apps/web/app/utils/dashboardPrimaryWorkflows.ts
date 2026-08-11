@@ -33,8 +33,9 @@ export function resolveActivePrimaryWorkflowKey({
   sidePanelForRender: SidePanelKey | null;
   activeWorkspaceMode: WorkspaceMode;
 }): PrimaryWorkflowKey {
+  const utilityPanelOpen = sidePanelForRender === "chat" || sidePanelForRender === "projects" || sidePanelForRender === "trust";
   const panelMatch = Object.entries(PRIMARY_WORKFLOW_GROUPS).find(([, panels]) =>
-    sidePanelForRender ? panels.includes(sidePanelForRender) : false,
+    sidePanelForRender && !utilityPanelOpen ? panels.includes(sidePanelForRender) : false,
   )?.[0] as PrimaryWorkflowKey | undefined;
   if (panelMatch) return panelMatch;
   if (activeWorkspaceMode === "setup") return "setup";

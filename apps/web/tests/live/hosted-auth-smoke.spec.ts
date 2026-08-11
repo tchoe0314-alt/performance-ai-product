@@ -38,7 +38,7 @@ async function openWorkspace(page: Page) {
 
 async function askChat(page: Page, prompt: string, expected: RegExp) {
   await page.getByTestId("header-chat-button").click();
-  const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+  const input = page.getByTestId("civora-command-input");
   await input.fill(prompt);
   await input.press("Enter");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 10_000 });

@@ -150,7 +150,7 @@ export function PreviewPlanCanvasLayers({
       {buildingPlacements.length || suggestedPlacements.length || hasSurveyOrTerrainEvidence ? (
         <svg
           data-testid="preview-plan-canvas-svg"
-          className="absolute inset-0"
+          className="absolute inset-0 h-full w-full"
           viewBox="0 0 100 100"
           preserveAspectRatio="none"
           style={viewportTransformStyle}

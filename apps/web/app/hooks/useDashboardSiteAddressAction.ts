@@ -697,6 +697,10 @@ export function useDashboardSiteAddressAction({
           !discoveryStatus.includes("failed") &&
           !configuredLocalGisProviderCount &&
           !providerSources.length;
+        const lookupReturnedNoFeatures =
+          candidateCount === 0 &&
+          !discoveryStatus.includes("failed") &&
+          (discoveryStatus.includes("no_features") || providerSources.length > 0);
         updateProjectStatus({
           state: lookupUnavailable ? "blocked" : candidateCount > 0 ? "needs review" : "ready",
           area: "setup",
@@ -725,6 +729,8 @@ export function useDashboardSiteAddressAction({
             ? providerAbsent
               ? "Address applied, but no source providers are configured. Add GIS providers or upload survey/topo evidence before relying on source context."
               : "Address applied, but provider lookup failed or was unavailable. Retry after the backend/providers respond."
+            : lookupReturnedNoFeatures
+              ? "No source candidates found yet. Lock the site boundary to focus the next source check inside the site."
             : preserveLatestLockedSite
               ? "Address changed. Civora will recheck sources inside the locked site."
               : "Address applied. Lock the site boundary to auto-check roads, buildings, terrain, constraints, and utilities inside it.",

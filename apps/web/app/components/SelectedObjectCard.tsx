@@ -19,6 +19,7 @@ type SelectedObjectCardProps = {
   onRotate: (item: BuildingPlacement) => void;
   onFlipHorizontal: (item: BuildingPlacement) => void;
   onDelete: (item: BuildingPlacement) => void;
+  onClearSelection: () => void;
 };
 
 export function SelectedObjectCard({
@@ -39,6 +40,7 @@ export function SelectedObjectCard({
   onRotate,
   onFlipHorizontal,
   onDelete,
+  onClearSelection,
 }: SelectedObjectCardProps) {
   const supportsHeight = Boolean(
     selectedObject &&
@@ -63,9 +65,21 @@ export function SelectedObjectCard({
               : "Pick an object on the canvas or from the list below."}
           </p>
         </div>
-        <span className="shrink-0 rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-          {selectedObject?.meta?.ui_hidden ? "Hidden" : selectedObject ? "Visible" : "None"}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            {selectedObject?.meta?.ui_hidden ? "Hidden" : selectedObject ? "Visible" : "None"}
+          </span>
+          {selectedObject ? (
+            <button
+              type="button"
+              onClick={onClearSelection}
+              data-testid="preview-object-manager-clear-selection"
+              className="rounded-[7px] border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-950"
+            >
+              Clear
+            </button>
+          ) : null}
+        </div>
       </div>
       {selectedObject ? (
         <>

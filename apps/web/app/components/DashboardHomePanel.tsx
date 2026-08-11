@@ -8,6 +8,7 @@ import { DashboardProjectSummary } from "./DashboardProjectSummary";
 import { DashboardRunReviewPanel } from "./DashboardRunReviewPanel";
 import { DashboardStatusPanels } from "./DashboardStatusPanels";
 import { TakeoffSnapshotPanel } from "./TakeoffSnapshotPanel";
+import { DisclosurePanel } from "./ui";
 
 type DashboardHomePanelProps = {
   projectSummary: ComponentProps<typeof DashboardProjectSummary>;
@@ -31,15 +32,27 @@ export function DashboardHomePanel({
   takeoffSnapshot,
 }: DashboardHomePanelProps) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-3" data-testid="clean-project-health-panel">
       <DashboardProjectSummary {...projectSummary} />
-      <DashboardProgressTimeline {...progressTimeline} />
-      {engineDepth ? <DashboardEngineDepthPanel {...engineDepth} /> : null}
       <DashboardGuidancePanel {...guidance} />
-      <DashboardIssueReportPanel {...issueReport} />
-      {runReview ? <DashboardRunReviewPanel {...runReview} /> : null}
-      <DashboardStatusPanels {...statusPanels} />
-      <TakeoffSnapshotPanel {...takeoffSnapshot} />
+      <DisclosurePanel title="Progress" subtitle="Project stages and recent activity" status="Timeline">
+        <DashboardProgressTimeline {...progressTimeline} />
+      </DisclosurePanel>
+      {engineDepth ? (
+        <DisclosurePanel title="Engineering systems" subtitle="Evidence depth and system readiness" status="Details">
+          <DashboardEngineDepthPanel {...engineDepth} />
+        </DisclosurePanel>
+      ) : null}
+      <DisclosurePanel title="Issues and evidence" subtitle="Diagnostics, sources, and review details" status="Details">
+        <DashboardIssueReportPanel {...issueReport} />
+        {runReview ? <DashboardRunReviewPanel {...runReview} /> : null}
+      </DisclosurePanel>
+      <DisclosurePanel title="Status" subtitle="Standards, sources, exports, and system state" status="Details">
+        <DashboardStatusPanels {...statusPanels} />
+      </DisclosurePanel>
+      <DisclosurePanel title="Quantities" subtitle="Current takeoff snapshot" status="Snapshot">
+        <TakeoffSnapshotPanel {...takeoffSnapshot} />
+      </DisclosurePanel>
     </div>
   );
 }

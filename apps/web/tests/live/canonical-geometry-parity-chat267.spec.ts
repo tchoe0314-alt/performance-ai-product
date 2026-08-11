@@ -10,6 +10,7 @@ import {
   mergePlacementLedPreview3DItems,
 } from "../../app/utils/dashboardPreview3DItems";
 import { normalizePreview3DLayer } from "../../app/utils/preview3DLayer";
+import { setPreviewQuality } from "./testUiHelpers";
 
 const placement = (
   id: string,
@@ -158,7 +159,7 @@ test("2D and 3D expose identical canonical footprints through repeated mode chan
     ),
   );
 
-  await page.getByTestId("preview-quality-high").click();
+  await setPreviewQuality(page, "high");
   await page.getByTestId("preview-mode-3d").click();
   await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
   const threeDObjects = page.locator(
@@ -179,7 +180,7 @@ test("2D and 3D expose identical canonical footprints through repeated mode chan
 
   for (let index = 0; index < 5; index += 1) {
     await page.getByTestId("preview-mode-2d").click();
-    await page.getByTestId(index % 2 ? "preview-quality-high" : "preview-quality-standard").click();
+    await setPreviewQuality(page, index % 2 ? "high" : "standard");
     await page.getByTestId("preview-mode-3d").click();
     await expect(page.getByTestId("civil-3d-viewer")).toBeVisible();
   }

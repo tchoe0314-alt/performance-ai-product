@@ -58,11 +58,13 @@ export function runDashboardOpenSidePanel({
   if (panel && !drawAdjacentPanels.includes(panel)) {
     setPlacementModeEnabled(false);
     setPreviewInteraction("static");
-    setCadToolRequest({ id: Date.now() + Math.random(), tool: "select" });
+    setCadToolRequest({ id: Date.now() + Math.random(), tool: "select", silent: true });
   }
   setActiveSidePanel(panel);
   if (!panel) return;
-  setActiveWorkspaceMode(workspaceModeByPanel[panel]);
+  if (panel !== "chat" && panel !== "projects" && panel !== "trust") {
+    setActiveWorkspaceMode(workspaceModeByPanel[panel]);
+  }
 }
 
 export function runDashboardCloseSidePanel({
@@ -141,7 +143,9 @@ export function runDashboardTriggerCadTool({
   setActiveWorkspaceMode("canvas");
   setPreviewInteraction("edit");
   setWorkspaceChromeMinimized(true);
-  setRightRailCollapsed(false);
+  // On compact screens the drawer would cover the drawing surface. Desktop
+  // keeps the tool palette visible while the contextual HUD shifts clear of it.
+  setRightRailCollapsed(typeof window !== "undefined" && window.innerWidth < 1024);
   setActiveSidePanel("objects");
   setCadToolRequest({ id: Date.now() + Math.random(), tool });
   setStatusMessage(`${label} tool selected. Use the canvas or command line for the next step.`);
@@ -162,7 +166,7 @@ export function runDashboardOpenWorkspaceMode({
   const nextPanel = workspacePanelByMode[mode];
   setActiveWorkspaceMode(mode);
   if (typeof window !== "undefined" && window.innerWidth < 1024) {
-    setLeftSidebarOpen(false);
+    setLeftSidebarOpen(true);
     window.requestAnimationFrame(() => openSidePanel(nextPanel));
     return;
   }

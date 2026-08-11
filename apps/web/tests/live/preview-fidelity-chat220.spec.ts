@@ -1,10 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&mapDebug=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/\d+ project object\(s\)/, { timeout: 30_000 });
+  await expect.poll(() => page.locator("[data-object-overlay='true']").count(), { timeout: 30_000 }).toBeGreaterThan(0);
 }
 
 test.describe("Chat 220 preview fidelity", () => {
@@ -19,16 +21,16 @@ test.describe("Chat 220 preview fidelity", () => {
     await openDemoWorkspace(page);
     const canvas = page.getByTestId("workspace-canvas-shell");
 
-    await canvas.getByTestId("preview-quality-standard").click();
+    await setPreviewQuality(page, "standard");
     await expect(canvas.getByTestId("preview-quality-standard")).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("preview-map-fallback-surface")).toHaveCount(0);
     await expect(page.getByTestId("preview-source-confidence-summary")).toHaveCount(0);
     await expect(page.getByTestId("preview-fallback-object-badge")).toHaveCount(0);
 
-    await canvas.getByTestId("preview-quality-high").click();
+    await setPreviewQuality(page, "high");
     await expect(canvas.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
-    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText("Visual preview only");
-    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText("Canonical geometry unchanged");
+    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/visual preview/i);
+    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/project geometry is unchanged/i);
     await expect(page.getByTestId("preview-source-confidence-summary")).toHaveCount(0);
 
     const bodyText = await canvas.innerText();
@@ -39,8 +41,7 @@ test.describe("Chat 220 preview fidelity", () => {
 
   test("renders professional geometry primitives rather than only box overlays", async ({ page }) => {
     await openDemoWorkspace(page);
-    const canvas = page.getByTestId("workspace-canvas-shell");
-    await canvas.getByTestId("preview-quality-high").click();
+    await setPreviewQuality(page, "high");
 
     const visibleMapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
     if ((await visibleMapCanvas.count()) === 1) {
@@ -108,7 +109,7 @@ test.describe("Chat 220 preview fidelity", () => {
   test("3D high quality canvas is nonblank and selectable", async ({ page }) => {
     await openDemoWorkspace(page);
     const canvas = page.getByTestId("workspace-canvas-shell");
-    await canvas.getByTestId("preview-quality-high").click();
+    await setPreviewQuality(page, "high");
     await canvas.getByTestId("preview-mode-3d").click();
 
     await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });

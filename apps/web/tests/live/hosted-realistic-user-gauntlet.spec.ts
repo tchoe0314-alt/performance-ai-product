@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { setPreviewQuality } from "./testUiHelpers";
 
 test.use({ video: "on", screenshot: "on" });
 
@@ -190,7 +191,7 @@ async function exerciseObjectManager(page: Page) {
 }
 
 async function exercisePreview(page: Page) {
-  await clickLikeHuman(page, page.getByTestId("preview-quality-high"), "High quality");
+  await setPreviewQuality(page, "high");
   const aiOn = page.getByTestId("ai-realism-on").filter({ visible: true }).first();
   if (await aiOn.isVisible().catch(() => false)) {
     await clickLikeHuman(page, aiOn, "AI visualization on");
@@ -203,7 +204,7 @@ async function exercisePreview(page: Page) {
 }
 
 async function generateDeliverAndChat(page: Page, scenario: Scenario) {
-  await openPanel(page, /^Generate$/, /Generate Systems/i);
+  await openPanel(page, /^Generate$/, /Generate project systems|Generate/i);
   await clickLikeHuman(page, page.getByTestId("generate-main-action"), "Generate");
   await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input|blocked|review/i, { timeout: 60_000 });
 
@@ -212,7 +213,7 @@ async function generateDeliverAndChat(page: Page, scenario: Scenario) {
   await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Needs input|missing|Review package/i, { timeout: 60_000 });
 
   await clickLikeHuman(page, page.getByTestId("header-chat-button"), "Chat");
-  const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+  const input = page.getByTestId("civora-command-input");
   await input.fill(scenario.messyChat);
   await input.press("Enter");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/created|added|blocked|review|next|site/i, { timeout: 20_000 });

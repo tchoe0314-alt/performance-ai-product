@@ -185,7 +185,6 @@ import {
   runDashboardReactiveValidation,
 } from "./utils/dashboardReactiveRerunView";
 import { createDashboardExportActions } from "./utils/dashboardExportActions";
-import { useDashboardFloatingObjectActions } from "./hooks/useDashboardFloatingObjectActions";
 import { useDashboardJobActions } from "./hooks/useDashboardJobActions";
 import { useDashboardJobLoader } from "./hooks/useDashboardJobLoader";
 import { useDashboardExistingConditionsUpload } from "./hooks/useDashboardExistingConditionsUpload";
@@ -249,7 +248,6 @@ import { useDashboardAutoFitSite } from "./hooks/useDashboardAutoFitSite";
 import { useDashboardGenerateFlowCoordinator } from "./hooks/useDashboardGenerateFlowCoordinator";
 import { useDashboardSystemEvidenceView } from "./hooks/useDashboardSystemEvidenceView";
 import { useDashboardScaleSaveScheduler } from "./hooks/useDashboardScaleSaveScheduler";
-import { useDashboardContextualToolbarTools } from "./hooks/useDashboardContextualToolbarTools";
 import type {
   ApprovalState,
   CadToolRequestForPreview,
@@ -357,10 +355,9 @@ function PerformanceAIDashboardView({
     setLeftSidebarOpen,
     sidebarRendered,
     sidebarVisible,
-    setSidebarVisible,
   } = useDashboardLeftSidebarState();
   const [, setChatCollapsed] = useState(false);
-  const [commandBarExpanded, setCommandBarExpanded] = useState(false);
+  const [, setCommandBarExpanded] = useState(false);
   const {
     activeSidePanel,
     setActiveSidePanel,
@@ -377,7 +374,6 @@ function PerformanceAIDashboardView({
   const {
     handleViewportCenter,
     handleViewportFootprint,
-    mobileViewport,
     setViewportCenter,
     setViewportFootprint,
     viewportCenter,
@@ -385,7 +381,7 @@ function PerformanceAIDashboardView({
   } = useDashboardViewportState({
     onCollapseRightRail: setRightRailCollapsed,
   });
-  const [workspaceChromeMinimized, setWorkspaceChromeMinimized] = useState(true);
+  const [, setWorkspaceChromeMinimized] = useState(true);
   const [cadToolRequest, setCadToolRequest] = useState<CadToolRequestForPreview | null>(null);
   const [activeWorkspaceMode, setActiveWorkspaceMode] = useState<WorkspaceMode>("setup");
   const [issueReportMessage, setIssueReportMessage] = useState("");
@@ -590,8 +586,8 @@ function PerformanceAIDashboardView({
   const [approvalPhaseLabel, setApprovalPhaseLabel] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [approvalPendingJobId, setApprovalPendingJobId] = useState<string | null>(null);
-  const [showMeasurements, setShowMeasurements] = useState(false);
-  const [showCalculations, setShowCalculations] = useState(false);
+  const [showMeasurements] = useState(false);
+  const [showCalculations] = useState(false);
   const [previewLayers, setPreviewLayers] = useState<PreviewLayerVisibility>({
     buildings: true,
     roads: true,
@@ -616,7 +612,7 @@ function PerformanceAIDashboardView({
   const [statusMessage, setStatusMessage] = useState("");
   const [projectStatusSummary, setProjectStatusSummary] =
     useState<ProjectStatusSummary>(DEFAULT_PROJECT_STATUS);
-  const [moveEditFeedback, setMoveEditFeedback] = useState("");
+  const [, setMoveEditFeedback] = useState("");
   const [workspaceRestoreState, setWorkspaceRestoreState] = useState<"idle" | "restored" | "failed">("idle");
   const [projectDrawerNotice, setProjectDrawerNotice] = useState("");
   const [jobsPanelStatusMessage, setJobsPanelStatusMessage] = useState("");
@@ -1705,6 +1701,7 @@ function PerformanceAIDashboardView({
     handleObjectManagerPaste,
     handleObjectManagerRenameBlock,
     handleObjectManagerSaveBlock,
+    handleObjectManagerClearSelection,
     handleObjectManagerSelect,
     handleObjectManagerSelectVisibleDraft,
     handleObjectManagerToggleMultiSelect,
@@ -4821,40 +4818,6 @@ function PerformanceAIDashboardView({
 
   const supportedShortcuts = DASHBOARD_SUPPORTED_SHORTCUTS;
 
-  const contextualToolbarTools = useDashboardContextualToolbarTools({
-    activePrimaryWorkflowKey,
-    handleApplySite,
-    handleOpenPanelFromDrawer,
-    handleStartSiteBoundaryDraw,
-    handleUnlockSite,
-    layerManagerOpen,
-    previewInteraction,
-    setLayerManagerOpen,
-    setPreviewInteraction,
-    setShowCalculations,
-    setShowMeasurements,
-    showCalculations,
-    showMeasurements,
-    sidePanelForRender,
-    siteScaleLocked,
-  });
-  const {
-    handleEditFloatingSelectedObject,
-    handleFocusFloatingSelectedObject,
-    handleOpenFloatingObjectDetails,
-    selectedObjectConfidence,
-  } = useDashboardFloatingObjectActions({
-    appendChatMessage,
-    handleOpenPanelFromDrawer,
-    onCloseSidePanel: handleCloseSidePanel,
-    selectedBuilding,
-    setFocusObjectId,
-    setMoveEditFeedback,
-    setPlacementModeEnabled,
-    setPreviewInteraction,
-    setStatusMessage,
-    sourceConfidenceByObjectId,
-  });
   const exportBlockText = getExportBlockReason();
   const {
     dashboardGuidanceStats,
@@ -5118,14 +5081,6 @@ function PerformanceAIDashboardView({
     utilities,
     visibleActiveJob,
   });
-  const denseConceptObjectCount = buildingPlacements.filter((item) => Boolean(item.meta?.dense_concept_generated)).length;
-  const denseConceptActive = denseConceptObjectCount >= 6;
-  const drawWorkspaceActive =
-    activePrimaryWorkflowKey === "draw" ||
-    activePrimaryWorkflowKey === "objects" ||
-    sidePanelForRender === "objects" ||
-    sidePanelForRender === "model" ||
-    previewInteraction === "edit";
   const canvasDrawControlsActive =
     sidePanelForRender === "objects" ||
     sidePanelForRender === "model" ||
@@ -5133,11 +5088,8 @@ function PerformanceAIDashboardView({
     sidePanelForRender === "details";
   const canvasPreviewInteraction =
     canvasDrawControlsActive || previewInteraction === "edit" ? "edit" : "static";
-  const commandBarVisible =
-    Boolean(commandBarExpanded || prompt.trim() || imageName || busy || chatBlockingActiveJob) &&
-    !(mobileViewport && leftSidebarOpen);
-  const commandBarDockVisible = commandBarVisible && sidePanelForRender !== "chat";
-  const workspaceChromeHidden = workspaceChromeMinimized || (drawWorkspaceActive && sidebarVisible);
+  const commandBarVisible = !previewFullscreenOpen;
+  const commandBarDockVisible = commandBarVisible;
   const handleCopyIssueDiagnostic = async () => {
     try {
       await navigator.clipboard.writeText(issueDiagnosticSummary);
@@ -5668,36 +5620,18 @@ function PerformanceAIDashboardView({
   const workspaceCanvasAreaProps = useDashboardCanvasAreaProps({
     authToken: token,
     siteScaleLocked,
-    workspaceChromeHidden,
     sidebarVisible,
     rightRailCollapsed,
     sidePanelForRender,
-    siteName,
     currentProject,
-    activeWorkflowKey: activePrimaryWorkflowKey,
-    workflowItems: primaryWorkflowItems,
-    toolbarTools: contextualToolbarTools,
     previewMode,
     previewQuality,
     layerManagerOpen,
     previewLayers,
-    selectedBuilding,
-    selectedObjectConfidence,
-    moveEditFeedback,
-    previewInteraction,
-    denseConceptActive,
-    denseConceptObjectCount,
     onOpenPanel: handleOpenPanelFromDrawer,
-    onMinimizeChrome: () => setWorkspaceChromeMinimized(true),
-    onPreviewModeSelect: handleSetPreviewMode,
-    onPreviewQualitySelect: handleSetPreviewQuality,
-    onSetRightRailCollapsed: setRightRailCollapsed,
     onCloseLayerManager: () => setLayerManagerOpen(false),
     onApplyLayerPreset: setPreviewLayers,
     onToggleLayer: (key, visible) => setPreviewLayers((prev) => ({ ...prev, [key]: visible })),
-    onEditSelectedObject: handleEditFloatingSelectedObject,
-    onFocusSelectedObject: handleFocusFloatingSelectedObject,
-    onOpenSelectedObjectDetails: handleOpenFloatingObjectDetails,
     previewReview,
     onRefreshPreview: handlePreviewPlan,
     busy,
@@ -5706,6 +5640,8 @@ function PerformanceAIDashboardView({
     projectId,
     previewSessionVersion,
     canvasPreviewInteraction,
+    draftingWorkspaceActive:
+      activePrimaryWorkflowKey === "draw" || activePrimaryWorkflowKey === "objects",
     systemStatuses,
     hasTerrainSource,
     hasSourceBackedSurfaceEvidence,
@@ -5745,6 +5681,10 @@ function PerformanceAIDashboardView({
     onRemoveBuilding: handleRemoveBuilding,
     onRestoreBuilding: handleRestoreBuilding,
     onSelectBuilding: setActivePlacementId,
+    onOpenObjectInspector: (id) => {
+      setActivePlacementId(id);
+      handleOpenSidePanel("objects");
+    },
     onSelectObjects: setSelectedObjectIds,
     onSetPreviewMode: handleSetPreviewMode,
     onSetPreviewInteraction: setPreviewInteraction,
@@ -5903,29 +5843,29 @@ function PerformanceAIDashboardView({
       <div className="flex min-h-screen flex-col">
         <AppHeader
           userEmail={effectiveUser.email}
+          projectName={siteName || currentProject?.name || "Untitled Project"}
+          saveStatus={projectDrawerStateLabel}
+          canUndo={Boolean(lastDraftAction)}
+          canRedo={Boolean(redoDraftAction)}
           onOpenProjects={() => {
             if (token) void refreshProjects(token);
             handleOpenSidePanel("projects");
           }}
           onOpenDocs={() => handleOpenSidePanel("trust")}
-          onOpenChat={() => handleOpenSidePanel("chat")}
-          onOpenWorkspaceControls={() => {
-            setLeftSidebarOpen(true);
-            setSidebarVisible(true);
-            setWorkspaceChromeMinimized(false);
-            handleOpenSidePanel("site_existing");
+          onOpenChat={() => {
+            handleOpenSidePanel("chat");
+            setCommandBarExpanded(true);
+            window.requestAnimationFrame(() => commandInputRef.current?.focus());
           }}
-          sidebarOpen={leftSidebarOpen}
-          onToggleSidebar={() => {
-            setLeftSidebarOpen((value) => !value);
-          }}
+          onUndo={handleUndoDraftAction}
+          onRedo={handleRedoDraftAction}
           onLogout={handleLogout}
         />
         <div data-testid="project-status-summary" className="sr-only" aria-live="polite">
           {`${projectStatusDisplayLabel[projectStatusSummary.state]}: ${projectStatusSummary.title}.`}
         </div>
 
-        <div className="relative h-[calc(100svh-4rem)] min-h-0 w-full max-w-full overflow-hidden lg:h-[calc(100vh-4rem)]">
+        <div className="relative h-[calc(100svh-52px)] min-h-0 w-full max-w-full overflow-hidden lg:h-[calc(100vh-52px)]">
           {sidebarRendered ? (
             <WorkspaceLeftRail
               visible={sidebarVisible}
@@ -5942,8 +5882,12 @@ function PerformanceAIDashboardView({
               visible={sidePanelVisible}
               commandBarVisible={commandBarDockVisible}
               mobileNavigationVisible={leftSidebarOpen && sidebarVisible}
-              wide={sidePanelForRender === "deliverables"}
-              onMinimize={handleCloseSidePanel}
+              wide={false}
+              onMinimize={() => {
+                setRightRailCollapsed(true);
+                setSidePanelVisible(false);
+              }}
+              onClose={handleCloseSidePanel}
             >
                 {sidePanelForRender === "trust" ? (
                   <TrustPanel
@@ -5972,7 +5916,6 @@ function PerformanceAIDashboardView({
                     token={token}
                     onNewProject={handleNewProject}
                     onSaveProject={() => void saveProject()}
-                    onOpenJobs={() => handleOpenSidePanel("jobs")}
                     onOpenProject={(projectIdToOpen) => void loadProject(projectIdToOpen)}
                     onDeleteProject={handleDeleteProject}
                     onDuplicateProject={handleDuplicateProject}
@@ -6084,6 +6027,7 @@ function PerformanceAIDashboardView({
                     handleSelectPlacementTarget={handleSelectPlacementTarget}
                     selectedBuilding={selectedBuilding}
                     handleObjectManagerSelect={handleObjectManagerSelect}
+                    handleObjectManagerClearSelection={handleObjectManagerClearSelection}
                     setFocusObjectId={setFocusObjectId}
                     onCloseSidePanel={handleCloseSidePanel}
                     handleObjectManagerCopy={handleObjectManagerCopy}
@@ -6133,7 +6077,6 @@ function PerformanceAIDashboardView({
                     combineObjectType={combineObjectType}
                     draftBlockName={draftBlockName}
                     draftBlockLibrary={draftBlockLibrary}
-                    setSelectedObjectIds={setSelectedObjectIds}
                     handleObjectManagerBulkVisibility={handleObjectManagerBulkVisibility}
                     handleObjectManagerIsolateSelected={handleObjectManagerIsolateSelected}
                     handleObjectManagerBulkLock={handleObjectManagerBulkLock}
@@ -6190,7 +6133,7 @@ function PerformanceAIDashboardView({
                 ) : null}
 
                 {sidePanelForRender === "chat" ? (
-                  <ChatPanel {...chatPanelProps} />
+                  <ChatPanel {...chatPanelProps} historyOnly />
                 ) : null}
             </WorkspaceRightPanel>
           ) : null}
@@ -6205,13 +6148,7 @@ function PerformanceAIDashboardView({
             <PinnedCommandBar
               {...pinnedCommandBarProps}
               leftRailVisible={sidebarRendered && sidebarVisible}
-              rightPanelSize={
-                sidePanelForRender === "deliverables"
-                  ? "wide"
-                  : sidePanelForRender
-                    ? "standard"
-                    : "none"
-              }
+              rightPanelSize={sidePanelForRender ? "standard" : "none"}
             />
           ) : null}
         </div>

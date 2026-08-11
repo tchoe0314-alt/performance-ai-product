@@ -835,11 +835,13 @@ export function useDashboardPowerCommandHandler({
       handleSetPreviewQuality("high");
       handleSetPreviewMode("2d");
       handleOpenSidePanel("model");
-      appendChatMessage("assistant", "Opened high-quality preview mode. Use the AI Visualization toggle there; provider/layout needs will be shown exactly in the preview panel.", "status");
+      window.dispatchEvent(new CustomEvent("civora:set-ai-visualization", { detail: { enabled: true } }));
+      appendChatMessage("assistant", "Creating AI Visualization from the current review layout. Provider or layout needs will be shown directly on the canvas.", "status");
       return true;
     }
     if (/^turn ai (?:realism|visualization) off$/.test(normalized)) {
       appendChatMessage("user", message);
+      window.dispatchEvent(new CustomEvent("civora:set-ai-visualization", { detail: { enabled: false } }));
       handleSetPreviewQuality("standard");
       appendChatMessage("assistant", "Turned AI Visualization off by returning to Standard preview quality.", "status");
       return true;

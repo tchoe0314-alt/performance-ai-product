@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { setPreviewQuality } from "./testUiHelpers";
 
 test.use({ video: "on", screenshot: "on" });
 
@@ -186,8 +187,8 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
   }, 10_000);
 
   await timed("preview mode and quality toggles", async () => {
-    const high = page.getByTestId("preview-quality-high");
-    await humanClick(high, "Plan Sheet quality");
+    await setPreviewQuality(page, "high");
+    const high = page.getByTestId("preview-quality-high").filter({ visible: true }).first();
     await expect(high).toHaveAttribute("aria-pressed", "true");
     await shot(page, testInfo, "06-plan-sheet-preview");
 
@@ -206,7 +207,7 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
   await shot(page, testInfo, "06-preview-toggles");
 
   await timed("generate and deliver visible flow", async () => {
-    await openPanel(page, /^Generate$/, /Generate systems/i);
+    await openPanel(page, /^Generate$/, /Generate project systems/i);
     await humanClick(page.getByTestId("generate-main-action"), "Generate");
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|blocked|Needs review/i, { timeout: 15_000 });
     await openPanel(page, /^Deliver$/, /Review package|Make Review Package/i);
@@ -217,7 +218,7 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
 
   await timed("chat visible help and refusal", async () => {
     await humanClick(page.getByTestId("header-chat-button"), "Chat");
-    const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+    const input = page.getByTestId("civora-command-input");
     await input.fill("what changed?");
     await input.press("Enter");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/changed|Generate|drawn|Auto Site/i, { timeout: 10_000 });

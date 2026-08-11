@@ -1,112 +1,123 @@
 "use client";
 
-import { CircleHelp, FolderOpen, MessageSquare, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from "lucide-react";
+import {
+  CircleHelp,
+  MessageSquare,
+  Redo2,
+  Undo2,
+} from "lucide-react";
 
 type AppHeaderProps = {
   userEmail: string;
+  projectName: string;
+  saveStatus: string;
+  canUndo: boolean;
+  canRedo: boolean;
   onOpenProjects: () => void;
   onOpenDocs: () => void;
   onOpenChat: () => void;
-  onOpenWorkspaceControls: () => void;
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
   onLogout: () => void;
 };
 
 export default function AppHeader({
   userEmail,
+  projectName,
+  saveStatus,
+  canUndo,
+  canRedo,
   onOpenProjects,
   onOpenDocs,
   onOpenChat,
-  onOpenWorkspaceControls,
-  sidebarOpen,
-  onToggleSidebar,
+  onUndo,
+  onRedo,
   onLogout,
 }: AppHeaderProps) {
+  const normalizedSaveStatus = /saved|reloadable|restored/i.test(saveStatus)
+    ? "Saved"
+    : /saving/i.test(saveStatus)
+      ? "Saving"
+      : "Unsaved";
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
-      <div className="flex h-16 w-full items-center justify-between gap-3 px-3 sm:px-4">
+    <header className="civora-app-header sticky top-0 z-[1000] w-full border-b border-slate-200/80 bg-white/97 backdrop-blur-xl">
+      <div className="flex h-[52px] w-full items-center justify-between gap-3 px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-200/80 bg-slate-50/80 p-1">
-            <button
-              type="button"
-              onClick={onToggleSidebar}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition hover:bg-white hover:text-slate-950 hover:shadow-sm"
-              aria-label={sidebarOpen ? "Hide left sidebar" : "Show left sidebar"}
-              title={sidebarOpen ? "Hide left sidebar" : "Show left sidebar"}
-            >
-              {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-            </button>
-            <button
-              type="button"
-              onClick={onOpenWorkspaceControls}
-              aria-label="Open workspace controls"
-              title="Open workspace controls"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition hover:bg-white hover:text-slate-950 hover:shadow-sm"
-            >
-              <SlidersHorizontal className="h-4 w-4" />
-            </button>
+          <div className="flex shrink-0 items-center gap-2.5" aria-label="Civora">
+            <div className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-blue-600 text-sm font-bold text-white">
+              C
+            </div>
+            <span className="hidden text-[17px] font-semibold text-slate-950 sm:inline">Civora</span>
           </div>
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-950 text-sm font-semibold text-white">
-            C
-          </div>
-          <div className="hidden sm:block">
-            <p className="text-[15px] font-semibold text-slate-950">Civora</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Planning support</p>
-          </div>
-          <button
-            type="button"
-            onClick={onOpenChat}
-            aria-label="Chat"
-            data-testid="header-chat-button"
-            title="Open Chat"
-            className="hidden h-9 items-center gap-2 rounded-lg border border-slate-900 bg-slate-950 px-3 text-sm font-semibold text-white transition hover:bg-slate-800 md:inline-flex"
-          >
-            <MessageSquare className="h-4 w-4" />
-            Chat
-          </button>
+          <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden="true" />
           <button
             type="button"
             onClick={onOpenProjects}
             aria-label="Projects"
             data-testid="header-projects-button"
             title="Open Projects"
-            className="hidden h-9 items-center gap-2 rounded-lg border border-transparent bg-transparent px-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100/70 hover:text-slate-950 md:inline-flex"
+            className="min-w-0 max-w-[min(42vw,30rem)] truncate rounded-[6px] px-2 py-1 text-left text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
           >
-            <FolderOpen className="h-4 w-4" />
-            Projects
+            {projectName || "Untitled Project"}
           </button>
+          <span
+            className="hidden shrink-0 items-center gap-1.5 text-xs font-medium text-slate-500 md:inline-flex"
+            data-testid="header-save-status"
+          >
+            <span className={`h-2 w-2 rounded-full ${normalizedSaveStatus === "Saved" ? "bg-emerald-500" : normalizedSaveStatus === "Saving" ? "bg-blue-500" : "bg-amber-500"}`} />
+            {normalizedSaveStatus}
+          </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={onUndo}
+            disabled={!canUndo}
+            className="civora-header-icon-button"
+            aria-label="Undo last draft change"
+            title="Undo"
+          >
+            <Undo2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="civora-header-icon-button"
+            aria-label="Redo draft change"
+            title="Redo"
+          >
+            <Redo2 className="h-4 w-4" />
+          </button>
+          <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" aria-hidden="true" />
           <button
             type="button"
             onClick={onOpenChat}
             aria-label="Chat"
-            data-testid="header-chat-button-mobile"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-900 bg-slate-950 text-white transition hover:bg-slate-800 md:hidden"
-            title="Chat"
+            data-testid="header-chat-button"
+            className="civora-header-icon-button"
+            title="Open Chat"
           >
             <MessageSquare className="h-4 w-4" />
           </button>
           <button
             type="button"
-            onClick={onOpenProjects}
-            aria-label="Projects"
-            data-testid="header-projects-button-mobile"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white/80 text-slate-700 transition hover:bg-slate-50 md:hidden"
-            title="Projects"
+            onClick={onOpenDocs}
+            data-testid="header-help-button"
+            className="civora-header-icon-button"
+            aria-label="Help"
+            title="Help and product trust"
           >
-            <FolderOpen className="h-4 w-4" />
-          </button>
-          <button type="button" onClick={onOpenDocs} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200/80 bg-white/80 text-slate-700 transition hover:bg-slate-50" aria-label="Help">
             <CircleHelp className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={onLogout}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-xs font-bold text-slate-900"
+            className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-xs font-bold text-slate-800 transition hover:border-slate-300 hover:bg-white"
             title={`Sign out ${userEmail}`}
+            aria-label={`Sign out ${userEmail}`}
           >
             {userEmail.slice(0, 1).toUpperCase()}
           </button>

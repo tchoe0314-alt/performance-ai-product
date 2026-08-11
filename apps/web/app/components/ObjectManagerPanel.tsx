@@ -8,6 +8,7 @@ import { ObjectManagerOverview } from "./ObjectManagerOverview";
 import { ObjectManagerSelectedToolsPanel } from "./ObjectManagerSelectedToolsPanel";
 import { RecentChangesPanel } from "./RecentChangesPanel";
 import { SelectedObjectCard } from "./SelectedObjectCard";
+import { DisclosurePanel } from "./ui";
 
 export type ObjectManagerPanelProps = {
   cadTools: ComponentProps<typeof DrawCadToolsPanel>;
@@ -35,24 +36,51 @@ export function ObjectManagerPanel({
   objectList,
 }: ObjectManagerPanelProps) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-3" data-testid="clean-draw-panel">
       <DrawCadToolsPanel {...cadTools} />
       <NeedsPlacementTray {...needsPlacement} />
-      <SelectedObjectCard {...selectedObject} />
+      {selectedObject.selectedObject ? (
+        <div data-testid="preview-object-manager">
+          <SelectedObjectCard {...selectedObject} />
+        </div>
+      ) : (
+        <SelectedObjectCard {...selectedObject} />
+      )}
       {statusMessage ? (
-        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700" data-testid="object-manager-status">
+        <p className="rounded-[7px] border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600" data-testid="object-manager-status">
           {statusMessage}
         </p>
       ) : null}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="object-manager-panel">
-        <ObjectManagerOverview {...overview} />
-        <ObjectManagerHiddenState {...hiddenState} />
-        <ObjectManagerListPanel {...objectList} />
+      <DisclosurePanel
+        defaultOpen={!selectedObject.selectedObject}
+        title="Objects"
+        subtitle="Select, focus, rename, hide, or delete"
+        status={overview.totalCount}
+        testId="object-manager-panel"
+      >
+        <div data-testid="preview-object-manager-list">
+          <ObjectManagerOverview {...overview} />
+          <ObjectManagerHiddenState {...hiddenState} />
+          <ObjectManagerListPanel {...objectList} />
+        </div>
+      </DisclosurePanel>
+      <DisclosurePanel title="Layers" subtitle="Visibility and drawing style" status="Optional" testId="object-manager-layers">
         <ObjectManagerLayerControls {...layerControls} />
+      </DisclosurePanel>
+      {selectedTools ? (
+        <DisclosurePanel defaultOpen title="Modify" subtitle="Transform and edit the selected object" status="Selected">
+          <ObjectManagerSelectedToolsPanel {...selectedTools} />
+        </DisclosurePanel>
+      ) : null}
+      <DisclosurePanel
+        title="Recent changes"
+        subtitle="Undo or inspect draft actions"
+        status={recentChanges.changes.length}
+        testId="object-manager-recent-changes"
+      >
         <RecentChangesPanel {...recentChanges} />
-        {selectedTools ? <ObjectManagerSelectedToolsPanel {...selectedTools} /> : null}
-      </div>
+      </DisclosurePanel>
     </div>
   );
 }

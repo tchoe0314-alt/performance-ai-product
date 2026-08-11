@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
   const params = new URLSearchParams(query);
   if (!params.has("seedDemo") && !params.has("chat226EmptyLayout")) {
@@ -14,7 +16,7 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
 
 async function enableHighQuality(page: Page) {
   const canvas = page.getByTestId("workspace-canvas-shell");
-  await canvas.getByTestId("preview-quality-high").click();
+  await setPreviewQuality(page, "high");
   await expect(canvas.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("ai-realism-toggle")).toBeVisible();
 }
@@ -73,14 +75,13 @@ async function clickExposedSurface(surface: Locator, xRatio: number, yRatio: num
 test.describe("Chat 226 AI visualization preview", () => {
   test("keeps Standard technical preview and High Quality geometry mode working", async ({ page }) => {
     await openDemoWorkspace(page);
-    const canvas = page.getByTestId("workspace-canvas-shell");
 
-    await canvas.getByTestId("preview-quality-standard").click();
+    await setPreviewQuality(page, "standard");
     await expect(page.getByTestId("preview-map-fallback-surface")).toHaveCount(0);
     await expect(page.getByTestId("preview-source-confidence-summary")).toHaveCount(0);
 
     await enableHighQuality(page);
-    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Plan Sheet mode");
+    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText(/visual preview/i);
     await expect(page.getByTestId("ai-realism-off")).toHaveClass(/bg-slate-950/);
     await expectTechnicalPlanGeometry(page);
   });

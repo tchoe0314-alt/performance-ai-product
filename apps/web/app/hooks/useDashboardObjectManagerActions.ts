@@ -251,6 +251,13 @@ export function useDashboardObjectManagerActions({
     runObjectManagerSelect({ id, actions: objectManagerSelectionActions });
   }, [objectManagerSelectionActions]);
 
+  const handleObjectManagerClearSelection = useCallback(() => {
+    setSelectedObjectIds([]);
+    setActivePlacementId(null);
+    setPreviewInteraction("static");
+    setObjectManagerStatusMessage("Selection cleared.");
+  }, [setActivePlacementId, setObjectManagerStatusMessage, setPreviewInteraction, setSelectedObjectIds]);
+
   const handleObjectManagerToggleMultiSelect = useCallback((id: string, checked: boolean) => {
     runObjectManagerToggleMultiSelect({ id, checked, actions: objectManagerSelectionActions });
   }, [objectManagerSelectionActions]);
@@ -639,6 +646,7 @@ export function useDashboardObjectManagerActions({
     handleObjectManagerPaste,
     handleObjectManagerRenameBlock,
     handleObjectManagerSaveBlock,
+    handleObjectManagerClearSelection,
     handleObjectManagerSelect,
     handleObjectManagerSelectVisibleDraft,
     handleObjectManagerToggleMultiSelect,

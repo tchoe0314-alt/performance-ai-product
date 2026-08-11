@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismProvider=mock") {
   const consoleErrors: string[] = [];
   page.on("console", (message) => {
@@ -46,8 +48,9 @@ test.describe("Chat 232 naming and trust copy", () => {
   test("main visible labels use the cleaned naming spine", async ({ page }) => {
     await openDemoWorkspace(page);
 
-    await expect(page.getByTestId("header-projects-button")).toContainText("Projects");
-    await expect(page.getByTestId("header-chat-button")).toContainText("Chat");
+    await expect(page.getByTestId("header-projects-button")).toHaveAccessibleName("Projects");
+    await expect(page.getByTestId("header-projects-button")).toContainText(/Project|Pinecrest/i);
+    await expect(page.getByTestId("header-chat-button")).toHaveAccessibleName("Chat");
     await expect(page.getByRole("button", { name: "Help" })).toBeVisible();
 
     const sidebar = page.getByTestId("primary-workflow-sidebar");
@@ -72,16 +75,12 @@ test.describe("Chat 232 naming and trust copy", () => {
     await openDemoWorkspace(page);
 
     const canvas = page.getByTestId("workspace-canvas-shell");
-    await canvas.getByTestId("preview-quality-high").click();
-    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Visual preview only");
-    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Canonical geometry unchanged");
-    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Not engineering evidence");
-    await expect(canvas.getByTestId("ai-realism-toggle")).toHaveAttribute(
-      "aria-label",
-      "AI Visualization toggle",
-    );
-    await expect(canvas.getByTestId("ai-realism-toggle")).toContainText("Plan");
-    await expect(canvas.getByTestId("ai-realism-toggle")).toContainText("Visual");
+    await setPreviewQuality(page, "high");
+    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText(/visual preview/i);
+    await expect(page.getByTestId("high-quality-preview-only-label")).toContainText(/project geometry is unchanged/i);
+    await expect(canvas.getByTestId("ai-realism-toggle")).toContainText("AI Visualization");
+    await expect(canvas.getByTestId("ai-realism-toggle")).toContainText("Off");
+    await expect(canvas.getByTestId("ai-realism-toggle")).toContainText("On");
 
     await page.getByRole("button", { name: /^Deliver$/ }).first().click();
     await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/review package/i);

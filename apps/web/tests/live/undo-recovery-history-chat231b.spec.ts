@@ -39,9 +39,24 @@ async function openDrawPanel(page: Page) {
 
 async function openRecentChanges(page: Page) {
   if (await page.getByTestId("recent-changes-list").isVisible().catch(() => false)) return;
+  const disclosure = page.getByTestId("object-manager-recent-changes");
+  if (!(await disclosure.evaluate((element) => element.hasAttribute("open")))) {
+    await disclosure.locator("summary").click();
+  }
   const section = page.getByTestId("recent-changes-section");
-  await section.getByRole("button").first().click();
+  await expect(section).toBeVisible();
+  if (!(await page.getByTestId("recent-changes-list").isVisible().catch(() => false))) {
+    await section.getByRole("button").first().click();
+  }
   await expect(page.getByTestId("recent-changes-list")).toBeVisible();
+}
+
+async function openObjectList(page: Page) {
+  const disclosure = page.getByTestId("object-manager-panel");
+  if (!(await disclosure.evaluate((element) => element.hasAttribute("open")))) {
+    await disclosure.locator("summary").click();
+  }
+  await expect(page.getByTestId("preview-object-manager-list")).toBeVisible();
 }
 
 test.describe("Chat 231B undo recovery and change history", () => {
@@ -62,6 +77,7 @@ test.describe("Chat 231B undo recovery and change history", () => {
     await page.getByTestId("recent-changes-undo").click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Office Building - 28,000 sf");
 
+    await openObjectList(page);
     const restored = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
     await restored.getByTestId("object-manager-color").fill("#0f766e");
     await expect(page.getByTestId("recent-changes-section")).toContainText("Object style changed");
@@ -109,7 +125,8 @@ test.describe("Chat 231B undo recovery and change history", () => {
 
     await runCommand(page, "create AI visualization");
     await page.getByRole("button", { name: "Minimize" }).click();
-    await page.getByTestId("ai-realism-on").first().click();
+    await page.getByLabel("Preview view options").click();
+    await expect(page.getByTestId("ai-realism-on").first()).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("ai-realism-image")).toBeVisible({ timeout: 10_000 });
     await openDrawPanel(page);
     await expect(page.getByTestId("recent-changes-section")).toContainText("AI visualization regenerated");

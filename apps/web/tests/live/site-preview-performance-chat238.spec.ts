@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 async function collectFailures(page: Page) {
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
@@ -31,8 +33,7 @@ async function openNewProject(page: Page) {
 }
 
 async function createBlankSite(page: Page) {
-  await page.getByRole("button", { name: "Open workspace controls" }).click();
-  await page.getByRole("button", { name: /^Setup$/ }).first().click();
+  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
   const panel = page.getByTestId("workspace-right-panel");
   await expect(panel).toBeVisible({ timeout: 5_000 });
   const boundary = panel.getByTestId("setup-site-box-controls");
@@ -40,7 +41,7 @@ async function createBlankSite(page: Page) {
   if (!boundaryOpen) await boundary.locator("summary").click();
   await boundary.getByLabel("Width (ft)").fill("1000");
   await boundary.getByLabel("Depth (ft)").fill("1000");
-  await boundary.getByRole("button", { name: "Lock Boundary" }).click();
+  await boundary.getByRole("button", { name: "Use this site" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 5_000 });
   if (await panel.isVisible()) {
     await panel.getByRole("button", { name: "Minimize" }).click();
@@ -64,8 +65,7 @@ test.describe("Chat 238 site preview performance", () => {
     await expect(page.getByText("Pinecrest Mixed-Use Demo Site")).toHaveCount(0);
     await expect(page.getByText("Pinecrest Mixed-Use")).toHaveCount(0);
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
-    await page.getByRole("button", { name: "Open workspace controls" }).click();
-    await page.getByRole("button", { name: /^Setup$/ }).first().click();
+    await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
     await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
     await expect(page.getByLabel("Type project address")).toBeVisible();
     await page.getByLabel("Type project address").fill("20525 Margo St, Gretna, NE");
@@ -84,7 +84,7 @@ test.describe("Chat 238 site preview performance", () => {
     await expectNoHorizontalOverflow(page);
 
     const canvas = page.getByTestId("workspace-canvas-shell");
-    await expect(canvas.getByTestId("preview-quality-standard").first()).toBeVisible();
+    await setPreviewQuality(page, "standard");
     await expect(canvas).toContainText(/Local site coordinates/i);
     const coordinateReadout = canvas.getByTestId("canvas-coordinate-readout");
     await expect(coordinateReadout).toContainText("SITE 1000 ft x 1000 ft");
@@ -107,9 +107,8 @@ test.describe("Chat 238 site preview performance", () => {
     await expect(coordinateReadout).toContainText("SITE 1000 ft x 1000 ft");
 
     await timed("high quality from new project", async () => {
-      await canvas.getByTestId("preview-quality-high").first().click();
-      await expect(canvas.getByTestId("preview-quality-high").first()).toHaveAttribute("aria-pressed", "true", { timeout: 2_500 });
-      await expect(canvas).toContainText("Plan Sheet · 2D", { timeout: 2_500 });
+      await setPreviewQuality(page, "high");
+      await expect(canvas.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true", { timeout: 2_500 });
     });
     await expect(page.evaluate(() => (window as unknown as { __civoraShowMap?: boolean }).__civoraShowMap)).resolves.toBeFalsy();
 

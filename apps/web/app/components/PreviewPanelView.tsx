@@ -42,10 +42,7 @@ import {
   clampValue,
   getPreviewCadLayer,
   getPreviewEditCapabilities,
-  getPreviewObjectDimensionsLabel as resolvePreviewObjectDimensionsLabel,
   getPreviewObjectGeometryPoints,
-  getPreviewObjectSourceLabel as resolvePreviewObjectSourceLabel,
-  getPreviewObjectStatusLabel as resolvePreviewObjectStatusLabel,
   snapPreviewValue,
 } from "../utils/previewCadObjectHelpers";
 import {
@@ -61,7 +58,6 @@ import {
 } from "../utils/previewLayoutHelpers";
 import {
   buildBalancedPreviewCanvasView,
-  buildFocusedPreviewCanvasView,
   resolvePreviewCanvasView,
 } from "../utils/previewCanvasViewHelpers";
 import { usePreviewObjectManagerModel } from "../utils/previewObjectManager";
@@ -70,8 +66,10 @@ import {
   buildPreviewObjectHoverDetails,
 } from "../utils/previewHoverDetails";
 import {
+  buildPreviewInteractionBounds,
   buildPreviewOverlayBounds,
   countRenderedCanonicalPreviewObjects,
+  HIGH_QUALITY_DRAWING_VIEWPORT,
 } from "../utils/previewOverlayBounds";
 import {
   previewRectIntersectsViewport,
@@ -160,13 +158,6 @@ import { usePreviewCadWindowSelection } from "./usePreviewCadWindowSelection";
 import { usePreviewDraftGeometry } from "./usePreviewDraftGeometry";
 import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 
-const HIGH_QUALITY_DRAWING_VIEWPORT = {
-  left: 1.2,
-  top: 1.2,
-  width: 82.6,
-  height: 97.6,
-};
-
 export default function PreviewPanel({
   authToken,
   previewReview,
@@ -177,6 +168,7 @@ export default function PreviewPanel({
   currentProjectId,
   previewMode,
   previewInteraction,
+  draftingWorkspaceActive = false,
   previewQuality,
   systemStatuses,
   hasTerrainSource,
@@ -213,6 +205,7 @@ export default function PreviewPanel({
   onRestoreBuilding,
   externalRectUndo,
   onSelectBuilding,
+  onOpenObjectInspector,
   onSelectObjects,
   analysisPaths,
   analysisHighlight,
@@ -295,6 +288,7 @@ export default function PreviewPanel({
   const [cadSelectionSet, setCadSelectionSet] = useState<string[]>([]);
   const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
   const [cadCommandDraft, setCadCommandDraft] = useState("");
+  const [cadPrecisionToolsVisible, setCadPrecisionToolsVisible] = useState(false);
   const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, ALIGN, DISTRIBUTE, DIST, OFFSET, TRIM, EXTEND, FILLET, JOIN, SPLIT, CLOSE, OPEN, REVERSE, HATCH, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
   const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
   const [cadActiveCommand, setCadActiveCommand] = useState<CadActiveCommand | null>(null);
@@ -775,11 +769,15 @@ export default function PreviewPanel({
         };
         return normalizedSitePoint;
       }
+      const interactionBounds = buildPreviewInteractionBounds(
+        bounds,
+        isHighQuality && !showMap ? HIGH_QUALITY_DRAWING_VIEWPORT : null,
+      );
       return resolvePreviewPointerSitePoint({
         clientX,
         clientY,
         containerRect: rect,
-        bounds,
+        bounds: interactionBounds,
         drawMode,
         drawingLotWidth,
         drawingLotHeight,
@@ -793,6 +791,7 @@ export default function PreviewPanel({
       drawMode,
       drawingLotHeight,
       drawingLotWidth,
+      isHighQuality,
       lotHeight,
       lotWidth,
       mapAnchor,
@@ -934,9 +933,6 @@ export default function PreviewPanel({
 
   const {
     cadLayerOptions,
-    getPreviewObjectActionBlocker,
-    objectManagerCounts,
-    objectManagerRows,
     previewObjectEditableSource,
   } = usePreviewObjectManagerModel({
     buildingPlacements,
@@ -944,49 +940,6 @@ export default function PreviewPanel({
     hiddenCadLayers,
     suggestedPlacements,
   });
-  const getPreviewObjectDimensionsLabel = useCallback(resolvePreviewObjectDimensionsLabel, []);
-  const getPreviewObjectSourceLabel = useCallback(
-    (item: BuildingPlacement) =>
-      resolvePreviewObjectSourceLabel(
-        item,
-        cadEntityPreviewObjects.some((candidate) => candidate.id === item.id),
-      ),
-    [cadEntityPreviewObjects],
-  );
-  const getPreviewObjectStatusLabel = useCallback(
-    (item: BuildingPlacement) => resolvePreviewObjectStatusLabel(item, siteLocked),
-    [siteLocked],
-  );
-  const updatePreviewManagedObject = useCallback(
-    (item: BuildingPlacement, updates: Partial<BuildingPlacement>) => {
-      if (buildingPlacements.some((candidate) => candidate.id === item.id)) {
-        onUpdateBuilding(item.id, updates);
-        return true;
-      }
-      if (suggestedPlacements.some((candidate) => candidate.id === item.id)) {
-        onUpdateSuggested(item.id, updates);
-        return true;
-      }
-      return false;
-    },
-    [buildingPlacements, onUpdateBuilding, onUpdateSuggested, suggestedPlacements],
-  );
-  const focusPreviewManagedObject = useCallback(
-    (item: BuildingPlacement | null) => {
-      const blocker = getPreviewObjectActionBlocker(item, "focus");
-      if (!item || blocker) {
-        setCadCommandStatus(blocker || "FOCUS blocked: select an object first.");
-        return;
-      }
-      setManagedObjectId(item.id);
-      onSelectBuilding(item.id);
-      setHoveredObjectId(item.id);
-      setCanvasView(buildFocusedPreviewCanvasView(item, lotWidth, lotHeight));
-      setCadCommandStatus(`Focused ${item.label || item.id}.`);
-    },
-    [getPreviewObjectActionBlocker, lotHeight, lotWidth, onSelectBuilding],
-  );
-
   const visibleCadObjects = useMemo(
     () => buildVisibleCadObjects({
       buildingPlacements,
@@ -1487,7 +1440,10 @@ export default function PreviewPanel({
     () => Array.from(new Set([...(selectedBuildingId ? [selectedBuildingId] : []), ...selectedObjectIds, ...cadSelectionSet])),
     [cadSelectionSet, selectedBuildingId, selectedObjectIds],
   );
-  const hasCadCommandActivity = Boolean(selectedCadObject) || drawMode !== "select" || Boolean(cadActiveCommand) || cadCommandHistory.length > 0;
+  const hasCadCommandActivity =
+    cadPrecisionToolsVisible ||
+    Boolean(cadActiveCommand) ||
+    ["command", "circle", "arc", "text", "copy"].includes(cadToolRequest?.tool || "");
   const cadCommandStatusDisplay = useMemo(() => formatCalmCadStatus(cadCommandStatus), [cadCommandStatus]);
   const cadCommandHistoryDisplay = useMemo(
     () =>
@@ -2233,8 +2189,11 @@ export default function PreviewPanel({
   );
 
   const overlayBoundsResolved = useMemo(
-    () => buildPreviewOverlayBounds(previewContainerBounds),
-    [previewContainerBounds],
+    () => buildPreviewOverlayBounds(
+      previewContainerBounds,
+      showMap ? null : isHighQuality ? { width: 1, height: 1 } : currentSiteSize,
+    ),
+    [currentSiteSize, isHighQuality, previewContainerBounds, showMap],
   );
 
   useEffect(() => {
@@ -2611,11 +2570,8 @@ export default function PreviewPanel({
   });
   return (
     <div className="civora-preview-panel flex h-full min-w-0 flex-col overflow-hidden">
-      <div className="civora-preview-canvas-container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2">
+      <div className="civora-preview-canvas-container flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <PreviewCanvasControlStack
-            previewMode={previewMode}
-            allowEdits={allowEdits}
-            selectedObjectPresent={Boolean(selectedObject)}
             headerProps={{
               previewMode,
               previewQuality,
@@ -2637,8 +2593,17 @@ export default function PreviewPanel({
               semanticLayerVisibility,
               sourceLayerVisibility,
               sourceLayerCounts,
+              precisionToolsVisible: cadPrecisionToolsVisible,
               onSetPreviewQuality,
-              onSetPreviewMode,
+              onSetPreviewMode: (nextMode) => {
+                if (nextMode === "3d" && drawMode !== "select") {
+                  clearDraftGeometry();
+                  setDrawMode("select");
+                  setActiveSnapPoint(null);
+                  setCadCommandStatus("Drawing cancelled before opening 3D.");
+                }
+                onSetPreviewMode(nextMode);
+              },
               onSetAiVisualizationOff: setAiVisualizationOff,
               onSetAiVisualizationOn: setAiVisualizationOn,
               onSetPreviewInteraction,
@@ -2656,34 +2621,12 @@ export default function PreviewPanel({
               onToggleSemanticLayer: toggleSemanticLayer,
               onShowAllSemanticLayers: showAllSemanticLayers,
               onToggleSourceLayer: toggleSourceLayer,
-            }}
-            objectManagerProps={{
-              visible: allowEdits && drawMode === "select" && Boolean(selectedObject),
-              selectedObject,
-              selectedBuildingId,
-              objectManagerRows,
-              objectManagerCounts,
-              selectedCadIds,
-              onSetManagedObjectId: setManagedObjectId,
-              onSelectBuilding,
-              onSelectObjects,
-              onSetCadSelectionSet: setCadSelectionSet,
-              onClearSelectedVertex: () => setSelectedVertex(null),
-              onSetCadCommandStatus: setCadCommandStatus,
-              onUpdatePreviewManagedObject: updatePreviewManagedObject,
-              onFocusPreviewManagedObject: focusPreviewManagedObject,
-              onRemoveBuilding,
-              onSetLastRectEdit: setLastRectEdit,
-              getPreviewObjectActionBlocker,
-              getPreviewObjectDimensionsLabel,
-              getPreviewObjectSourceLabel,
-              getPreviewObjectStatusLabel,
-              getCadLayer,
+              onTogglePrecisionTools: () => setCadPrecisionToolsVisible((value) => !value),
             }}
             activeDrawHudProps={{
               drawMode,
               activeDrawToolLabel,
-              activeDrawToolDetail,
+              activeDrawToolDetail: drawMode === "select" ? activeDrawToolDetail : cadCommandStatusDisplay,
               draftPointCount: draftPoints.length,
               siteLocked: Boolean(siteLocked),
               canDrawObjects,
@@ -2762,6 +2705,20 @@ export default function PreviewPanel({
             insertCadSymbol={insertCadSymbol}
             applyCadProperties={applyCadProperties}
           />
+          {previewMode === "2d" &&
+          draftingWorkspaceActive &&
+          allowEdits &&
+          !hasCadCommandActivity &&
+          drawMode === "select" &&
+          ((cadToolRequest && !cadToolRequest.silent) || cadCommandHistoryDisplay.length > 0) ? (
+            <div
+              className="pointer-events-none absolute bottom-[4.75rem] left-3 z-[255] max-w-[min(24rem,calc(100%-1.5rem))] rounded-[7px] border border-slate-200 bg-white/97 px-3 py-2 text-xs font-medium text-slate-700 shadow-[0_16px_46px_-30px_rgba(15,23,42,0.5)] backdrop-blur-xl"
+              data-testid="cad-command-feedback-panel"
+              aria-live="polite"
+            >
+              {cadCommandStatusDisplay}
+            </div>
+          ) : null}
           <UtilityCoordinationDock rows={utilityCoordinationRows} summary={utilityCoordinationSummary} />
           {show3D ? (
             <Preview3DShell
@@ -3032,6 +2989,7 @@ export default function PreviewPanel({
                     shouldRevealObjectLabel,
                     handleBuildingMouseDown,
                     onSelectBuilding,
+                    onOpenObjectInspector,
                     setSelectedVertex,
                     setHoveredObjectId,
                     setHoveredVertex,

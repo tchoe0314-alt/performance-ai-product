@@ -4,7 +4,7 @@ async function openDemoWorkspace(page: import("@playwright/test").Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/\d+ project object\(s\)/, { timeout: 30_000 });
+  await expect.poll(() => page.locator("[data-object-overlay]").count(), { timeout: 30_000 }).toBeGreaterThan(0);
 }
 
 test.describe("Chat 32 UI functionality QA", () => {
@@ -17,7 +17,7 @@ test.describe("Chat 32 UI functionality QA", () => {
     await expect(page.getByRole("button", { name: "Notifications unavailable" })).toHaveCount(0);
     await expect(page.locator("header").getByRole("button", { name: "Projects" })).toBeVisible();
     await expect(page.locator("header").getByRole("button", { name: "Chat" })).toBeVisible();
-    await expect(page.locator("header").getByRole("button", { name: "Workspace" })).toBeVisible();
+    await expect(page.locator("header").getByRole("button", { name: "Workspace" })).toHaveCount(0);
 
     const canvas = page.getByTestId("workspace-canvas-shell");
     await page.getByRole("button", { name: /^Deliver$/ }).filter({ visible: true }).first().click();
@@ -26,12 +26,12 @@ test.describe("Chat 32 UI functionality QA", () => {
     const initialObjectOverlayCount = await page.locator("[data-object-overlay]").count();
     expect(initialObjectOverlayCount).toBeGreaterThan(0);
 
-    await page.locator("header").getByRole("button", { name: "Workspace" }).click();
+    await canvas.getByLabel("Preview view options").click();
     await expect(canvas.getByTestId("preview-quality-high")).toBeVisible();
     await canvas.getByTestId("preview-quality-high").click();
     await expect(canvas.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Visual preview only/i);
-    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Canonical geometry unchanged/i);
+    await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Project geometry is unchanged/i);
     await expect(canvas.getByTestId("high-quality-preview-only-label")).toContainText(/Not engineering evidence/i);
     expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
     await canvas.getByTestId("preview-quality-standard").click();
@@ -59,24 +59,23 @@ test.describe("Chat 32 UI functionality QA", () => {
     await openDemoWorkspace(page);
 
     await page.locator("header").getByRole("button", { name: "Chat" }).click();
-    const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
-    const send = page.getByRole("button", { name: "Send" });
+    const composer = page.getByTestId("civora-command-input");
     const chatPanel = page.getByTestId("workspace-right-panel");
 
     await composer.fill("what should I do next");
-    await send.click();
+    await composer.press("Enter");
     await expect(chatPanel).toContainText(/review-required|review evidence|engineer review|review drafts/i);
 
     await composer.fill("why can't I export");
-    await send.click();
+    await composer.press("Enter");
     await expect(chatPanel).toContainText("Export needs input: authenticate with a backend session before exporting review packages.");
 
     await composer.fill("make this a basin");
-    await send.click();
+    await composer.press("Enter");
     await expect(chatPanel).toContainText("This is draft geometry and still requires engineer review.");
 
     await composer.fill("stamp this construction-ready");
-    await send.click();
+    await composer.press("Enter");
     await expect(chatPanel).toContainText(/can't stamp, seal, sign, certify, approve construction, submit construction documents, or act as engineer of record/i);
     await expect(chatPanel).toContainText(/review-only draft materials/i);
     await expect(chatPanel.locator("p").last()).not.toContainText(/approved for construction|released for construction/i);
@@ -86,7 +85,7 @@ test.describe("Chat 32 UI functionality QA", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openDemoWorkspace(page);
 
-    await expect(page.getByTestId("floating-command-bar")).toHaveCount(0);
+    await expect(page.getByTestId("floating-command-bar")).toBeVisible();
     await expect(page.getByTestId("bottom-review-panel")).toHaveCount(0);
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -103,29 +102,22 @@ test.describe("Chat 32 UI functionality QA", () => {
 
     const canvas = page.getByTestId("workspace-canvas-shell");
     const sidebar = page.getByTestId("left-sidebar");
-    const hideSidebarToggle = page.getByRole("button", { name: "Hide left sidebar" });
-    const showSidebarToggle = page.getByRole("button", { name: "Show left sidebar" });
-    await expect(hideSidebarToggle).toBeVisible();
+    await expect(page.getByRole("button", { name: "Hide left sidebar" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Show left sidebar" })).toHaveCount(0);
     await expect(canvas).toBeVisible();
 
     const canvasBounds = await canvas.boundingBox();
     expect(canvasBounds?.x ?? -1).toBeGreaterThanOrEqual(0);
     expect(canvasBounds?.width ?? 0).toBeGreaterThan(0);
 
-    await hideSidebarToggle.click();
-    await expect(showSidebarToggle).toBeVisible();
-    await expect(sidebar).toBeHidden();
     await page.keyboard.press("/");
-    await expect(page.getByTestId("floating-command-bar")).toBeVisible();
-
-    await showSidebarToggle.click();
-    await expect(hideSidebarToggle).toBeVisible();
+    await expect(page.getByTestId("civora-command-input")).toBeFocused();
     await expect(sidebar).toBeVisible();
-    await expect(sidebar).toHaveAttribute("data-motion-state", "open");
 
     await sidebar.getByRole("button", { name: /^Draw$/ }).click();
-    await expect(canvas.getByRole("button", { name: "Add Line" })).toBeVisible();
-    await expect(canvas.getByRole("button", { name: "Add Area" })).toBeVisible();
+    const drawPanel = page.getByTestId("workspace-right-panel");
+    await expect(drawPanel.getByTestId("cad-tool-line")).toBeVisible();
+    await expect(drawPanel.getByTestId("cad-tool-area")).toBeVisible();
     await expect(canvas).toBeVisible();
 
     const postToggleOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

@@ -55,13 +55,13 @@ test.describe("Chat 265 human UI friction repair", () => {
     await page.keyboard.press("/");
     await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
     await page.getByRole("button", { name: "Open Civora chat history" }).click();
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Command Center/i);
-    await expect(page.getByTestId("civora-command-input")).toHaveCount(0);
-    await expect(page.getByTestId("civora-chat-input")).toHaveCount(1);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Chat|Conversation/i);
+    await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
+    await expect(page.getByTestId("civora-chat-input")).toHaveCount(0);
 
     await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
-    await expect(page.getByTestId("civora-chat-input")).toBeFocused();
-    await expect(page.getByTestId("civora-command-input")).toHaveCount(0);
+    await expect(page.getByTestId("civora-command-input")).toBeFocused();
+    await expect(page.getByTestId("civora-chat-input")).toHaveCount(0);
 
     await page.getByTestId("workspace-right-panel").getByRole("button", { name: "Minimize" }).click();
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
@@ -99,13 +99,12 @@ test.describe("Chat 265 human UI friction repair", () => {
     await page.getByTestId("preview-layer-menu").locator("summary").click();
     const existingLayer = page.getByTestId("preview-source-layer-existing");
     await expect(existingLayer).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("preview-layer-visibility-summary")).toContainText("Existing context is shown");
+    await expect(page.getByTestId("preview-layer-visibility-summary")).toContainText("Existing shown");
     await existingLayer.click();
     await expect(existingLayer).toHaveAttribute("aria-pressed", "false");
-    await expect(existingLayer).toContainText("Hidden");
-    await expect(page.getByTestId("preview-layer-visibility-summary")).toContainText("Existing context is hidden");
+    await expect(page.getByTestId("preview-layer-visibility-summary")).toContainText("Existing hidden");
     await existingLayer.click();
-    await expect(existingLayer).toContainText("Shown");
+    await expect(existingLayer).toHaveAttribute("aria-pressed", "true");
     expect(consoleErrors).toEqual([]);
   });
 
@@ -192,12 +191,12 @@ test.describe("Chat 265 human UI friction repair", () => {
     await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
     const siteSection = page.getByTestId("setup-site-box-controls");
     await expect(siteSection).not.toContainText(/No boundary locked|Needs lock/i);
-    await expect(siteSection).toContainText(/Editable|Add boundary/i);
+    await expect(siteSection).toContainText(/No site boundary yet|Not set/i);
 
-    await expect(siteSection.getByRole("button", { name: "Enter Size First" })).toBeDisabled();
-    await siteSection.getByRole("button", { name: "Use 1000 ft x 1000 ft" }).click();
-    await expect(siteSection.getByRole("button", { name: "Lock Boundary" })).toBeEnabled();
-    await siteSection.getByRole("button", { name: "Lock Boundary" }).click();
+    await expect(siteSection.getByRole("button", { name: "Enter a size" })).toBeDisabled();
+    await siteSection.getByTestId("use-1000-site-size").click();
+    await expect(siteSection.getByRole("button", { name: "Use this site" })).toBeEnabled();
+    await siteSection.getByRole("button", { name: "Use this site" }).click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
     await page.waitForTimeout(700);

@@ -16,7 +16,6 @@ type ProjectsDrawerProps = {
   token?: string | null;
   onNewProject: () => Promise<void> | void;
   onSaveProject: () => void;
-  onOpenJobs: () => void;
   onOpenProject: (projectId: string) => void;
   onDeleteProject: (projectId: string) => Promise<void> | void;
   onDuplicateProject: (projectId: string) => Promise<void> | void;
@@ -35,7 +34,6 @@ export function ProjectsDrawer({
   token,
   onNewProject,
   onSaveProject,
-  onOpenJobs,
   onOpenProject,
   onDeleteProject,
   onDuplicateProject,
@@ -107,13 +105,6 @@ export function ProjectsDrawer({
           className="rounded-xl border border-slate-950 bg-slate-950 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
         >
           Save Project
-        </button>
-        <button
-          type="button"
-          onClick={onOpenJobs}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-        >
-          Open Jobs
         </button>
       </div>
       <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" aria-label="Project list view">

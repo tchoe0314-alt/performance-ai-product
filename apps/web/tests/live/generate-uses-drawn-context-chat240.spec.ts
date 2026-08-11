@@ -154,7 +154,7 @@ async function askChat(page: Page, question: string, expected: RegExp) {
   } else {
     await page.getByRole("button", { name: "Chat" }).first().click();
   }
-  const input = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+  const input = page.getByTestId("civora-command-input");
   await input.fill(question);
   await input.press("Enter");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });

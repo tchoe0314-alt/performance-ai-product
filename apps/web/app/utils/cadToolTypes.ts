@@ -40,6 +40,7 @@ export type CadToolName =
 export type CadToolRequest = {
   id: number;
   commandText?: string;
+  silent?: boolean;
   tool: CadToolName;
 };
 

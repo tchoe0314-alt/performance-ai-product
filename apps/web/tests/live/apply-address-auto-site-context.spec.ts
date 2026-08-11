@@ -668,11 +668,12 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await page.getByRole("button", { name: "Apply address" }).click();
 
   await onlineFetchStarted;
-  await page.getByRole("button", { name: "Draw" }).first().click();
-  await expect(page.getByTestId("object-manager-panel")).toBeVisible();
-  const cadTools = page.getByTestId("draw-cad-tools-section");
   const drawingSurface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
-  await page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first().click();
+  const siteBoundarySection = page.getByTestId("setup-site-box-controls");
+  if (!(await siteBoundarySection.evaluate((node) => (node as HTMLDetailsElement).open))) {
+    await siteBoundarySection.locator(":scope > summary").click();
+  }
+  await page.getByTestId("setup-draw-site-boundary").click();
   await clickExposedSurface(drawingSurface, 0.2, 0.25);
   await clickExposedSurface(drawingSurface, 0.72, 0.28);
   await clickExposedSurface(drawingSurface, 0.68, 0.78);
@@ -680,6 +681,9 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
   await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+  await page.getByRole("button", { name: "Draw" }).first().click();
+  await expect(page.getByTestId("object-manager-panel")).toBeVisible();
+  const cadTools = page.getByTestId("draw-cad-tools-section");
   await cadTools.getByTestId("cad-tool-area").filter({ visible: true }).first().click();
   await clickExposedSurface(drawingSurface, 0.25, 0.52);
   await clickExposedSurface(drawingSurface, 0.38, 0.47);
@@ -772,13 +776,13 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(page.getByTestId("auto-site-context-found")).toContainText(/building footprints/i);
   await expect(page.getByTestId("auto-site-context-missing")).toContainText(/public utility layers/i);
   await expect(page.getByTestId("auto-site-context-candidates")).toContainText("available for review");
-  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/Detected inside site/i);
+  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/Found:/i);
   await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/parcel\/site boundary|building footprints/i);
-  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/missing[\s\S]*public utility layers/i);
-  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/not survey\/control/i);
+  await expect(page.getByTestId("auto-site-context-plain-summary")).toContainText(/Still needed:[\s\S]*public utility layers/i);
   await expect(page.getByTestId("auto-site-context-evidence-level-note")).toContainText(
-    /detected feature and a missing source can both be true/i,
+    /detected context and stronger missing evidence can both be true/i,
   );
+  await page.getByTestId("auto-site-context-details").locator(":scope > summary").click();
   await expect(page.getByTestId("auto-site-context-source-table")).toBeVisible();
   await expect(page.getByTestId("auto-site-context-status-parcel")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-status-roads")).toContainText("found");
@@ -787,11 +791,11 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(page.getByTestId("auto-site-context-status-imagery")).toContainText("found");
   await expect(page.getByTestId("auto-site-context-detail-imagery")).toContainText(/Test Imagery Detector|1 review candidate/i);
   await expect(page.getByTestId("auto-site-context-status-terrain")).toContainText("found");
-  await expect(page.getByTestId("auto-site-context-status-survey_control")).toContainText("needs source");
+  await expect(page.getByTestId("auto-site-context-status-survey_control")).toContainText("Unavailable");
   await expect(page.getByTestId("auto-site-context-detail-survey_control")).toContainText("does not satisfy survey");
-  await expect(page.getByTestId("auto-site-context-status-drainage")).toContainText(/needs source|assumed/);
+  await expect(page.getByTestId("auto-site-context-status-drainage")).toContainText(/Unavailable|assumed/);
   await expect(page.getByTestId("auto-site-context-detail-drainage")).toContainText(/stormwater|drainage|assumed/i);
-  await expect(page.getByTestId("auto-site-context-status-utilities")).toContainText("needs source");
+  await expect(page.getByTestId("auto-site-context-status-utilities")).toContainText("Unavailable");
   await expect(page.getByTestId("auto-site-context-detail-utilities")).toContainText(/utility providers checked|Test stormwater/i);
   await expect(page.getByTestId("site-intelligence-summary")).toBeVisible();
   await expect(page.getByTestId("site-intelligence-one-sentence")).toContainText("Found road/ROW");
@@ -897,7 +901,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   expect(layerControlsBox!.x).toBeGreaterThanOrEqual(0);
   expect(layerControlsBox!.x + layerControlsBox!.width).toBeLessThanOrEqual(viewport!.width);
   await expect(page.getByTestId("preview-source-layer-existing")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("preview-source-layer-existing")).toContainText(/\d+ source object/i);
+  await expect(page.getByTestId("preview-source-layer-existing")).toContainText(/\d+ objects?/i);
   await page.getByTestId("preview-source-sublayer-buildings").click();
   await expect(detectedBuildingOverlay).toHaveCount(0);
   await expect(correctedVisionOverlay).toBeVisible();
@@ -951,6 +955,10 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await cadTools.getByTestId("cad-tool-box").filter({ visible: true }).first().click();
   await clickExposedSurface(drawingSurface, 0.52, 0.4);
   await clickExposedSurface(drawingSurface, 0.64, 0.55);
+  const objectManagerDetails = page.getByTestId("object-manager-panel");
+  if (!(await objectManagerDetails.evaluate((node) => (node as HTMLDetailsElement).open))) {
+    await objectManagerDetails.locator(":scope > summary").click();
+  }
   await expect(page.getByTestId("object-manager-row").filter({ hasText: /Custom Rectangle/ }).first()).toBeVisible();
   await expect(page.getByTestId("object-manager-panel")).toContainText("Test Buildings");
   await expect(
@@ -962,7 +970,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-2d").click();
 
   await page.getByTestId("header-chat-button").click();
-  const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+  const composer = page.getByTestId("civora-command-input");
   await composer.fill("what did you find here?");
   await composer.press("Enter");
   await expect(page.getByTestId("workspace-right-panel")).toContainText("Found inside the site");
@@ -1004,11 +1012,12 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(page.getByTestId("project-status-summary")).toContainText("Blank site started");
   await expect(page.getByTestId("project-status-summary")).not.toContainText("Address applied");
   await page.getByRole("button", { name: "Cancel" }).click();
-  await page.getByRole("button", { name: "Show left sidebar" }).click();
   await page.getByRole("button", { name: "Setup" }).first().click();
   await expect(page.getByTestId("setup-detect-inside-site")).toContainText("Blank site started");
   await expect(page.getByTestId("setup-detect-inside-site")).toContainText("0 found");
-  await expect(page.getByTestId("auto-site-context-candidates")).toContainText("No source candidates found yet");
+  await expect(page.getByTestId("auto-site-context-candidates")).toContainText(
+    "Blank site started. Add an address later if you want Civora to auto-check public source context.",
+  );
   await expect(page.getByTestId("site-intelligence-summary")).toHaveCount(0);
 });
 

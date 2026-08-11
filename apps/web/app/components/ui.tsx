@@ -166,27 +166,27 @@ export function DisclosurePanel({
     <details
       open={isOpen}
       onToggle={(event) => setIsOpen(event.currentTarget.open)}
-      className={`overflow-clip rounded-xl border border-slate-200/90 bg-white ${className}`}
+      className={`civora-disclosure-panel overflow-clip rounded-[8px] border border-slate-200/90 bg-white ${className}`}
       data-testid={testId}
     >
-      <summary className="flex min-h-14 cursor-pointer items-center gap-2.5 px-3.5 py-3">
+      <summary className="flex min-h-12 cursor-pointer items-center gap-2.5 px-3 py-2.5">
         <span className="min-w-0 flex-1">
-          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+          <span className="block text-sm font-semibold text-slate-900">
             {title}
           </span>
-          <span className="mt-1 block break-words text-sm font-semibold leading-5 text-slate-950">
+          <span className="mt-0.5 block break-words text-xs font-medium leading-4 text-slate-500">
             {subtitle}
           </span>
         </span>
         {status ? (
           <span
-            className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${statusClassName}`}
+            className={`shrink-0 rounded-[5px] px-2 py-1 text-[10px] font-semibold ${statusClassName}`}
           >
             {status}
           </span>
         ) : null}
       </summary>
-      <div className={`border-t border-slate-100 px-3.5 py-3.5 ${bodyClassName}`}>
+      <div className={`border-t border-slate-100 px-3 py-3 ${bodyClassName}`}>
         {children}
       </div>
     </details>
@@ -204,7 +204,7 @@ export function PanelCard({
 }) {
   return (
     <div
-      className={`rounded-xl border border-slate-200/90 bg-white p-3.5 ${className}`}
+      className={`civora-panel-card rounded-[8px] border border-slate-200/90 bg-white p-3 ${className}`}
       data-testid={testId}
     >
       {children}

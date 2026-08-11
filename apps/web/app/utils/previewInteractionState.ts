@@ -101,8 +101,6 @@ export function buildPreviewInteractionState({
     (allowEdits && drawMode === "select") ||
     (showMap && previewInteraction === "edit" && !mapLocked);
 
-  const showDrawControls = previewMode === "2d" && (allowEdits || drawMode !== "select") && drawMode !== "pan";
-
   return {
     mapAvailable,
     highQualityObjectCount,
@@ -117,8 +115,12 @@ export function buildPreviewInteractionState({
     canUse3D: showMap || hasLiveObjects || preview3DItemCount > 0 || Boolean(planPreviewUrl),
     showHover: previewInteraction === "static",
     allowEdits,
-    showQuickDrawPalette: showDrawControls && !compactViewport && drawMode === "select" && !siteLocked,
-    showMobileDrawToolbar: showDrawControls && compactViewport,
+    showQuickDrawPalette: false,
+    showMobileDrawToolbar:
+      previewMode === "2d" &&
+      drawMode !== "select" &&
+      drawMode !== "pan" &&
+      compactViewport,
     activeDrawMode,
     drawingOwnsCanvasHits,
     drawingSurfaceInteractive,

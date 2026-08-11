@@ -100,7 +100,7 @@ export function buildSelectedCadMetrics({
 }
 
 export function buildPreviewTopologyIssues(visibleCadObjects: BuildingPlacement[]): ReturnType<typeof validateTopology> {
-  return validateTopology(visibleCadObjects.map((item) => ({
+  return validateTopology(visibleCadObjects.filter((item) => item.type !== "site").map((item) => ({
     id: item.id,
     type: item.type,
     geometryType: item.geometryType,

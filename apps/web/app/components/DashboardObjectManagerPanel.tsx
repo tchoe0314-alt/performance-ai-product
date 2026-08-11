@@ -15,6 +15,7 @@ type DashboardObjectManagerPanelProps = {
   handleSelectPlacementTarget: (id: string) => void;
   selectedBuilding: BuildingPlacement | null;
   handleObjectManagerSelect: (id: string) => void;
+  handleObjectManagerClearSelection: () => void;
   setFocusObjectId: Dispatch<SetStateAction<string | null>>;
   onCloseSidePanel: () => void;
   handleObjectManagerCopy: (item: BuildingPlacement) => void;
@@ -64,7 +65,6 @@ type DashboardObjectManagerPanelProps = {
   combineObjectType: SiteObjectType;
   draftBlockName: string;
   draftBlockLibrary: DraftBlockDefinition[];
-  setSelectedObjectIds: Dispatch<SetStateAction<string[]>>;
   handleObjectManagerBulkVisibility: (hidden: boolean) => void;
   handleObjectManagerIsolateSelected: () => void;
   handleObjectManagerBulkLock: (locked: boolean) => void;
@@ -118,6 +118,7 @@ export function DashboardObjectManagerPanel({
   handleSelectPlacementTarget,
   selectedBuilding,
   handleObjectManagerSelect,
+  handleObjectManagerClearSelection,
   setFocusObjectId,
   onCloseSidePanel,
   handleObjectManagerCopy,
@@ -167,7 +168,6 @@ export function DashboardObjectManagerPanel({
   combineObjectType,
   draftBlockName,
   draftBlockLibrary,
-  setSelectedObjectIds,
   handleObjectManagerBulkVisibility,
   handleObjectManagerIsolateSelected,
   handleObjectManagerBulkLock,
@@ -236,6 +236,7 @@ export function DashboardObjectManagerPanel({
         dimensionsLabel: selectedBuilding ? getObjectDimensionsLabel(selectedBuilding) : "",
         objectTypeOptions,
         objectOutlineColor,
+        onClearSelection: handleObjectManagerClearSelection,
         onRename: (item, value) => {
           const blocker = getObjectEditBlocker(item, "rename");
           if (blocker) {
@@ -405,7 +406,7 @@ export function DashboardObjectManagerPanel({
           updatedAt: block.updatedAt,
           revision: block.revision,
         })),
-        onClearSelection: () => setSelectedObjectIds([]),
+        onClearSelection: handleObjectManagerClearSelection,
         onHideSelected: () => handleObjectManagerBulkVisibility(true),
         onShowSelected: () => handleObjectManagerBulkVisibility(false),
         onIsolateSelected: handleObjectManagerIsolateSelected,

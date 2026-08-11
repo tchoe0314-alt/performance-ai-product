@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
@@ -57,7 +59,7 @@ async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/\d+ project object\(s\)/, { timeout: 30_000 });
+  await expect.poll(() => page.locator("[data-object-overlay]").count(), { timeout: 30_000 }).toBeGreaterThan(0);
 }
 
 async function openWorkspacePanel(page: Page, name: RegExp | string, expected: RegExp | string) {
@@ -158,7 +160,7 @@ test.describe("Chat 222B performance and responsiveness", () => {
     await measureVisible(
       page,
       "panel open generate",
-      () => openWorkspacePanel(page, "Generate", /Generate systems/i),
+      () => openWorkspacePanel(page, "Generate", /Generate project systems/i),
       page.getByTestId("generate-main-action"),
     );
     await measureVisible(
@@ -191,14 +193,14 @@ test.describe("Chat 222B performance and responsiveness", () => {
     await measureVisible(
       page,
       "quality high visible",
-      () => canvas.getByTestId("preview-quality-high").click(),
+      () => setPreviewQuality(page, "high"),
       canvas.getByTestId("preview-quality-high"),
     );
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Visual preview only");
     await measureVisible(
       page,
       "quality standard visible",
-      () => canvas.getByTestId("preview-quality-standard").click(),
+      () => setPreviewQuality(page, "standard"),
       canvas.getByTestId("preview-quality-standard"),
     );
     await expect.poll(async () => {

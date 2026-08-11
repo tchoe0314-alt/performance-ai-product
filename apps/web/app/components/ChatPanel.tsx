@@ -15,6 +15,7 @@ type ThinkingState = {
 };
 
 type ChatPanelProps = {
+  historyOnly?: boolean;
   chatMessages: ChatMessage[];
   chatScrollRef: React.RefObject<HTMLDivElement | null>;
   onSetMessageFeedback: (messageId: string, feedback: ChatMessage["feedback"]) => void;
@@ -50,6 +51,7 @@ type ChatPanelProps = {
 };
 
 export default function ChatPanel({
+  historyOnly = false,
   chatMessages,
   chatScrollRef,
   onSetMessageFeedback,
@@ -91,16 +93,17 @@ export default function ChatPanel({
   const approvalLabel = approvalPhaseLabel ? `Starting ${approvalPhaseLabel}...` : "Starting next phase...";
   const showContinuePending = Boolean(pendingClarification && onContinuePendingClarification && !blocksChatInput);
   useEffect(() => {
+    if (historyOnly) return;
     if (blocksChatInput) return;
     const frame = window.requestAnimationFrame(() => {
       promptInputRef?.current?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [blocksChatInput, promptInputRef]);
+  }, [blocksChatInput, historyOnly, promptInputRef]);
 
   return (
-    <div className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-28px_rgba(15,23,42,0.5)]">
-      <button
+    <div className="min-w-0 bg-white">
+      {!historyOnly ? <button
         type="button"
         onClick={onToggleCollapsed}
         className="flex w-full min-w-0 items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 text-left"
@@ -114,12 +117,12 @@ export default function ChatPanel({
         <ChevronDown
           className={`h-4 w-4 text-slate-500 transition ${collapsed ? "" : "rotate-180"}`}
         />
-      </button>
+      </button> : null}
 
-      {!collapsed ? (
+      {historyOnly || !collapsed ? (
         <div
           ref={chatScrollRef}
-          className="max-h-[min(320px,36svh)] space-y-4 overflow-y-auto p-3 sm:p-4"
+          className={`${historyOnly ? "h-[calc(100svh-8.5rem)]" : "max-h-[min(320px,36svh)]"} space-y-4 overflow-y-auto p-3 sm:p-4`}
         >
           {chatMessages.map((message) => (
             <div
@@ -188,7 +191,7 @@ export default function ChatPanel({
         </div>
       ) : null}
 
-      <div className="border-t border-slate-200 p-3 sm:p-4">
+      {!historyOnly ? <div className="border-t border-slate-200 p-3 sm:p-4">
         {(busy || hasVisibleActiveJob) && (
           <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-4 sm:px-4">
             <div className="flex items-start justify-between gap-4">
@@ -346,7 +349,7 @@ export default function ChatPanel({
             {statusMessage}
           </div>
         )}
-      </div>
+      </div> : null}
     </div>
   );
 }

@@ -143,6 +143,7 @@ export function ObjectManagerSelectedToolsPanel({
         <button
           type="button"
           onClick={onClearSelection}
+          data-testid="object-manager-clear-multi-selection"
           className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500 hover:bg-slate-50"
         >
           Clear

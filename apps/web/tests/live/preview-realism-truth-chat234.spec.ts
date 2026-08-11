@@ -1,17 +1,18 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/\d+ project object\(s\)/, { timeout: 30_000 });
+  await expect.poll(() => page.locator("[data-object-overlay='true']").count(), { timeout: 30_000 }).toBeGreaterThan(0);
 }
 
 test.describe("Chat 234 preview realism truth pass", () => {
   test("source layer controls hide every proposed canvas overlay together", async ({ page }) => {
     await openDemoWorkspace(page);
-    const canvas = page.getByTestId("workspace-canvas-shell");
-    await canvas.getByTestId("preview-quality-standard").click();
+    await setPreviewQuality(page, "standard");
 
     const overlays = page.locator("[data-object-overlay]");
     expect(await overlays.count()).toBeGreaterThan(0);
@@ -38,7 +39,7 @@ test.describe("Chat 234 preview realism truth pass", () => {
     await openDemoWorkspace(page);
     const canvas = page.getByTestId("workspace-canvas-shell");
 
-    await canvas.getByTestId("preview-quality-standard").click();
+    await setPreviewQuality(page, "standard");
     await expect(page.getByTestId("preview-map-fallback-surface")).toHaveCount(0);
     await expect(page.getByTestId("preview-source-confidence-chip")).toHaveCount(0);
     await expect(page.getByTestId("preview-fallback-object-badge")).toHaveCount(0);

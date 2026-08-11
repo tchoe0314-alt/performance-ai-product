@@ -285,9 +285,7 @@ export function useDashboardApplySiteAction({
     setRenderedSidePanel(null);
     setRightRailCollapsed(true);
     setSidePanelVisible(false);
-    if (typeof window !== "undefined" && window.innerWidth < 1024) {
-      setLeftSidebarOpen(false);
-    }
+    setLeftSidebarOpen(true);
     const nextSiteInputs = {
       ...(currentInput?.meta?.site_inputs ?? {}),
       site_alignment_locked: true,

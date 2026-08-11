@@ -101,17 +101,17 @@ test("opening Chat during the first site save keeps the newer panel open", async
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
   const siteSection = page.getByTestId("setup-site-box-controls");
-  await siteSection.getByRole("button", { name: "Use 1000 ft x 1000 ft" }).click();
-  await siteSection.getByRole("button", { name: "Lock Boundary" }).click();
+  await siteSection.getByTestId("use-1000-site-size").click();
+  await siteSection.getByRole("button", { name: "Use this site" }).click();
 
   await page.getByTestId("header-chat-button").click();
   await expect(page.getByTestId("workspace-right-panel")).toContainText("Chat");
-  await expect(page.getByTestId("civora-chat-input")).toHaveCount(1);
-  await expect(page.getByTestId("civora-command-input")).toHaveCount(0);
+  await expect(page.getByTestId("civora-chat-input")).toHaveCount(0);
+  await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
 
   await page.waitForTimeout(1_600);
   await expect(page.getByTestId("workspace-right-panel")).toContainText("Chat");
-  await expect(page.getByTestId("civora-chat-input")).toHaveCount(1);
-  await expect(page.getByTestId("civora-command-input")).toHaveCount(0);
+  await expect(page.getByTestId("civora-chat-input")).toHaveCount(0);
+  await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
   expect(errors).toEqual([]);
 });

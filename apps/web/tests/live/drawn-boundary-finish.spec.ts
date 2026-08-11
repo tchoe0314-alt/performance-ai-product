@@ -58,18 +58,11 @@ async function openSetupControls(page: Page) {
     return;
   }
 
-  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
-  if (await workspaceButton.isVisible().catch(() => false)) {
-    await workspaceButton.click({ noWaitAfter: true });
-  }
-  const sidebarSetup = page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Setup\b/i });
-  if (await sidebarSetup.isVisible().catch(() => false)) {
-    await sidebarSetup.click({ noWaitAfter: true });
-  } else if (await page.getByRole("button", { name: /^Setup\b/i }).first().isVisible().catch(() => false)) {
-    await page.getByRole("button", { name: /^Setup\b/i }).first().click({ noWaitAfter: true });
-  } else {
-    await page.getByTestId("workspace-canvas-shell").getByRole("button", { name: /^Setup$/ }).click({ noWaitAfter: true });
-  }
+  const sidebarSetup = page
+    .getByTestId("left-sidebar")
+    .getByRole("button", { name: "Setup", exact: true });
+  await expect(sidebarSetup).toHaveCount(1);
+  await sidebarSetup.click({ noWaitAfter: true });
   const setupDetails = page.locator("details").filter({ hasText: "Detailed setup controls and evidence" }).first();
   if (await setupDetails.isVisible().catch(() => false)) {
     const isOpen = await setupDetails.evaluate((element) => element.hasAttribute("open"));
@@ -117,13 +110,10 @@ async function openBlankWorkspace(page: Page) {
 }
 
 async function startBoundaryDraw(page: Page) {
-  const toolbarButton = page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first();
-  if (await toolbarButton.isVisible().catch(() => false)) {
-    await toolbarButton.click();
-    return;
-  }
-  const canvasButton = page.getByTestId("workspace-canvas-shell").getByRole("button", { name: "Draw Site Boundary" }).first();
-  await canvasButton.click();
+  await openSetupControls(page);
+  const setupButton = page.getByTestId("setup-draw-site-boundary").filter({ visible: true }).first();
+  await expect(setupButton).toBeVisible();
+  await setupButton.click();
 }
 
 async function finishDraft(page: Page, canvas: Locator) {
@@ -219,9 +209,8 @@ test.describe("drawn site boundary Finish workflow", () => {
     await finishDraft(page, canvas);
 
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
-    await expect(canvas).toContainText("Locked canonical site");
-    await expect(page.getByTestId("draw-site-boundary-canvas")).toBeVisible();
-    await expect(page.getByTestId("change-site-boundary-canvas")).toBeVisible();
+    await expect(canvas).toContainText(/SITE LOCKED.*300 FT x 130 FT/i);
+    await expect(page.getByTestId("canonical-site-boundary")).toBeVisible();
     const quickPalette = canvas.getByTestId("canvas-quick-draw-palette");
     await expect(quickPalette.getByRole("button", { name: /Add (Line|Area|Box|Point)/ })).toHaveCount(0);
     await openDrawControls(page);
@@ -231,9 +220,10 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(cadTools.getByTestId("cad-tool-box")).toBeEnabled();
     await expect(cadTools.getByTestId("cad-tool-point")).toBeEnabled();
 
-    await page.getByTestId("change-site-boundary-canvas").click();
+    await openSetupControls(page);
+    await page.getByRole("button", { name: "Edit site" }).filter({ visible: true }).first().click();
     await expect(page.getByTestId("site-status")).toContainText("Site Editable");
-    await page.getByTestId("lock-site-boundary-toolbar").filter({ visible: true }).first().click();
+    await page.getByRole("button", { name: "Use this site" }).filter({ visible: true }).first().click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     const relockClose = page.getByRole("button", { name: "Close" });
     if (await relockClose.isVisible().catch(() => false)) {
@@ -279,8 +269,8 @@ test.describe("drawn site boundary Finish workflow", () => {
 
     await clickVisibleControl(page.locator('[data-object-overlay][aria-label^="Select Custom Point"]').first());
     await page.getByRole("button", { name: "Chat" }).first().click();
-    await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("make this a basin");
-    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByTestId("civora-command-input").fill("make this a basin");
+    await page.getByRole("button", { name: "Run Civora command" }).click();
     await expect(page.locator("p.whitespace-pre-wrap").filter({ hasText: "draft geometry and still requires engineer review" })).toBeVisible();
 
     await expect(page.getByText(/Basin \/ Detention P/i).filter({ visible: true }).first()).toBeVisible();
@@ -293,11 +283,13 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId("draw-site-boundary-toolbar-mobile")).toHaveCount(0);
     await openDrawControls(page);
+    const drawPanel = page.getByTestId("draw-cad-tools-section");
+    await expect(drawPanel.getByTestId("cad-tool-line")).toBeVisible();
+    await expect(drawPanel.getByTestId("cad-tool-area")).toBeVisible();
+    await expect(drawPanel.getByTestId("cad-tool-box")).toBeVisible();
+    await expect(drawPanel.getByTestId("cad-tool-point")).toBeVisible();
+    await drawPanel.getByTestId("cad-tool-line").click();
     await expect(page.getByTestId("draw-site-boundary-toolbar-mobile").filter({ visible: true }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add Line" }).filter({ visible: true }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add Area" }).filter({ visible: true }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add Box" }).filter({ visible: true }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Add Point" }).filter({ visible: true }).first()).toBeVisible();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   });

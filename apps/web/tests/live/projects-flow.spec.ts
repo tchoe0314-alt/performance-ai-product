@@ -32,6 +32,32 @@ function readProjectInputName(projectInput: Record<string, unknown> | undefined)
 
 async function mockShell(page: Page, store: Map<string, SavedProject>) {
   let nextProjectNumber = 1;
+  const sourceContextResult = () => ({
+    success: true,
+    status: "ready_with_context",
+    online_existing_conditions_discovery_v1: {
+      version: "online_existing_conditions_discovery_v1",
+      status: "candidates_found",
+      candidate_count: 2,
+      sources: [
+        { key: "parcel_site_boundary", label: "parcel/site boundary", provider: "Test Parcels", candidate_count: 1, review_required: true },
+        { key: "public_utilities", label: "public utility layers", provider: "", candidate_count: 0, review_required: true },
+      ],
+      missing_sources: [{ key: "public_utilities", label: "public utility layers" }],
+      review_required: true,
+      acceptance_status: "candidate",
+      construction_release_allowed: false,
+    },
+    map_feature_detection_report_v1: {
+      version: "map_feature_detection_report_v1",
+      candidate_count: 1,
+      feature_candidates: [
+        { candidate_id: "parcel-1", feature_type: "parcel_or_site_boundary", source_type: "official_gis", source_name: "Test Parcels", evidence_source: "Test Parcels", confidence: 0.88, review_required: true, acceptance_status: "pending" },
+      ],
+    },
+    existing_conditions_package: { status: "review_required", production_ready: false },
+    existing_conditions_summary: { production_ready: false },
+  });
 
   await page.route("**/api/auth/status", async (route) => {
     await route.fulfill({
@@ -52,6 +78,39 @@ async function mockShell(page: Page, store: Map<string, SavedProject>) {
   });
 
   await page.route("**/api/jobs**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/jobs/source-context") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          job: {
+            job_id: "source-context-1",
+            status: "completed",
+            progress: 1,
+            result: sourceContextResult(),
+          },
+        }),
+      });
+      return;
+    }
+    if (path === "/api/jobs/source-context-1") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          job: {
+            job_id: "source-context-1",
+            status: "completed",
+            progress: 1,
+            result: sourceContextResult(),
+          },
+        }),
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -117,32 +176,7 @@ async function mockShell(page: Page, store: Map<string, SavedProject>) {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        success: true,
-        status: "ready_with_context",
-        online_existing_conditions_discovery_v1: {
-          version: "online_existing_conditions_discovery_v1",
-          status: "candidates_found",
-          candidate_count: 2,
-          sources: [
-            { key: "parcel_site_boundary", label: "parcel/site boundary", provider: "Test Parcels", candidate_count: 1, review_required: true },
-            { key: "public_utilities", label: "public utility layers", provider: "", candidate_count: 0, review_required: true },
-          ],
-          missing_sources: [{ key: "public_utilities", label: "public utility layers" }],
-          review_required: true,
-          acceptance_status: "candidate",
-          construction_release_allowed: false,
-        },
-        map_feature_detection_report_v1: {
-          version: "map_feature_detection_report_v1",
-          candidate_count: 1,
-          feature_candidates: [
-            { candidate_id: "parcel-1", feature_type: "parcel_or_site_boundary", source_type: "official_gis", source_name: "Test Parcels", evidence_source: "Test Parcels", confidence: 0.88, review_required: true, acceptance_status: "pending" },
-          ],
-        },
-        existing_conditions_package: { status: "review_required", production_ready: false },
-        existing_conditions_summary: { production_ready: false },
-      }),
+      body: JSON.stringify(sourceContextResult()),
     });
   });
 
@@ -275,9 +309,22 @@ async function openProjects(page: Page) {
   await expect(page.getByTestId("projects-drawer")).toBeVisible();
 }
 
+async function openWorkspaceMode(page: Page, name: RegExp) {
+  const modeButton = page
+    .getByTestId("primary-workflow-sidebar")
+    .getByRole("button", { name })
+    .filter({ visible: true })
+    .first();
+  if (!(await modeButton.isVisible().catch(() => false))) {
+    const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
+    if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
+  }
+  await expect(modeButton).toBeVisible();
+  await modeButton.click();
+}
+
 async function openSetup(page: Page) {
-  await page.getByRole("button", { name: "Open workspace controls" }).click();
-  await page.getByRole("button", { name: /^Setup$/ }).first().click();
+  await openWorkspaceMode(page, /^Setup$/);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/);
 }
 
@@ -388,7 +435,7 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByLabel("Width (ft)")).toHaveValue("920");
     await expect(page.getByLabel("Depth (ft)")).toHaveValue("730");
     await expect(page.getByTestId("setup-site-box-controls")).toContainText(/920 ft x 730 ft/i);
-    await expect(page.getByTestId("setup-site-box-controls")).toContainText(/locked/i);
+    await expect(page.getByTestId("setup-site-box-controls")).toContainText(/ready/i);
     await page.getByRole("button", { name: /^Generate$/ }).first().click();
     await expect(page.getByTestId("generate-flow-summary")).toHaveCount(0);
   });
@@ -539,27 +586,30 @@ test.describe("project drawer reliability", () => {
       await page.getByTestId("cad-tool-box").filter({ visible: true }).first().click();
       const panel = page.getByTestId("workspace-right-panel");
       await panel.getByRole("button", { name: "Minimize" }).click();
-      const surface = page.getByTestId("preview-drawing-surface");
-      const box = await surface.boundingBox();
+      const plan = page.getByTestId("preview-plan-canvas-svg");
+      const box = await plan.boundingBox();
       expect(box).not.toBeNull();
       await page.mouse.click(box!.x + box!.width * first[0], box!.y + box!.height * first[1]);
       await page.mouse.click(box!.x + box!.width * second[0], box!.y + box!.height * second[1]);
     };
 
     await drawBox([0.54, 0.34], [0.67, 0.46]);
-    const objectManager = page.getByTestId("preview-object-manager");
-    const firstSelected = objectManager.getByRole("textbox", { name: "Rename selected object" });
+    await page.getByTestId("selected-object-quick-inspect").click();
+    const objectManager = page.getByTestId("workspace-right-panel").getByTestId("preview-object-manager");
+    const firstSelected = objectManager.getByTestId("preview-object-manager-rename");
     await expect(firstSelected).toHaveValue(/Custom Rectangle/);
     await firstSelected.fill("Office Building A");
     await firstSelected.press("Enter");
     await objectManager.getByTestId("preview-object-manager-type").selectOption("building");
 
     await drawBox([0.72, 0.34], [0.85, 0.46]);
-    const secondSelected = objectManager.getByRole("textbox", { name: "Rename selected object" });
+    await page.getByTestId("selected-object-quick-inspect").click();
+    const secondObjectManager = page.getByTestId("workspace-right-panel").getByTestId("preview-object-manager");
+    const secondSelected = secondObjectManager.getByTestId("preview-object-manager-rename");
     await expect(secondSelected).toHaveValue(/Custom Rectangle/);
     await secondSelected.fill("Parking Field A");
     await secondSelected.press("Enter");
-    await objectManager.getByTestId("preview-object-manager-type").selectOption("parking");
+    await secondObjectManager.getByTestId("preview-object-manager-type").selectOption("parking");
 
     await page.waitForTimeout(1_800);
     const objectList = page.getByTestId("preview-object-manager-list");
@@ -628,7 +678,7 @@ test.describe("project drawer reliability", () => {
     );
     await openSetup(page);
     await expect(page.getByLabel("Type project address")).toHaveValue("");
-    await expect(page.getByTestId("auto-site-context-summary")).toContainText("Found 0");
+    await expect(page.getByTestId("auto-site-context-found-count")).toHaveAttribute("aria-label", "Found 0");
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText(
       "Local site coordinates",
     );
@@ -734,7 +784,8 @@ test.describe("project drawer reliability", () => {
       .filter({ visible: true })
       .first();
     if (!(await drawButton.isVisible().catch(() => false))) {
-      await page.getByRole("button", { name: "Open workspace controls" }).click();
+      const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
+      if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
     }
     await page
       .getByTestId("primary-workflow-sidebar")
@@ -998,7 +1049,7 @@ test.describe("project drawer reliability", () => {
     );
     await openSetup(page);
     await expect(page.getByLabel("Type project address")).toHaveValue("");
-    await expect(page.getByTestId("auto-site-context-summary")).toContainText("Found 0");
+    await expect(page.getByTestId("auto-site-context-found-count")).toHaveAttribute("aria-label", "Found 0");
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText(
       "Local site coordinates",
     );
@@ -1069,8 +1120,7 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("project-drawer-state")).toContainText(/Saved|Restored/i);
     await page.getByRole("button", { name: "Open project Requested Program Project" }).click();
 
-    await page.getByRole("button", { name: "Open workspace controls" }).click();
-    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await openWorkspaceMode(page, /^Draw$/);
     await expect(page.getByTestId("needs-placement-tray")).toContainText("Office Building - 28,000 sf");
     await expect(page.getByTestId("needs-placement-tray")).toContainText("Parking Field - 140 stalls");
     await expect(page.getByTestId("needs-placement-tray")).toContainText("Detention Basin");
@@ -1085,8 +1135,8 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("object-manager-panel")).toContainText("Parking Field - 140 stalls");
     await expect(page.getByTestId("object-manager-panel")).toContainText("Unplaced");
     await page.getByTestId("header-chat-button").click();
-    await page.getByPlaceholder("Message Civora AI with what you want to create or change...").fill("what should I do next?");
-    await page.getByPlaceholder("Message Civora AI with what you want to create or change...").press("Enter");
+    await page.getByTestId("civora-command-input").fill("what should I do next?");
+    await page.getByTestId("civora-command-input").press("Enter");
     await expect(page.getByTestId("workspace-right-panel").getByText("Open Objects and place Parking Field - 140 stalls", { exact: false }).last()).toBeVisible();
 
     await page.getByRole("button", { name: /^Generate$/ }).first().click();
@@ -1122,9 +1172,9 @@ test.describe("project drawer reliability", () => {
     }
     await addressDetails.getByLabel("Type project address").fill("123 Main St, Test City, TX");
     await page.getByRole("button", { name: "Apply address" }).click();
-    await expect(page.getByTestId("auto-site-context-summary")).toContainText(/parcel\/site boundary|candidates/i, { timeout: 30_000 });
+    await expect(page.getByTestId("auto-site-context-summary")).toContainText(/parcel\/site boundary|source candidate/i, { timeout: 30_000 });
     await page.getByTestId("header-chat-button").click();
-    const chatComposer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+    const chatComposer = page.getByTestId("civora-command-input");
     await expect(chatComposer).toBeVisible();
     await chatComposer.fill("add 140 parking spaces");
     await chatComposer.press("Enter");
@@ -1154,10 +1204,10 @@ test.describe("project drawer reliability", () => {
 
     await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
     await page.getByTestId("cad-tool-line").filter({ visible: true }).first().click();
-    await expect(page.getByTestId("cad-precision-tools")).toBeVisible();
+    await expect(page.getByTestId("draw-active-tool")).toContainText(/LINE/i);
     await openProjects(page);
     await page.getByRole("button", { name: "New Project" }).first().click();
-    await expect(page.getByTestId("workspace-canvas-shell")).not.toContainText("Precision & commands");
+    await expect(page.getByTestId("draw-active-tool")).toHaveCount(0);
     await openProjects(page);
     await expect(page.getByTestId("project-drawer-state")).toContainText("Unsaved draft");
     await openSetup(page);
@@ -1165,9 +1215,9 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByText("parcel/site boundary")).not.toBeVisible();
     await page.getByRole("button", { name: /^Draw$/ }).first().click();
     await expect(page.getByTestId("workspace-right-panel")).not.toContainText("Parking Field - 140 stalls");
-    await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Undo last draft change" })).toBeDisabled();
     await page.getByTestId("header-chat-button").click();
-    await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toHaveValue("");
+    await expect(page.getByTestId("civora-command-input")).toHaveValue("");
 
     await openProjects(page);
     await page.getByRole("button", { name: "Open project Untitled Project" }).first().click();
@@ -1175,7 +1225,7 @@ test.describe("project drawer reliability", () => {
     await openSetup(page);
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/123 Main St, Test City, TX/i);
     await page.getByTestId("header-chat-button").click();
-    await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toHaveValue("Generate a parking layout note.");
+    await expect(page.getByTestId("civora-command-input")).toHaveValue("Generate a parking layout note.");
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });

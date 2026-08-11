@@ -10,10 +10,12 @@ async function openDemoWorkspace(page: Page) {
 }
 
 async function openWorkspacePanel(page: Page, name: RegExp | string, expected: RegExp | string) {
+  const panel = page.getByTestId("workspace-right-panel");
+  if (await panel.filter({ hasText: expected }).isVisible().catch(() => false)) return;
   const navName = name === "Object Manager" || name === "Open canvas from sidebar" ? /^Draw$/ : name;
   const directButton = page.getByRole("button", { name: navName }).first();
   await directButton.click();
-  await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
+  await expect(panel).toContainText(expected, { timeout: 5_000 });
 }
 
 async function openDrawTools(page: Page) {
@@ -40,6 +42,17 @@ async function clickCadTool(page: Page, tool: string, expected: RegExp) {
   await toolButton.scrollIntoViewIfNeeded();
   await expect(toolButton).toBeEnabled();
   await toolButton.click();
+  const activeDrawLabels: Record<string, string> = {
+    line: "Add Line",
+    polyline: "Add Polyline",
+    area: "Add Area",
+    box: "Add Box",
+    point: "Add Point",
+  };
+  if (activeDrawLabels[tool]) {
+    await expect(page.getByTestId("draw-active-tool")).toContainText(activeDrawLabels[tool], { timeout: 5_000 });
+    return;
+  }
   await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(expected, { timeout: 5_000 });
 }
 
@@ -128,7 +141,7 @@ test.describe("button functionality audit", () => {
     const panels: Array<[RegExp | string, RegExp | string]> = [
       [/^Setup$/, /Setup|Address \/ Location|Site Boundary/],
       [/^Draw$/, /Draw & Objects|Tools/],
-      ["Generate", /Generate Systems/],
+      ["Generate", /^Generate|Generate project systems/],
       [/^Deliver$/, /Deliver|Plan Sheets|Files/],
     ];
 
@@ -137,16 +150,16 @@ test.describe("button functionality audit", () => {
     }
 
     await page.getByTestId("header-chat-button").click();
-    await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Chat");
+    await expect(page.getByTestId("civora-command-input")).toBeVisible();
 
     await page.getByRole("button", { name: /^Setup$/ }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/);
     await expect(page.getByTestId("setup-address-truth")).toBeVisible();
 
-    await page.getByRole("button", { name: "Hide left sidebar" }).click();
-    await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible();
-    await page.getByRole("button", { name: "Show left sidebar" }).click();
-    await expect(page.getByRole("button", { name: "Hide left sidebar" })).toBeVisible();
+    await expect(page.getByTestId("left-sidebar")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Hide left sidebar" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Show left sidebar" })).toHaveCount(0);
 
     expect(pageErrors).toEqual([]);
     expect(consoleErrors.filter((message) => !message.includes("ERR_CONNECTION_REFUSED"))).toEqual([]);

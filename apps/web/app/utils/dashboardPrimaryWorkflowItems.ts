@@ -1,7 +1,7 @@
 import {
   Box,
+  CircleAlert,
   FileText,
-  Gauge,
   Layers,
   MapPinned,
   SlidersHorizontal,
@@ -77,10 +77,10 @@ export function buildDashboardPrimaryWorkflowItems({
     },
     {
       key: "analyze",
-      label: "Project Health",
-      caption: "Issues, quantities, jobs",
+      label: "Review",
+      caption: "Issues and project health",
       panel: "analysis",
-      icon: Gauge,
+      icon: CircleAlert,
       status: issueCount ? "review" : backendResultPresent ? "ok" : "idle",
       metric: `${issueCount} issue${issueCount === 1 ? "" : "s"}`,
     },

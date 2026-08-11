@@ -81,6 +81,7 @@ type PreviewEditableObjectHitTargetsProps = {
     mode?: "move" | "resize" | "rotate",
   ) => void;
   onSelectBuilding: (id: string | null) => void;
+  onOpenObjectInspector?: (id: string) => void;
   setSelectedVertex: Dispatch<SetStateAction<SelectionIndex>>;
   setHoveredObjectId: Dispatch<SetStateAction<string | null>>;
   setHoveredVertex: Dispatch<SetStateAction<SelectionIndex>>;
@@ -139,6 +140,7 @@ export function PreviewEditableObjectHitTargets({
   shouldRevealObjectLabel,
   handleBuildingMouseDown,
   onSelectBuilding,
+  onOpenObjectInspector,
   setSelectedVertex,
   setHoveredObjectId,
   setHoveredVertex,
@@ -391,7 +393,8 @@ export function PreviewEditableObjectHitTargets({
                   onRotate={() => transformSelectedCadObjects("rotate")}
                   onInspect={() => {
                     onSelectBuilding(item.id);
-                    pushCadCommandFeedback("INSPECT", "info", `INSPECT selected ${item.label || "draft object"}. Use Object Manager for full properties.`);
+                    onOpenObjectInspector?.(item.id);
+                    pushCadCommandFeedback("INSPECT", "info", `Opened ${item.label || "draft object"} in Object Inspector.`);
                   }}
                   onDelete={() => {
                     if (!selectedDeletableObject || selectedDeletableObject.id !== item.id) {

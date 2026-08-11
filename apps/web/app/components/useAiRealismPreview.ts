@@ -352,6 +352,20 @@ export function useAiRealismPreview({
   }, [aiRealismArtifact, generateAiRealismArtifact, providerMode]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleVisualizationCommand = (event: Event) => {
+      const enabled = (event as CustomEvent<{ enabled?: boolean }>).detail?.enabled !== false;
+      if (enabled) {
+        setAiVisualizationOn();
+      } else {
+        setAiVisualizationOff();
+      }
+    };
+    window.addEventListener("civora:set-ai-visualization", handleVisualizationCommand);
+    return () => window.removeEventListener("civora:set-ai-visualization", handleVisualizationCommand);
+  }, [setAiVisualizationOff, setAiVisualizationOn]);
+
+  useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;

@@ -326,9 +326,7 @@ export function runDashboardStartBlankSite({ actions }: { actions: DashboardSite
   actions.setSidePanelVisible(false);
   actions.setRightRailCollapsed(true);
   actions.setSiteDrawRequest((value) => Math.max(value + 1, Date.now()));
-  if (typeof window !== "undefined") {
-    actions.setLeftSidebarOpen(false);
-  }
+  actions.setLeftSidebarOpen(true);
   actions.scrollToDrawingSurface();
   actions.updateProjectStatus({
     state: "ready",
@@ -353,9 +351,17 @@ export function runDashboardStartSiteBoundaryDraw({
   width: number | null | undefined;
   siteScaleLocked: boolean;
 }) {
-  if (!width || !height) {
-    actions.setStatusMessage("Set site width and depth before drawing the boundary.");
-    return;
+  const hasDrawingFrame = Boolean(width && height);
+  if (!hasDrawingFrame) {
+    actions.autoFitSite(
+      width || DEFAULT_BLANK_SITE_WIDTH_FT,
+      height || DEFAULT_BLANK_SITE_DEPTH_FT,
+      "Draft Site Boundary",
+      undefined,
+      true,
+      false,
+      false,
+    );
   }
   if (siteScaleLocked) {
     unlockSite();
@@ -365,13 +371,15 @@ export function runDashboardStartSiteBoundaryDraw({
   actions.setRenderedSidePanel(null);
   actions.setSidePanelVisible(false);
   actions.setRightRailCollapsed(true);
-  if (typeof window !== "undefined") {
-    actions.setLeftSidebarOpen(false);
-  }
+  actions.setLeftSidebarOpen(true);
   actions.setShowSiteBounds(true);
   actions.setSiteSelectionMode(true);
   actions.setPreviewInteraction("edit");
   actions.setSiteDrawRequest((value) => Math.max(value + 1, Date.now()));
   actions.scrollToDrawingSurface();
-  actions.setStatusMessage("Draw the site boundary on the canvas. Double-click or use Finish to lock it.");
+  actions.setStatusMessage(
+    hasDrawingFrame
+      ? "Draw the site boundary on the canvas. Double-click or use Finish to lock it."
+      : `Draw the site boundary on the ${width || DEFAULT_BLANK_SITE_WIDTH_FT} ft by ${height || DEFAULT_BLANK_SITE_DEPTH_FT} ft starter frame. Double-click or use Finish to lock it.`,
+  );
 }

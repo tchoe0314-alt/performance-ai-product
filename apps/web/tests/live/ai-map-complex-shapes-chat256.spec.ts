@@ -1,13 +1,34 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 async function clickExposedSurface(surface: Locator, siteFrame: Locator, xRatio: number, yRatio: number) {
   await surface.scrollIntoViewIfNeeded();
   const point = await siteFrame.evaluate(
     (element, ratios) => {
       const rect = element.getBoundingClientRect();
       const clamp = (value: number) => Math.max(0.08, Math.min(0.9, value));
-      return {
+      const candidates: Array<{ x: number; y: number; distance: number }> = [];
+      for (const xOffset of [0, -0.06, 0.06, -0.12, 0.12, -0.2]) {
+        for (const yOffset of [0, -0.06, 0.06, -0.12, 0.12, -0.2]) {
+          const x = rect.left + rect.width * clamp(ratios.xRatio + xOffset);
+          const y = rect.top + rect.height * clamp(ratios.yRatio + yOffset);
+          const hit = document.elementFromPoint(x, y);
+          const blocked = hit?.closest?.(
+            'button,input,select,textarea,aside,header,[data-object-overlay],[data-testid="cad-precision-tools"],[data-testid="workspace-right-panel"]',
+          );
+          if (!blocked && hit?.closest?.('[data-testid="preview-drawing-surface"]')) {
+            candidates.push({
+              x,
+              y,
+              distance: Math.abs(xOffset) + Math.abs(yOffset),
+            });
+          }
+        }
+      }
+      candidates.sort((a, b) => a.distance - b.distance);
+      return candidates[0] || {
         x: rect.left + rect.width * clamp(ratios.xRatio),
         y: rect.top + rect.height * clamp(ratios.yRatio),
       };
@@ -31,23 +52,29 @@ async function drawArea(page: Page, points: Array<[number, number]>) {
 }
 
 async function drawSiteBoundary(page: Page) {
-  await page.getByTestId("draw-site-boundary-toolbar").filter({ visible: true }).first().click();
+  await page.getByRole("button", { name: /^Setup$/ }).first().click();
+  await page.getByTestId("setup-draw-site-boundary").filter({ visible: true }).first().click();
+  await expect(page.getByTestId("draw-active-tool")).toContainText("Site Boundary");
   const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
   await expect(surface).toBeVisible();
   for (const [x, y] of [
     [0.12, 0.16],
-    [0.88, 0.16],
-    [0.88, 0.84],
-    [0.12, 0.84],
+    [0.62, 0.16],
+    [0.62, 0.72],
+    [0.12, 0.72],
   ] as Array<[number, number]>) {
     await clickExposedSurface(surface, surface, x, y);
   }
   const siteStatus = page.getByTestId("site-status");
-  if ((await siteStatus.textContent())?.includes("Site Locked")) return;
+  if ((await siteStatus.textContent())?.includes("Site Locked")) {
+    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    return;
+  }
   const finish = page.getByTestId("canvas-quick-finish").filter({ visible: true }).first();
   await expect(finish).toBeEnabled();
   await finish.click();
   await expect(siteStatus).toContainText("Site Locked");
+  await page.getByRole("button", { name: /^Draw$/ }).first().click();
 }
 
 test("keeps available map context and preserves complex building and parking polygons", async ({ page }) => {
@@ -96,7 +123,7 @@ test("keeps available map context and preserves complex building and parking pol
   await expect(page.getByTestId("object-manager-row").filter({ hasText: "L-Shaped Research Building" }).first()).toBeVisible();
   await expect(page.getByTestId("object-manager-row").filter({ hasText: "Angled Visitor Parking" }).first()).toBeVisible();
   await page.getByRole("button", { name: "Minimize", exact: true }).click();
-  await page.getByRole("button", { name: "Plan Sheet", exact: true }).click();
+  await setPreviewQuality(page, "high");
   const mapToggle = page.getByTestId("preview-inner-map-toggle");
   const liveMapAvailable = await mapToggle.isEnabled();
   if (liveMapAvailable && (await mapToggle.textContent())?.includes("Off")) await mapToggle.click();

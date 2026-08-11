@@ -46,7 +46,7 @@ test("step 1.1 preview stability flow", async ({ page, request, baseURL }) => {
     await siteSection.locator("summary").click();
   }
   await page.getByTestId("use-1000-site-size").click();
-  await addressSection.getByTestId("create-centered-site-button").click();
+  await siteSection.getByTestId("create-centered-site-button").click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 60_000 });
 
   const canvas = page.getByTestId("workspace-canvas-shell");
@@ -56,9 +56,9 @@ test("step 1.1 preview stability flow", async ({ page, request, baseURL }) => {
 
   await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
   const refreshedSiteSection = page.getByTestId("setup-site-box-controls");
-  await refreshedSiteSection.getByRole("button", { name: "Change Boundary" }).click();
+  await refreshedSiteSection.getByRole("button", { name: "Edit site" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Editable");
-  await refreshedSiteSection.getByRole("button", { name: "Lock Boundary" }).click();
+  await refreshedSiteSection.getByRole("button", { name: "Use this site" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
   const workspacePanel = page.getByTestId("workspace-right-panel");
   if (await workspacePanel.isVisible().catch(() => false)) {

@@ -83,6 +83,7 @@ export function ObjectManagerRow({
     <div
       data-testid="object-manager-row"
       data-object-id={item.id}
+      data-selected={isSelected ? "true" : "false"}
       draggable={!item.locked}
       onDragStart={onDragStart}
       className={`rounded-2xl border bg-white p-3 text-xs text-slate-600 ${
@@ -96,7 +97,7 @@ export function ObjectManagerRow({
               type="checkbox"
               checked={isMultiSelected}
               onChange={(event) => onToggleMultiSelect(event.target.checked)}
-              aria-label={`Select ${item.label} for bulk actions`}
+              aria-label={`Include ${item.label} in bulk actions`}
               data-testid="object-manager-bulk-select"
               className="mt-1 h-4 w-4 shrink-0 accent-slate-950"
             />

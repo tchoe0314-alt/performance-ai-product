@@ -58,7 +58,7 @@ async function readShellMetrics(page: Page): Promise<ShellMetrics> {
       rail: rectFor('[data-testid="left-sidebar"]'),
       canvas: rectFor('[data-testid="workspace-canvas-frame"]'),
       panel: rectFor('[data-testid="workspace-right-panel"]'),
-      controls: rectFor('[data-testid="preview-control-stack"]'),
+      controls: rectFor(".civora-preview-view-toolbar"),
       siteStatus: rectFor('[data-testid="site-status"]'),
       drawingSurface: rectFor('[aria-label="Drawing surface"]'),
       commandBar: rectFor('[data-testid="floating-command-bar"]'),
@@ -87,7 +87,7 @@ function expectContained(inner: Rect | null, outer: Rect | null) {
 }
 
 test.describe("Chat 263 workspace visual geometry", () => {
-  test("desktop panels share one non-overlapping layout contract", async ({ page }) => {
+  test("desktop panels overlay the fixed canvas without covering its active controls", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await openDemoWorkspace(page);
 
@@ -105,7 +105,9 @@ test.describe("Chat 263 workspace visual geometry", () => {
       expect(metrics.pageOverflowX).toBeLessThanOrEqual(1);
       expect(metrics.panelOverflowX).toBeLessThanOrEqual(1);
       expect(metrics.header?.bottom).toBeLessThanOrEqual((metrics.panel?.top ?? 0) + 1);
-      expect(metrics.canvas?.right).toBeLessThanOrEqual((metrics.panel?.left ?? 0) - 8);
+      expect(metrics.canvas?.right).toBeGreaterThan(metrics.panel?.left ?? 0);
+      expect(metrics.canvas?.right).toBeLessThanOrEqual(metrics.viewport.width + 1);
+      expect(metrics.controls?.right).toBeLessThanOrEqual((metrics.panel?.left ?? 0) - 8);
       expectContained(metrics.controls, metrics.canvas);
       expectContained(metrics.siteStatus, metrics.controls);
       expect(await railButton.getAttribute("aria-current")).toBe("page");
@@ -118,7 +120,7 @@ test.describe("Chat 263 workspace visual geometry", () => {
     expect(withCommand.commandBar?.left).toBeGreaterThanOrEqual((withCommand.canvas?.left ?? 0) + 8);
   });
 
-  test("constrained desktop keeps the canvas usable beside every primary drawer", async ({ page }) => {
+  test("constrained desktop keeps the fixed canvas controls clear of every primary drawer", async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 });
     await openDemoWorkspace(page);
 
@@ -128,7 +130,8 @@ test.describe("Chat 263 workspace visual geometry", () => {
       expect(metrics.pageOverflowX).toBeLessThanOrEqual(1);
       expect(metrics.canvas?.width).toBeGreaterThanOrEqual(panelName === "Deliver" ? 300 : 500);
       expect(metrics.drawingSurface?.height).toBeGreaterThanOrEqual(220);
-      expect(metrics.canvas?.right).toBeLessThanOrEqual((metrics.panel?.left ?? 0) - 8);
+      expect(metrics.canvas?.right).toBeGreaterThan(metrics.panel?.left ?? 0);
+      expect(metrics.controls?.right).toBeLessThanOrEqual((metrics.panel?.left ?? 0) - 8);
       expectContained(metrics.controls, metrics.canvas);
     }
   });

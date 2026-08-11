@@ -133,8 +133,8 @@ export function GeneratePanel({
       <PanelCard>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generate Systems</p>
-            <p className="mt-1 text-sm font-semibold text-slate-950">Run what is ready from the current site model.</p>
+            <p className="text-sm font-semibold text-slate-950">Generate project systems</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Civora uses the current site, drawn objects, and accepted context.</p>
           </div>
           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
             missingSite
@@ -178,7 +178,7 @@ export function GeneratePanel({
             onGenerateSystem("full");
           }}
           disabled={actionBusy}
-          className="mt-4 flex w-full items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-3 py-3 text-center text-sm font-semibold text-white shadow-[0_14px_30px_-24px_rgba(37,99,235,0.85)] transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+          className="mt-4 flex w-full items-center justify-center rounded-[7px] border border-blue-600 bg-blue-600 px-3 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
         >
           {isAwaitingApproval
             ? `Continue after ${reviewCheckpointLabel}`
@@ -201,8 +201,10 @@ export function GeneratePanel({
             {approvalError ? <span className="mt-1 block font-semibold text-red-700">{approvalError}</span> : null}
           </div>
         ) : null}
+        <details className="mt-3 border-t border-slate-100 pt-3" data-testid="generate-context-details">
+          <summary className="cursor-pointer list-none text-xs font-semibold text-slate-600">Inputs and context</summary>
         <div
-          className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600"
+          className="mt-3 rounded-[7px] border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600"
           data-testid="generate-auto-site-context"
         >
           Auto Site Context: {autoSiteContextFlowSummary.candidateCount} review-required source candidate{autoSiteContextFlowSummary.candidateCount === 1 ? "" : "s"} available.
@@ -245,11 +247,12 @@ export function GeneratePanel({
             {statusMessage}
           </div>
         ) : null}
+        </details>
       </PanelCard>
 
       <PanelCard testId="generate-system-list">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Systems</p>
-        <div className="mt-3 space-y-2">
+        <p className="text-sm font-semibold text-slate-900">Systems</p>
+        <div className="mt-2 divide-y divide-slate-100">
           {systemReadinessRows.map((row) => (
             <button
               key={row.key}
@@ -257,7 +260,7 @@ export function GeneratePanel({
               data-testid={`generate-${row.key}`}
               onClick={() => onGenerateSystem(row.runTarget)}
               disabled={actionBusy || isAwaitingApproval}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left text-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="min-w-0">
                 <span className="block font-semibold text-slate-900">{row.label}</span>

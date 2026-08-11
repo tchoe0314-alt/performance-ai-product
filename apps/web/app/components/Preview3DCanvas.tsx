@@ -1596,7 +1596,7 @@ export default function Preview3DCanvas({
         </div>
       ) : null}
       {objectChips.length ? (
-        <div className="absolute right-4 top-32 z-[90] flex max-h-36 w-[min(218px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/76 p-2 shadow-sm backdrop-blur sm:top-16" data-testid="civil-3d-object-strip">
+        <div className="civora-3d-object-strip absolute right-4 top-32 z-[90] flex max-h-36 w-[min(218px,calc(100%-2rem))] flex-col gap-1 overflow-y-auto rounded-xl border border-slate-200 bg-white/76 p-2 shadow-sm backdrop-blur sm:top-16" data-testid="civil-3d-object-strip">
           <p className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             Objects
           </p>

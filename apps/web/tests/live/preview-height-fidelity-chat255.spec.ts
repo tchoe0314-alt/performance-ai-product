@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 async function openDemoWorkspace(page: Page) {
   await page.route("**/api/**", async (route) => {
     await route.fulfill({
@@ -46,7 +48,7 @@ test.describe("Preview height and geometry fidelity", () => {
     await page.getByTestId("selected-object-roof-select").selectOption("gable");
     await expect(buildingRow).toContainText("72 ft high");
 
-    await page.getByTestId("preview-quality-high").click();
+    await setPreviewQuality(page, "high");
     await page.getByTestId("preview-mode-3d").click();
     const viewer = page.getByTestId("civil-3d-viewer");
     await expect(viewer).toBeVisible({ timeout: 20_000 });
@@ -92,7 +94,7 @@ test.describe("Preview height and geometry fidelity", () => {
     } else {
       await expect(page.getByTestId("professional-building-footprint").first()).toHaveJSProperty("tagName", "polygon");
     }
-    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Plan Sheet mode/i);
+    await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/CONCEPT PLAN/i);
     await page.getByRole("button", { name: /^Draw$/ }).first().click();
     expect(await page.getByTestId("object-manager-row").count()).toBe(initialObjectCount);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);

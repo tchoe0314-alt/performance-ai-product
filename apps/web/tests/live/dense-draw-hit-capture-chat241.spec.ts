@@ -80,7 +80,7 @@ test.describe("dense canvas draw hit capture", () => {
     expect(await pointIsObjectOverlay(page, points.lineA)).toBe(true);
 
     await cadTools.getByTestId("cad-tool-line").click();
-    await expect(feedback).toContainText(/LINE tool active|LINE active/i);
+    await expect(page.getByTestId("draw-active-tool")).toContainText(/LINE|ADD LINE/i);
     await expect.poll(() => pointIsObjectOverlay(page, points.lineA)).toBe(false);
     await page.mouse.click(points.lineA.x, points.lineA.y);
     await page.mouse.click(points.lineB.x, points.lineB.y);
@@ -89,7 +89,7 @@ test.describe("dense canvas draw hit capture", () => {
 
     const areaPoints = await largestOverlayPoints(page);
     await cadTools.getByTestId("cad-tool-area").click();
-    await expect(feedback).toContainText(/AREA tool active|Add Area active/i);
+    await expect(page.getByTestId("draw-active-tool")).toContainText(/AREA|ADD AREA/i);
     await expect.poll(() => pointIsObjectOverlay(page, areaPoints.areaA)).toBe(false);
     await page.mouse.click(areaPoints.areaA.x, areaPoints.areaA.y);
     await page.mouse.click(areaPoints.areaB.x, areaPoints.areaB.y);

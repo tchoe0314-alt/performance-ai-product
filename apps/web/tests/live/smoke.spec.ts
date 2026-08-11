@@ -80,9 +80,7 @@ async function expectNoGenericDesignClarification(page: Page) {
 }
 
 async function waitForComposer(page: Page) {
-  const composer = page.getByPlaceholder(
-    "Message Civora AI with what you want to create or change...",
-  );
+  const composer = page.getByTestId("civora-command-input");
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     if (await ensureAppUrl(page)) {

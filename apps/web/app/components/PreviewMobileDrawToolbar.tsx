@@ -48,7 +48,7 @@ export function PreviewMobileDrawToolbar({
   onDeleteSelected: () => void;
 }) {
   return (
-    <div className="absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 sm:bottom-2 md:hidden">
+    <div className="civora-preview-mobile-draw-toolbar absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 md:hidden">
       <div className="grid grid-cols-4 gap-1.5 pb-1 min-[420px]:grid-cols-7">
         {drawModeButtons.map((item) => {
           const Icon = item.icon;

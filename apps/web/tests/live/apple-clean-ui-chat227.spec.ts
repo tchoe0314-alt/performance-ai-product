@@ -38,6 +38,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await expect(page.getByTestId("header-projects-button")).toBeVisible();
     await expect(page.getByRole("button", { name: "Search unavailable" })).toHaveCount(0);
     await expect(page.getByTestId("workspace-canvas-shell").getByTestId("preview-mode-2d")).toBeVisible();
+    await page.locator('summary[aria-label="Preview view options"]').click();
     await expect(page.getByTestId("workspace-canvas-shell").getByTestId("preview-quality-high")).toBeVisible();
 
     expect(await visibleButtonCount(page, "Generate")).toBe(1);
@@ -59,13 +60,14 @@ test.describe("Chat 227 Apple-clean UI", () => {
     if (await showSidebar.isVisible().catch(() => false)) {
       await showSidebar.click();
     }
-    await expect(page.getByTestId("header-projects-button-mobile")).toBeVisible();
-    await page.getByTestId("header-projects-button-mobile").click();
+    await expect(page.getByTestId("header-projects-button")).toBeVisible();
+    await page.getByTestId("header-projects-button").click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
     await page.getByRole("button", { name: "Minimize" }).click();
-    await expect(page.getByTestId("header-chat-button-mobile")).toBeVisible();
-    await page.getByTestId("header-chat-button-mobile").click();
-    await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
+    await expect(page.getByTestId("header-chat-button")).toBeVisible();
+    await page.getByTestId("header-chat-button").click();
+    await expect(page.getByTestId("workspace-right-panel")).toContainText("Chat");
+    await expect(page.getByTestId("civora-command-input")).toBeVisible();
 
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
@@ -79,7 +81,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await expect(page.getByLabel(/Type project address/i)).toBeVisible();
     expect(await visibleButtonCount(page, /Enter Address First|Apply Address/i)).toBe(1);
 
-    await openPanel(page, "Generate", /Generate Systems/);
+    await openPanel(page, "Generate", /Generate/);
     expect(await visibleButtonCount(page, /^Generate$/)).toBe(1);
 
     await openPanel(page, /^Deliver$/, /Review package|Deliver/);
@@ -88,7 +90,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
 
   test("Object Manager can select, rename, color, layer, hide, focus, and delete", async ({ page }) => {
     await openDemoWorkspace(page, "debugPreview=1&seedDemo=1");
-    await openPanel(page, "Object Manager", /Draw & Objects|Tools/);
+    await openPanel(page, "Object Manager", /Draw|Objects/);
 
     const rows = page.getByTestId("object-manager-row");
     await expect(rows.first()).toBeVisible();
@@ -113,8 +115,13 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await editable.getByTestId("object-manager-focus").click();
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
 
-    await openPanel(page, "Object Manager", /Draw & Objects|Tools/);
+    await openPanel(page, "Object Manager", /Draw|Objects/);
+    const objectsDisclosure = page.getByTestId("object-manager-panel");
+    if (!(await objectsDisclosure.evaluate((element) => (element as HTMLDetailsElement).open))) {
+      await objectsDisclosure.locator("summary").click();
+    }
     const renamed = page.getByTestId("object-manager-row").filter({ hasText: "Apple Clean Test Object" }).first();
+    await expect(renamed).toBeVisible();
     await renamed.getByTestId("object-manager-delete").click();
     await expect(page.getByTestId("object-manager-row").filter({ hasText: "Apple Clean Test Object" })).toHaveCount(0);
   });

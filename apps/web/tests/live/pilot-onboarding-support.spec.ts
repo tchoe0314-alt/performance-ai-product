@@ -21,9 +21,11 @@ test("pilot onboarding and support surfaces render", async ({ page, baseURL }) =
   const rightPanel = page.getByTestId("workspace-right-panel");
   await expect(rightPanel.getByText("Onboarding checklist")).toHaveCount(0);
   await expect(rightPanel.getByText("What do statuses mean?")).toHaveCount(0);
-  await expect(rightPanel.getByText("Report issue")).toBeVisible();
-  await rightPanel.getByText("Report issue", { exact: true }).click();
-  await expect(rightPanel.getByText("Diagnostic summary", { exact: true })).toBeVisible();
+  await page.getByTestId("header-help-button").click();
+  await expect(rightPanel.getByTestId("support-summary")).toBeVisible();
+  await rightPanel.getByTestId("support-summary").click();
+  await expect(rightPanel.getByTestId("support-request-form")).toBeVisible();
+  await expect(rightPanel.getByRole("link", { name: /support@civora.ai/i })).toBeVisible();
 
   await page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Deliver\b/i }).click();
   await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/Make a review package/i);

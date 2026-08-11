@@ -113,7 +113,7 @@ export function AiRealismPreviewOverlay({
           ) : null}
           <details
             data-testid="ai-realism-source-summary"
-            className="group pointer-events-auto absolute right-4 top-4 w-[min(20rem,calc(100%-2rem))] text-[11px] text-slate-700"
+            className="civora-ai-realism-details group pointer-events-auto absolute left-4 top-16 w-[min(20rem,calc(100%-2rem))] text-[11px] text-slate-700"
             onClick={stopPreviewPointerEvent}
             onMouseDown={stopPreviewPointerEvent}
           >

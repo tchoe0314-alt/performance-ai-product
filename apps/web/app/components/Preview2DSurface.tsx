@@ -76,7 +76,7 @@ export function Preview2DSurface({
     >
       <div
         ref={mapContainerRef}
-        className={`absolute inset-0 overflow-hidden rounded-[24px] ${
+        className={`absolute inset-0 overflow-hidden ${
           showMap ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
         }`}
         style={{ width: "100%", height: "100%" }}

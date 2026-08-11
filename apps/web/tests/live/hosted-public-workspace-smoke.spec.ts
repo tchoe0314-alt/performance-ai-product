@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { setPreviewQuality } from "./testUiHelpers";
 
 const ignoredConsoleError = /favicon|401|unauthorized|auth\/status/i;
 
@@ -61,7 +62,7 @@ test.describe("hosted/public workspace smoke", () => {
     expect(await visibleButtonCount(page, /^Deliver$/)).toBe(1);
 
     await expect(page.getByTestId("preview-mode-2d").first()).toBeVisible();
-    await page.getByTestId("preview-quality-high").first().click();
+    await setPreviewQuality(page, "high");
     await expect(page.getByTestId("ai-realism-on").first()).toBeVisible();
     await page.getByTestId("ai-realism-on").first().click();
     await expect(page.getByTestId("ai-realism-watermark").first()).toContainText(/visual concept only/i);
@@ -76,9 +77,10 @@ test.describe("hosted/public workspace smoke", () => {
     await openPanel(page, /^Draw$/, /Draw & Objects|Tools/);
     await expect(page.getByTestId("cad-tool-line")).toBeVisible();
     await page.getByTestId("cad-tool-line").click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE tool active|LINE active/i);
+    await expect(page.getByTestId("active-draw-hud")).toContainText(/Line/i);
 
-    await openPanel(page, "Generate", /Generate Systems/);
+    await page.getByTestId("canvas-quick-cancel").click();
+    await openPanel(page, "Generate", /Generate project systems|Generate/i);
     await expect(page.getByTestId("generate-main-action")).toBeVisible();
     await expect(page.getByTestId("generate-system-details")).toContainText(/Advanced/i);
 
@@ -91,7 +93,7 @@ test.describe("hosted/public workspace smoke", () => {
     await page.getByRole("button", { name: "Minimize" }).click();
 
     await page.getByTestId("header-chat-button").click();
-    await expect(page.getByPlaceholder("Message Civora AI with what you want to create or change...")).toBeVisible();
+    await expect(page.getByTestId("civora-command-input")).toBeVisible();
 
     await expect(page.getByText(/construction-ready|Civora approved|stamped by Civora|sealed by Civora|engineer of record/i)).toHaveCount(0);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

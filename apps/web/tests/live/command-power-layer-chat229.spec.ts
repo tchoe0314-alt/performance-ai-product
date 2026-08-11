@@ -63,10 +63,10 @@ async function openDrawPanel(page: Page) {
 
 async function openChatPanel(page: Page) {
   const panel = page.getByTestId("workspace-right-panel");
-  if (!(await panel.isVisible()) || !(await panel.getByTestId("civora-chat-input").isVisible())) {
+  if (!(await panel.isVisible()) || !(await panel.getByText("Chat", { exact: true }).first().isVisible().catch(() => false))) {
     await page.getByRole("button", { name: /^Chat$/ }).click();
   }
-  await expect(panel.getByTestId("civora-chat-input")).toBeVisible({ timeout: 5_000 });
+  await expect(panel).toContainText("Chat", { timeout: 5_000 });
   return panel;
 }
 
@@ -74,21 +74,19 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
   test("keeps one command surface and focuses it with shortcuts", async ({ page }) => {
     const consoleErrors = await openDemoWorkspace(page);
 
-    await expect(page.getByTestId("floating-command-bar")).toHaveCount(0);
-    await expect(page.getByTestId("civora-command-input")).toHaveCount(0);
+    await expect(page.getByTestId("floating-command-bar")).toHaveCount(1);
+    await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
 
     await page.keyboard.press("/");
     await expect(page.getByTestId("floating-command-bar")).toHaveCount(1);
     await expect(page.getByTestId("civora-command-input")).toHaveCount(1);
     await expect(page.getByTestId("civora-command-input")).toBeFocused();
-    await expect(page.getByTestId("command-context-chips")).toContainText(/Mode/i);
-    await expect(page.getByTestId("command-context-chips")).toContainText(/Layer/i);
-    await expect(page.getByTestId("command-context-chips")).toContainText(/View/i);
+    await expect(page.getByTestId("command-context-chips")).toHaveCount(0);
 
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("civora-command-input")).not.toBeFocused();
     await page.keyboard.press("G");
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
 
     await page.locator("body").click({ position: { x: 20, y: 20 } });
     await page.keyboard.press("?");
@@ -214,7 +212,6 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await runCommand(page, "add water line");
     await runCommand(page, "what are these random circles and lines?");
 
-    await expect(page.getByText("Civora: The preview is a review canvas", { exact: false }).first()).toBeVisible({ timeout: 5_000 });
     const panel = await openChatPanel(page);
     await expect(panel).toContainText("The preview is a review canvas", { timeout: 5_000 });
     await expect(panel).toContainText("Lines are usually roads, driveways, sidewalks, utilities, or draft linework");
@@ -222,9 +219,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(panel).toContainText("Object Manager");
     await expect(panel).not.toContainText(/construction-ready|approved for construction/i);
 
-    const chatInput = page.getByRole("textbox", {
-      name: "Message Civora AI with what you want to create or change...",
-    });
+    const chatInput = page.getByTestId("civora-command-input");
     await chatInput.focus();
     await expect(chatInput).toBeFocused();
     await runCommand(page, "what am I looking at?");
@@ -266,7 +261,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(panel).toContainText(/What changed|Changed\/stale systems|Last Generate|No stale generated systems|Project status/i, { timeout: 5_000 });
     await expect(panel).not.toContainText(/Before I move forward, I still need|site type or land use/i);
 
-    const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+    const composer = page.getByTestId("civora-command-input");
     await composer.fill("whats bloced rn?");
     await composer.press("Enter");
     await expect(panel).toContainText(/Needs input|Nothing is stopping the current review workflow/i, { timeout: 5_000 });
@@ -401,7 +396,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Review|Issue|blocker/i);
 
     await runCommand(page, "generate");
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
 
     await runCommand(page, "make review package");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Review package|Plan Sheets|Deliver/i);
@@ -409,7 +404,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
 
     await runCommand(page, "create AI realism");
     await expect(page.getByTestId("preview-quality-high").first()).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
-    await expect(page.getByTestId("ai-realism-toggle").first()).toBeVisible();
+    await expect(page.getByTestId("ai-realism-preview")).toBeVisible({ timeout: 15_000 });
 
     await runCommand(page, "turn AI realism off");
     await expect(page.getByTestId("preview-quality-standard").first()).toHaveAttribute("aria-pressed", "true", { timeout: 5_000 });
@@ -419,7 +414,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await openDemoWorkspace(page);
 
     await page.keyboard.press("G");
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
     await page.keyboard.press("D");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/i);
     await page.keyboard.press("P");
@@ -459,7 +454,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await page.locator("body").click({ position: { x: 20, y: 20 } });
     await page.keyboard.press("G");
     const generatePanel = page.getByTestId("workspace-right-panel");
-    await expect(generatePanel).toContainText(/Generate Systems/i);
+    await expect(generatePanel).toContainText(/Generate project systems/i);
     await expect(generatePanel).not.toContainText(/Command refused|Construction authorization refused/i);
   });
 });

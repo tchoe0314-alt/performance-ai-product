@@ -16,7 +16,6 @@ type SelectedAccessIssue = {
 
 type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectName" | "previewPanelProps"> & {
   authToken?: string | null;
-  siteName: string;
   currentProject: ProjectRecord | null;
   previewReview: PreviewPanelProps["previewReview"];
   onRefreshPreview: PreviewPanelProps["onRefreshPreview"];
@@ -24,7 +23,10 @@ type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectN
   planPreviewUrl: string;
   planPreviewProjectId?: string | null;
   projectId: string;
+  previewMode: PreviewPanelProps["previewMode"];
+  previewQuality: PreviewPanelProps["previewQuality"];
   canvasPreviewInteraction: PreviewPanelProps["previewInteraction"];
+  draftingWorkspaceActive: boolean;
   systemStatuses: PreviewPanelProps["systemStatuses"];
   hasTerrainSource: boolean;
   hasSourceBackedSurfaceEvidence: boolean;
@@ -64,6 +66,7 @@ type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectN
   onRemoveBuilding: PreviewPanelProps["onRemoveBuilding"];
   onRestoreBuilding: NonNullable<PreviewPanelProps["onRestoreBuilding"]>;
   onSelectBuilding: PreviewPanelProps["onSelectBuilding"];
+  onOpenObjectInspector: NonNullable<PreviewPanelProps["onOpenObjectInspector"]>;
   onSelectObjects: NonNullable<PreviewPanelProps["onSelectObjects"]>;
   onSetPreviewMode: PreviewPanelProps["onSetPreviewMode"];
   onSetPreviewInteraction: PreviewPanelProps["onSetPreviewInteraction"];
@@ -112,7 +115,6 @@ type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectN
 
 export function useDashboardCanvasAreaProps({
   authToken,
-  siteName,
   currentProject,
   previewReview,
   onRefreshPreview,
@@ -122,6 +124,7 @@ export function useDashboardCanvasAreaProps({
   projectId,
   previewMode,
   canvasPreviewInteraction,
+  draftingWorkspaceActive,
   previewQuality,
   systemStatuses,
   hasTerrainSource,
@@ -162,6 +165,7 @@ export function useDashboardCanvasAreaProps({
   onRemoveBuilding,
   onRestoreBuilding,
   onSelectBuilding,
+  onOpenObjectInspector,
   onSelectObjects,
   onSetPreviewMode,
   onSetPreviewInteraction,
@@ -225,9 +229,6 @@ export function useDashboardCanvasAreaProps({
 
   return {
     ...canvasAreaProps,
-    previewMode,
-    previewQuality,
-    projectName: siteName || currentProject?.name || "Untitled Project",
     previewPanelProps: {
       authToken,
       previewReview,
@@ -238,6 +239,7 @@ export function useDashboardCanvasAreaProps({
       currentProjectId: projectId || currentProject?.project_id || null,
       previewMode,
       previewInteraction: canvasPreviewInteraction,
+      draftingWorkspaceActive,
       previewQuality,
       systemStatuses,
       hasTerrainSource,
@@ -295,6 +297,7 @@ export function useDashboardCanvasAreaProps({
       onRemoveBuilding,
       onRestoreBuilding,
       onSelectBuilding,
+      onOpenObjectInspector,
       onSelectObjects,
       onSetPreviewMode,
       onSetPreviewInteraction,

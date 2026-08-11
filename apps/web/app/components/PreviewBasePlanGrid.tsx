@@ -89,6 +89,7 @@ export function PreviewBasePlanGrid({
           </g>
         ) : null}
         <rect
+          data-testid="canonical-site-boundary"
           x={1.2}
           y={1.2}
           width={isHighQuality ? 82.6 : 97.6}

@@ -275,13 +275,14 @@ export function usePreviewDraftGeometry({
     // eslint-disable-next-line react-hooks/refs
     const previewPoint = draftPreviewPoint ?? lastDraftPreviewPointRef.current ?? cursorPoint;
     return buildDraftGeometryViewModel({
+      autoFinishPointCount: drawAutoFinishPointCount,
       cursorPoint,
       draftPoints,
       draftPreviewPoint,
       drawMode,
       finishPreviewPoint: previewPoint,
     });
-  }, [cursorSitePoint, draftPoints, draftPreviewPoint, drawMode, lastDraftPreviewPointRef]);
+  }, [cursorSitePoint, draftPoints, draftPreviewPoint, drawAutoFinishPointCount, drawMode, lastDraftPreviewPointRef]);
 
   const handleDrawPointer = useCallback(
     (

@@ -52,7 +52,7 @@ export function PreviewActiveDrawHud({
 
   return (
     <div
-      className={`${drawMode !== "select" ? "pointer-events-auto" : "pointer-events-none"} relative z-[80] grid h-12 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden border-t border-slate-200 px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500`}
+      className={`${drawMode !== "select" ? "pointer-events-auto" : "pointer-events-none"} relative z-[80] grid h-12 min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden px-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500`}
       data-testid="active-draw-hud"
     >
       <span className="shrink-0 rounded-md border border-slate-900 bg-white px-2 py-1 text-slate-900" data-testid="draw-active-tool">
@@ -81,8 +81,8 @@ export function PreviewActiveDrawHud({
             title={finishDraftBlockedReason ?? "Finish drawn geometry"}
             className={`inline-flex h-8 items-center rounded-lg border px-3 text-[11px] font-semibold normal-case tracking-normal ${
               !canFinishDraftGeometry
-                ? "cursor-not-allowed border-amber-200 bg-amber-50 text-amber-800"
-                : "border-slate-900 bg-slate-950 text-white"
+                ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                : "border-blue-600 bg-blue-600 text-white hover:bg-blue-700"
             }`}
           >
             Finish
@@ -91,7 +91,7 @@ export function PreviewActiveDrawHud({
             type="button"
             data-testid="canvas-quick-cancel"
             onClick={onCancelDraw}
-            className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold normal-case tracking-normal text-slate-700 hover:bg-slate-50"
+            className="inline-flex h-8 items-center rounded-[6px] border border-slate-200 bg-white px-3 text-[11px] font-semibold normal-case tracking-normal text-slate-700 hover:bg-slate-50"
           >
             Cancel
           </button>

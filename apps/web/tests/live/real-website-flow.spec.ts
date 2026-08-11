@@ -78,7 +78,7 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByRole("button", { name: /^Draw$/ })).toHaveCount(1);
     expect(await visibleButtonCount(page, "Generate")).toBe(1);
 
-    await expectSectionToggles(page, "setup-address-truth", "Address / Location", /Type project address/);
+    await expectSectionToggles(page, "setup-address-truth", "Address / Location", /Project address/);
     await expectSectionToggles(page, "setup-site-box-controls", "Site Boundary", /Width \(ft\)/);
     await page.getByTestId("setup-survey-terrain-card").getByText("Survey / Terrain").first().click();
     await expect(page.getByTestId("setup-survey-terrain-card")).toHaveAttribute("open", "");
@@ -96,28 +96,28 @@ test.describe("real website workflow clarity", () => {
     await page.getByRole("button", { name: /^Setup$/ }).click();
     const siteContextDetails = page.getByTestId("setup-detect-inside-site");
     if (!(await siteContextDetails.evaluate((node) => node.hasAttribute("open")))) {
-      await siteContextDetails.getByText("Auto Site Context").first().click();
+      await siteContextDetails.getByText("Site Context").first().click();
     }
     await expect(page.getByTestId("setup-detect-inside-site")).toHaveAttribute("open", "");
 
-    const objectOpenMs = await timedOpen(page, /^Draw$/, /Draw & Objects|Tools/);
-    await expect(page.getByTestId("draw-cad-tools-section")).toContainText(/Choose a tool, then draw on the canvas/);
+    const objectOpenMs = await timedOpen(page, /^Draw$/, /Draw|Tools|Objects/);
+    await expect(page.getByTestId("draw-cad-tools-section")).toContainText(/Choose a tool, then use the canvas/);
     await expect(page.getByTestId("cad-tool-line")).toBeVisible();
     await page.getByTestId("cad-tool-line").click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/LINE tool active|LINE active/);
+    await expect(page.getByTestId("draw-active-tool")).toContainText(/LINE/i);
     await page.getByRole("button", { name: /^Draw$/ }).click();
     await (await revealCadTool(page, "snap")).click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/SNAP (on|off)/);
+    await expect(page.getByTestId("draw-active-tool-detail")).toContainText(/SNAP (on|off)/);
     await page.getByRole("button", { name: /^Draw$/ }).click();
     await (await revealCadTool(page, "offset")).click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/OFFSET/);
+    await expect(page.getByTestId("draw-active-tool-detail")).toContainText(/OFFSET/);
     await page.getByRole("button", { name: /^Draw$/ }).click();
     await (await revealCadTool(page, "dimension")).click();
-    await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(/DIM/);
+    await expect(page.getByTestId("draw-active-tool-detail")).toContainText(/DIM/);
     await page.getByRole("button", { name: /^Draw$/ }).click();
     await (await revealCadTool(page, "command")).click();
     await expect((await openCadPrecisionTools(page)).getByLabel("Draft command input")).toHaveValue(/LINE/);
-    const generateOpenMs = await timedOpen(page, "Generate", /Generate Systems/);
+    const generateOpenMs = await timedOpen(page, "Generate", /Generate project systems|Generate/);
     const deliverOpenMs = await timedOpen(page, /^Deliver$/, /Deliver|Plan Sheets|Files/);
 
     expect(objectOpenMs).toBeLessThan(1_500);
@@ -130,11 +130,10 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByTestId("reopen-civora-workspace")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^Sections$/ })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Hide left sidebar" }).click();
-    await expect(page.getByRole("button", { name: "Show left sidebar" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Hide left sidebar" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Show left sidebar" })).toHaveCount(0);
     expect(await visibleButtonCount(page, /^Generate$/)).toBeLessThanOrEqual(1);
-    await page.getByRole("button", { name: "Show left sidebar" }).click();
-    await expect(page.getByRole("button", { name: "Hide left sidebar" })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Setup$/ })).toBeVisible();
     await expect(page.getByTestId("left-sidebar")).toBeVisible();
     expect(await visibleButtonCount(page, /^Generate$/)).toBeLessThanOrEqual(1);
 

@@ -243,7 +243,7 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
 
   await page.getByRole("button", { name: "Setup" }).first().click();
   await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
-  await expect(page.getByTestId("setup-site-box-controls")).toContainText("Locked");
+  await expect(page.getByTestId("setup-site-box-controls")).toContainText("Ready");
   await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary", { timeout: 30_000 });
   await expect(page.getByTestId("auto-site-context-found")).toContainText("terrain/elevation");
   await expect(page.getByTestId("auto-site-context-missing")).toContainText("public utility layers");
@@ -408,8 +408,7 @@ test("chat can create the same centered site from natural language", async ({ pa
   await page.getByRole("button", { name: "New Project" }).first().click();
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
 
-  await page.getByRole("button", { name: "Chat" }).first().click();
-  const composer = page.getByPlaceholder("Message Civora AI with what you want to create or change...");
+  const composer = page.getByTestId("civora-command-input");
   await composer.fill(
     "I want the address to be 20525 Margo St Gretna NE and it is gonna be 1000ft by 1000 ft with the address as the center point",
   );
@@ -426,7 +425,7 @@ test("chat can create the same centered site from natural language", async ({ pa
 
   await page.getByRole("button", { name: "Setup" }).first().click();
   await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
-  await expect(page.getByTestId("setup-site-box-controls")).toContainText("Locked");
+  await expect(page.getByTestId("setup-site-box-controls")).toContainText("Ready");
   await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary", { timeout: 30_000 });
   await expect(page.getByTestId("auto-site-context-found")).toContainText("terrain/elevation");
 
@@ -437,7 +436,7 @@ test("chat can create the same centered site from natural language", async ({ pa
   expect(savedProjectInput).toContain("20525 Margo St");
 });
 
-test("centered site rejects bad dimensions without launching discovery and keeps the documented empty-size default", async ({ page }) => {
+test("centered site rejects bad dimensions without discovery and offers an explicit 1000 foot preset", async ({ page }) => {
   const counters = { geocode: 0, sourceContext: 0 };
   await mockFreshAuthenticatedWorkspace(page, counters);
 
@@ -457,8 +456,11 @@ test("centered site rejects bad dimensions without launching discovery and keeps
 
   await page.getByLabel("Site width in feet").fill("-10");
   await page.getByLabel("Site depth in feet").fill("0");
-  await page.getByTestId("create-centered-site-button").click();
-  await expect(page.getByTestId("project-status-summary")).toContainText("Site size needs correction");
+  await expect(page.getByTestId("create-centered-site-button")).toBeDisabled();
+  await expect(page.getByTestId("create-centered-site-button")).toHaveAttribute(
+    "title",
+    "Enter width and depth, or draw a boundary first",
+  );
   await expect(page.getByTestId("site-status")).toContainText("Site Editable");
   expect(counters).toEqual({ geocode: autocompleteGeocodeCount, sourceContext: 0 });
 
@@ -471,6 +473,8 @@ test("centered site rejects bad dimensions without launching discovery and keeps
 
   await page.getByLabel("Site width in feet").fill("");
   await page.getByLabel("Site depth in feet").fill("");
+  await expect(page.getByTestId("create-centered-site-button")).toBeDisabled();
+  await page.getByTestId("use-1000-site-size").click();
   await page.getByTestId("create-centered-site-button").click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
   await page.getByRole("button", { name: "Setup" }).first().click();

@@ -76,8 +76,8 @@ test("hosted survey upload drives source-backed preview marks without fake topo"
     await siteBox.locator("summary").click();
   }
   await page.getByTestId("use-1000-site-size").click();
-  await expect(addressSection.getByTestId("create-centered-site-button")).toBeEnabled({ timeout: 10_000 });
-  await addressSection.getByTestId("create-centered-site-button").click();
+  await expect(siteBox.getByTestId("create-centered-site-button")).toBeEnabled({ timeout: 10_000 });
+  await siteBox.getByTestId("create-centered-site-button").click();
   await expect(page.getByTestId("site-status")).toContainText(/Site Locked/i, { timeout: 30_000 });
   const mapToggle = page.getByTestId("workspace-canvas-shell").getByTestId("preview-inner-map-toggle");
   await expect(mapToggle).toBeEnabled({ timeout: 60_000 });

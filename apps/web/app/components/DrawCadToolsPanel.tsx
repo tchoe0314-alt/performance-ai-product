@@ -1,4 +1,23 @@
 import type { CadToolName } from "../utils/cadToolTypes";
+import type { LucideIcon } from "lucide-react";
+import {
+  BoxSelect,
+  Circle,
+  Copy,
+  Hand,
+  MapPin,
+  MousePointer2,
+  Move,
+  MoveDiagonal2,
+  RotateCw,
+  Ruler,
+  Scissors,
+  Shapes,
+  Square,
+  Spline,
+  Trash2,
+  Type,
+} from "lucide-react";
 
 export type DrawCadToolGroup = {
   title: string;
@@ -10,60 +29,77 @@ type DrawCadToolsPanelProps = {
   onSelectTool: (tool: CadToolName, label: string) => void;
 };
 
+const TOOL_ICONS: Partial<Record<CadToolName, LucideIcon>> = {
+  select: MousePointer2,
+  pan: Hand,
+  line: Spline,
+  polyline: Spline,
+  area: Shapes,
+  box: Square,
+  point: MapPin,
+  circle: Circle,
+  text: Type,
+  dimension: Ruler,
+  move: Move,
+  copy: Copy,
+  rotate: RotateCw,
+  scale: MoveDiagonal2,
+  trim: Scissors,
+  extend: MoveDiagonal2,
+  delete: Trash2,
+};
+
 export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelProps) {
   return (
-    <details className="rounded-xl border border-slate-200/90 bg-white p-3.5" open data-testid="draw-cad-tools-section">
-      <summary className="flex cursor-pointer items-center gap-2.5 text-left">
+    <section className="rounded-[8px] border border-slate-200/90 bg-white p-3" data-testid="draw-cad-tools-section">
+      <div className="flex items-center gap-2.5 text-left">
         <span className="min-w-0 flex-1">
-          <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Tools</span>
-          <span className="mt-1 block text-sm font-semibold leading-5 text-slate-900">
-            Choose a tool, then draw on the canvas
+          <span className="block text-sm font-semibold text-slate-900">Tools</span>
+          <span className="mt-0.5 block text-xs leading-4 text-slate-500">
+            Choose a tool, then use the canvas
           </span>
         </span>
-        <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-          Basic first
-        </span>
-      </summary>
-      <div className="mt-4 space-y-3">
+      </div>
+      <div className="mt-3 space-y-2">
         {groups.map((group, groupIndex) => {
           const toolGrid = (
-            <div className="grid grid-cols-3 gap-1.5">
-              {group.tools.map((item) => (
-                <button
-                  key={`${group.title}-${item.tool}`}
-                  type="button"
-                  onClick={() => onSelectTool(item.tool, item.label)}
-                  data-testid={`cad-tool-${item.tool}`}
-                  className="min-h-[54px] rounded-xl border border-slate-200 bg-white px-2 py-2 text-center transition hover:border-slate-950 hover:bg-white"
-                >
-                  <span className="block text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-900">
-                    {item.label}
-                  </span>
-                  <span className="mt-1 block text-[10px] font-medium leading-3 text-slate-400">
-                    {item.hint}
-                  </span>
-                </button>
-              ))}
+            <div className="grid grid-cols-3 gap-1">
+              {group.tools.map((item) => {
+                const Icon = TOOL_ICONS[item.tool] ?? BoxSelect;
+                return (
+                  <button
+                    key={`${group.title}-${item.tool}`}
+                    type="button"
+                    onClick={() => onSelectTool(item.tool, item.label)}
+                    data-testid={`cad-tool-${item.tool}`}
+                    title={item.hint}
+                    className="flex min-h-[58px] flex-col items-center justify-center gap-1.5 rounded-[7px] border border-transparent px-1.5 py-2 text-center text-slate-600 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950"
+                  >
+                    <Icon className="h-4 w-4" />
+                    <span className="block text-[11px] font-semibold leading-none text-slate-700">{item.label}</span>
+                  </button>
+                );
+              })}
             </div>
           );
           if (groupIndex === 0) {
             return (
-              <div key={group.title} className="rounded-lg border border-slate-200/90 bg-slate-50/80 p-2">
+              <div key={group.title}>
                 {toolGrid}
               </div>
             );
           }
           return (
-            <details key={group.title} className="rounded-lg border border-slate-200/90 bg-white p-2">
-              <summary className="flex cursor-pointer items-center gap-2 px-1 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <details key={group.title} className="border-t border-slate-100 pt-2">
+              <summary className="flex cursor-pointer items-center gap-2 px-1 py-1 text-xs font-semibold text-slate-600">
                 <span className="min-w-0 flex-1">{group.title}</span>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">{group.tools.length}</span>
+                <span className="text-[10px] text-slate-400">{group.tools.length}</span>
               </summary>
               <div className="mt-2">{toolGrid}</div>
             </details>
           );
         })}
       </div>
-    </details>
+    </section>
   );
 }
