@@ -2,7 +2,7 @@ import { expect, type Page, type Locator, test } from "@playwright/test";
 
 import { openCadPrecisionTools } from "./testUiHelpers";
 
-async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number) {
+async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number, holdMs = 0) {
   await surface.scrollIntoViewIfNeeded();
   const point = await surface.evaluate(
     (element, ratios) => {
@@ -41,7 +41,14 @@ async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number) 
     },
     { xRatio, yRatio },
   );
-  await surface.page().mouse.click(point.x, point.y);
+  if (holdMs > 0) {
+    await surface.page().mouse.move(point.x, point.y);
+    await surface.page().mouse.down();
+    await surface.page().waitForTimeout(holdMs);
+    await surface.page().mouse.up();
+  } else {
+    await surface.page().mouse.click(point.x, point.y);
+  }
 }
 
 async function openSetupControls(page: Page) {
@@ -263,7 +270,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await expect(page.getByText(/Custom Line \d+/).filter({ visible: true }).first()).toBeVisible();
 
     await clickCanvasTool(canvas, "Add Point");
-    await clickSurfaceAt(surface, 0.78, 0.72);
+    await clickSurfaceAt(surface, 0.78, 0.72, 80);
     await expect(page.getByText("Custom Point 4").filter({ visible: true }).first()).toBeVisible();
     await expect.poll(async () => (await page.locator("[data-object-overlay]").count()) - beforeObjects).toBeGreaterThanOrEqual(3);
 

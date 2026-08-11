@@ -989,6 +989,66 @@ export default function Preview3DCanvas({
               );
               object.add(roofLine);
             }
+            if (layer === "BUILDING") {
+              const roofMaterial = new THREE.MeshStandardMaterial({
+                color: roofProfile === "tower" ? "#111827" : roofProfile === "dome" ? "#6b7280" : "#d1d5db",
+                roughness: 0.78,
+                metalness: roofProfile === "dome" ? 0.03 : 0,
+              });
+              if (roofProfile === "dome") {
+                const dome = new THREE.Mesh(
+                  new THREE.SphereGeometry(Math.max(Math.min(item.w, item.h) * 0.36, 4), 32, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+                  roofMaterial,
+                );
+                dome.scale.set(1.28, 0.56, 1);
+                dome.position.copy(toScene(item.x + item.w / 2, item.y + item.h / 2, baseY + displayDepth + 0.12));
+                dome.userData = object.userData;
+                object.add(dome);
+              } else if (roofProfile === "gable") {
+                const roof = new THREE.Mesh(
+                  new THREE.ConeGeometry(
+                    Math.max(Math.min(item.w, item.h) * 0.52, 4),
+                    Math.max(Math.min(item.w, item.h) * 0.22, 2.2),
+                    4,
+                  ),
+                  roofMaterial,
+                );
+                roof.rotation.y = Math.PI / 4;
+                roof.scale.set(Math.max(item.w / Math.max(item.h, 1), 0.8), 0.75, 1);
+                roof.position.copy(
+                  toScene(
+                    item.x + item.w / 2,
+                    item.y + item.h / 2,
+                    baseY + displayDepth + Math.max(Math.min(item.w, item.h) * 0.09, 1.2),
+                  ),
+                );
+                roof.userData = object.userData;
+                object.add(roof);
+              } else if (roofProfile === "tower") {
+                const roof = new THREE.Mesh(
+                  new THREE.ShapeGeometry(shapeFromPlanPoints(scalePlanPoints(planPoints, 0.96), centerX, centerY)),
+                  roofMaterial,
+                );
+                roof.geometry.rotateX(-Math.PI / 2);
+                roof.position.y = baseY + displayDepth + 0.14;
+                roof.userData = object.userData;
+                object.add(roof);
+                const spire = new THREE.Mesh(
+                  new THREE.ConeGeometry(Math.max(Math.min(item.w, item.h) * 0.12, 1.2), Math.max(displayDepth * 0.34, 8), 12),
+                  new THREE.MeshStandardMaterial({ color: "#020617", roughness: 0.5 }),
+                );
+                spire.position.copy(
+                  toScene(
+                    item.x + item.w / 2,
+                    item.y + item.h / 2,
+                    baseY + displayDepth + Math.max(displayDepth * 0.18, 4),
+                  ),
+                );
+                spire.userData = object.userData;
+                object.add(spire);
+              }
+              if (previewQuality === "high") addBuildingDetailCues(object, item, baseY, displayDepth);
+            }
           }
           if (layer === "PARKING" && item.source !== "fallback" && Math.max(item.w, item.h) >= 42 && Math.min(item.w, item.h) >= 32) {
             const stripeMaterial = new THREE.LineBasicMaterial({ color: "#f8fafc", transparent: true, opacity: 0.34 });
