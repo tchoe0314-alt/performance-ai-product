@@ -111,7 +111,7 @@ test("hosted real user can set up site, upload real sources, generate, and deliv
   await setPreviewQuality(page, "high");
   await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/SOURCE|REVIEW|Terrain/i, { timeout: 20_000 });
 
-  await openPanel(page, /^Generate$/, /Generate systems/i);
+  await openPanel(page, /^Generate$/, /Generate project systems/i);
   await page.getByTestId("generate-main-action").click();
   await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input|Started|review/i, { timeout: 60_000 });
   await shot(page, testInfo, "06-generate");
