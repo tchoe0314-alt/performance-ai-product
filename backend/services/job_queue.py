@@ -118,6 +118,7 @@ class JobQueueService:
             )
         self._in_process_start_delay_sec = max(0.0, float(in_process_start_delay_sec or 0.0))
         self._last_resume_poll_at = 0.0
+        self._resume_poll_error: Optional[str] = None
         self._job_timeout_seconds = self._env_float("CIVORA_JOB_TIMEOUT_SECONDS", 900.0)
         self._failure_window_seconds = self._env_float("CIVORA_JOB_FAILURE_WINDOW_SECONDS", 3600.0)
         self._ensure_workers_alive()
@@ -187,6 +188,7 @@ class JobQueueService:
             "execution_mode": "external_worker" if self._worker_count == 0 else "in_process",
             "queued_in_memory": self._queue.qsize(),
             "resume_pending_jobs": self._resume_pending_jobs,
+            "resume_poll_error": self._resume_poll_error,
             "registered_handlers": sorted(self._handlers.keys()),
             "monitoring": monitoring,
         }
@@ -746,11 +748,12 @@ class JobQueueService:
         if not self._handlers:
             return None
         job_types = sorted(self._handlers.keys())
-        query = """
+        placeholders = ", ".join("?" for _ in job_types)
+        query = f"""
                 SELECT job_id
                 FROM jobs
                 WHERE status = 'queued'
-                  AND job_type IN (SELECT value FROM json_each(?))
+                  AND job_type IN ({placeholders})
                 ORDER BY created_at ASC
                 LIMIT 1
                 """
@@ -758,7 +761,7 @@ class JobQueueService:
         try:
             row = connection.execute(
                 query,
-                (json.dumps(job_types),),
+                tuple(job_types),
             ).fetchone()
             if row is None:
                 return None
@@ -1102,7 +1105,15 @@ class JobQueueService:
                 if now - self._last_resume_poll_at < self._resume_poll_interval_sec:
                     continue
                 self._last_resume_poll_at = now
-                job_id = self._find_next_pending_job_id()
+                try:
+                    job_id = self._find_next_pending_job_id()
+                    self._resume_poll_error = None
+                except Exception as exc:
+                    # A transient database or dialect failure must not kill the
+                    # only queue worker. Surface the error class in runtime
+                    # evidence and retry on the next bounded poll interval.
+                    self._resume_poll_error = exc.__class__.__name__
+                    continue
                 if not job_id:
                     continue
                 queue_task = False

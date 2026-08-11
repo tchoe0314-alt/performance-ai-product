@@ -345,6 +345,34 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(record["progress"], 100)
         self.assertEqual(record["result"]["job_progress"]["progress"], 100)
 
+    def test_database_poll_uses_portable_in_clause_without_sqlite_json_each(self):
+        test_case = self
+
+        class PortableConnection:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+
+            def execute(self, sql, params=()):
+                test_case.assertNotIn("json_each", str(sql).lower())
+                return self.wrapped.execute(sql, params)
+
+            def __getattr__(self, name):
+                return getattr(self.wrapped, name)
+
+        class PortableDatabase:
+            def connect(self):
+                return PortableConnection(test_case.db.connect())
+
+        web_queue = self.track_queue(JobQueueService(PortableDatabase(), worker_count=0))
+        web_queue.register_handler("source_context", lambda job: {"success": True})
+        created = web_queue.submit_job(
+            user_id=self.user_id,
+            job_type="source_context",
+            payload={"address": "201 E Colfax Ave"},
+        )
+
+        self.assertEqual(web_queue._find_next_pending_job_id(), created["job_id"])
+
     def test_web_only_queue_is_completed_by_separate_worker_service(self):
         web_queue = self.track_queue(JobQueueService(self.db, worker_count=0))
         web_queue.register_handler(
