@@ -1,6 +1,8 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import path from "node:path";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 const DEFAULT_APP_URL = "https://civoraai.com/?debugPreview=1&aiRealismProvider=mock";
@@ -94,10 +96,10 @@ test("hosted survey upload drives source-backed preview marks without fake topo"
   await expect(page.getByTestId("best-survey-source-label")).toContainText(/uploaded survey\/control points/i, { timeout: 15_000 });
 
   const canvas = page.getByTestId("workspace-canvas-shell");
-  await canvas.getByTestId("preview-quality-high").click();
+  await setPreviewQuality(page, "high");
   await expect(page.getByTestId("source-survey-point").first()).toBeVisible({ timeout: 15_000 });
-  if ((await mapToggle.textContent())?.includes("Map On")) await mapToggle.click();
-  await expect(mapToggle).toContainText("Map Off");
+  if ((await mapToggle.getAttribute("aria-pressed")) === "true") await mapToggle.click();
+  await expect(mapToggle).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByTestId("survey-spot-elevation").first()).toBeVisible();
   await expect(canvas).toContainText(/SOURCE EXHIBIT/i);
   await expect(canvas).toContainText(/SOURCE REVIEW/i);

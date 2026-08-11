@@ -78,11 +78,14 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   await expect(page.getByTestId("plan-utility-pipe-halo").first()).toBeVisible();
   await expect(page.getByTestId("survey-utility-callout").first()).toBeVisible();
   await expect(canvas).toContainText(/concept plan/i);
-  await expect(canvas).toContainText(/no survey \/ topo source/i);
+  await expect(canvas).toContainText(/source\s*user_confirmed/i);
+  await expect(canvas).not.toContainText(/survey verified|survey-backed/i);
 
   await canvas.getByTestId("preview-mode-3d").click();
   await expect(page.getByTestId("civil-3d-viewer")).toBeVisible({ timeout: 20_000 });
   const threeDObjects = page.getByTestId("civil-3d-object-strip");
+  await expect(threeDObjects.getByRole("button", { name: /FG_CONTOUR/i })).toHaveCount(0);
+  await expect(threeDObjects.getByRole("button", { name: /^PARKING\s+PARKING/i })).toHaveCount(0);
   for (const label of ["Public Water Line", "Public Sanitary Line", "Storm Sewer"]) {
     const utility = threeDObjects.getByRole("button", { name: new RegExp(label, "i") });
     await expect(utility).toHaveCount(1);

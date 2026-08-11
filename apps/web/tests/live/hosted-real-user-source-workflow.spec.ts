@@ -1,6 +1,8 @@
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from "@playwright/test";
 import path from "node:path";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 const DEFAULT_APP_URL = "https://civoraai.com/?debugPreview=1&aiRealismProvider=mock";
@@ -106,7 +108,7 @@ test("hosted real user can set up site, upload real sources, generate, and deliv
   await uploadSource(page, "surface_pipe.landxml", /LandXML exchange|Surface metadata|Pipe-network metadata/i);
   await shot(page, testInfo, "05-landxml-source-effects");
 
-  await page.getByTestId("workspace-canvas-shell").getByTestId("preview-quality-high").click();
+  await setPreviewQuality(page, "high");
   await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/SOURCE|REVIEW|Terrain/i, { timeout: 20_000 });
 
   await openPanel(page, /^Generate$/, /Generate systems/i);

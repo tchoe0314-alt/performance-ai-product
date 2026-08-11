@@ -160,6 +160,36 @@ const isDenseConceptLot = (item: Preview3DItem) =>
       item.meta?.cad_reference_recreation,
   );
 
+const isContourPlanDetail = (item: Preview3DItem) =>
+  /(^|[\s_-])(eg|fg)?[\s_-]*contour([\s_-]|$)/i.test(
+    `${item.label} ${String(item.meta?.cad_layer || "")} ${String(item.meta?.layer || "")}`,
+  );
+
+const shouldIncludePreview3DItem = (item: Preview3DItem) => {
+  const layer = normalizePreview3DItemLayer(item);
+  if (item.terrainSample || layer === "TERRAIN" || isContourPlanDetail(item)) return false;
+
+  const minPlanDimension = Math.min(Math.max(item.w, 0), Math.max(item.h, 0));
+  const maxPlanDimension = Math.max(Math.max(item.w, 0), Math.max(item.h, 0));
+  const planArea = Math.max(item.w, 0) * Math.max(item.h, 0);
+  const isDraftedPlanDetail =
+    (item.geometryType === "polyline" || item.geometryType === "polygon") &&
+    minPlanDimension > 0 &&
+    minPlanDimension < 18 &&
+    (layer === "OBJECT" || layer === "PARKING" || layer === "ROAD");
+  const isSmallPavementDetail =
+    (layer === "PARKING" || layer === "ROAD") &&
+    minPlanDimension > 0 &&
+    (minPlanDimension < 28 ||
+      planArea < 2800 ||
+      (maxPlanDimension > 0 && maxPlanDimension / Math.max(minPlanDimension, 1) > 5));
+
+  if (layer === "PARKING" && item.geometryType === "polyline") return false;
+  if (isDraftedPlanDetail && !item.corridorWidth) return false;
+  if (isSmallPavementDetail && !item.corridorWidth) return false;
+  return true;
+};
+
 function stableUnitValue(seed: string, offset = 0) {
   let hash = 2166136261 + offset;
   for (let index = 0; index < seed.length; index += 1) {
@@ -336,7 +366,7 @@ export default function Preview3DCanvas({
       );
       return items
         .filter((item) => {
-          if (item.terrainSample) return false;
+          if (!shouldIncludePreview3DItem(item)) return false;
           if (hasReviewContourSurface && /grading surface missing/i.test(String(item.label || ""))) return false;
           return true;
         })
@@ -378,7 +408,7 @@ export default function Preview3DCanvas({
     [items, selectedItemId],
   );
   const massingStats = useMemo(() => {
-    const visibleObjects = items.filter((item) => !item.terrainSample);
+    const visibleObjects = items.filter(shouldIncludePreview3DItem);
     const vertical = visibleObjects.filter((item) => {
       const layer = normalizePreview3DItemLayer(item);
       return layer === "BUILDING" || layer === "STRUCTURE" || (layer === "LOT" && isDenseConceptLot(item));
@@ -778,7 +808,7 @@ export default function Preview3DCanvas({
     const maxVisibleLabels = selectedItemId ? 1 : 0;
     items.forEach((item, index) => {
       const layer = normalizePreview3DItemLayer(item);
-      if (layer === "TERRAIN") return;
+      if (!shouldIncludePreview3DItem(item)) return;
       const id = getItemId(item, index);
       const palette = resolveLayerPalette(item, layer);
       const heightFt = displayHeightForLayer(item, layer);
@@ -789,21 +819,6 @@ export default function Preview3DCanvas({
       // terrain instead of burying them and losing the object entirely.
       const baseY = terrainBaseY + (layer === "DRAINAGE" ? Math.max(itemOffset, 0) : itemOffset);
       const state = confidenceState(item);
-      const minPlanDimension = Math.min(Math.max(item.w, 0), Math.max(item.h, 0));
-      const maxPlanDimension = Math.max(Math.max(item.w, 0), Math.max(item.h, 0));
-      const planArea = Math.max(item.w, 0) * Math.max(item.h, 0);
-      const isDraftedPlanDetail =
-        (item.geometryType === "polyline" || item.geometryType === "polygon") &&
-        minPlanDimension > 0 &&
-        minPlanDimension < 18 &&
-        (layer === "OBJECT" || layer === "PARKING" || layer === "ROAD");
-      const isSmallPavementDetail =
-        (layer === "PARKING" || layer === "ROAD") &&
-        minPlanDimension > 0 &&
-        (minPlanDimension < 28 || planArea < 2800 || (maxPlanDimension > 0 && maxPlanDimension / Math.max(minPlanDimension, 1) > 5));
-      if (layer === "PARKING" && item.geometryType === "polyline") return;
-      if (isDraftedPlanDetail && !item.corridorWidth) return;
-      if (isSmallPavementDetail && !item.corridorWidth) return;
       const object = new THREE.Group();
       object.userData = {
         itemId: id,

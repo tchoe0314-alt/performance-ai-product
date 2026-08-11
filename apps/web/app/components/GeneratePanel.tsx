@@ -275,7 +275,7 @@ export function GeneratePanel({
                     ? "bg-amber-50 text-amber-700"
                     : "bg-slate-100 text-slate-500"
               }`}>
-                {row.status === "fresh" ? "Ran" : row.blockers.length ? "Needs input" : "Ready"}
+                {row.status === "fresh" ? "Current" : row.blockers.length ? "Needs input" : "Ready"}
               </span>
             </button>
           ))}

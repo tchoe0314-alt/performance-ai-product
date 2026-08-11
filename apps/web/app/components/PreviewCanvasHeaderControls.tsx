@@ -155,6 +155,7 @@ export function PreviewCanvasHeaderControls({
       <button
         type="button"
         data-testid="preview-mode-2d"
+        aria-pressed={previewMode === "2d"}
         onClick={() => {
           closeHeaderMenus();
           onSetPreviewMode("2d");
@@ -166,6 +167,7 @@ export function PreviewCanvasHeaderControls({
       <button
         type="button"
         data-testid="preview-mode-3d"
+        aria-pressed={previewMode === "3d"}
         onPointerEnter={() => canUse3D && void loadPreview3DCanvas()}
         onFocus={() => canUse3D && void loadPreview3DCanvas()}
         onClick={() => {
@@ -180,6 +182,7 @@ export function PreviewCanvasHeaderControls({
       <button
         type="button"
         data-testid="preview-inner-map-toggle"
+        aria-pressed={mapOverlayEnabled}
         onClick={() => {
           closeHeaderMenus();
           onSetMapOverlayEnabled((value) => !value);

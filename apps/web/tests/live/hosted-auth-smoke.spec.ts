@@ -76,7 +76,6 @@ test.describe("hosted authenticated smoke", () => {
     await seedAuth(page, token);
     await openWorkspace(page);
 
-    await expect(page.getByRole("banner").getByRole("button", { name: "Open workspace controls" })).toBeVisible();
     await expect(page.getByTestId("header-projects-button")).toBeVisible();
     await expect(page.getByTestId("header-chat-button")).toBeVisible();
     await expect(page.getByRole("banner").getByRole("button", { name: "Help" })).toBeVisible();
@@ -86,12 +85,11 @@ test.describe("hosted authenticated smoke", () => {
     await page.getByRole("button", { name: /New Project/i }).filter({ visible: true }).first().click();
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
 
-    await page.getByRole("button", { name: "Open workspace controls" }).click();
     await page.getByRole("button", { name: /^Setup$/ }).click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/i);
 
     await page.getByRole("button", { name: "Generate" }).click();
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate Systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input/i, { timeout: 10_000 });
 
