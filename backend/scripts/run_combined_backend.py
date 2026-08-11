@@ -42,7 +42,7 @@ def build_process_environments(
             "CIVORA_ENABLED_JOB_TYPES": ",".join(EXTERNAL_JOB_TYPES),
             "CIVORA_DISABLED_JOB_TYPES": "",
             "CIVORA_WORKER_HEALTH_ENABLED": "false",
-            "PERFORMANCE_AI_JOB_WORKERS": str(base.get("CIVORA_EXTERNAL_JOB_WORKERS") or "1"),
+            "PERFORMANCE_AI_JOB_WORKERS": str(base.get("CIVORA_EXTERNAL_JOB_WORKERS") or "2"),
             "PERFORMANCE_AI_RESUME_PENDING_JOBS": "true",
             "PERFORMANCE_AI_RESUME_POLL_SECONDS": _positive_poll_seconds(base),
             "CIVORA_DATABASE_POOL_MIN_SIZE": "1",

@@ -60,6 +60,7 @@ ENV_VAR_SPECS: tuple[EnvVarSpec, ...] = (
     EnvVarSpec("CIVORA_IMAGE_RENDERER_URL", "ai_image", (), optional=True, description="Private Civora GPU renderer base URL when provider is civora."),
     EnvVarSpec("CIVORA_IMAGE_RENDERER_TOKEN", "ai_image", (), optional=True, secret=True, description="Service token shared only with the private Civora renderer."),
     EnvVarSpec("CIVORA_JOB_TIMEOUT_SECONDS", "queue", (), optional=True, description="Maximum in-process job runtime."),
+    EnvVarSpec("CIVORA_EXPORT_JOB_TIMEOUT_SECONDS", "queue", (), optional=True, description="Maximum PDF, DXF, or report export runtime."),
     EnvVarSpec("CIVORA_MEMORY_WARN_MB", "monitoring", (), optional=True, description="Runtime memory warning threshold."),
     EnvVarSpec("CIVORA_RUNTIME_DEBUG_BEARER_TOKEN", "monitoring", (), optional=True, secret=True, description="Audit token for runtime sampling tools."),
     EnvVarSpec("CIVORA_MAX_IMAGE_UPLOAD_BYTES", "uploads", (), optional=True, description="Image/map snapshot upload limit."),

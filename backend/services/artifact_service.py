@@ -13,7 +13,8 @@ import shutil
 
 from backend.planning.dwg_compatibility import DWG_UNSUPPORTED_STATUS
 
-PREVIEW_RENDER_VERSION = "2026-04-17-preview-modes-v1"
+PREVIEW_RENDER_VERSION = "2026-08-11-bounded-contour-preview-v2"
+PREVIEW_RENDER_MAX_CONTOUR_ACTIONS = 240
 DEFAULT_HEAVY_EXPORT_TIMEOUT_SECONDS = 30.0
 
 _REPORT_METADATA_EXCLUDED_KEYS = {
@@ -72,6 +73,80 @@ def render_plan_preview_png(final_plan: Dict[str, Any], **kwargs: Any) -> bytes:
     from output.preview import render_plan_preview_png as _render_plan_preview_png
 
     return _render_plan_preview_png(final_plan, **kwargs)
+
+
+def _sample_evenly(indexed_actions: list[tuple[int, Dict[str, Any]]], limit: int) -> list[tuple[int, Dict[str, Any]]]:
+    if limit <= 0:
+        return []
+    if len(indexed_actions) <= limit:
+        return list(indexed_actions)
+    if limit == 1:
+        return [indexed_actions[len(indexed_actions) // 2]]
+    last_index = len(indexed_actions) - 1
+    return [
+        indexed_actions[round(sample_index * last_index / (limit - 1))]
+        for sample_index in range(limit)
+    ]
+
+
+def _is_contour_preview_action(action: Dict[str, Any]) -> bool:
+    raw_layer = str(action.get("layer") or "").strip().upper().replace(" ", "_")
+    return raw_layer == "C-CONTOUR" or raw_layer.endswith("_CONTOUR")
+
+
+def _bounded_preview_render_plan(final_plan: Dict[str, Any]) -> Dict[str, Any]:
+    """Bound raster-only contour work without changing the canonical plan."""
+
+    actions = [action for action in list(final_plan.get("actions") or []) if isinstance(action, dict)]
+    indexed_contours = [
+        (index, action)
+        for index, action in enumerate(actions)
+        if _is_contour_preview_action(action)
+    ]
+    if len(indexed_contours) <= PREVIEW_RENDER_MAX_CONTOUR_ACTIONS:
+        return final_plan
+
+    contour_groups: Dict[str, list[tuple[int, Dict[str, Any]]]] = {}
+    for index, action in indexed_contours:
+        raw_layer = str(action.get("layer") or "C-CONTOUR").strip().upper().replace(" ", "_")
+        contour_groups.setdefault(raw_layer, []).append((index, action))
+
+    group_keys = sorted(contour_groups)
+    allocations = {key: 0 for key in group_keys}
+    remaining = PREVIEW_RENDER_MAX_CONTOUR_ACTIONS
+    while remaining > 0:
+        eligible = [key for key in group_keys if allocations[key] < len(contour_groups[key])]
+        if not eligible:
+            break
+        for key in eligible:
+            if remaining <= 0:
+                break
+            allocations[key] += 1
+            remaining -= 1
+
+    selected_contour_indexes = {
+        index
+        for key in group_keys
+        for index, _ in _sample_evenly(contour_groups[key], allocations[key])
+    }
+    render_actions = [
+        action
+        for index, action in enumerate(actions)
+        if not _is_contour_preview_action(action) or index in selected_contour_indexes
+    ]
+    render_plan = dict(final_plan)
+    render_plan["actions"] = render_actions
+    render_meta = dict(final_plan.get("meta") or {})
+    render_meta["preview_render_compaction"] = {
+        "source_action_count": len(actions),
+        "render_action_count": len(render_actions),
+        "source_contour_count": len(indexed_contours),
+        "render_contour_count": len(selected_contour_indexes),
+        "raster_preview_only": True,
+        "canonical_plan_changed": False,
+    }
+    render_plan["meta"] = render_meta
+    return render_plan
 
 
 def _slugify(value: str, default: str = "artifact") -> str:
@@ -339,8 +414,9 @@ class ArtifactService:
         density = label_density
         if not density:
             density = "high" if quality_key == "high" else "standard"
+        render_plan = _bounded_preview_render_plan(final_plan)
         png_bytes = render_plan_preview_png(
-            final_plan,
+            render_plan,
             render_labels=render_labels,
             dpi=dpi,
             include_layers=set(include_layers or []) if include_layers else None,

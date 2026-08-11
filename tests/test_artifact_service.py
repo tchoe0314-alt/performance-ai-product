@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -67,6 +68,94 @@ class ArtifactServiceTest(unittest.TestCase):
             self.assertEqual(first, b"preview-v1")
             self.assertEqual(second, b"preview-v2")
             self.assertEqual(render_mock.call_count, 2)
+
+    def test_build_preview_png_bounds_only_raster_contours_and_keeps_canonical_plan(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ArtifactService(Path(tmpdir))
+            actions = [
+                {
+                    "task": "polyline",
+                    "layer": "FG_CONTOUR" if index % 3 else "EG_CONTOUR",
+                    "points": [[0.0, float(index)], [1000.0, float(index)]],
+                    "canonical_source_id": f"contour-{index}",
+                }
+                for index in range(1500)
+            ]
+            actions.extend(
+                [
+                    {"task": "polygon", "layer": "BUILDING", "points": [[10, 10], [40, 10], [40, 40], [10, 40]], "canonical_source_id": "building-1"},
+                    {"task": "polyline", "layer": "PIPE", "points": [[0, 0], [100, 100]], "canonical_source_id": "storm-1"},
+                ]
+            )
+            final_plan = {
+                "project_name": "Dense Preview",
+                "actions": actions,
+                "meta": {"project_id": "dense-preview"},
+            }
+
+            with patch(
+                "backend.services.artifact_service.render_plan_preview_png",
+                return_value=b"bounded-preview",
+            ) as render_mock:
+                preview = service.build_preview_png(final_plan, quality="high")
+
+            render_plan = render_mock.call_args.args[0]
+            render_actions = list(render_plan["actions"])
+            render_contours = [action for action in render_actions if "CONTOUR" in str(action.get("layer") or "")]
+            render_ids = {str(action.get("canonical_source_id") or "") for action in render_actions}
+
+            self.assertEqual(preview, b"bounded-preview")
+            self.assertEqual(len(render_contours), 240)
+            self.assertIn("building-1", render_ids)
+            self.assertIn("storm-1", render_ids)
+            self.assertEqual(len(final_plan["actions"]), 1502)
+            self.assertNotIn("preview_render_compaction", final_plan["meta"])
+            self.assertTrue(render_plan["meta"]["preview_render_compaction"]["raster_preview_only"])
+            self.assertFalse(render_plan["meta"]["preview_render_compaction"]["canonical_plan_changed"])
+
+    def test_dense_review_pdf_completes_with_full_canonical_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = ArtifactService(Path(tmpdir))
+            contour_actions = [
+                {
+                    "task": "polyline",
+                    "layer": "FG_CONTOUR",
+                    "points": [[0.0, float(index % 500)], [500.0, float(index % 500) + 4.0], [1000.0, float(index % 500)]],
+                    "canonical_source_id": f"dense-contour-{index}",
+                }
+                for index in range(1500)
+            ]
+            final_plan = {
+                "project_id": "dense-pdf-project",
+                "project_name": "Dense PDF Review",
+                "units": "ft",
+                "actions": [
+                    {"task": "polygon", "layer": "SITE", "points": [[0, 0], [1000, 0], [1000, 1000], [0, 1000]], "canonical_source_id": "site-1"},
+                    {"task": "polygon", "layer": "BUILDING", "points": [[300, 300], [700, 300], [700, 550], [300, 550]], "canonical_source_id": "building-1"},
+                    *contour_actions,
+                ],
+                "meta": {
+                    "project_id": "dense-pdf-project",
+                    "canonical_revision": "dense-rev-1",
+                    "canonical_model_hash": "dense-hash-1",
+                },
+            }
+            started = time.perf_counter()
+            artifact_path = service.export_review_pdf(
+                user_id="user-1",
+                result_data={"final_plan": final_plan},
+                sheet_set={"name": "Dense Package", "sheets": []},
+                stem="dense-review",
+            )
+            elapsed = time.perf_counter() - started
+            sidecar_path = artifact_path.with_suffix(f"{artifact_path.suffix}.metadata.json")
+            sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+
+            self.assertTrue(artifact_path.read_bytes().startswith(b"%PDF"))
+            self.assertLess(elapsed, 20.0)
+            self.assertEqual(len(final_plan["actions"]), 1502)
+            self.assertEqual(sidecar["export_package_report_ref"]["source_canonical_hash"], "dense-hash-1")
+            self.assertEqual(sidecar["export_package_report_ref"]["source_canonical_revision"], "dense-rev-1")
 
     def test_export_dxf_writes_sidecar_metadata(self):
         with tempfile.TemporaryDirectory() as tmpdir:

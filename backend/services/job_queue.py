@@ -120,6 +120,7 @@ class JobQueueService:
         self._last_resume_poll_at = 0.0
         self._resume_poll_error: Optional[str] = None
         self._job_timeout_seconds = self._env_float("CIVORA_JOB_TIMEOUT_SECONDS", 900.0)
+        self._export_job_timeout_seconds = self._env_float("CIVORA_EXPORT_JOB_TIMEOUT_SECONDS", 180.0)
         self._failure_window_seconds = self._env_float("CIVORA_JOB_FAILURE_WINDOW_SECONDS", 3600.0)
         self._ensure_workers_alive()
 
@@ -923,8 +924,60 @@ class JobQueueService:
             connection.close()
         return True
 
-    def _heartbeat_loop(self, job_id: str, stop_event: threading.Event) -> None:
-        while not stop_event.wait(self._heartbeat_interval_sec):
+    def _fail_running_job_for_runtime_limit(self, job_id: str, *, timeout_seconds: float) -> bool:
+        current = self._get_job_for_worker(job_id)
+        if current is None or str(current.get("status") or "") not in {"running", "cancelling"}:
+            return False
+        stage = str(current.get("stage") or "Unknown stage")
+        detail = str(current.get("stage_detail") or "No progress detail was recorded.")
+        progress = _coerce_progress(current.get("progress"))
+        error = (
+            f"Job exceeded the maximum runtime of {int(timeout_seconds)} seconds. "
+            f"Last stage: {stage}. Last detail: {detail}"
+        )
+        result = dict(current.get("result") or {})
+        result.update(_job_progress_payload("Timed Out", error, progress))
+        result["error_details"] = {
+            "code": "job_runtime_timeout",
+            "message": error,
+            "last_stage": stage,
+            "last_detail": detail,
+            "timeout_seconds": timeout_seconds,
+            "review_only": True,
+            "construction_release_allowed": False,
+        }
+        self._update_job_state(job_id, status="failed", result=result, error=error)
+        return True
+
+    def _runtime_timeout_for_job(self, job_type: str) -> float:
+        global_timeout = max(1.0, float(self._job_timeout_seconds or 900.0))
+        if str(job_type or "").strip().lower() in {"export_dxf", "export_pdf", "export_report"}:
+            return min(
+                global_timeout,
+                max(1.0, float(self._export_job_timeout_seconds or 180.0)),
+            )
+        return global_timeout
+
+    def _heartbeat_loop(
+        self,
+        job_id: str,
+        stop_event: threading.Event,
+        started_monotonic: Optional[float] = None,
+        job_type: str = "",
+    ) -> None:
+        started = time.monotonic() if started_monotonic is None else started_monotonic
+        timeout_seconds = self._runtime_timeout_for_job(job_type)
+        while True:
+            elapsed = time.monotonic() - started
+            remaining = timeout_seconds - elapsed
+            if remaining <= 0:
+                self._fail_running_job_for_runtime_limit(job_id, timeout_seconds=timeout_seconds)
+                break
+            if stop_event.wait(min(self._heartbeat_interval_sec, remaining)):
+                break
+            if time.monotonic() - started >= timeout_seconds:
+                self._fail_running_job_for_runtime_limit(job_id, timeout_seconds=timeout_seconds)
+                break
             if not self._touch_job_activity(job_id):
                 break
 
@@ -1138,9 +1191,10 @@ class JobQueueService:
                 continue
 
             heartbeat_stop = threading.Event()
+            runner_started_at = time.monotonic()
             heartbeat_thread = threading.Thread(
                 target=self._heartbeat_loop,
-                args=(job_id, heartbeat_stop),
+                args=(job_id, heartbeat_stop, runner_started_at, str(job.get("job_type") or "")),
                 name=f"performance-ai-job-heartbeat-{job_id}",
                 daemon=True,
             )
@@ -1153,6 +1207,8 @@ class JobQueueService:
                     progress=24,
                 )
                 result = runner(job)
+                heartbeat_stop.set()
+                heartbeat_thread.join(timeout=1.0)
                 runtime_should_continue = bool(
                     dict((result or {}).get("metadata") or {}).get("runtime_should_continue")
                 )
@@ -1167,6 +1223,12 @@ class JobQueueService:
                         )
                     )
                     self._update_job_state(job_id, status="cancelled", result=cancelled_result, error="Cancelled by user.")
+                elif current and current.get("status") == "failed":
+                    # A runtime watchdog may have failed the job while a
+                    # non-interruptible library call was still returning.
+                    # Preserve that terminal truth instead of reporting a
+                    # late success.
+                    pass
                 elif runtime_should_continue:
                     checkpoint = dict(
                         dict((result or {}).get("metadata") or {}).get("runtime_phase_checkpoint") or {}
@@ -1219,6 +1281,8 @@ class JobQueueService:
                 self._update_job_state(job_id, status="cancelled", result=cancelled_result, error="Cancelled by user.")
             except Exception as exc:
                 current = self._get_job_for_worker(job_id)
+                if current and current.get("status") == "failed":
+                    continue
                 previous_result = dict((current or {}).get("result") or {})
                 previous_progress = dict(previous_result.get("job_progress") or {})
                 stage = str((current or {}).get("stage") or previous_progress.get("stage") or "Job Failed")

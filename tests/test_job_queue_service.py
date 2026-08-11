@@ -345,6 +345,56 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(record["progress"], 100)
         self.assertEqual(record["result"]["job_progress"]["progress"], 100)
 
+    def test_runtime_watchdog_fails_hung_job_and_late_return_cannot_overwrite_timeout(self):
+        queue = self.track_queue(
+            JobQueueService(
+                self.db,
+                worker_count=1,
+                heartbeat_interval_sec=0.1,
+                resume_poll_interval_sec=0.05,
+            )
+        )
+        queue._job_timeout_seconds = 1.0
+        runner_returned = threading.Event()
+
+        def slow_runner(job):
+            time.sleep(1.4)
+            runner_returned.set()
+            return {"success": True, "job_id": job["job_id"]}
+
+        queue.register_handler("runtime_timeout_test", slow_runner)
+        created = queue.submit_job(
+            user_id=self.user_id,
+            job_type="runtime_timeout_test",
+            payload={"prompt_text": "exercise watchdog"},
+        )
+
+        deadline = time.time() + 3.0
+        timed_out = None
+        while time.time() < deadline:
+            timed_out = queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if timed_out and timed_out["status"] == "failed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(timed_out)
+        self.assertEqual(timed_out["status"], "failed")
+        self.assertEqual(timed_out["result"]["error_details"]["code"], "job_runtime_timeout")
+        self.assertTrue(runner_returned.wait(timeout=2.0))
+        time.sleep(0.1)
+        after_return = queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+        self.assertEqual(after_return["status"], "failed")
+        self.assertEqual(after_return["result"]["error_details"]["code"], "job_runtime_timeout")
+
+    def test_export_jobs_use_shorter_runtime_budget(self):
+        self.queue._job_timeout_seconds = 900.0
+        self.queue._export_job_timeout_seconds = 180.0
+
+        self.assertEqual(self.queue._runtime_timeout_for_job("export_pdf"), 180.0)
+        self.assertEqual(self.queue._runtime_timeout_for_job("export_dxf"), 180.0)
+        self.assertEqual(self.queue._runtime_timeout_for_job("export_report"), 180.0)
+        self.assertEqual(self.queue._runtime_timeout_for_job("orchestrate"), 900.0)
+
     def test_database_poll_uses_portable_in_clause_without_sqlite_json_each(self):
         test_case = self
 

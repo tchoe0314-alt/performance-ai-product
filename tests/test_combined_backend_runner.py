@@ -36,8 +36,20 @@ def test_combined_runner_externalizes_heavy_jobs_and_keeps_file_jobs_local() -> 
     }
     assert worker_env["CIVORA_DISABLED_JOB_TYPES"] == ""
     assert worker_env["CIVORA_WORKER_HEALTH_ENABLED"] == "false"
+    assert worker_env["PERFORMANCE_AI_JOB_WORKERS"] == "2"
     assert worker_env["PERFORMANCE_AI_RESUME_POLL_SECONDS"] == "1"
     assert worker_env["CIVORA_DATABASE_POOL_MAX_SIZE"] == "2"
+
+
+def test_combined_runner_allows_explicit_external_worker_count() -> None:
+    _, worker_env = build_process_environments(
+        {
+            "DATABASE_URL": "postgresql://example.invalid/civora",
+            "CIVORA_EXTERNAL_JOB_WORKERS": "4",
+        }
+    )
+
+    assert worker_env["PERFORMANCE_AI_JOB_WORKERS"] == "4"
 
 
 def test_combined_runner_never_disables_continuous_database_polling() -> None:
