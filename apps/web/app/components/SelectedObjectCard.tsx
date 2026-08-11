@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import type { BuildingPlacement, SiteObjectType } from "../types";
 import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 
@@ -22,6 +24,48 @@ type SelectedObjectCardProps = {
   onClearSelection: () => void;
 };
 
+function BuildingHeightInput({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number | "";
+  onCommit: (heightFt: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const commit = () => {
+    const heightFt = Number(draft);
+    if (Number.isFinite(heightFt) && heightFt > 0) {
+      onCommit(heightFt);
+      return;
+    }
+    setDraft(String(value));
+  };
+
+  return (
+    <input
+      type="number"
+      min={1}
+      max={500}
+      step={1}
+      value={draft}
+      aria-label={`Height selected object ${label}`}
+      data-testid="selected-object-height-input"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          setDraft(String(value));
+          event.currentTarget.blur();
+        }
+      }}
+      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold text-slate-900"
+    />
+  );
+}
+
 export function SelectedObjectCard({
   selectedObject,
   displayType,
@@ -42,6 +86,9 @@ export function SelectedObjectCard({
   onDelete,
   onClearSelection,
 }: SelectedObjectCardProps) {
+  const selectedHeight = selectedObject
+    ? selectedObject.h ?? SITE_OBJECT_CATALOG[selectedObject.type ?? "custom"]?.defaultH ?? ""
+    : "";
   const supportsHeight = Boolean(
     selectedObject &&
       ((SITE_OBJECT_CATALOG[selectedObject.type ?? "custom"]?.defaultH ?? 0) > 0 || (selectedObject.h ?? 0) > 0),
@@ -127,19 +174,11 @@ export function SelectedObjectCard({
                 <div className="col-span-2 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2" data-testid="selected-object-3d-properties">
                   <label className={`flex flex-col gap-1 font-medium text-slate-500 ${supportsRoofProfile ? "" : "col-span-2"}`}>
                     Height (ft)
-                    <input
-                      type="number"
-                      min={1}
-                      max={500}
-                      step={1}
-                      value={selectedObject.h ?? SITE_OBJECT_CATALOG[selectedObject.type ?? "custom"]?.defaultH ?? ""}
-                      aria-label={`Height selected object ${selectedObject.label}`}
-                      data-testid="selected-object-height-input"
-                      onChange={(event) => {
-                        const heightFt = Number(event.target.value);
-                        if (Number.isFinite(heightFt) && heightFt > 0) onHeight(selectedObject, heightFt);
-                      }}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm font-semibold text-slate-900"
+                    <BuildingHeightInput
+                      key={`${selectedObject.id}:${selectedHeight}`}
+                      label={selectedObject.label}
+                      value={selectedHeight}
+                      onCommit={(heightFt) => onHeight(selectedObject, heightFt)}
                     />
                   </label>
                   {supportsRoofProfile ? (

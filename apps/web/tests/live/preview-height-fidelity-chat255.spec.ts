@@ -43,8 +43,11 @@ test.describe("Preview height and geometry fidelity", () => {
 
     const height = page.getByTestId("selected-object-height-input");
     await expect(height).toHaveValue("36");
-    await height.fill("72");
+    await height.fill("");
+    await expect(height).toHaveValue("");
+    await height.type("72");
     await expect(height).toHaveValue("72");
+    await height.press("Enter");
     await page.getByTestId("selected-object-roof-select").selectOption("gable");
     await expect(buildingRow).toContainText("72 ft high");
 
