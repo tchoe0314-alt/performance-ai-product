@@ -32,6 +32,10 @@ unavailable health state; it does not silently call the heuristic a learned mode
 Shadow is not another detector mode. With a heuristic baseline, `CIVORA_GATEWAY_SHADOW_ENABLED=true` samples requests,
 queues learned inference after the baseline path, and stores aggregate agreement only. Shadow geometry never enters the
 response candidate list. The queue is bounded and drops work rather than slowing or accumulating behind user traffic.
+Attach a small persistent volume at `/data` before enabling shadow if metrics must survive a deployment restart. The
+metrics file contains only counts, per-class agreement/IoU summaries, timestamps, and model identity. It never stores
+imagery bytes, source URLs, addresses, bounding boxes, coordinates, or shadow geometry. Agreement between two detectors
+is not an accuracy measurement and cannot promote a model.
 
 `civora` remains a backward-compatible alias for `civora_heuristic`. New deployments should use an explicit mode.
 
@@ -74,6 +78,7 @@ CIVORA_GATEWAY_SHADOW_MODE=async
 CIVORA_GATEWAY_SHADOW_SAMPLE_RATE=0.05
 CIVORA_GATEWAY_SHADOW_IOU_THRESHOLD=0.25
 CIVORA_GATEWAY_SHADOW_MODEL_MANIFEST=/app/vision/models/shadow/chat246/candidate-manifest.json
+CIVORA_GATEWAY_SHADOW_METRICS_PATH=/data/vision-shadow-metrics.json
 CIVORA_GATEWAY_BEARER_TOKEN=generate-a-long-random-service-token
 CIVORA_GATEWAY_IMAGE_HOST_ALLOWLIST=api.mapbox.com
 CIVORA_GATEWAY_MAX_IMAGE_BYTES=15728640
@@ -154,6 +159,19 @@ PYTHONPATH=. python3 backend/scripts/bootstrap_public_vision_collection.py \
 
 This creates the merged weak package, source manifest, coverage report, zero-ground-truth review sprint, and standalone
 review gallery. Source images and reviewer artifacts remain outside Git under `private/vision`.
+
+Build the separate core-segmentation seed for buildings, approximate road corridors, and surface-water polygons:
+
+```bash
+PYTHONPATH=. python3 backend/scripts/bootstrap_public_vision_collection.py \
+  --plan vision/datasets/us-conus-core-segmentation-seed-v1.json \
+  --source-registry vision/datasets/public-source-registry-v1.json \
+  --output-root private/vision/collections/us-conus-core-segmentation-seed-v1
+```
+
+The road source is U.S. Census TIGERweb centerline data buffered into approximate corridors, not pavement-edge truth.
+The surface-water source is USGS NHD mapped hydrography. Both can differ from the contemporaneous aerial frame, remain
+weak proposals, and require accept/reject/redraw review before training. Empty classes at a location remain empty.
 
 ### Independent SpaceNet benchmark import
 

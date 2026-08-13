@@ -1,0 +1,163 @@
+{
+  "candidate_id": "us-conus-core-segmentation-diagnostic-v2",
+  "dataset": {
+    "fingerprint": "80ffe0806eec3fac89b7689e704f0b849b9e578d5c1f4ea8aca267954ae6ef9a",
+    "geographies": [
+      "charlotte_nc",
+      "dallas_tx",
+      "denver_co",
+      "gretna_ne",
+      "phoenix_az"
+    ],
+    "ground_truth_annotation_count": 0,
+    "imagery_frame_count": 45,
+    "imagery_quality_bands": [
+      "high_resolution_0_30m_or_better",
+      "medium_resolution_0_31m_to_0_60m"
+    ],
+    "seasons": [
+      "autumn",
+      "summer"
+    ],
+    "supervision_status": "weak_labels_pending_review",
+    "training_coverage_ready": true,
+    "weak_proposals_by_class": {
+      "building": 489,
+      "road": 177,
+      "water": 38
+    },
+    "weak_proposals_by_split_and_class": {
+      "test": {
+        "building": 200,
+        "road": 54,
+        "water": 2
+      },
+      "train": {
+        "building": 142,
+        "road": 102,
+        "water": 27
+      },
+      "validation": {
+        "building": 147,
+        "road": 21,
+        "water": 9
+      }
+    }
+  },
+  "decision": {
+    "decision": "rejected_before_deployment",
+    "deployed_as_primary": false,
+    "deployed_as_shadow": false,
+    "primary_reasons": [
+      "weak_labels_not_human_reviewed",
+      "held_out_f1_below_gate",
+      "held_out_building_recall_zero",
+      "held_out_basin_recall_zero",
+      "per_class_sample_depth_insufficient"
+    ],
+    "promotion_eligible": false
+  },
+  "evaluated_at": "2026-08-13",
+  "held_out_diagnostic": {
+    "evaluation_status": "unattested_or_weak_label_diagnostic",
+    "f1": 0.0208,
+    "ground_truth_count": 256,
+    "image_count": 9,
+    "mean_matched_iou": 0.668,
+    "per_class": {
+      "basin": {
+        "evaluation_status": "unattested_or_weak_label_diagnostic",
+        "f1": 0.0,
+        "false_negative": 2,
+        "false_positive": 13,
+        "geometry_metric": "class_aware_bounding_box_iou",
+        "ground_truth_count": 2,
+        "iou_threshold": 0.5,
+        "mean_matched_iou": 0.0,
+        "precision": 0.0,
+        "prediction_count": 13,
+        "recall": 0.0,
+        "true_positive": 0
+      },
+      "building": {
+        "evaluation_status": "unattested_or_weak_label_diagnostic",
+        "f1": 0.0,
+        "false_negative": 200,
+        "false_positive": 0,
+        "geometry_metric": "class_aware_bounding_box_iou",
+        "ground_truth_count": 200,
+        "iou_threshold": 0.5,
+        "mean_matched_iou": 0.0,
+        "precision": 0.0,
+        "prediction_count": 0,
+        "recall": 0.0,
+        "true_positive": 0
+      },
+      "road": {
+        "evaluation_status": "unattested_or_weak_label_diagnostic",
+        "f1": 0.0822,
+        "false_negative": 51,
+        "false_positive": 16,
+        "geometry_metric": "class_aware_bounding_box_iou",
+        "ground_truth_count": 54,
+        "iou_threshold": 0.5,
+        "mean_matched_iou": 0.668,
+        "precision": 0.1579,
+        "prediction_count": 19,
+        "recall": 0.0556,
+        "true_positive": 3
+      }
+    },
+    "precision": 0.0938,
+    "prediction_count": 32,
+    "recall": 0.0117,
+    "split": "test"
+  },
+  "training": {
+    "architecture": "lraspp_mobilenet_v3_large",
+    "best_validation_mean_foreground_iou": 0.465432,
+    "class_split_coverage": {
+      "blockers": [],
+      "counts": {
+        "test": {
+          "building": 200,
+          "road": 54,
+          "water": 2
+        },
+        "train": {
+          "building": 142,
+          "road": 102,
+          "water": 27
+        },
+        "validation": {
+          "building": 147,
+          "road": 21,
+          "water": 9
+        }
+      },
+      "ready": true,
+      "required_splits": [
+        "train",
+        "validation",
+        "test"
+      ]
+    },
+    "class_weighting": "inverse_sqrt",
+    "class_weights": [
+      0.2,
+      1.412199,
+      1.0,
+      0.588887
+    ],
+    "epochs_completed": 19,
+    "pretrained_backbone": true,
+    "training_pixel_counts": [
+      2835642,
+      131007,
+      261268,
+      753395
+    ]
+  },
+  "truth_label": "This diagnostic used registered public imagery and weak labels, not independently reviewed ground truth. Its metrics cannot establish production accuracy. The candidate was rejected and does not affect user-visible detections.",
+  "version": "civora_vision_candidate_diagnostic_summary_v1"
+}

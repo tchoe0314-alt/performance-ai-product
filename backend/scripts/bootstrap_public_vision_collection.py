@@ -78,6 +78,11 @@ def bootstrap_public_vision_collection(
             source_registry_path=source_registry_path,
             imagery_source_id=str(plan.get("imagery_source_id") or "usgs_naip_conus"),
             label_source_id=str(plan.get("label_source_id") or "microsoft_global_building_footprints"),
+            additional_label_sources=[
+                dict(item)
+                for item in plan.get("additional_label_sources") or []
+                if isinstance(item, dict)
+            ],
         )
         region_results.append({"geography_id": geography_id, **result})
         package_paths.append(Path(result["package"]))
@@ -97,7 +102,11 @@ def bootstrap_public_vision_collection(
         build_public_review_gallery_html(review_sprint, image_prefix="images"),
         encoding="utf-8",
     )
-    coverage = _collection_coverage(merged_package, review_sprint)
+    coverage = _collection_coverage(
+        merged_package,
+        review_sprint,
+        coverage_policy=dict(plan.get("coverage_policy") or {}),
+    )
     coverage_path = merged_root / "collection-coverage.json"
     coverage_path.write_text(json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     run_record = {
@@ -110,6 +119,8 @@ def bootstrap_public_vision_collection(
         "review_sprint": str(review_sprint_path),
         "review_gallery": str(review_gallery_path),
         "coverage": coverage,
+        "training_coverage_ready": coverage["training_coverage_ready"],
+        "training_coverage_blockers": coverage["training_coverage_blockers"],
         "ground_truth_annotation_count": 0,
         "promotion_eligible": False,
         "truth_label": (
@@ -125,7 +136,11 @@ def bootstrap_public_vision_collection(
         "review_sprint": str(review_sprint_path),
         "review_gallery": str(review_gallery_path),
         "imagery_frames": coverage["imagery_frame_count"],
-        "weak_building_proposals": coverage["weak_proposal_count"],
+        "weak_building_proposals": coverage["weak_proposals_by_class"].get("building", 0),
+        "weak_proposals_by_class": coverage["weak_proposals_by_class"],
+        "weak_proposals_by_split_and_class": coverage["weak_proposals_by_split_and_class"],
+        "training_coverage_ready": coverage["training_coverage_ready"],
+        "training_coverage_blockers": coverage["training_coverage_blockers"],
         "ground_truth_annotations": 0,
         "geographies": coverage["geographies"],
         "seasons": coverage["seasons"],
@@ -134,12 +149,65 @@ def bootstrap_public_vision_collection(
     }
 
 
-def _collection_coverage(package: Dict[str, Any], review_sprint: Dict[str, Any]) -> Dict[str, Any]:
+def _collection_coverage(
+    package: Dict[str, Any],
+    review_sprint: Dict[str, Any],
+    *,
+    coverage_policy: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     images = [dict(item) for item in package.get("images") or [] if isinstance(item, dict)]
+    policy = dict(coverage_policy or {})
+    required_splits = [str(item) for item in policy.get("required_splits") or ("train", "validation", "test")]
+    category_names = {
+        int(item.get("id") or 0): str(item.get("name") or "unknown")
+        for item in package.get("categories") or []
+        if isinstance(item, dict)
+    }
+    image_splits = {
+        int(item.get("id") or 0): str(item.get("split") or "")
+        for item in images
+    }
+    class_names = sorted({name for name in category_names.values() if name})
+    by_split_and_class = {
+        split: {label: 0 for label in class_names}
+        for split in required_splits
+    }
+    for annotation in package.get("annotations") or []:
+        if not isinstance(annotation, dict):
+            continue
+        split = image_splits.get(int(annotation.get("image_id") or 0), "")
+        label = str(
+            annotation.get("category_name")
+            or category_names.get(int(annotation.get("category_id") or 0))
+            or "unknown"
+        )
+        if split in by_split_and_class and label in by_split_and_class[split]:
+            by_split_and_class[split][label] += 1
+    minimums = {
+        label: max(1, int(value or 1))
+        for label, value in dict(policy.get("minimum_proposals_per_class_per_split") or {}).items()
+        if str(label) in class_names
+    }
+    for label in class_names:
+        minimums.setdefault(label, 1)
+    coverage_blockers = sorted(
+        f"class_split_proposal_count_below_minimum:{split}:{label}:{count}<{minimums[label]}"
+        for split in required_splits
+        for label, count in by_split_and_class.get(split, {}).items()
+        if count < minimums[label]
+    )
     return {
         "version": "civora_public_vision_collection_coverage_v1",
         "imagery_frame_count": len(images),
         "weak_proposal_count": len(package.get("annotations") or []),
+        "weak_proposals_by_class": _annotation_counts_by_class(package),
+        "weak_proposals_by_split_and_class": by_split_and_class,
+        "coverage_requirements": {
+            "required_splits": required_splits,
+            "minimum_proposals_per_class_per_split": minimums,
+        },
+        "training_coverage_ready": not coverage_blockers,
+        "training_coverage_blockers": coverage_blockers,
         "ground_truth_annotation_count": int(review_sprint.get("ground_truth_annotation_count") or 0),
         "geographies": sorted({str(item.get("geography_id") or item.get("source_dataset") or "") for item in images if item.get("geography_id") or item.get("source_dataset")}),
         "seasons": sorted({str(item.get("season") or "") for item in images if item.get("season")}),
@@ -149,6 +217,25 @@ def _collection_coverage(package: Dict[str, Any], review_sprint: Dict[str, Any])
         "review_status": "pending_human_review",
         "promotion_eligible": False,
     }
+
+
+def _annotation_counts_by_class(package: Dict[str, Any]) -> Dict[str, int]:
+    category_names = {
+        int(item.get("id") or 0): str(item.get("name") or "unknown")
+        for item in package.get("categories") or []
+        if isinstance(item, dict)
+    }
+    counts: Dict[str, int] = {}
+    for annotation in package.get("annotations") or []:
+        if not isinstance(annotation, dict):
+            continue
+        label = str(
+            annotation.get("category_name")
+            or category_names.get(int(annotation.get("category_id") or 0))
+            or "unknown"
+        )
+        counts[label] = counts.get(label, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _read_object(path: Path) -> Dict[str, Any]:

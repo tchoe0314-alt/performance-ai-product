@@ -791,15 +791,19 @@ _GALLERY_TEMPLATE = r"""<!doctype html>
         exportStatus.textContent = 'Checksum export needs a secure browser context. Serve this folder over localhost.';
         return;
       }
-      const reviewed = [...decisions.entries()].map(([candidate_id, state]) => ({
-        candidate_id,
-        action: state === 'accept' ? 'accept' : 'reject',
-        reason: state === 'accept'
-          ? 'Inspected against the registered source frame and accepted the visible building outline.'
-          : state === 'redraw'
-            ? 'Inspected against the registered source frame; proposal rejected because corrected geometry must be redrawn in Civora Draw.'
-            : 'Inspected against the registered source frame and rejected the weak building proposal.',
-      }));
+      const reviewed = [...decisions.entries()].map(([candidate_id, state]) => {
+        const candidate = candidates.find(item => item.candidate_id === candidate_id);
+        const featureLabel = humanLabel(candidate?.label || 'visible feature').toLowerCase();
+        return {
+          candidate_id,
+          action: state === 'accept' ? 'accept' : 'reject',
+          reason: state === 'accept'
+            ? `Inspected against the registered source frame and accepted the visible ${featureLabel} outline.`
+            : state === 'redraw'
+              ? `Inspected against the registered source frame; ${featureLabel} proposal rejected because corrected geometry must be redrawn in Civora Draw.`
+              : `Inspected against the registered source frame and rejected the weak ${featureLabel} proposal.`,
+        };
+      });
       const payload = {
         version: 'civora_public_vision_review_decisions_v1',
         review_sprint_fingerprint: data.review_sprint_fingerprint,

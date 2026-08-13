@@ -1,7 +1,9 @@
 import os
 import json
+import tempfile
 import unittest
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 
 from PIL import Image, ImageDraw
@@ -393,6 +395,69 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
             from backend.scripts.imagery_detection_gateway import _shadow_sample_rate
 
             self.assertEqual(_shadow_sample_rate(), 0.05)
+
+    def test_shadow_metrics_persist_aggregate_only_across_runtime_restart(self) -> None:
+        from backend.scripts import imagery_detection_gateway as gateway
+
+        report = {
+            "version": "civora_vision_shadow_report_v1",
+            "status": "ready",
+            "baseline_provider": "civora_heuristic",
+            "source_url": "https://private.example/customer-site.png?token=secret",
+            "address": "123 Private Project Drive",
+            "baseline_count": 3,
+            "shadow_count": 2,
+            "matched_count": 1,
+            "agreement_rate": 0.3333,
+            "per_class": {
+                "building": {
+                    "baseline_count": 3,
+                    "shadow_count": 2,
+                    "matched_count": 1,
+                    "count_delta": -1,
+                    "agreement_rate": 0.3333,
+                    "mean_matched_iou": 0.61,
+                    "bbox": [10, 20, 30, 40],
+                }
+            },
+            "shadow_model": {
+                "model_name": "candidate",
+                "model_version": "v1",
+                "model_sha256": "a" * 64,
+                "promotion_status": "candidate_blocked",
+            },
+            "shadow_geometry": {"coordinates": [[1, 2], [3, 4]]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            metrics_path = Path(directory) / "shadow-metrics.json"
+            with patch.dict(
+                os.environ,
+                {"CIVORA_GATEWAY_SHADOW_METRICS_PATH": str(metrics_path)},
+                clear=False,
+            ):
+                gateway._SHADOW_STATS_PATH_LOADED = ""
+                gateway._SHADOW_STATS = gateway._empty_shadow_stats()
+                gateway._record_shadow_submission()
+                gateway._record_shadow_completion(report)
+
+                stored_text = metrics_path.read_text(encoding="utf-8")
+                stored = json.loads(stored_text)
+                self.assertEqual(stored["statistics"]["aggregate"]["sample_count"], 1)
+                self.assertNotIn("private.example", stored_text)
+                self.assertNotIn("Private Project", stored_text)
+                self.assertNotIn("bbox", stored_text)
+                self.assertNotIn("coordinates", stored_text)
+
+                gateway._SHADOW_STATS_PATH_LOADED = ""
+                gateway._SHADOW_STATS = gateway._empty_shadow_stats()
+                restored = gateway._shadow_runtime_statistics()
+                self.assertEqual(restored["submitted_count"], 1)
+                self.assertEqual(restored["completed_count"], 1)
+                self.assertEqual(restored["aggregate"]["sample_count"], 1)
+                self.assertEqual(restored["aggregate"]["per_class"]["building"]["matched_count"], 1)
+                self.assertTrue(restored["persistence_configured"])
+                self.assertTrue(restored["persistent_volume_required"])
+                self.assertEqual(restored["storage_scope"], "aggregate_metrics_only_no_imagery_or_geometry")
 
     def test_gateway_runs_promoted_learned_model_and_reports_exact_runtime(self) -> None:
         session = _CivoraImageSession()

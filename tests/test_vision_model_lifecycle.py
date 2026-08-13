@@ -237,6 +237,41 @@ class VisionModelLifecycleTests(unittest.TestCase):
             "unattested_or_weak_label_diagnostic",
         )
 
+    def test_quality_uses_model_category_over_source_feature_type_alias(self) -> None:
+        truth = [
+            {
+                "kind": "building",
+                "feature_type": "building_footprint",
+                "geometry": _polygon(0, 0, 10, 10),
+            },
+            {
+                "kind": "road",
+                "feature_type": "road_or_drive",
+                "geometry": _polygon(20, 0, 40, 10),
+            },
+            {
+                "kind": "water",
+                "feature_type": "water/pond/basin",
+                "geometry": _polygon(50, 0, 65, 15),
+            },
+        ]
+        predictions = [
+            {"kind": item["kind"], "geometry": item["geometry"], "confidence": 0.9}
+            for item in truth
+        ]
+
+        quality = evaluate_quality_by_class(
+            predictions,
+            truth,
+            evaluation_status="unattested_or_weak_label_diagnostic",
+        )
+
+        self.assertEqual(quality["true_positive"], 3)
+        self.assertEqual(quality["precision"], 1.0)
+        self.assertEqual(quality["recall"], 1.0)
+        self.assertEqual(sorted(quality["per_class"]), ["basin", "building", "road"])
+        self.assertEqual(truth[0]["feature_type"], "building_footprint")
+
     def test_manifest_is_promoted_only_with_quality_provenance_and_approver(self) -> None:
         quality = {
             "evaluation_status": "measured_against_ground_truth",

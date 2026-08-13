@@ -24,6 +24,7 @@ def main() -> int:
     parser.add_argument("--image-size", type=int, default=512)
     parser.add_argument("--base-channels", type=int, default=32)
     parser.add_argument("--background-weight", type=float, default=0.25)
+    parser.add_argument("--class-weighting", choices=("uniform", "inverse_sqrt"), default="inverse_sqrt")
     parser.add_argument("--dice-weight", type=float, default=0.40)
     parser.add_argument("--architecture", choices=("unet", "lraspp_mobilenet_v3_large"), default="unet")
     parser.add_argument("--pretrained-backbone", action="store_true")
@@ -74,6 +75,12 @@ def main() -> int:
         raise SystemExit("Training split contains no rights-cleared images.")
     if not images_by_split["validation"]:
         raise SystemExit("Validation split contains no images; add more frames or choose a different deterministic split seed.")
+    class_split_coverage = build_class_split_coverage(dataset_payload)
+    if not class_split_coverage["ready"]:
+        raise SystemExit(
+            "Every declared class must be represented in train, validation, and test before training: "
+            + ", ".join(class_split_coverage["blockers"])
+        )
 
     class CocoSemanticDataset(Dataset):
         def __init__(self, images: List[Dict[str, Any]], *, augment: bool) -> None:
@@ -200,14 +207,17 @@ def main() -> int:
     if device_name == "auto":
         device_name = "cuda" if torch.cuda.is_available() else "mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() else "cpu"
     device = torch.device(device_name)
+    training_dataset = CocoSemanticDataset(images_by_split["train"], augment=True)
+    training_measurement_dataset = CocoSemanticDataset(images_by_split["train"], augment=False)
+    validation_dataset = CocoSemanticDataset(images_by_split["validation"], augment=False)
     train_loader = DataLoader(
-        CocoSemanticDataset(images_by_split["train"], augment=True),
+        training_dataset,
         batch_size=max(1, args.batch_size),
         shuffle=True,
         num_workers=0,
     )
     validation_loader = DataLoader(
-        CocoSemanticDataset(images_by_split["validation"], augment=False),
+        validation_dataset,
         batch_size=max(1, args.batch_size),
         shuffle=False,
         num_workers=0,
@@ -238,8 +248,15 @@ def main() -> int:
         patience=max(1, int(args.early_stopping_patience) // 3),
         min_lr=1e-6,
     )
-    class_weights = torch.ones(class_count, dtype=torch.float32, device=device)
-    class_weights[0] = min(max(float(args.background_weight), 0.01), 1.0)
+    training_pixel_counts = np.zeros(class_count, dtype=np.int64)
+    for _, mask in training_measurement_dataset:
+        training_pixel_counts += np.bincount(mask.numpy().reshape(-1), minlength=class_count)[:class_count]
+    class_weight_values = build_class_weight_values(
+        training_pixel_counts.tolist(),
+        background_weight=args.background_weight,
+        mode=args.class_weighting,
+    )
+    class_weights = torch.tensor(class_weight_values, dtype=torch.float32, device=device)
     criterion = CombinedSegmentationLoss(class_weights, args.dice_weight)
     history: List[Dict[str, float]] = []
     best_validation_iou = -1.0
@@ -306,6 +323,7 @@ def main() -> int:
         "supervision_status": str(dataset_payload.get("supervision_status") or "unspecified"),
         "training_dataset_promotion_eligible": dataset_payload.get("promotion_eligible") is True,
         "training_dataset_promotion_blockers": list(dataset_payload.get("promotion_blockers") or []),
+        "class_split_coverage": class_split_coverage,
         "categories": [{"id": 0, "name": "background"}] + categories,
         "hyperparameters": {
             "epochs": args.epochs,
@@ -314,6 +332,9 @@ def main() -> int:
             "image_size": args.image_size,
             "base_channels": args.base_channels,
             "background_weight": round(float(class_weights[0].detach().cpu()), 4),
+            "class_weighting": args.class_weighting,
+            "class_weights": [round(float(value), 6) for value in class_weight_values],
+            "training_pixel_counts": [int(value) for value in training_pixel_counts.tolist()],
             "dice_weight": round(float(args.dice_weight), 4),
             "architecture": args.architecture,
             "pretrained_backbone": args.pretrained_backbone,
@@ -361,6 +382,70 @@ def main() -> int:
         )
     )
     return 0
+
+
+def build_class_split_coverage(dataset_payload: Dict[str, Any]) -> Dict[str, Any]:
+    categories = {
+        int(item.get("id") or 0): str(item.get("name") or "")
+        for item in dataset_payload.get("categories") or []
+        if isinstance(item, dict) and int(item.get("id") or 0) > 0
+    }
+    image_splits = {
+        int(item.get("id") or 0): str(item.get("split") or "")
+        for item in dataset_payload.get("images") or []
+        if isinstance(item, dict)
+    }
+    required_splits = ("train", "validation", "test")
+    counts = {
+        split: {label: 0 for label in categories.values() if label}
+        for split in required_splits
+    }
+    for annotation in dataset_payload.get("annotations") or []:
+        if not isinstance(annotation, dict):
+            continue
+        split = image_splits.get(int(annotation.get("image_id") or 0), "")
+        label = categories.get(int(annotation.get("category_id") or 0), "")
+        if split in counts and label in counts[split]:
+            counts[split][label] += 1
+    blockers = sorted(
+        f"declared_class_missing_from_split:{split}:{label}"
+        for split in required_splits
+        for label, count in counts[split].items()
+        if count < 1
+    )
+    return {
+        "ready": bool(categories) and not blockers,
+        "required_splits": list(required_splits),
+        "counts": counts,
+        "blockers": blockers or ([] if categories else ["declared_model_classes_missing"]),
+    }
+
+
+def build_class_weight_values(
+    pixel_counts: List[int],
+    *,
+    background_weight: float,
+    mode: str,
+) -> List[float]:
+    if not pixel_counts:
+        raise ValueError("At least one class pixel count is required.")
+    if any(int(value) < 0 for value in pixel_counts):
+        raise ValueError("Class pixel counts cannot be negative.")
+    if mode not in {"uniform", "inverse_sqrt"}:
+        raise ValueError("Unsupported class weighting mode.")
+    foreground_counts = [max(1, int(value)) for value in pixel_counts[1:]]
+    if mode == "uniform" or not foreground_counts:
+        foreground_weights = [1.0 for _ in foreground_counts]
+    else:
+        reference = float(np.median(np.asarray(foreground_counts, dtype=np.float64)))
+        foreground_weights = [
+            max(0.25, min(4.0, float(np.sqrt(reference / count))))
+            for count in foreground_counts
+        ]
+    return [
+        min(max(float(background_weight), 0.01), 1.0),
+        *foreground_weights,
+    ]
 
 
 def _validate(model: Any, loader: Any, criterion: Any, device: Any, class_count: int, torch: Any) -> Dict[str, float]:

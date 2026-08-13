@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import ipaddress
+import json
+import os
 import queue
 import secrets
 import tempfile
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, urlsplit
 
@@ -41,14 +43,29 @@ _SHADOW_QUEUE: queue.Queue[Dict[str, Any]] = queue.Queue(maxsize=4)
 _SHADOW_WORKER_LOCK = threading.Lock()
 _SHADOW_WORKER_STARTED = False
 _SHADOW_STATS_LOCK = threading.Lock()
-_SHADOW_STATS: Dict[str, Any] = {
-    "submitted_count": 0,
-    "completed_count": 0,
-    "failed_count": 0,
-    "dropped_count": 0,
-    "last_completed_at": "",
-    "last_report": {},
-}
+_SHADOW_STATS_PATH_LOADED = ""
+
+
+def _empty_shadow_stats() -> Dict[str, Any]:
+    return {
+        "submitted_count": 0,
+        "completed_count": 0,
+        "failed_count": 0,
+        "dropped_count": 0,
+        "last_completed_at": "",
+        "last_report": {},
+        "aggregate": {
+            "sample_count": 0,
+            "baseline_count": 0,
+            "shadow_count": 0,
+            "matched_count": 0,
+            "agreement_rate_sum": 0.0,
+            "per_class": {},
+        },
+    }
+
+
+_SHADOW_STATS: Dict[str, Any] = _empty_shadow_stats()
 
 
 def gateway_health_status() -> Dict[str, Any]:
@@ -320,6 +337,7 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
         )
     if shadow_selected:
         if str(os.getenv("CIVORA_GATEWAY_SHADOW_MODE") or "async").strip().lower() == "inline":
+            _record_shadow_submission()
             shadow_report = _run_shadow_comparison(
                 baseline_detections=detections,
                 baseline_provider=provider,
@@ -327,6 +345,7 @@ def run_detection_gateway(payload: Dict[str, Any], *, session: Any = requests) -
                 image_content=shared_image[0] if shared_image else b"",
                 requested_kinds=_list(payload.get("candidate_types")),
             )
+            _record_shadow_completion(shadow_report)
         else:
             queued = _enqueue_shadow_comparison(
                 baseline_detections=detections,
@@ -713,11 +732,9 @@ def _enqueue_shadow_comparison(
     try:
         _SHADOW_QUEUE.put_nowait(job)
     except queue.Full:
-        with _SHADOW_STATS_LOCK:
-            _SHADOW_STATS["dropped_count"] += 1
+        _record_shadow_drop()
         return False
-    with _SHADOW_STATS_LOCK:
-        _SHADOW_STATS["submitted_count"] += 1
+    _record_shadow_submission()
     return True
 
 
@@ -739,19 +756,15 @@ def _shadow_worker_loop() -> None:
                 report = _run_shadow_comparison(**job)
             except Exception:
                 report = build_shadow_status_report("failed", reason="unexpected_shadow_worker_failure")
-            with _SHADOW_STATS_LOCK:
-                if report.get("status") == "ready":
-                    _SHADOW_STATS["completed_count"] += 1
-                else:
-                    _SHADOW_STATS["failed_count"] += 1
-                _SHADOW_STATS["last_completed_at"] = _now_iso()
-                _SHADOW_STATS["last_report"] = report
+            _record_shadow_completion(report)
         finally:
             _SHADOW_QUEUE.task_done()
 
 
 def _shadow_runtime_statistics() -> Dict[str, Any]:
     with _SHADOW_STATS_LOCK:
+        _ensure_shadow_stats_loaded_locked()
+        aggregate = _shadow_aggregate_summary(_dict(_SHADOW_STATS.get("aggregate")))
         return {
             "submitted_count": int(_SHADOW_STATS["submitted_count"]),
             "completed_count": int(_SHADOW_STATS["completed_count"]),
@@ -759,8 +772,259 @@ def _shadow_runtime_statistics() -> Dict[str, Any]:
             "dropped_count": int(_SHADOW_STATS["dropped_count"]),
             "queue_depth": _SHADOW_QUEUE.qsize(),
             "last_completed_at": str(_SHADOW_STATS["last_completed_at"]),
-            "last_report": _dict(_SHADOW_STATS["last_report"]),
+            "last_report": _privacy_safe_shadow_report(_dict(_SHADOW_STATS["last_report"])),
+            "aggregate": aggregate,
+            "persistence_configured": bool(_shadow_metrics_path()),
+            "persistent_volume_required": True,
+            "storage_scope": "aggregate_metrics_only_no_imagery_or_geometry",
         }
+
+
+def _record_shadow_submission() -> None:
+    with _SHADOW_STATS_LOCK:
+        _ensure_shadow_stats_loaded_locked()
+        _SHADOW_STATS["submitted_count"] += 1
+        _persist_shadow_stats_locked()
+
+
+def _record_shadow_drop() -> None:
+    with _SHADOW_STATS_LOCK:
+        _ensure_shadow_stats_loaded_locked()
+        _SHADOW_STATS["dropped_count"] += 1
+        _persist_shadow_stats_locked()
+
+
+def _record_shadow_completion(report: Dict[str, Any]) -> None:
+    safe_report = _privacy_safe_shadow_report(report)
+    with _SHADOW_STATS_LOCK:
+        _ensure_shadow_stats_loaded_locked()
+        if safe_report.get("status") == "ready":
+            _SHADOW_STATS["completed_count"] += 1
+            _accumulate_shadow_report(_dict(_SHADOW_STATS.get("aggregate")), safe_report)
+        else:
+            _SHADOW_STATS["failed_count"] += 1
+        _SHADOW_STATS["last_completed_at"] = _now_iso()
+        _SHADOW_STATS["last_report"] = safe_report
+        _persist_shadow_stats_locked()
+
+
+def _shadow_metrics_path() -> Optional[Path]:
+    value = str(os.getenv("CIVORA_GATEWAY_SHADOW_METRICS_PATH") or "").strip()
+    return Path(value).expanduser() if value else None
+
+
+def _ensure_shadow_stats_loaded_locked() -> None:
+    global _SHADOW_STATS, _SHADOW_STATS_PATH_LOADED
+    path = _shadow_metrics_path()
+    path_key = str(path.resolve()) if path else "__memory__"
+    if _SHADOW_STATS_PATH_LOADED == path_key:
+        return
+    _SHADOW_STATS = _empty_shadow_stats()
+    _SHADOW_STATS_PATH_LOADED = path_key
+    if not path or not path.is_file():
+        return
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    statistics = _dict(_dict(payload).get("statistics"))
+    _SHADOW_STATS = _sanitize_persisted_shadow_stats(statistics)
+
+
+def _persist_shadow_stats_locked() -> None:
+    path = _shadow_metrics_path()
+    if not path:
+        return
+    payload = {
+        "version": "civora_vision_shadow_metrics_v1",
+        "updated_at": _now_iso(),
+        "statistics": _sanitize_persisted_shadow_stats(_SHADOW_STATS),
+        "storage_scope": "aggregate_metrics_only_no_imagery_or_geometry",
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=str(path.parent),
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            temp_path = Path(handle.name)
+        os.replace(temp_path, path)
+    except OSError:
+        try:
+            temp_path.unlink(missing_ok=True)
+        except (OSError, UnboundLocalError):
+            pass
+
+
+def _sanitize_persisted_shadow_stats(value: Dict[str, Any]) -> Dict[str, Any]:
+    aggregate = _sanitize_shadow_aggregate(_dict(value.get("aggregate")))
+    return {
+        "submitted_count": _nonnegative_int(value.get("submitted_count")),
+        "completed_count": _nonnegative_int(value.get("completed_count")),
+        "failed_count": _nonnegative_int(value.get("failed_count")),
+        "dropped_count": _nonnegative_int(value.get("dropped_count")),
+        "last_completed_at": str(value.get("last_completed_at") or ""),
+        "last_report": _privacy_safe_shadow_report(_dict(value.get("last_report"))),
+        "aggregate": aggregate,
+    }
+
+
+def _privacy_safe_shadow_report(report: Dict[str, Any]) -> Dict[str, Any]:
+    if not report:
+        return {}
+    model = _dict(report.get("shadow_model"))
+    safe: Dict[str, Any] = {
+        "version": SHADOW_REPORT_VERSION,
+        "status": str(report.get("status") or "not_run"),
+        "reason": str(report.get("reason") or ""),
+        "shadow_model": {
+            "model_name": str(model.get("model_name") or ""),
+            "model_version": str(model.get("model_version") or ""),
+            "model_sha256": str(model.get("model_sha256") or ""),
+            "promotion_status": str(model.get("promotion_status") or "candidate_shadow_only"),
+        },
+        "influenced_user_candidates": False,
+        "contains_shadow_geometry": False,
+        "quality_claim_allowed": False,
+    }
+    if safe["status"] != "ready":
+        return safe
+    safe.update(
+        {
+            "baseline_provider": str(report.get("baseline_provider") or "unknown"),
+            "iou_threshold": _bounded_float(report.get("iou_threshold")),
+            "baseline_count": _nonnegative_int(report.get("baseline_count")),
+            "shadow_count": _nonnegative_int(report.get("shadow_count")),
+            "matched_count": _nonnegative_int(report.get("matched_count")),
+            "agreement_rate": _bounded_float(report.get("agreement_rate")),
+            "per_class": {
+                str(label): {
+                    "baseline_count": _nonnegative_int(_dict(item).get("baseline_count")),
+                    "shadow_count": _nonnegative_int(_dict(item).get("shadow_count")),
+                    "matched_count": _nonnegative_int(_dict(item).get("matched_count")),
+                    "count_delta": _safe_int(_dict(item).get("count_delta")),
+                    "agreement_rate": _bounded_float(_dict(item).get("agreement_rate")),
+                    "mean_matched_iou": _bounded_float(_dict(item).get("mean_matched_iou")),
+                }
+                for label, item in _dict(report.get("per_class")).items()
+                if str(label).strip()
+            },
+        }
+    )
+    return safe
+
+
+def _sanitize_shadow_aggregate(value: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "sample_count": _nonnegative_int(value.get("sample_count")),
+        "baseline_count": _nonnegative_int(value.get("baseline_count")),
+        "shadow_count": _nonnegative_int(value.get("shadow_count")),
+        "matched_count": _nonnegative_int(value.get("matched_count")),
+        "agreement_rate_sum": _nonnegative_float(value.get("agreement_rate_sum")),
+        "per_class": {
+            str(label): {
+                "sample_count": _nonnegative_int(_dict(item).get("sample_count")),
+                "baseline_count": _nonnegative_int(_dict(item).get("baseline_count")),
+                "shadow_count": _nonnegative_int(_dict(item).get("shadow_count")),
+                "matched_count": _nonnegative_int(_dict(item).get("matched_count")),
+                "agreement_rate_sum": _nonnegative_float(_dict(item).get("agreement_rate_sum")),
+                "mean_matched_iou_sum": _nonnegative_float(_dict(item).get("mean_matched_iou_sum")),
+            }
+            for label, item in _dict(value.get("per_class")).items()
+            if str(label).strip()
+        },
+    }
+
+
+def _accumulate_shadow_report(aggregate: Dict[str, Any], report: Dict[str, Any]) -> None:
+    aggregate["sample_count"] = _nonnegative_int(aggregate.get("sample_count")) + 1
+    aggregate["baseline_count"] = _nonnegative_int(aggregate.get("baseline_count")) + _nonnegative_int(
+        report.get("baseline_count")
+    )
+    aggregate["shadow_count"] = _nonnegative_int(aggregate.get("shadow_count")) + _nonnegative_int(
+        report.get("shadow_count")
+    )
+    aggregate["matched_count"] = _nonnegative_int(aggregate.get("matched_count")) + _nonnegative_int(
+        report.get("matched_count")
+    )
+    aggregate["agreement_rate_sum"] = float(aggregate.get("agreement_rate_sum") or 0.0) + _bounded_float(
+        report.get("agreement_rate")
+    )
+    per_class = _dict(aggregate.setdefault("per_class", {}))
+    for label, item in _dict(report.get("per_class")).items():
+        current = _dict(per_class.setdefault(label, {}))
+        current["sample_count"] = _nonnegative_int(current.get("sample_count")) + 1
+        for key in ("baseline_count", "shadow_count", "matched_count"):
+            current[key] = _nonnegative_int(current.get(key)) + _nonnegative_int(_dict(item).get(key))
+        current["agreement_rate_sum"] = float(current.get("agreement_rate_sum") or 0.0) + _bounded_float(
+            _dict(item).get("agreement_rate")
+        )
+        current["mean_matched_iou_sum"] = float(current.get("mean_matched_iou_sum") or 0.0) + _bounded_float(
+            _dict(item).get("mean_matched_iou")
+        )
+        per_class[label] = current
+    aggregate["per_class"] = per_class
+
+
+def _shadow_aggregate_summary(value: Dict[str, Any]) -> Dict[str, Any]:
+    aggregate = _sanitize_shadow_aggregate(value)
+    sample_count = aggregate["sample_count"]
+    return {
+        "sample_count": sample_count,
+        "baseline_count": aggregate["baseline_count"],
+        "shadow_count": aggregate["shadow_count"],
+        "matched_count": aggregate["matched_count"],
+        "mean_agreement_rate": round(aggregate["agreement_rate_sum"] / sample_count, 4) if sample_count else 0.0,
+        "per_class": {
+            label: {
+                "sample_count": item["sample_count"],
+                "baseline_count": item["baseline_count"],
+                "shadow_count": item["shadow_count"],
+                "matched_count": item["matched_count"],
+                "mean_agreement_rate": round(item["agreement_rate_sum"] / item["sample_count"], 4)
+                if item["sample_count"]
+                else 0.0,
+                "mean_matched_iou": round(item["mean_matched_iou_sum"] / item["sample_count"], 4)
+                if item["sample_count"]
+                else 0.0,
+            }
+            for label, item in aggregate["per_class"].items()
+        },
+    }
+
+
+def _nonnegative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _bounded_float(value: Any) -> float:
+    try:
+        return max(0.0, min(1.0, float(value or 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _nonnegative_float(value: Any) -> float:
+    try:
+        return max(0.0, float(value or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _shadow_request_selected(payload: Dict[str, Any], *, image_url: str) -> bool:

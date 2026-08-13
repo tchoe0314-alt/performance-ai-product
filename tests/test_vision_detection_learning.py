@@ -258,6 +258,28 @@ class VisionDetectionLearningTests(unittest.TestCase):
         self.assertEqual(quality["false_positive"], 1)
         self.assertEqual(quality["false_negative"], 1)
 
+    def test_quality_evaluation_matches_model_label_to_source_feature_type(self) -> None:
+        quality = evaluate_detection_quality(
+            [
+                {
+                    "image_id": 1,
+                    "kind": "road",
+                    "geometry": _polygon(0, 0, 20, 10),
+                    "confidence": 0.9,
+                }
+            ],
+            [
+                {
+                    "image_id": 1,
+                    "feature_type": "road_or_drive",
+                    "geometry": _polygon(0, 0, 20, 10),
+                }
+            ],
+        )
+
+        self.assertEqual(quality["true_positive"], 1)
+        self.assertEqual(quality["precision"], 1.0)
+
     def test_project_local_redraw_is_saved_but_not_training_eligible_until_registered(self) -> None:
         meta = _vision_meta(training_allowed=True)
         meta["candidate_review_inbox_v1"] = build_candidate_review_inbox(meta)

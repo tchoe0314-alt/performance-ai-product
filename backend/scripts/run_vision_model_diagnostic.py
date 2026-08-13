@@ -9,6 +9,7 @@ from backend.planning.vision_model_lifecycle import (
     assess_model_promotion,
     assess_ground_truth_attestation,
     build_model_manifest,
+    canonical_model_label,
     evaluate_quality_by_class,
 )
 from backend.planning.vision_model_calibration import (
@@ -60,7 +61,9 @@ def main() -> int:
         args.confidence = float(chosen_thresholds["confidence"])
         args.minimum_component_pixels = int(chosen_thresholds["minimum_component_pixels"])
         args.mask_threshold = float(chosen_thresholds["mask"])
-    required_classes = sorted({str(label) for key, label in classes.items() if str(key) != "0"})
+    required_classes = sorted(
+        {canonical_model_label(label) for key, label in classes.items() if str(key) != "0"}
+    )
     seed_quality = {
         "evaluation_status": "unattested_or_weak_label_diagnostic",
         "ground_truth_count": 0,

@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
+from urllib.request import Request
+from unittest.mock import MagicMock, patch
 
 from backend.planning.vision_ground_truth_flywheel import (
     DATASET_VERSION,
@@ -27,7 +30,12 @@ from backend.scripts.apply_public_vision_review_decisions import (
     apply_review_decisions,
     review_decisions_fingerprint,
 )
-from backend.scripts.bootstrap_public_vision_dataset import _select_usgs_records, _usgs_export_url
+from backend.scripts.bootstrap_public_vision_dataset import (
+    _buffer_line_feature,
+    _open_source_request,
+    _select_usgs_records,
+    _usgs_export_url,
+)
 from backend.scripts.merge_public_vision_datasets import merge_public_vision_packages
 
 
@@ -133,6 +141,103 @@ def _decisions(sprint, rows):
 
 
 class PublicVisionReviewSprintTests(unittest.TestCase):
+    def test_buffered_road_centerline_becomes_one_closed_review_corridor(self) -> None:
+        buffered = _buffer_line_feature(
+            {
+                "type": "Feature",
+                "properties": {"NAME": "Review Road"},
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [[-96.24, 41.18], [-96.235, 41.182], [-96.23, 41.181]],
+                },
+            },
+            half_width_meters=8,
+        )
+
+        self.assertEqual(len(buffered), 1)
+        ring = buffered[0]["geometry"]["coordinates"][0]
+        self.assertEqual(ring[0], ring[-1])
+        self.assertEqual(len(ring), 7)
+        self.assertEqual(buffered[0]["properties"]["weak_geometry_method"], "buffered_centerline_corridor")
+
+    def test_multiclass_weak_package_preserves_annotation_feature_types(self) -> None:
+        package, _ = _review_sprint()
+        bbox = package["images"][0]["bbox_wgs84"]
+        road = {
+            "type": "Feature",
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [bbox["west"], bbox["south"]],
+                    [bbox["east"], bbox["south"]],
+                    [bbox["east"], bbox["south"] + (bbox["north"] - bbox["south"]) * 0.1],
+                    [bbox["west"], bbox["south"] + (bbox["north"] - bbox["south"]) * 0.1],
+                    [bbox["west"], bbox["south"]],
+                ]],
+            },
+        }
+        imagery_source = package["licenses"][0]
+        building_source = package["licenses"][1]
+        rebuilt = build_weak_supervision_package(
+            tiles=[
+                {
+                    **package["images"][0],
+                    "frame_id": package["images"][0]["imagery_frame_id"],
+                    "sha256": package["images"][0]["source_sha256"],
+                }
+            ],
+            footprint_features=[],
+            imagery_source=imagery_source,
+            label_source=building_source,
+            additional_label_sets=[
+                {
+                    "category_id": 2,
+                    "category_name": "road",
+                    "feature_type": "road_or_drive",
+                    "features": [road],
+                    "label_source": _source_record(
+                        source_id="us_census_tigerweb_roads",
+                        source_role="weak_label_proposals_only",
+                        license_name="public-domain",
+                    ),
+                }
+            ],
+        )
+
+        self.assertTrue(verify_weak_supervision_package(rebuilt)["valid"])
+        self.assertEqual(rebuilt["annotations"][0]["category_id"], 2)
+        self.assertEqual(rebuilt["annotations"][0]["feature_type"], "road_or_drive")
+        sprint = build_public_review_sprint(rebuilt)
+        candidate = sprint["meta"]["candidate_review_inbox_v1"]["candidates"][0]
+        self.assertEqual(candidate["label"], "road or drive")
+        self.assertEqual(candidate["source_record"]["feature_type"], "road_or_drive")
+
+    def test_source_request_retries_transient_failure_without_using_fallback(self) -> None:
+        request = Request("https://imagery.nationalmap.gov/approved")
+        response = MagicMock()
+        with patch(
+            "backend.scripts.bootstrap_public_vision_dataset.urlopen",
+            side_effect=[
+                HTTPError(request.full_url, 502, "Bad Gateway", {}, None),
+                response,
+            ],
+        ) as open_url, patch("backend.scripts.bootstrap_public_vision_dataset.time.sleep") as sleep:
+            result = _open_source_request(request, timeout=5, attempts=3)
+
+        self.assertIs(result, response)
+        self.assertEqual(open_url.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_source_request_stops_after_bounded_transient_failures(self) -> None:
+        request = Request("https://imagery.nationalmap.gov/approved")
+        failure = HTTPError(request.full_url, 502, "Bad Gateway", {}, None)
+        with patch(
+            "backend.scripts.bootstrap_public_vision_dataset.urlopen",
+            side_effect=[failure, failure, failure],
+        ), patch("backend.scripts.bootstrap_public_vision_dataset.time.sleep"):
+            with self.assertRaisesRegex(SystemExit, "after 3 attempts; no fallback source was used"):
+                _open_source_request(request, timeout=5, attempts=3)
+
     def test_gallery_renders_registered_frames_and_truthful_review_controls(self) -> None:
         _, sprint = _review_sprint()
 
@@ -150,6 +255,8 @@ class PublicVisionReviewSprintTests(unittest.TestCase):
         self.assertIn("frame.permanent_split", html)
         self.assertIn("state === 'redraw'", html)
         self.assertIn("corrected geometry must be redrawn in Civora Draw", html)
+        self.assertIn("candidate?.label || 'visible feature'", html)
+        self.assertNotIn("accepted the visible building outline", html)
         self.assertIn("height: 100vh", html)
         self.assertIn("grid-template-columns: minmax(0, 1fr)", html)
         self.assertNotIn("construction-ready", html.lower())
@@ -291,6 +398,12 @@ class PublicVisionReviewSprintTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         registry = json.loads((root / "vision/datasets/public-source-registry-v1.json").read_text(encoding="utf-8"))
         plan = json.loads((root / "vision/datasets/us-conus-building-seed-v1.json").read_text(encoding="utf-8"))
+        core_plan = json.loads(
+            (root / "vision/datasets/us-conus-core-segmentation-seed-v1.json").read_text(encoding="utf-8")
+        )
+        diagnostic = json.loads(
+            (root / "vision/datasets/us-conus-core-segmentation-diagnostic-v2-report.json").read_text(encoding="utf-8")
+        )
 
         self.assertEqual(registry["version"], "civora_vision_public_source_registry_v1")
         self.assertEqual(len(plan["geographies"]), 5)
@@ -310,6 +423,21 @@ class PublicVisionReviewSprintTests(unittest.TestCase):
         self.assertFalse(split_groups["validation"] & split_groups["test"])
         self.assertFalse(plan["output_policy"]["ground_truth_at_collection_time"])
         self.assertFalse(plan["output_policy"]["promotion_eligible"])
+        self.assertEqual(
+            {item["category_name"] for item in core_plan["additional_label_sources"]},
+            {"road", "water"},
+        )
+        self.assertEqual(core_plan["tile_defaults"]["rows"], 3)
+        self.assertEqual(core_plan["tile_defaults"]["columns"], 3)
+        self.assertEqual(
+            core_plan["coverage_policy"]["minimum_proposals_per_class_per_split"],
+            {"building": 5, "road": 5, "water": 1},
+        )
+        self.assertFalse(diagnostic["decision"]["promotion_eligible"])
+        self.assertFalse(diagnostic["decision"]["deployed_as_primary"])
+        self.assertFalse(diagnostic["decision"]["deployed_as_shadow"])
+        self.assertEqual(diagnostic["decision"]["decision"], "rejected_before_deployment")
+        self.assertEqual(diagnostic["dataset"]["ground_truth_annotation_count"], 0)
         for source in registry["sources"].values():
             self.assertTrue(source["rights"]["training_use_allowed"])
             self.assertTrue(source["rights"]["storage_allowed"])

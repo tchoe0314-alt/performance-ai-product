@@ -6,10 +6,13 @@ import gzip
 import hashlib
 import io
 import json
+import math
 from pathlib import Path
 import shutil
 import tempfile
+import time
 from typing import Any, Dict, Iterable, List
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
@@ -34,7 +37,11 @@ ALLOWED_SOURCE_HOSTS = {
     "imagery.nationalmap.gov",
     "bfppub.blob.core.windows.net",
     "bfppub.z5.web.core.windows.net",
+    "hydro.nationalmap.gov",
+    "tigerweb.geo.census.gov",
 }
+RETRYABLE_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+SOURCE_REQUEST_ATTEMPTS = 3
 
 
 def main() -> int:
@@ -98,15 +105,22 @@ def bootstrap_public_vision_region(
     source_registry_path: Path = DEFAULT_SOURCE_REGISTRY,
     imagery_source_id: str = "usgs_naip_conus",
     label_source_id: str = "microsoft_global_building_footprints",
+    additional_label_sources: List[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     registry, registry_fingerprint = _load_source_registry(source_registry_path)
     sources = dict(registry.get("sources") or {})
     imagery_spec = dict(sources.get(imagery_source_id) or {})
     label_spec = dict(sources.get(label_source_id) or {})
+    additional_source_configs = [dict(item) for item in additional_label_sources or []]
     if not imagery_spec or imagery_spec.get("source_role") != "training_imagery":
         raise SystemExit(f"Unknown or ineligible imagery source registry entry: {imagery_source_id}")
     if not label_spec or label_spec.get("source_role") != "weak_label_proposals_only":
         raise SystemExit(f"Unknown or ineligible weak-label source registry entry: {label_source_id}")
+    for config in additional_source_configs:
+        source_id = str(config.get("source_id") or "")
+        source_spec = dict(sources.get(source_id) or {})
+        if not source_spec or source_spec.get("source_role") != "weak_label_proposals_only":
+            raise SystemExit(f"Unknown or ineligible weak-label source registry entry: {source_id}")
     if imagery_spec.get("allowed_geography") == "conterminous_united_states":
         if country != "UnitedStates" or not (-125.0 <= center_longitude <= -66.0 and 24.0 <= center_latitude <= 50.0):
             raise SystemExit("The registered NAIP source is limited to a CONUS collection center.")
@@ -182,6 +196,12 @@ def bootstrap_public_vision_region(
         if not cache_path.is_file():
             _download_file(partition_url, cache_path)
         footprints.extend(_read_footprints(cache_path, region_bbox))
+    additional_label_sets = _collect_additional_label_sets(
+        source_configs=additional_source_configs,
+        source_registry=sources,
+        registry_fingerprint=registry_fingerprint,
+        bbox=region_bbox,
+    )
     package = build_weak_supervision_package(
         tiles=tiles,
         footprint_features=footprints,
@@ -203,6 +223,7 @@ def bootstrap_public_vision_region(
             "license_url": label_spec["license_url"],
             "source_rights": _source_rights(label_spec, registry_fingerprint=registry_fingerprint),
         },
+        additional_label_sets=additional_label_sets,
     )
     package["geography_id"] = geography_id
     package["source_region_bbox_wgs84"] = region_bbox
@@ -225,7 +246,8 @@ def bootstrap_public_vision_region(
                 "version": package["bootstrap_version"],
                 "dataset_fingerprint": package["dataset_fingerprint"],
                 "imagery_tiles": len(package["images"]),
-                "weak_building_labels": len(package["annotations"]),
+                "weak_building_labels": _annotation_counts_by_class(package).get("building", 0),
+                "weak_proposals_by_class": _annotation_counts_by_class(package),
                 "source_region_bbox_wgs84": region_bbox,
                 "geography_id": geography_id,
                 "capture_dates": sorted({str(tile.get("capture_date") or "") for tile in tiles if tile.get("capture_date")}),
@@ -248,7 +270,8 @@ def bootstrap_public_vision_region(
         "image_root": str(image_root),
         "review_candidates": str(review_path),
         "imagery_tiles": len(package["images"]),
-        "weak_building_labels": len(package["annotations"]),
+        "weak_building_labels": _annotation_counts_by_class(package).get("building", 0),
+        "weak_proposals_by_class": _annotation_counts_by_class(package),
         "capture_dates": sorted({str(tile.get("capture_date") or "") for tile in tiles if tile.get("capture_date")}),
         "seasons": sorted({str(tile.get("season") or "") for tile in tiles if tile.get("season")}),
         "imagery_quality_bands": sorted({str(tile.get("imagery_quality_band") or "") for tile in tiles if tile.get("imagery_quality_band")}),
@@ -256,6 +279,185 @@ def bootstrap_public_vision_region(
         "promotion_eligible": False,
         "promotion_blockers": package["promotion_blockers"],
     }
+
+
+def _collect_additional_label_sets(
+    *,
+    source_configs: List[Dict[str, Any]],
+    source_registry: Dict[str, Any],
+    registry_fingerprint: str,
+    bbox: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    result: List[Dict[str, Any]] = []
+    for config in source_configs:
+        source_id = str(config.get("source_id") or "")
+        spec = dict(source_registry.get(source_id) or {})
+        service_url = str(spec.get("service_url") or "")
+        layer_specs = [dict(item) for item in spec.get("service_layers") or [] if isinstance(item, dict)]
+        features: List[Dict[str, Any]] = []
+        for layer_spec in layer_specs:
+            layer_features = _query_arcgis_geojson_features(
+                service_url,
+                int(layer_spec.get("layer_id") or 0),
+                bbox,
+            )
+            buffer_meters = float(layer_spec.get("centerline_buffer_meters") or 0.0)
+            if buffer_meters > 0:
+                for feature in layer_features:
+                    features.extend(_buffer_line_feature(feature, half_width_meters=buffer_meters / 2.0))
+            else:
+                features.extend(layer_features)
+        features = _dedupe_geojson_features(features)
+        result.append(
+            {
+                "category_id": int(config.get("category_id") or 0),
+                "category_name": str(config.get("category_name") or ""),
+                "feature_type": str(config.get("feature_type") or ""),
+                "features": features,
+                "label_source": {
+                    "source_id": source_id,
+                    "source_role": spec["source_role"],
+                    "name": spec["name"],
+                    "url": spec["source_url"],
+                    "license": spec["license"],
+                    "license_url": spec["license_url"],
+                    "source_rights": _source_rights(spec, registry_fingerprint=registry_fingerprint),
+                },
+            }
+        )
+    return result
+
+
+def _dedupe_geojson_features(features: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    result: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for feature in features:
+        geometry = dict(feature.get("geometry") or {})
+        if not geometry:
+            continue
+        fingerprint = hashlib.sha256(
+            json.dumps(geometry, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        result.append(feature)
+    return result
+
+
+def _query_arcgis_geojson_features(
+    service_url: str,
+    layer_id: int,
+    bbox: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    _require_allowed_https(service_url)
+    params = urlencode(
+        {
+            "f": "geojson",
+            "where": "1=1",
+            "geometry": f"{bbox['west']},{bbox['south']},{bbox['east']},{bbox['north']}",
+            "geometryType": "esriGeometryEnvelope",
+            "inSR": "4326",
+            "outSR": "4326",
+            "spatialRel": "esriSpatialRelIntersects",
+            "outFields": "*",
+            "returnGeometry": "true",
+            "resultRecordCount": "5000",
+        }
+    )
+    payload = _download_json(f"{service_url.rstrip('/')}/{layer_id}/query?{params}")
+    if payload.get("type") != "FeatureCollection":
+        raise SystemExit(f"Approved ArcGIS source layer {layer_id} did not return a GeoJSON FeatureCollection.")
+    return [dict(item) for item in payload.get("features") or [] if isinstance(item, dict)]
+
+
+def _buffer_line_feature(feature: Dict[str, Any], *, half_width_meters: float) -> List[Dict[str, Any]]:
+    geometry = dict(feature.get("geometry") or {})
+    geometry_type = str(geometry.get("type") or "")
+    coordinate_sets = [geometry.get("coordinates") or []]
+    if geometry_type == "MultiLineString":
+        coordinate_sets = list(geometry.get("coordinates") or [])
+    elif geometry_type != "LineString":
+        return []
+    result: List[Dict[str, Any]] = []
+    for coordinates in coordinate_sets:
+        points = [
+            [float(point[0]), float(point[1])]
+            for point in coordinates
+            if isinstance(point, (list, tuple)) and len(point) >= 2
+        ]
+        if len(points) < 2:
+            continue
+        latitude = sum(point[1] for point in points) / len(points)
+        meters_per_degree_lon = max(1.0, 111_320.0 * abs(math.cos(math.radians(latitude))))
+        origin_lon, origin_lat = points[0]
+        metric_points = [
+            ((point[0] - origin_lon) * meters_per_degree_lon, (point[1] - origin_lat) * 111_320.0)
+            for point in points
+        ]
+        segment_normals: List[tuple[float, float]] = []
+        for start, end in zip(metric_points, metric_points[1:]):
+            dx_m, dy_m = end[0] - start[0], end[1] - start[1]
+            length_m = math.hypot(dx_m, dy_m)
+            segment_normals.append((-dy_m / length_m, dx_m / length_m) if length_m > 0.01 else (0.0, 0.0))
+        vertex_normals: List[tuple[float, float]] = []
+        for index in range(len(metric_points)):
+            adjacent = []
+            if index > 0:
+                adjacent.append(segment_normals[index - 1])
+            if index < len(segment_normals):
+                adjacent.append(segment_normals[index])
+            nx, ny = sum(item[0] for item in adjacent), sum(item[1] for item in adjacent)
+            normal_length = math.hypot(nx, ny)
+            if normal_length <= 0.01:
+                nx, ny = next((item for item in adjacent if math.hypot(*item) > 0.01), (0.0, 0.0))
+                normal_length = math.hypot(nx, ny)
+            vertex_normals.append((nx / normal_length, ny / normal_length) if normal_length > 0.01 else (0.0, 0.0))
+
+        def project(point: tuple[float, float]) -> List[float]:
+            return [origin_lon + point[0] / meters_per_degree_lon, origin_lat + point[1] / 111_320.0]
+
+        left = [
+            project((point[0] + normal[0] * half_width_meters, point[1] + normal[1] * half_width_meters))
+            for point, normal in zip(metric_points, vertex_normals)
+        ]
+        right = [
+            project((point[0] - normal[0] * half_width_meters, point[1] - normal[1] * half_width_meters))
+            for point, normal in zip(metric_points, vertex_normals)
+        ]
+        ring = left + list(reversed(right))
+        ring.append(ring[0])
+        result.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    **dict(feature.get("properties") or {}),
+                    "weak_geometry_method": "buffered_centerline_corridor",
+                    "half_width_meters": round(half_width_meters, 3),
+                },
+                "geometry": {"type": "Polygon", "coordinates": [ring]},
+            }
+        )
+    return result
+
+
+def _annotation_counts_by_class(package: Dict[str, Any]) -> Dict[str, int]:
+    category_names = {
+        int(item.get("id") or 0): str(item.get("name") or "unknown")
+        for item in package.get("categories") or []
+        if isinstance(item, dict)
+    }
+    counts: Dict[str, int] = {}
+    for annotation in package.get("annotations") or []:
+        if not isinstance(annotation, dict):
+            continue
+        name = str(
+            annotation.get("category_name")
+            or category_names.get(int(annotation.get("category_id") or 0))
+            or "unknown"
+        )
+        counts[name] = counts.get(name, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _usgs_export_url(
@@ -330,7 +532,7 @@ def _download_image(url: str, destination: Path) -> None:
     _require_allowed_https(url)
     request = Request(url, headers={"User-Agent": "CivoraVisionBootstrap/1.0 (support@civora.ai)"})
     # URL is restricted to the approved HTTPS host allowlist above.
-    with urlopen(request, timeout=90) as response:  # nosec B310
+    with _open_source_request(request, timeout=90) as response:
         content_type = str(response.headers.get("content-type") or "").lower()
         if not content_type.startswith("image/"):
             raise SystemExit(f"Expected an image from {urlsplit(url).hostname}; received {content_type or 'unknown'}.")
@@ -345,7 +547,10 @@ def _download_file(url: str, destination: Path) -> None:
     _require_allowed_https(normalized)
     request = Request(normalized, headers={"User-Agent": "CivoraVisionBootstrap/1.0 (support@civora.ai)"})
     # The normalized URL is restricted to the approved HTTPS host allowlist above.
-    with urlopen(request, timeout=180) as response, tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as handle:  # nosec B310
+    with _open_source_request(request, timeout=180) as response, tempfile.NamedTemporaryFile(
+        dir=destination.parent,
+        delete=False,
+    ) as handle:
         shutil.copyfileobj(response, handle)
         temp_path = Path(handle.name)
     temp_path.replace(destination)
@@ -355,7 +560,7 @@ def _download_text(url: str) -> str:
     _require_allowed_https(url)
     request = Request(url, headers={"User-Agent": "CivoraVisionBootstrap/1.0 (support@civora.ai)"})
     # URL is restricted to the approved HTTPS host allowlist above.
-    with urlopen(request, timeout=90) as response:  # nosec B310
+    with _open_source_request(request, timeout=90) as response:
         return response.read().decode("utf-8-sig")
 
 
@@ -363,11 +568,35 @@ def _download_json(url: str) -> Dict[str, Any]:
     _require_allowed_https(url)
     request = Request(url, headers={"User-Agent": "CivoraVisionBootstrap/1.0 (support@civora.ai)"})
     # URL is restricted to the approved HTTPS host allowlist above.
-    with urlopen(request, timeout=90) as response:  # nosec B310
+    with _open_source_request(request, timeout=90) as response:
         value = json.loads(response.read().decode("utf-8"))
     if not isinstance(value, dict):
         raise SystemExit("Expected a JSON object from the approved imagery catalog.")
     return value
+
+
+def _open_source_request(request: Request, *, timeout: float, attempts: int = SOURCE_REQUEST_ATTEMPTS):
+    attempt_count = max(1, int(attempts))
+    hostname = str(urlsplit(request.full_url).hostname or "approved source")
+    for attempt in range(1, attempt_count + 1):
+        try:
+            # Every caller validates the URL against the approved HTTPS source allowlist before reaching this helper.
+            return urlopen(request, timeout=timeout)  # nosec B310
+        except HTTPError as exc:
+            retryable = exc.code in RETRYABLE_HTTP_STATUS_CODES
+            if not retryable or attempt >= attempt_count:
+                raise SystemExit(
+                    f"Approved source {hostname} returned HTTP {exc.code} after {attempt} attempt"
+                    f"{'s' if attempt != 1 else ''}; no fallback source was used."
+                ) from exc
+        except (URLError, TimeoutError) as exc:
+            if attempt >= attempt_count:
+                raise SystemExit(
+                    f"Approved source {hostname} could not be reached after {attempt_count} attempts; "
+                    "no fallback source was used."
+                ) from exc
+        time.sleep(min(2.0, 0.25 * (2 ** (attempt - 1))))
+    raise AssertionError("Source request retry loop exited unexpectedly.")
 
 
 def _load_source_registry(path: Path) -> tuple[Dict[str, Any], str]:

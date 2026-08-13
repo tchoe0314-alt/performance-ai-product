@@ -586,7 +586,7 @@ def evaluate_detection_quality(
     matched_ious: List[float] = []
     true_positive = 0
     for prediction in sorted(predicted, key=lambda item: safe_float(item.get("confidence")), reverse=True):
-        pred_label = safe_str(prediction.get("feature_type") or prediction.get("kind") or prediction.get("label"))
+        pred_label = _evaluation_label(prediction)
         pred_box = _geometry_bbox(prediction.get("geometry") or prediction.get("geo_geometry"))
         prediction_scope = _evaluation_scope(prediction)
         best_index = -1
@@ -597,7 +597,7 @@ def evaluate_detection_quality(
             annotation_scope = _evaluation_scope(annotation)
             if prediction_scope and annotation_scope and prediction_scope != annotation_scope:
                 continue
-            truth_label = safe_str(annotation.get("feature_type") or annotation.get("kind") or annotation.get("label"))
+            truth_label = _evaluation_label(annotation)
             if pred_label != truth_label:
                 continue
             overlap = _bbox_iou(pred_box, _geometry_bbox(annotation.get("geometry") or annotation.get("geo_geometry")))
@@ -625,6 +625,24 @@ def evaluate_detection_quality(
         "f1": round(f1, 4),
         "mean_matched_iou": round(sum(matched_ious) / len(matched_ious), 4) if matched_ious else 0.0,
     }
+
+
+def _evaluation_label(item: Dict[str, Any]) -> str:
+    explicit = safe_str(item.get("model_label") or item.get("category_name") or item.get("kind") or item.get("label"))
+    if explicit:
+        return {"water": "basin", "pond": "basin", "basin_or_pond": "basin"}.get(explicit, explicit)
+    aliases = {
+        "building_footprint": "building",
+        "road_or_drive": "road",
+        "parking_area": "parking",
+        "sidewalk_or_path": "sidewalk",
+        "vegetation/tree_area": "tree",
+        "water/pond/basin": "basin",
+        "visible_utility_structure": "utility",
+        "constraint_area": "constraint",
+    }
+    feature_type = safe_str(item.get("feature_type"))
+    return aliases.get(feature_type, feature_type)
 
 
 def _evaluation_scope(item: Dict[str, Any]) -> str:

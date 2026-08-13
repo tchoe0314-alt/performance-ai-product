@@ -1,6 +1,6 @@
 {
   "version": "civora_vision_public_source_registry_v1",
-  "reviewed_at": "2026-08-02",
+  "reviewed_at": "2026-08-13",
   "reviewed_by": "civora_source_rights_review",
   "review_status": "operational_source_record_not_legal_advice",
   "sources": {
@@ -43,6 +43,71 @@
       },
       "source_role": "training_imagery",
       "truth_boundary": "Only catalog records identified as USDA NAIP in CONUS are eligible. Commercial or unidentified imagery fallbacks are rejected."
+    },
+    "us_census_tigerweb_roads": {
+      "approved_hosts": [
+        "tigerweb.geo.census.gov"
+      ],
+      "license": "public-domain",
+      "license_url": "https://www2.census.gov/geo/pdfs/maps-data/data/tiger/tgrshp2022/TGRSHP2022_TechDoc_Ch1.pdf",
+      "name": "U.S. Census Bureau TIGERweb Transportation",
+      "rights": {
+        "derivative_labels_allowed": true,
+        "redistribution_allowed": true,
+        "storage_allowed": true,
+        "training_use_allowed": true
+      },
+      "service_layers": [
+        {
+          "centerline_buffer_meters": 24,
+          "layer_id": 0,
+          "name": "Primary Roads"
+        },
+        {
+          "centerline_buffer_meters": 16,
+          "layer_id": 1,
+          "name": "Secondary Roads"
+        },
+        {
+          "centerline_buffer_meters": 10,
+          "layer_id": 2,
+          "name": "Local Roads"
+        }
+      ],
+      "service_url": "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Transportation_LargeScale/MapServer",
+      "source_role": "weak_label_proposals_only",
+      "source_url": "https://tigerweb.geo.census.gov/tigerwebmain/TIGERweb_restmapservice.html",
+      "supervision_status": "weak_labels_pending_review",
+      "truth_boundary": "TIGERweb road centerlines are buffered into approximate road corridors for weak supervision. They are not surveyed pavement edges and require image-by-image review."
+    },
+    "usgs_nhd_surface_water": {
+      "approved_hosts": [
+        "hydro.nationalmap.gov"
+      ],
+      "license": "public-domain",
+      "license_url": "https://www.usgs.gov/media/files/national-hydrography-product-information-document",
+      "name": "USGS National Hydrography Dataset",
+      "rights": {
+        "derivative_labels_allowed": true,
+        "redistribution_allowed": true,
+        "storage_allowed": true,
+        "training_use_allowed": true
+      },
+      "service_layers": [
+        {
+          "layer_id": 9,
+          "name": "Area - Large Scale"
+        },
+        {
+          "layer_id": 12,
+          "name": "Waterbody - Large Scale"
+        }
+      ],
+      "service_url": "https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer",
+      "source_role": "weak_label_proposals_only",
+      "source_url": "https://www.usgs.gov/national-hydrography/access-national-hydrography-products",
+      "supervision_status": "weak_labels_pending_review",
+      "truth_boundary": "NHD polygons are mapped hydrography context and may differ from current imagery. They require image-by-image review before training use."
     }
   },
   "truth_label": "Registry entries document operational source-rights evidence. They do not replace counsel review or permit unlisted sources."

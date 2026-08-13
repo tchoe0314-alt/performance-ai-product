@@ -60,6 +60,17 @@ The collector accepts only exact USDA NAIP catalog records from the registered U
 an `esriMosaicLockRaster` rule with the selected catalog object IDs. Commercial, unidentified, non-NAIP, non-CONUS, or
 fallback imagery is rejected. Microsoft Global ML Building Footprints are used only as separately licensed weak proposals.
 
+The separate `vision/datasets/us-conus-core-segmentation-seed-v1.json` plan keeps those building proposals and adds U.S.
+Census TIGERweb road centerlines buffered as approximate road corridors plus USGS NHD surface-water polygons. All three
+classes remain weak proposals. Road corridors are not surveyed pavement edges, mapped water can be stale, and neither
+source becomes ground truth without explicit review against the registered NAIP frame.
+
+The collector reports proposal counts by class and permanent split. The trainer refuses a declared class that is absent
+from train, validation, or test, and records measured class weights. The first 45-frame diagnostic is documented in
+`vision/datasets/us-conus-core-segmentation-diagnostic-v2-report.json`. It was rejected before deployment: its held-out
+weak-label F1 was `0.0208`, building and basin recall were zero, and no labels had completed human review. This report is
+rejection evidence, not an accuracy claim.
+
 Collect the planned corpus and create a zero-ground-truth review sprint:
 
 ```bash

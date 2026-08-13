@@ -41,6 +41,12 @@ FEATURE_TYPE_ALIASES = {
     "open_space": "constraint_area",
 }
 
+MODEL_LABEL_ALIASES = {
+    "water": "basin",
+    "pond": "basin",
+    "basin_or_pond": "basin",
+}
+
 DEFAULT_PROMOTION_THRESHOLDS = {
     "precision": 0.85,
     "recall": 0.75,
@@ -223,8 +229,8 @@ def evaluate_quality_by_class(
     source_supervision_status: str = "",
     promotion_eligible: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    predicted = [safe_dict(item) for item in predictions if safe_dict(item)]
-    truth = [safe_dict(item) for item in ground_truth if safe_dict(item)]
+    predicted = [_evaluation_record(item) for item in predictions if safe_dict(item)]
+    truth = [_evaluation_record(item) for item in ground_truth if safe_dict(item)]
     overall = evaluate_detection_quality(predicted, truth, iou_threshold=iou_threshold)
     labels = sorted({_label(item) for item in predicted + truth if _label(item)})
     per_class: Dict[str, Any] = {}
@@ -356,7 +362,8 @@ def assess_model_promotion(
             blockers.append(blocker)
     per_class = safe_dict(quality.get("per_class"))
     class_assessments: Dict[str, Any] = {}
-    for label in required_classes or []:
+    for raw_label in required_classes or []:
+        label = canonical_model_label(raw_label)
         class_quality = safe_dict(per_class.get(label))
         class_blockers: List[str] = []
         if not class_quality:
@@ -618,7 +625,32 @@ def _split_for_frame(frame_id: str, seed: str) -> str:
 
 
 def _label(item: Dict[str, Any]) -> str:
-    return safe_str(item.get("feature_type") or item.get("kind") or item.get("label"))
+    explicit_model_label = safe_str(
+        item.get("model_label") or item.get("category_name") or item.get("kind") or item.get("label")
+    )
+    if explicit_model_label:
+        return canonical_model_label(explicit_model_label)
+    source_feature_type = safe_str(item.get("feature_type"))
+    canonical_feature_type = FEATURE_TYPE_ALIASES.get(source_feature_type, source_feature_type)
+    return canonical_model_label(DEFAULT_CLASSES.get(canonical_feature_type, source_feature_type))
+
+
+def canonical_model_label(value: Any) -> str:
+    label = safe_str(value)
+    return MODEL_LABEL_ALIASES.get(label, label)
+
+
+def _evaluation_record(item: Dict[str, Any]) -> Dict[str, Any]:
+    record = dict(safe_dict(item))
+    label = _label(record)
+    if not label:
+        return record
+    source_feature_type = safe_str(record.get("feature_type"))
+    if source_feature_type and source_feature_type != label:
+        record["source_feature_type"] = source_feature_type
+    record["feature_type"] = label
+    record["kind"] = label
+    return record
 
 
 def _stable_fingerprint(value: Any) -> str:
@@ -639,5 +671,6 @@ __all__ = [
     "assess_model_promotion",
     "build_coco_training_package",
     "build_model_manifest",
+    "canonical_model_label",
     "evaluate_quality_by_class",
 ]

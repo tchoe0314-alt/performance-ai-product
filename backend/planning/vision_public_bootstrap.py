@@ -216,9 +216,20 @@ def build_weak_supervision_package(
     footprint_features: Iterable[Dict[str, Any]],
     imagery_source: Dict[str, Any],
     label_source: Dict[str, Any],
+    additional_label_sets: Sequence[Dict[str, Any]] = (),
 ) -> Dict[str, Any]:
     normalized_tiles = [dict(tile) for tile in tiles]
-    features = [safe_dict(feature) for feature in footprint_features if safe_dict(feature)]
+    label_sets = [
+        {
+            "category_id": 1,
+            "category_name": "building",
+            "feature_type": "building_footprint",
+            "features": [safe_dict(feature) for feature in footprint_features if safe_dict(feature)],
+            "label_source": safe_dict(label_source),
+        }
+    ]
+    label_sets.extend(safe_dict(item) for item in additional_label_sets if safe_dict(item))
+    categories = _weak_label_categories(label_sets)
     images: List[Dict[str, Any]] = []
     annotations: List[Dict[str, Any]] = []
     review_features: List[Dict[str, Any]] = []
@@ -253,66 +264,77 @@ def build_weak_supervision_package(
                 "source_rights": safe_dict(imagery_source.get("source_rights")),
             }
         )
-        for feature in features:
-            if not feature_intersects_bbox(feature, bbox):
-                continue
-            for ring in geometry_exterior_rings(feature.get("geometry")):
-                clipped = clip_ring_to_bbox(ring, bbox)
-                if len(clipped) < 4:
+        for label_set in label_sets:
+            category_id = int(safe_float(label_set.get("category_id")))
+            category_name = safe_str(label_set.get("category_name"))
+            feature_type = safe_str(label_set.get("feature_type"))
+            current_label_source = safe_dict(label_set.get("label_source"))
+            for feature in [safe_dict(item) for item in safe_list(label_set.get("features")) if safe_dict(item)]:
+                if not feature_intersects_bbox(feature, bbox):
                     continue
-                pixel_ring = wgs84_ring_to_pixels(
-                    clipped,
-                    bbox,
-                    width=int(safe_float(tile.get("width"))),
-                    height=int(safe_float(tile.get("height"))),
-                )
-                segmentation, pixel_bbox, area = coco_polygon(pixel_ring)
-                if not segmentation or area < 4.0:
-                    continue
-                annotations.append(
-                    {
-                        "id": annotation_id,
-                        "image_id": image_id,
-                        "category_id": 1,
-                        "segmentation": segmentation,
-                        "bbox": pixel_bbox,
-                        "area": area,
-                        "iscrowd": 0,
-                        "supervision": WEAK_SUPERVISION_STATUS,
-                        "label_source": safe_str(label_source.get("name")),
-                        "label_license": safe_str(label_source.get("license")),
-                        "source_confidence": (
-                            round(min(max(safe_float(safe_dict(feature.get("properties")).get("confidence")), 0.0), 1.0), 4)
-                            if safe_dict(feature.get("properties")).get("confidence") not in (None, "")
-                            else None
-                        ),
-                        "review_status": "pending",
-                        "geo_geometry": {"type": "Polygon", "coordinates": [clipped]},
-                    }
-                )
-                review_features.append(
-                    {
-                        "type": "Feature",
-                        "id": annotation_id,
-                        "properties": {
-                            "annotation_id": annotation_id,
+                for ring in geometry_exterior_rings(feature.get("geometry")):
+                    clipped = clip_ring_to_bbox(ring, bbox)
+                    if len(clipped) < 4:
+                        continue
+                    pixel_ring = wgs84_ring_to_pixels(
+                        clipped,
+                        bbox,
+                        width=int(safe_float(tile.get("width"))),
+                        height=int(safe_float(tile.get("height"))),
+                    )
+                    segmentation, pixel_bbox, area = coco_polygon(pixel_ring)
+                    if not segmentation or area < 4.0:
+                        continue
+                    annotations.append(
+                        {
+                            "id": annotation_id,
                             "image_id": image_id,
-                            "tile_file": safe_str(tile.get("file_name")),
-                            "feature_type": "building",
-                            "review_status": "pending",
+                            "category_id": category_id,
+                            "feature_type": feature_type,
+                            "category_name": category_name,
+                            "segmentation": segmentation,
+                            "bbox": pixel_bbox,
+                            "area": area,
+                            "iscrowd": 0,
                             "supervision": WEAK_SUPERVISION_STATUS,
-                            "imagery_frame_id": safe_str(tile.get("frame_id")),
-                            "capture_date": safe_str(tile.get("capture_date")),
-                            "season": safe_str(tile.get("season")),
-                            "imagery_quality_band": safe_str(tile.get("imagery_quality_band")),
-                        },
-                        "geometry": {"type": "Polygon", "coordinates": [clipped]},
-                    }
-                )
-                annotation_id += 1
+                            "label_source": safe_str(current_label_source.get("name")),
+                            "label_license": safe_str(current_label_source.get("license")),
+                            "source_confidence": (
+                                round(min(max(safe_float(safe_dict(feature.get("properties")).get("confidence")), 0.0), 1.0), 4)
+                                if safe_dict(feature.get("properties")).get("confidence") not in (None, "")
+                                else None
+                            ),
+                            "review_status": "pending",
+                            "geo_geometry": {"type": "Polygon", "coordinates": [clipped]},
+                        }
+                    )
+                    review_features.append(
+                        {
+                            "type": "Feature",
+                            "id": annotation_id,
+                            "properties": {
+                                "annotation_id": annotation_id,
+                                "image_id": image_id,
+                                "tile_file": safe_str(tile.get("file_name")),
+                                "feature_type": feature_type,
+                                "category_name": category_name,
+                                "review_status": "pending",
+                                "supervision": WEAK_SUPERVISION_STATUS,
+                                "imagery_frame_id": safe_str(tile.get("frame_id")),
+                                "capture_date": safe_str(tile.get("capture_date")),
+                                "season": safe_str(tile.get("season")),
+                                "imagery_quality_band": safe_str(tile.get("imagery_quality_band")),
+                            },
+                            "geometry": {"type": "Polygon", "coordinates": [clipped]},
+                        }
+                    )
+                    annotation_id += 1
     licenses = [
         {"id": 1, **safe_dict(imagery_source)},
-        {"id": 2, **safe_dict(label_source)},
+        *[
+            {"id": index + 2, **safe_dict(item.get("label_source"))}
+            for index, item in enumerate(label_sets)
+        ],
     ]
     registry_fingerprints = sorted(
         {
@@ -326,13 +348,13 @@ def build_weak_supervision_package(
         "bootstrap_version": PUBLIC_BOOTSTRAP_VERSION,
         "generated_at": now_iso(),
         "info": {
-            "description": "Public-domain aerial imagery with separately licensed weak building labels.",
+            "description": "Public-domain aerial imagery with separately licensed weak visible-feature labels.",
             "contains_image_bytes": False,
             "supervision_status": WEAK_SUPERVISION_STATUS,
         },
         "licenses": licenses,
         "source_registry_fingerprints": registry_fingerprints,
-        "categories": [{"id": 1, "name": "building", "source_feature_type": "building_footprint"}],
+        "categories": categories,
         "images": images,
         "annotations": annotations,
         "splits": {
@@ -351,12 +373,29 @@ def build_weak_supervision_package(
         ],
         "review_candidates": {"type": "FeatureCollection", "features": review_features},
         "truth_label": (
-            "These Microsoft-derived footprints are weak labels aligned to public USGS imagery. They may bootstrap "
-            "training, but they are not reviewed ground truth and cannot promote a production model."
+            "These registered-source proposals are weak labels aligned to public USGS imagery. They may bootstrap "
+            "diagnostic training, but they are not reviewed ground truth and cannot promote a production model."
         ),
     }
     package["dataset_fingerprint"] = weak_supervision_package_fingerprint(package)
     return package
+
+
+def _weak_label_categories(label_sets: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    categories = [
+        {
+            "id": int(safe_float(item.get("category_id"))),
+            "name": safe_str(item.get("category_name")),
+            "source_feature_type": safe_str(item.get("feature_type")),
+        }
+        for item in label_sets
+    ]
+    ids = [item["id"] for item in categories]
+    if ids != list(range(1, len(categories) + 1)):
+        raise ValueError("Weak-label category IDs must be contiguous and start at 1.")
+    if any(not item["name"] or not item["source_feature_type"] for item in categories):
+        raise ValueError("Every weak-label category requires a name and feature type.")
+    return categories
 
 
 def merge_weak_supervision_packages(
@@ -426,7 +465,7 @@ def merge_weak_supervision_packages(
                         "properties": {
                             "annotation_id": next_annotation_id,
                             "image_id": image_id_map[old_image_id],
-                            "feature_type": "building",
+                            "feature_type": safe_str(annotation.get("feature_type"), "building_footprint"),
                             "review_status": "pending",
                             "supervision": WEAK_SUPERVISION_STATUS,
                             "source_dataset": source_name,
@@ -473,7 +512,7 @@ def merge_weak_supervision_packages(
         "bootstrap_version": PUBLIC_BOOTSTRAP_VERSION,
         "generated_at": now_iso(),
         "info": {
-            "description": "Multi-geography public imagery with separately licensed weak building labels.",
+            "description": "Multi-geography public imagery with separately licensed weak visible-feature labels.",
             "contains_image_bytes": False,
             "supervision_status": WEAK_SUPERVISION_STATUS,
         },
@@ -522,6 +561,12 @@ def verify_weak_supervision_package(package: Dict[str, Any]) -> Dict[str, Any]:
         blockers.append("weak_package_must_be_promotion_ineligible")
     images = [safe_dict(item) for item in safe_list(rec.get("images")) if safe_dict(item)]
     annotations = [safe_dict(item) for item in safe_list(rec.get("annotations")) if safe_dict(item)]
+    categories = [safe_dict(item) for item in safe_list(rec.get("categories")) if safe_dict(item)]
+    category_ids = [int(safe_float(item.get("id"))) for item in categories]
+    if category_ids != list(range(1, len(categories) + 1)):
+        blockers.append("category_ids_must_be_contiguous")
+    if any(not safe_str(item.get("name")) or not safe_str(item.get("source_feature_type")) for item in categories):
+        blockers.append("category_name_or_feature_type_missing")
     licenses = [safe_dict(item) for item in safe_list(rec.get("licenses")) if safe_dict(item)]
     source_roles = {safe_str(item.get("source_role")) for item in licenses if safe_str(item.get("source_role"))}
     if "training_imagery" not in source_roles:
@@ -577,6 +622,8 @@ def verify_weak_supervision_package(package: Dict[str, Any]) -> Dict[str, Any]:
             blockers.append("weak_annotation_must_start_pending")
         if safe_str(annotation.get("supervision")) != WEAK_SUPERVISION_STATUS:
             blockers.append("weak_annotation_supervision_mismatch")
+        if int(safe_float(annotation.get("category_id"))) not in set(category_ids):
+            blockers.append("annotation_category_missing")
     split_policy = safe_dict(rec.get("split_policy"))
     if split_policy:
         expected_integrity = build_split_integrity(
@@ -624,6 +671,11 @@ def build_public_review_sprint(package: Dict[str, Any]) -> Dict[str, Any]:
     rec = safe_dict(package)
     images = [safe_dict(item) for item in safe_list(rec.get("images")) if safe_dict(item)]
     image_by_id = {int(safe_float(item.get("id"))): item for item in images}
+    category_by_id = {
+        int(safe_float(item.get("id"))): safe_dict(item)
+        for item in safe_list(rec.get("categories"))
+        if safe_dict(item)
+    }
     frames: List[Dict[str, Any]] = []
     frame_by_image_id: Dict[int, Dict[str, Any]] = {}
     for image in images:
@@ -663,20 +715,26 @@ def build_public_review_sprint(package: Dict[str, Any]) -> Dict[str, Any]:
         if not frame:
             continue
         annotation_id = int(safe_float(annotation.get("id")))
-        detection_id = f"public_weak_building_{validation['dataset_fingerprint'][:10]}_{annotation_id}"
+        category = category_by_id.get(int(safe_float(annotation.get("category_id"))), {})
+        category_name = safe_str(annotation.get("category_name") or category.get("name"), "unknown")
+        feature_type = safe_str(
+            annotation.get("feature_type") or category.get("source_feature_type"),
+            "constraint_area",
+        )
+        detection_id = f"public_weak_{category_name}_{validation['dataset_fingerprint'][:10]}_{annotation_id}"
         candidate_id = f"public_review_{validation['dataset_fingerprint'][:10]}_{annotation_id}"
         pixel_geometry = _segmentation_polygon(annotation.get("segmentation"))
         geo_geometry = safe_dict(annotation.get("geo_geometry"))
         confidence = safe_float(annotation.get("source_confidence"), 0.5)
         detection = {
             "detection_id": detection_id,
-            "kind": "building",
-            "feature_type": "building_footprint",
+            "kind": category_name,
+            "feature_type": feature_type,
             "confidence": round(min(max(confidence, 0.05), 0.7), 4),
             "pixel_geometry": pixel_geometry,
             "geo_geometry": geo_geometry,
             "imagery_frame_id": safe_str(frame.get("frame_id")),
-            "provider": "Microsoft Global ML Building Footprints weak alignment",
+            "provider": safe_str(annotation.get("label_source"), "Registered public weak-label source"),
             "source_url": safe_str(frame.get("source_url")),
             "properties": {
                 "supervision": WEAK_SUPERVISION_STATUS,
@@ -688,16 +746,16 @@ def build_public_review_sprint(package: Dict[str, Any]) -> Dict[str, Any]:
         feature_candidates.append(
             {
                 "candidate_id": candidate_id,
-                "feature_type": "building_footprint",
+                "feature_type": feature_type,
                 "geometry": geo_geometry,
                 "source_type": "image_detected_candidate",
                 "source_url": safe_str(frame.get("source_url")),
-                "source_name": "Microsoft Global ML Building Footprints weak alignment",
+                "source_name": safe_str(annotation.get("label_source"), "Registered public weak-label source"),
                 "confidence": detection["confidence"],
                 "review_required": True,
                 "needs_user_confirmation": True,
                 "acceptance_status": "pending",
-                "evidence_source": "USGS NAIP frame with Microsoft weak building proposal",
+                "evidence_source": f"USGS NAIP frame with {category_name} weak-label proposal",
                 "blockers": [
                     "Weak public label requires image-by-image accept, reject, or redraw review before it can become ground truth."
                 ],
