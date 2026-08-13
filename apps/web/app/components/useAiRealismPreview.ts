@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { apiErrorMessage, getJson, postJson } from "../../lib/api";
+import { apiErrorMessage, classifyApiError, getJson, postJson } from "../../lib/api";
 import type { BuildingPlacement } from "../types";
 import type { AiRealismProviderMode } from "../utils/previewViewModel";
 import {
@@ -53,6 +53,7 @@ const INITIAL_GENERATION_STATUS: AiRealismGenerationStatus = {
 
 const POLL_INTERVAL_MS = 1000;
 const MAX_POLL_ATTEMPTS = 180;
+const MAX_CONSECUTIVE_POLL_FAILURES = 5;
 
 function sleep(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -153,12 +154,40 @@ export function useAiRealismPreview({
     requestedLayoutHash: string;
     controller: AbortController;
   }) => {
+    let consecutivePollFailures = 0;
     for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
       if (controller.signal.aborted || activeRequestRef.current?.id !== requestId) return;
-      const response = await getJson<{ success: boolean; job: VisualizationJob }>(`/api/jobs/${jobId}`, {
-        token: authToken,
-        signal: controller.signal,
-      });
+      let response: { success: boolean; job: VisualizationJob };
+      try {
+        response = await getJson<{ success: boolean; job: VisualizationJob }>(`/api/jobs/${jobId}`, {
+          token: authToken,
+          signal: controller.signal,
+        });
+        consecutivePollFailures = 0;
+      } catch (error) {
+        if (controller.signal.aborted || activeRequestRef.current?.id !== requestId) return;
+        const kind = classifyApiError(error);
+        const status = Number((error as { status?: number })?.status || 0);
+        const retryable =
+          kind === "backend_unreachable" ||
+          kind === "rate_limited" ||
+          (kind === "request_failed" && status >= 500);
+        consecutivePollFailures += 1;
+        if (!retryable || consecutivePollFailures > MAX_CONSECUTIVE_POLL_FAILURES) throw error;
+        setGenerationStatus((previous) => ({
+          ...previous,
+          state: previous.state === "queued" ? "queued" : "generating",
+          stage: "Reconnecting to visualization job",
+          detail: "The renderer is still working. Civora is retrying a temporary status connection.",
+          jobId,
+        }));
+        await sleep(
+          kind === "rate_limited"
+            ? 5_000
+            : POLL_INTERVAL_MS * Math.min(3, consecutivePollFailures),
+        );
+        continue;
+      }
       const job = response.job || {};
       const status = String(job.status || "queued").toLowerCase();
       const progress = Math.max(0, Math.min(100, Number(job.progress || 0)));

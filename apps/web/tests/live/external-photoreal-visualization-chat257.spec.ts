@@ -20,7 +20,7 @@ async function expectTechnicalPlanRestored(page: Page) {
 
 async function installAuthenticatedApiMocks(
   page: Page,
-  options: { unavailable?: boolean } = {},
+  options: { unavailable?: boolean; transientPollFailures?: number } = {},
 ) {
   let jobPolls = 0;
   let queueCalls = 0;
@@ -86,7 +86,11 @@ async function installAuthenticatedApiMocks(
     }
     if (path === "/api/jobs/visual-job-1") {
       jobPolls += 1;
-      if (jobPolls === 1) {
+      if (jobPolls <= (options.transientPollFailures || 0)) {
+        await route.abort("failed");
+        return;
+      }
+      if (jobPolls === (options.transientPollFailures || 0) + 1) {
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -218,6 +222,19 @@ test.describe("external photorealistic visualization", () => {
     );
     await page.getByTestId("ai-realism-off").click();
     await expectTechnicalPlanRestored(page);
+  });
+
+  test("keeps polling through brief hosted status interruptions", async ({ page }) => {
+    const api = await installAuthenticatedApiMocks(page, { transientPollFailures: 2 });
+    await openSeededWorkspace(page);
+
+    await page.getByTestId("ai-realism-on").click();
+    await expect(page.getByTestId("ai-realism-generation-status")).toContainText(
+      "Reconnecting to visualization job",
+    );
+    await expect(page.getByTestId("ai-realism-image")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("ai-realism-blocker")).toHaveCount(0);
+    expect(api.jobPolls()).toBeGreaterThanOrEqual(4);
   });
 
   test("turning Visual off cancels browser polling and immediately restores the plan", async ({ page }) => {
