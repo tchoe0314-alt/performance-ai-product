@@ -724,6 +724,9 @@ class JobQueueService:
         current = self._get_job_for_worker(job_id)
         if current is None:
             return None
+        job_type = str(current.get("job_type") or "")
+        if job_type not in self._handlers:
+            return None
         if current.get("status") == "cancelled":
             return current
         if current.get("status") != "queued":
@@ -734,9 +737,9 @@ class JobQueueService:
                 """
                 UPDATE jobs
                 SET status = ?, updated_at = ?
-                WHERE job_id = ? AND status = 'queued'
+                WHERE job_id = ? AND status = 'queued' AND job_type = ?
                 """,
-                ("running", _now(), job_id),
+                ("running", _now(), job_id, job_type),
             )
             connection.commit()
             if int(getattr(cursor, "rowcount", 0) or 0) <= 0:

@@ -462,6 +462,52 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(record["status"], "completed")
         self.assertEqual(record["result"]["processed_by"], "dedicated_worker")
 
+    def test_worker_cannot_claim_job_type_without_registered_handler(self):
+        web_queue = self.track_queue(JobQueueService(self.db, worker_count=0))
+        created = web_queue.submit_job(
+            user_id=self.user_id,
+            job_type="ai_visualization_isolation_test",
+            payload={"prompt_text": "render current layout"},
+        )
+
+        source_context_worker = self.track_queue(JobQueueService(self.db, worker_count=0))
+        source_context_worker.register_handler(
+            "source_context_isolation_test",
+            lambda job: {"success": True, "processed_by": "source_context_worker"},
+        )
+
+        claimed = source_context_worker._claim_job_for_worker(created["job_id"])
+        still_queued = web_queue.get_job_detail(
+            user_id=self.user_id,
+            job_id=created["job_id"],
+        )
+
+        self.assertIsNone(claimed)
+        self.assertIsNotNone(still_queued)
+        self.assertEqual(still_queued["status"], "queued")
+
+        visualization_worker = self.track_queue(JobQueueService(
+            self.db,
+            worker_count=1,
+            resume_poll_interval_sec=0.05,
+        ))
+        visualization_worker.register_handler(
+            "ai_visualization_isolation_test",
+            lambda job: {"success": True, "processed_by": "visualization_worker"},
+        )
+
+        deadline = time.time() + 3.0
+        record = None
+        while time.time() < deadline:
+            record = web_queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
+            if record and record["status"] == "completed":
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(record)
+        self.assertEqual(record["status"], "completed")
+        self.assertEqual(record["result"]["processed_by"], "visualization_worker")
+
     def test_web_queue_continuation_waits_for_external_worker_when_handler_is_disabled(self):
         web_queue = self.track_queue(JobQueueService(self.db, worker_count=1))
         created = web_queue.submit_job(
