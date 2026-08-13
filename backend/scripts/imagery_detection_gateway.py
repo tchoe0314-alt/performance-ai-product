@@ -1028,7 +1028,7 @@ def _nonnegative_float(value: Any) -> float:
 
 
 def _shadow_request_selected(payload: Dict[str, Any], *, image_url: str) -> bool:
-    if _env_true("CIVORA_GATEWAY_SHADOW_FORCE"):
+    if _env_true("CIVORA_GATEWAY_SHADOW_FORCE") and _env_true("CIVORA_GATEWAY_ALLOW_SHADOW_FORCE"):
         return True
     sample_rate = _shadow_sample_rate()
     if sample_rate <= 0:

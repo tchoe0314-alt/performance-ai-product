@@ -316,6 +316,7 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
                 "CIVORA_GATEWAY_SOURCE_MODE": "direct",
                 "CIVORA_GATEWAY_SHADOW_ENABLED": "true",
                 "CIVORA_GATEWAY_SHADOW_FORCE": "true",
+                "CIVORA_GATEWAY_ALLOW_SHADOW_FORCE": "true",
                 "CIVORA_GATEWAY_SHADOW_MODE": "inline",
                 "CIVORA_GATEWAY_SHADOW_MODEL_MANIFEST": "/fixture/candidate-manifest.json",
             },
@@ -351,6 +352,7 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
                 "CIVORA_GATEWAY_SOURCE_MODE": "direct",
                 "CIVORA_GATEWAY_SHADOW_ENABLED": "true",
                 "CIVORA_GATEWAY_SHADOW_FORCE": "true",
+                "CIVORA_GATEWAY_ALLOW_SHADOW_FORCE": "true",
                 "CIVORA_GATEWAY_SHADOW_MODE": "async",
                 "CIVORA_GATEWAY_SHADOW_MODEL_MANIFEST": "/fixture/candidate-manifest.json",
             },
@@ -395,6 +397,50 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
             from backend.scripts.imagery_detection_gateway import _shadow_sample_rate
 
             self.assertEqual(_shadow_sample_rate(), 0.05)
+
+    def test_shadow_force_requires_explicit_diagnostic_allowance(self) -> None:
+        from backend.scripts.imagery_detection_gateway import _shadow_request_selected
+
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_SHADOW_FORCE": "true",
+                "CIVORA_GATEWAY_ALLOW_SHADOW_FORCE": "false",
+                "CIVORA_GATEWAY_SHADOW_SAMPLE_RATE": "0",
+            },
+            clear=False,
+        ):
+            self.assertFalse(
+                _shadow_request_selected(
+                    {"address": "diagnostic fixture"},
+                    image_url="https://imagery.example/source.png",
+                )
+            )
+
+        with patch.dict(
+            os.environ,
+            {
+                "CIVORA_GATEWAY_SHADOW_FORCE": "true",
+                "CIVORA_GATEWAY_ALLOW_SHADOW_FORCE": "true",
+                "CIVORA_GATEWAY_SHADOW_SAMPLE_RATE": "0",
+            },
+            clear=False,
+        ):
+            self.assertTrue(
+                _shadow_request_selected(
+                    {"address": "diagnostic fixture"},
+                    image_url="https://imagery.example/source.png",
+                )
+            )
+
+    def test_gateway_image_defaults_to_bounded_async_shadow(self) -> None:
+        dockerfile = Path(__file__).resolve().parents[1] / "Dockerfile.imagery-gateway"
+        content = dockerfile.read_text(encoding="utf-8")
+
+        self.assertIn("ENV CIVORA_GATEWAY_SHADOW_ENABLED=true", content)
+        self.assertIn("ENV CIVORA_GATEWAY_SHADOW_MODE=async", content)
+        self.assertIn("ENV CIVORA_GATEWAY_SHADOW_SAMPLE_RATE=0.05", content)
+        self.assertIn("ENV CIVORA_GATEWAY_ALLOW_SHADOW_FORCE=false", content)
 
     def test_shadow_metrics_persist_aggregate_only_across_runtime_restart(self) -> None:
         from backend.scripts import imagery_detection_gateway as gateway

@@ -73,10 +73,11 @@ CIVORA_GATEWAY_MODEL_MANIFEST=/app/vision/models/civora_vision_model_manifest.js
 CIVORA_GATEWAY_MODEL_PATH=/models/civora_semantic.onnx
 CIVORA_GATEWAY_REQUIRE_PROMOTED_MODEL=true
 CIVORA_GATEWAY_ALLOW_HEURISTIC_FALLBACK=false
-CIVORA_GATEWAY_SHADOW_ENABLED=false
+CIVORA_GATEWAY_SHADOW_ENABLED=true
 CIVORA_GATEWAY_SHADOW_MODE=async
 CIVORA_GATEWAY_SHADOW_SAMPLE_RATE=0.05
 CIVORA_GATEWAY_SHADOW_IOU_THRESHOLD=0.25
+CIVORA_GATEWAY_ALLOW_SHADOW_FORCE=false
 CIVORA_GATEWAY_SHADOW_MODEL_MANIFEST=/app/vision/models/shadow/chat246/candidate-manifest.json
 CIVORA_GATEWAY_SHADOW_METRICS_PATH=/data/vision-shadow-metrics.json
 CIVORA_GATEWAY_BEARER_TOKEN=generate-a-long-random-service-token
@@ -334,6 +335,11 @@ After both services are deployed:
 10. For a promoted primary model, confirm `/detect` metadata says `learned_model_used: true` and `fallback_used: false`.
 11. For shadow, confirm the response keeps baseline providers, `shadow_influenced_user_candidates: false`, and health shows
     bounded submitted/completed/failed/dropped counts. Never use shadow agreement as an accuracy metric.
+
+The gateway image enables the bundled blocked candidate only as a five-percent asynchronous shadow by default. It cannot
+add, replace, or modify user-visible candidates. Set `CIVORA_GATEWAY_SHADOW_ENABLED=false` for immediate rollback. Keep
+`CIVORA_GATEWAY_ALLOW_SHADOW_FORCE=false` on hosted services; the force switch exists only for explicit local diagnostics.
+Attach a persistent volume at `/data` if aggregate metrics must survive deployment replacement.
 
 The feedback manifest does not claim model accuracy. Precision/recall are reported only after a separate rights-cleared ground-truth set is evaluated. The current geometric score is explicitly class-aware bounding-box IoU.
 
