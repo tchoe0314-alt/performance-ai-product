@@ -52,6 +52,17 @@ def test_combined_runner_allows_explicit_external_worker_count() -> None:
     assert worker_env["PERFORMANCE_AI_JOB_WORKERS"] == "4"
 
 
+def test_combined_runner_preserves_explicit_worker_job_allowlist() -> None:
+    _, worker_env = build_process_environments(
+        {
+            "DATABASE_URL": "postgresql://example.invalid/civora",
+            "CIVORA_ENABLED_JOB_TYPES": "source_context",
+        }
+    )
+
+    assert worker_env["CIVORA_ENABLED_JOB_TYPES"] == "source_context"
+
+
 def test_combined_runner_never_disables_continuous_database_polling() -> None:
     _, worker_env = build_process_environments(
         {

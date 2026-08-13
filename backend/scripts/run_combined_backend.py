@@ -35,11 +35,20 @@ def build_process_environments(
     source: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
     base = dict(source or os.environ)
+    configured_worker_job_types = tuple(
+        item.strip()
+        for item in str(base.get("CIVORA_ENABLED_JOB_TYPES") or "").split(",")
+        if item.strip()
+    )
+    worker_job_types = configured_worker_job_types or EXTERNAL_JOB_TYPES
     worker_env = dict(base)
     worker_env.update(
         {
             "CIVORA_PROCESS_ROLE": "worker",
-            "CIVORA_ENABLED_JOB_TYPES": ",".join(EXTERNAL_JOB_TYPES),
+            # A dedicated service may intentionally own one queue slice. Do
+            # not broaden its explicit allowlist when the startup wrapper
+            # falls through combined-process supervision.
+            "CIVORA_ENABLED_JOB_TYPES": ",".join(worker_job_types),
             "CIVORA_DISABLED_JOB_TYPES": "",
             "CIVORA_WORKER_HEALTH_ENABLED": "false",
             "PERFORMANCE_AI_JOB_WORKERS": str(base.get("CIVORA_EXTERNAL_JOB_WORKERS") or "2"),
