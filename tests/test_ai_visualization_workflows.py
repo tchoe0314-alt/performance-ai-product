@@ -299,8 +299,28 @@ def test_openai_provider_uses_image_edit_with_reference_and_no_key_leak() -> Non
     assert call["size"] == "1536x1024"
     assert call["quality"] == "medium"
     assert call["output_format"] == "webp"
+    assert "response_format" not in call
     assert call["image"].name == "civora-site-layout-reference.png"
     assert "sk-secret" not in str(call)
+
+
+def test_openai_provider_keeps_legacy_response_format_for_dall_e_edits() -> None:
+    response = SimpleNamespace(
+        data=[SimpleNamespace(b64_json=base64.b64encode(b"image").decode("ascii"), revised_prompt="")],
+        _request_id="req-legacy",
+    )
+    fake_client = SimpleNamespace(images=SimpleNamespace(edit=Mock(return_value=response)))
+    provider = OpenAIImageProvider(
+        api_key="sk-secret",
+        model="dall-e-2",
+        output_format="png",
+        client=fake_client,
+    )
+
+    provider.generate(prompt="Render the site.", reference_png=b"png", user_id="user-1")
+
+    call = fake_client.images.edit.call_args.kwargs
+    assert call["response_format"] == "b64_json"
 
 
 def test_provider_configuration_is_explicit() -> None:

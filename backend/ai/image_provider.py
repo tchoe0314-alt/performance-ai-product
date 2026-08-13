@@ -135,10 +135,14 @@ class OpenAIImageProvider:
             "size": "1536x1024",
             "quality": self.quality,
             "output_format": self.output_format,
-            "response_format": "b64_json",
             "user": str(user_id or "")[:128] or "civora-user",
             "timeout": self.timeout_seconds,
         }
+        # GPT Image responses already return base64 image data. The legacy
+        # response_format option is accepted by the SDK signature but rejected
+        # by the current GPT Image API.
+        if self.model.lower().startswith("dall-e"):
+            request_options["response_format"] = "b64_json"
         if self.output_format in {"jpeg", "webp"}:
             request_options["output_compression"] = 82
         try:
