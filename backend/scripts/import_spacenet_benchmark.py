@@ -19,6 +19,10 @@ def main() -> int:
             {
                 "success": True,
                 "package_path": result["package_path"],
+                "training_validation_package_path": result["training_validation_package_path"],
+                "frozen_test_package_path": result["frozen_test_package_path"],
+                "evaluation_reservation_manifest_path": result["evaluation_reservation_manifest_path"],
+                "split_artifact_blockers": result["split_artifact_blockers"],
                 "image_root": result["image_root"],
                 "eligible_image_count": result["eligible_image_count"],
                 "annotation_count": result["annotation_count"],

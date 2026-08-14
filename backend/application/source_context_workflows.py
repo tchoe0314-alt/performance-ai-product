@@ -26,7 +26,7 @@ DETECTION_COVERAGE_CATEGORIES = (
     ("roads_row", "Roads / right-of-way", ("road_or_drive",), ("road_row", "roads_row")),
     ("parking", "Parking areas", ("parking_area",), ()),
     ("sidewalks_paths", "Sidewalks / paths", ("sidewalk_or_path",), ()),
-    ("surface_water", "Ponds / basins / surface water", ("water/pond/basin",), ()),
+    ("surface_water", "Surface water (classification required)", ("water/pond/basin",), ()),
     ("vegetation", "Trees / vegetation", ("vegetation/tree_area",), ()),
     ("terrain_elevation", "Terrain / elevation", ("terrain",), ("terrain_dem_lidar",)),
     ("contours", "Contours", (), ("contours",)),

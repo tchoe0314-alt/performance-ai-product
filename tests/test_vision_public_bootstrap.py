@@ -18,6 +18,7 @@ from backend.planning.vision_public_bootstrap import (
     quadkey_for_point,
     quadkeys_for_bbox,
     verify_weak_supervision_package,
+    weak_supervision_package_fingerprint,
 )
 
 
@@ -62,6 +63,85 @@ def _registered_sources():
 
 
 class VisionPublicBootstrapTests(unittest.TestCase):
+    def test_label_source_availability_is_sealed_and_region_scoped_when_merged(self) -> None:
+        imagery_source, label_source = _registered_sources()
+
+        def package_for(frame_id: str, geography_id: str, split: str):
+            tile = build_geographic_tile_grid(
+                center_longitude=-96.237,
+                center_latitude=41.185,
+                rows=1,
+                columns=1,
+                tile_meters=320,
+                image_pixels=512,
+                permanent_split=split,
+            )[0]
+            tile.update({
+                "frame_id": frame_id,
+                "file_name": f"{frame_id}.png",
+                "sha256": ("a" if geography_id == "gretna_ne" else "b") * 64,
+                "geography_id": geography_id,
+            })
+            bbox = tile["bbox_wgs84"]
+            feature = {
+                "type": "Feature",
+                "geometry": {"type": "Polygon", "coordinates": [[
+                    [bbox["west"], bbox["south"]],
+                    [bbox["east"], bbox["south"]],
+                    [bbox["east"], bbox["north"]],
+                    [bbox["west"], bbox["north"]],
+                    [bbox["west"], bbox["south"]],
+                ]]},
+            }
+            package = build_weak_supervision_package(
+                tiles=[tile],
+                footprint_features=[feature],
+                imagery_source=imagery_source,
+                label_source=label_source,
+            )
+            package["label_source_status"] = [{
+                "source_id": "usgs_nhd_surface_water",
+                "status": "unavailable",
+                "feature_count": 0,
+                "blockers": ["layer_9:HTTP 500"],
+                "fallback_used": False,
+            }]
+            package["dataset_fingerprint"] = weak_supervision_package_fingerprint(package)
+            return package
+
+        first = package_for("frame-gretna", "gretna_ne", "train")
+        second = package_for("frame-seattle", "seattle_wa", "test")
+        self.assertTrue(verify_weak_supervision_package(first)["valid"])
+
+        tampered = deepcopy(first)
+        tampered["label_source_status"][0]["status"] = "ready"
+        self.assertIn(
+            "weak_dataset_fingerprint_mismatch",
+            verify_weak_supervision_package(tampered)["blockers"],
+        )
+        fallback = deepcopy(first)
+        fallback["label_source_status"][0]["fallback_used"] = True
+        fallback["dataset_fingerprint"] = weak_supervision_package_fingerprint(fallback)
+        self.assertIn(
+            "label_source_status_fallback_boundary_invalid",
+            verify_weak_supervision_package(fallback)["blockers"],
+        )
+
+        merged = merge_weak_supervision_packages(
+            [first, second],
+            source_names=["gretna_ne", "seattle_wa"],
+        )
+        self.assertTrue(verify_weak_supervision_package(merged)["valid"])
+        self.assertEqual(len(merged["label_source_status"]), 2)
+        self.assertEqual(
+            {item["source_dataset"] for item in merged["label_source_status"]},
+            {"gretna_ne", "seattle_wa"},
+        )
+        self.assertIn(
+            "weak_label_source_unavailable:gretna_ne:usgs_nhd_surface_water",
+            merged["promotion_blockers"],
+        )
+
     def test_capture_metadata_is_normalized_without_guessing(self) -> None:
         self.assertEqual(capture_date_from_epoch_ms(1659398400000), "2022-08-02")
         self.assertEqual(capture_season("2022-08-02"), "summer")

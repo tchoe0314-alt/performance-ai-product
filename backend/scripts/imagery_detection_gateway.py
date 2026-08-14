@@ -44,6 +44,11 @@ _SHADOW_WORKER_LOCK = threading.Lock()
 _SHADOW_WORKER_STARTED = False
 _SHADOW_STATS_LOCK = threading.Lock()
 _SHADOW_STATS_PATH_LOADED = ""
+_SHADOW_STATS_RESTORED_FROM_DISK = False
+_SHADOW_STATS_RESTORE_INTEGRITY_VALID = False
+_SHADOW_STATS_RESTORE_BLOCKER = "not_loaded"
+SHADOW_METRICS_VERSION = "civora_vision_shadow_metrics_v2"
+SHADOW_METRICS_STORAGE_SCOPE = "aggregate_metrics_only_no_imagery_or_geometry"
 
 
 def _empty_shadow_stats() -> Dict[str, Any]:
@@ -775,8 +780,11 @@ def _shadow_runtime_statistics() -> Dict[str, Any]:
             "last_report": _privacy_safe_shadow_report(_dict(_SHADOW_STATS["last_report"])),
             "aggregate": aggregate,
             "persistence_configured": bool(_shadow_metrics_path()),
+            "persistence_restore_observed": _SHADOW_STATS_RESTORED_FROM_DISK,
+            "persistence_integrity_valid": _SHADOW_STATS_RESTORE_INTEGRITY_VALID,
+            "persistence_restore_blocker": _SHADOW_STATS_RESTORE_BLOCKER,
             "persistent_volume_required": True,
-            "storage_scope": "aggregate_metrics_only_no_imagery_or_geometry",
+            "storage_scope": SHADOW_METRICS_STORAGE_SCOPE,
         }
 
 
@@ -814,33 +822,55 @@ def _shadow_metrics_path() -> Optional[Path]:
 
 
 def _ensure_shadow_stats_loaded_locked() -> None:
-    global _SHADOW_STATS, _SHADOW_STATS_PATH_LOADED
+    global _SHADOW_STATS, _SHADOW_STATS_PATH_LOADED, _SHADOW_STATS_RESTORED_FROM_DISK
+    global _SHADOW_STATS_RESTORE_INTEGRITY_VALID, _SHADOW_STATS_RESTORE_BLOCKER
     path = _shadow_metrics_path()
     path_key = str(path.resolve()) if path else "__memory__"
     if _SHADOW_STATS_PATH_LOADED == path_key:
         return
     _SHADOW_STATS = _empty_shadow_stats()
+    _SHADOW_STATS_RESTORED_FROM_DISK = False
+    _SHADOW_STATS_RESTORE_INTEGRITY_VALID = False
+    _SHADOW_STATS_RESTORE_BLOCKER = "persistence_not_configured" if not path else "persistence_file_missing"
     _SHADOW_STATS_PATH_LOADED = path_key
     if not path or not path.is_file():
         return
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
+        _SHADOW_STATS_RESTORE_BLOCKER = "persistence_file_unreadable_or_invalid_json"
         return
-    statistics = _dict(_dict(payload).get("statistics"))
+    record = _dict(payload)
+    if str(record.get("version") or "") != SHADOW_METRICS_VERSION:
+        _SHADOW_STATS_RESTORE_BLOCKER = "persistence_version_unsupported"
+        return
+    if str(record.get("storage_scope") or "") != SHADOW_METRICS_STORAGE_SCOPE:
+        _SHADOW_STATS_RESTORE_BLOCKER = "persistence_storage_scope_invalid"
+        return
+    if not secrets.compare_digest(
+        str(record.get("integrity_sha256") or ""),
+        _shadow_metrics_integrity(record),
+    ):
+        _SHADOW_STATS_RESTORE_BLOCKER = "persistence_integrity_mismatch"
+        return
+    statistics = _dict(record.get("statistics"))
     _SHADOW_STATS = _sanitize_persisted_shadow_stats(statistics)
+    _SHADOW_STATS_RESTORED_FROM_DISK = True
+    _SHADOW_STATS_RESTORE_INTEGRITY_VALID = True
+    _SHADOW_STATS_RESTORE_BLOCKER = ""
 
 
 def _persist_shadow_stats_locked() -> None:
     path = _shadow_metrics_path()
     if not path:
         return
-    payload = {
-        "version": "civora_vision_shadow_metrics_v1",
+    payload: Dict[str, Any] = {
+        "version": SHADOW_METRICS_VERSION,
         "updated_at": _now_iso(),
         "statistics": _sanitize_persisted_shadow_stats(_SHADOW_STATS),
-        "storage_scope": "aggregate_metrics_only_no_imagery_or_geometry",
+        "storage_scope": SHADOW_METRICS_STORAGE_SCOPE,
     }
+    payload["integrity_sha256"] = _shadow_metrics_integrity(payload)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
@@ -853,13 +883,34 @@ def _persist_shadow_stats_locked() -> None:
         ) as handle:
             json.dump(payload, handle, indent=2, sort_keys=True)
             handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
             temp_path = Path(handle.name)
         os.replace(temp_path, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
     except OSError:
         try:
             temp_path.unlink(missing_ok=True)
         except (OSError, UnboundLocalError):
             pass
+
+
+def _shadow_metrics_integrity(payload: Dict[str, Any]) -> str:
+    record = _dict(payload)
+    canonical = json.dumps(
+        {
+            "version": str(record.get("version") or ""),
+            "statistics": _sanitize_persisted_shadow_stats(_dict(record.get("statistics"))),
+            "storage_scope": str(record.get("storage_scope") or ""),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _sanitize_persisted_shadow_stats(value: Dict[str, Any]) -> Dict[str, Any]:
@@ -1296,7 +1347,7 @@ def _normalize_kind(value: str) -> str:
     if "tree" in text or "vegetation" in text or "landscape" in text:
         return "tree"
     if "pond" in text or "basin" in text or "water" in text or "pool" in text:
-        return "basin"
+        return "surface_water"
     if "inlet" in text:
         return "inlet"
     if "outfall" in text:

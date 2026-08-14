@@ -40,6 +40,19 @@ class VisionBenchmarkDatasetTests(unittest.TestCase):
             self.assertEqual(len(result["dataset_fingerprint"]), 64)
             self.assertTrue((Path(result["image_root"]) / result["images"][0]["file_name"]).is_file())
             self.assertGreater(result["annotations"][0]["area"], 1.0)
+            training = json.loads(Path(result["training_validation_package_path"]).read_text())
+            evaluation = json.loads(Path(result["frozen_test_package_path"]).read_text())
+            reservation = json.loads(Path(result["evaluation_reservation_manifest_path"]).read_text())
+            self.assertEqual(training["dataset_role"], "training_and_validation")
+            self.assertEqual(training["splits"]["test"], [])
+            self.assertFalse(training["test_records_in_package"])
+            self.assertEqual(evaluation["dataset_role"], "frozen_test")
+            self.assertEqual(evaluation["splits"]["train"], [])
+            self.assertFalse(evaluation["training_records_in_package"])
+            self.assertEqual(
+                reservation["evaluation_dataset_fingerprint"],
+                evaluation["dataset_fingerprint"],
+            )
 
     def test_missing_matching_label_is_reported_not_invented(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -58,6 +71,8 @@ class VisionBenchmarkDatasetTests(unittest.TestCase):
             self.assertEqual(result["eligible_image_count"], 1)
             self.assertEqual(result["excluded_example_count"], 1)
             self.assertIn("matching_spacenet_building_labels_missing", result["excluded_examples"][0]["blockers"])
+            self.assertEqual(result["training_validation_package_path"], "")
+            self.assertTrue(result["split_artifact_blockers"])
 
     @staticmethod
     def _write_raster(path: Path, *, value: int) -> None:

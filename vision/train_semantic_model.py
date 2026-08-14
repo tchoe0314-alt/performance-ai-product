@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 from pathlib import Path
@@ -11,6 +12,11 @@ from PIL import Image, ImageDraw
 
 
 COCO_PACKAGE_VERSION = "civora_vision_coco_package_v1"
+
+
+def _stable_hash(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def main() -> int:
@@ -48,6 +54,44 @@ def main() -> int:
         raise SystemExit(f"Expected {COCO_PACKAGE_VERSION}.")
     if dataset_payload.get("contains_image_bytes") is not False:
         raise SystemExit("Training package must preserve the no-embedded-image contract.")
+    if dataset_payload.get("dataset_role") != "training_and_validation":
+        raise SystemExit(
+            "Training requires a split-scoped training_and_validation package; never pass the full audit or frozen-test package."
+        )
+    if dataset_payload.get("test_records_in_package") is not False:
+        raise SystemExit("Training package must attest that frozen-test records are physically absent.")
+    if (dataset_payload.get("splits") or {}).get("test"):
+        raise SystemExit("Training package contains frozen-test image IDs.")
+    if any(str(item.get("split") or "") == "test" for item in dataset_payload.get("images") or [] if isinstance(item, dict)):
+        raise SystemExit("Training package contains frozen-test image records.")
+    held_out_manifest = dataset_payload.get("held_out_test_manifest") or {}
+    held_out_fields = {
+        "version",
+        "dataset_fingerprint",
+        "test_image_membership_sha256",
+        "test_image_count",
+        "test_image_ids_sha256",
+        "test_source_identities_sha256",
+        "test_source_identity_count",
+        "test_split_mutation_allowed",
+        "label_statistics_disclosed",
+        "manifest_sha256",
+    }
+    if not held_out_manifest or held_out_manifest.get("test_split_mutation_allowed") is not False:
+        raise SystemExit("Training package is missing the immutable held-out-test manifest reference.")
+    if (
+        set(held_out_manifest) != held_out_fields
+        or held_out_manifest.get("version") != "civora_vision_held_out_commitment_v1"
+        or held_out_manifest.get("label_statistics_disclosed") is not False
+        or "test_annotation_count" in held_out_manifest
+        or not held_out_manifest.get("test_image_membership_sha256")
+        or int(held_out_manifest.get("test_image_count") or 0) <= 0
+        or int(held_out_manifest.get("test_source_identity_count") or 0)
+        != int(held_out_manifest.get("test_image_count") or 0)
+        or held_out_manifest.get("manifest_sha256")
+        != _stable_hash({key: value for key, value in held_out_manifest.items() if key != "manifest_sha256"})
+    ):
+        raise SystemExit("Training package held-out reference must be label-blind and cryptographically committed.")
     if not dataset_payload.get("dataset_fingerprint"):
         raise SystemExit("Training package is missing its deterministic dataset fingerprint.")
     image_root = Path(args.image_root).expanduser().resolve()
@@ -64,21 +108,32 @@ def main() -> int:
     if class_ids != list(range(1, len(categories) + 1)):
         raise SystemExit("COCO category IDs must be contiguous and start at 1; class 0 is reserved for background.")
     class_count = len(categories) + 1
-    annotations_by_image: Dict[int, List[Dict[str, Any]]] = {}
-    for item in dataset_payload.get("annotations") or []:
-        annotations_by_image.setdefault(int(item["image_id"]), []).append(dict(item))
+    category_names = {int(item["id"]): str(item.get("name") or "") for item in categories}
     images_by_split = {
         split: [dict(item) for item in dataset_payload.get("images") or [] if item.get("split") == split]
-        for split in ("train", "validation", "test")
+        for split in ("train", "validation")
     }
     if not images_by_split["train"]:
         raise SystemExit("Training split contains no rights-cleared images.")
     if not images_by_split["validation"]:
         raise SystemExit("Validation split contains no images; add more frames or choose a different deterministic split seed.")
-    class_split_coverage = build_class_split_coverage(dataset_payload)
+    training_image_ids = {
+        int(item["id"])
+        for split in ("train", "validation")
+        for item in images_by_split[split]
+    }
+    annotations_by_image: Dict[int, List[Dict[str, Any]]] = {}
+    for item in dataset_payload.get("annotations") or []:
+        image_id = int(item["image_id"])
+        if image_id in training_image_ids:
+            annotations_by_image.setdefault(image_id, []).append(dict(item))
+    class_split_coverage = build_class_split_coverage(
+        dataset_payload,
+        required_splits=("train", "validation"),
+    )
     if not class_split_coverage["ready"]:
         raise SystemExit(
-            "Every declared class must be represented in train, validation, and test before training: "
+            "Every declared class must be represented in train and validation before training: "
             + ", ".join(class_split_coverage["blockers"])
         )
 
@@ -104,7 +159,13 @@ def main() -> int:
             draw = ImageDraw.Draw(mask)
             scale_x = args.image_size / max(source_width, 1)
             scale_y = args.image_size / max(source_height, 1)
-            for annotation in annotations_by_image.get(int(rec["id"]), []):
+            image_annotations = sorted(
+                annotations_by_image.get(int(rec["id"]), []),
+                key=lambda item: semantic_annotation_priority(
+                    category_names.get(int(item.get("category_id") or 0), "")
+                ),
+            )
+            for annotation in image_annotations:
                 class_id = int(annotation["category_id"])
                 for polygon in annotation.get("segmentation") or []:
                     points = [
@@ -258,7 +319,7 @@ def main() -> int:
     )
     class_weights = torch.tensor(class_weight_values, dtype=torch.float32, device=device)
     criterion = CombinedSegmentationLoss(class_weights, args.dice_weight)
-    history: List[Dict[str, float]] = []
+    history: List[Dict[str, Any]] = []
     best_validation_iou = -1.0
     best_validation_loss = float("inf")
     epochs_without_improvement = 0
@@ -273,7 +334,15 @@ def main() -> int:
             loss.backward()
             optimizer.step()
             training_loss += float(loss.detach().cpu())
-        validation = _validate(model, validation_loader, criterion, device, class_count, torch)
+        validation = _validate(
+            model,
+            validation_loader,
+            criterion,
+            device,
+            class_count,
+            torch,
+            category_names=category_names,
+        )
         record = {
             "epoch": epoch + 1,
             "training_loss": round(training_loss / max(len(train_loader), 1), 6),
@@ -317,9 +386,12 @@ def main() -> int:
     run_report = {
         "version": "civora_vision_training_run_v1",
         "dataset_fingerprint": dataset_payload["dataset_fingerprint"],
+        "training_evidence_fingerprint": str(dataset_payload.get("coco_evidence_fingerprint") or ""),
+        "evidence_family_fingerprint": str(dataset_payload.get("parent_coco_evidence_fingerprint") or ""),
         "training_image_count": len(images_by_split["train"]),
         "validation_image_count": len(images_by_split["validation"]),
-        "test_image_count": len(images_by_split["test"]),
+        "test_image_count": held_out_test_image_count(dataset_payload),
+        **training_split_usage_contract(),
         "supervision_status": str(dataset_payload.get("supervision_status") or "unspecified"),
         "training_dataset_promotion_eligible": dataset_payload.get("promotion_eligible") is True,
         "training_dataset_promotion_blockers": list(dataset_payload.get("promotion_blockers") or []),
@@ -345,6 +417,7 @@ def main() -> int:
         "history": history,
         "epochs_completed": len(history),
         "checkpoint_selection_metric": "validation_mean_foreground_iou_then_validation_loss",
+        "checkpoint_selection_split": "validation",
         "best_validation": max(
             history,
             key=lambda item: (item["validation_mean_foreground_iou"], -item["validation_loss"]),
@@ -384,7 +457,11 @@ def main() -> int:
     return 0
 
 
-def build_class_split_coverage(dataset_payload: Dict[str, Any]) -> Dict[str, Any]:
+def build_class_split_coverage(
+    dataset_payload: Dict[str, Any],
+    *,
+    required_splits: Tuple[str, ...] = ("train", "validation"),
+) -> Dict[str, Any]:
     categories = {
         int(item.get("id") or 0): str(item.get("name") or "")
         for item in dataset_payload.get("categories") or []
@@ -395,7 +472,6 @@ def build_class_split_coverage(dataset_payload: Dict[str, Any]) -> Dict[str, Any
         for item in dataset_payload.get("images") or []
         if isinstance(item, dict)
     }
-    required_splits = ("train", "validation", "test")
     counts = {
         split: {label: 0 for label in categories.values() if label}
         for split in required_splits
@@ -419,6 +495,41 @@ def build_class_split_coverage(dataset_payload: Dict[str, Any]) -> Dict[str, Any
         "counts": counts,
         "blockers": blockers or ([] if categories else ["declared_model_classes_missing"]),
     }
+
+
+def training_split_usage_contract() -> Dict[str, Any]:
+    return {
+        "test_images_loaded_during_training": 0,
+        "test_image_bytes_loaded_during_training": 0,
+        "test_annotations_loaded_during_training": 0,
+        "test_labels_inspected_for_training_coverage": False,
+        "test_images_used_for_checkpoint_selection": 0,
+        "test_images_used_for_threshold_selection": 0,
+        "test_split_manifest_only_access": True,
+        "frozen_test_split_untouched": True,
+    }
+
+
+def held_out_test_image_count(dataset_payload: Dict[str, Any]) -> int:
+    return int(
+        (dataset_payload.get("held_out_test_manifest") or {}).get("test_image_count")
+        or len((dataset_payload.get("splits") or {}).get("test") or [])
+    )
+
+
+def semantic_annotation_priority(label: str) -> int:
+    normalized = str(label or "").strip().lower().replace("-", "_").replace(" ", "_")
+    priorities = {
+        "road": 10,
+        "road_or_drive": 10,
+        "surface_water": 20,
+        "water": 20,
+        "pond": 20,
+        "basin": 20,
+        "building": 30,
+        "building_footprint": 30,
+    }
+    return priorities.get(normalized, 15)
 
 
 def build_class_weight_values(
@@ -448,7 +559,16 @@ def build_class_weight_values(
     ]
 
 
-def _validate(model: Any, loader: Any, criterion: Any, device: Any, class_count: int, torch: Any) -> Dict[str, float]:
+def _validate(
+    model: Any,
+    loader: Any,
+    criterion: Any,
+    device: Any,
+    class_count: int,
+    torch: Any,
+    *,
+    category_names: Dict[int, str] | None = None,
+) -> Dict[str, Any]:
     model.eval()
     loss_total = 0.0
     intersections = np.zeros(class_count, dtype=np.float64)
@@ -471,10 +591,18 @@ def _validate(model: Any, loader: Any, criterion: Any, device: Any, class_count:
                 intersections[class_id] += np.logical_and(pred_mask, truth_mask).sum()
                 unions[class_id] += np.logical_or(pred_mask, truth_mask).sum()
     class_ious = [intersections[index] / unions[index] for index in range(1, class_count) if unions[index] > 0]
+    per_class_iou = {
+        str((category_names or {}).get(index) or f"class_{index}"): round(
+            float(intersections[index] / unions[index]) if unions[index] > 0 else 0.0,
+            6,
+        )
+        for index in range(1, class_count)
+    }
     return {
         "validation_loss": round(loss_total / max(len(loader), 1), 6),
         "validation_pixel_accuracy": round(correct / max(pixels, 1), 6),
         "validation_mean_foreground_iou": round(float(np.mean(class_ious)) if class_ious else 0.0, 6),
+        "validation_per_class_iou": per_class_iou,
     }
 
 

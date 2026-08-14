@@ -10,6 +10,17 @@ from vision.model_runtime import MODEL_MANIFEST_VERSION, PROMOTED_STATUS, file_s
 
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .vision_detection_learning import DATASET_VERSION, evaluate_detection_quality
+from .vision_evidence_integrity import (
+    EVIDENCE_INTEGRITY_VERSION,
+    assess_coco_evidence_integrity,
+    build_frozen_split_manifest,
+    evidence_context_fingerprint,
+    frozen_test_image_membership_fingerprint,
+    validate_evaluation_reservation_manifest,
+    validate_evidence_integrity_report,
+    validate_test_consumption_ledger,
+    validate_test_consumption_receipt,
+)
 from .vision_model_calibration import validate_baseline_comparison, validate_threshold_calibration
 
 
@@ -22,7 +33,7 @@ DEFAULT_CLASSES = {
     "parking_area": "parking",
     "sidewalk_or_path": "sidewalk",
     "vegetation/tree_area": "tree",
-    "water/pond/basin": "basin",
+    "water/pond/basin": "surface_water",
     "utility": "utility",
     "constraint_area": "constraint",
 }
@@ -42,9 +53,11 @@ FEATURE_TYPE_ALIASES = {
 }
 
 MODEL_LABEL_ALIASES = {
-    "water": "basin",
-    "pond": "basin",
-    "basin_or_pond": "basin",
+    "water": "surface_water",
+    "pond": "surface_water",
+    "pool": "surface_water",
+    "basin": "surface_water",
+    "basin_or_pond": "surface_water",
 }
 
 DEFAULT_PROMOTION_THRESHOLDS = {
@@ -155,16 +168,23 @@ def build_coco_training_package(
                 }
             )
             annotation_id += 1
+    represented_category_ids = sorted(
+        {int(item["category_id"]) for item in annotations if item.get("category_id") is not None}
+    )
+    category_id_remap = {
+        old_id: new_id for new_id, old_id in enumerate(represented_category_ids, start=1)
+    }
+    categories = [
+        {**item, "id": category_id_remap[int(item["id"])]}
+        for item in categories
+        if int(item["id"]) in category_id_remap
+    ]
+    annotations = [
+        {**item, "category_id": category_id_remap[int(item["category_id"])]}
+        for item in annotations
+    ]
     attestation_payload = safe_dict(ground_truth_attestation)
     scope_payload = safe_dict(evaluation_scope)
-    attestation_assessment = assess_ground_truth_attestation(
-        {
-            "supervision_status": "reviewer_labeled",
-            "evaluation_eligible": bool(images and annotations),
-            "ground_truth_attestation": attestation_payload,
-        }
-    )
-    evaluation_eligible = bool(images and annotations) and attestation_assessment["eligible"] is True
     payload: Dict[str, Any] = {
         "version": COCO_PACKAGE_VERSION,
         "generated_at": _now_iso(),
@@ -181,24 +201,19 @@ def build_coco_training_package(
             split_name: [item["id"] for item in images if item["split"] == split_name]
             for split_name in ("train", "validation", "test")
         },
+        "split_policy": {
+            "strategy": "source_identity_disjoint",
+            "test_split_frozen": True,
+        },
         "excluded_examples": excluded,
         "eligible_image_count": len(images),
         "annotation_count": len(annotations),
         "excluded_example_count": len(excluded),
         "contains_image_bytes": False,
         "supervision_status": "reviewer_labeled",
-        "evaluation_eligible": evaluation_eligible,
-        "promotion_eligible": evaluation_eligible,
-        "promotion_blockers": (
-            []
-            if evaluation_eligible
-            else sorted(
-                set(
-                    ([] if images and annotations else ["reviewed_training_annotations_missing"])
-                    + safe_list(attestation_assessment.get("blockers"))
-                )
-            )
-        ),
+        "evaluation_eligible": False,
+        "promotion_eligible": False,
+        "promotion_blockers": [],
         "ground_truth_attestation": attestation_payload,
         "evaluation_scope": scope_payload,
         "truth_label": (
@@ -215,6 +230,36 @@ def build_coco_training_package(
             "splits": payload["splits"],
         }
     )
+    payload["frozen_split_manifest"] = build_frozen_split_manifest(payload)
+    payload["evidence_integrity"] = assess_coco_evidence_integrity(
+        payload,
+        evaluation_split="test",
+        training_package=payload,
+    )
+    payload["evaluation_eligible"] = (
+        bool(images and annotations)
+        and payload["evidence_integrity"]["promotion_eligible"] is True
+    )
+    payload["promotion_eligible"] = payload["evaluation_eligible"]
+    attestation_assessment = assess_ground_truth_attestation(payload)
+    evaluation_eligible = (
+        bool(images and annotations)
+        and payload["evidence_integrity"]["promotion_eligible"] is True
+        and attestation_assessment["eligible"] is True
+    )
+    payload["evaluation_eligible"] = evaluation_eligible
+    payload["promotion_eligible"] = evaluation_eligible
+    payload["promotion_blockers"] = (
+        []
+        if evaluation_eligible
+        else sorted(
+            set(
+                ([] if images and annotations else ["reviewed_training_annotations_missing"])
+                + safe_list(payload["evidence_integrity"].get("blockers"))
+                + safe_list(attestation_assessment.get("blockers"))
+            )
+        )
+    )
     return payload
 
 
@@ -228,6 +273,7 @@ def evaluate_quality_by_class(
     evaluation_scope: Optional[Dict[str, Any]] = None,
     source_supervision_status: str = "",
     promotion_eligible: Optional[bool] = None,
+    evidence_integrity: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     predicted = [_evaluation_record(item) for item in predictions if safe_dict(item)]
     truth = [_evaluation_record(item) for item in ground_truth if safe_dict(item)]
@@ -258,6 +304,8 @@ def evaluate_quality_by_class(
         result["source_supervision_status"] = safe_str(source_supervision_status)
     if promotion_eligible is not None:
         result["promotion_eligible"] = promotion_eligible is True
+    if evidence_integrity is not None:
+        result["evidence_integrity"] = safe_dict(evidence_integrity)
     return result
 
 
@@ -281,11 +329,33 @@ def assess_ground_truth_attestation(payload: Dict[str, Any]) -> Dict[str, Any]:
     evaluation_eligible = source.get("evaluation_eligible") is True or source.get("promotion_eligible") is True
     if not evaluation_eligible:
         blockers.append("ground_truth_evaluation_not_eligible")
+    integrity = safe_dict(source.get("evidence_integrity"))
+    integrity_validation = validate_evidence_integrity_report(integrity)
+    if safe_str(integrity.get("version")) != EVIDENCE_INTEGRITY_VERSION:
+        blockers.append("ground_truth_evidence_integrity_missing")
+    elif integrity_validation["valid"] is not True:
+        blockers.extend(
+            f"evidence_integrity:{item}" for item in safe_list(integrity_validation.get("blockers"))
+        )
+    elif integrity.get("evaluation_eligible") is not True:
+        blockers.extend(
+            f"evidence_integrity:{item}" for item in safe_list(integrity.get("blockers"))
+            if not safe_str(item).startswith("training_")
+        )
+        if not [
+            item
+            for item in safe_list(integrity.get("blockers"))
+            if not safe_str(item).startswith("training_")
+        ]:
+            blockers.append("ground_truth_evidence_integrity_invalid")
+    if integrity and safe_str(integrity.get("evidence_context_fingerprint")) != evidence_context_fingerprint(source):
+        blockers.append("ground_truth_evidence_context_mismatch")
     return {
         "eligible": not blockers,
         "supervision_status": supervision,
         "attestation_status": safe_str(attestation.get("status")),
         "independent_test_split": attestation.get("independent_test_split") is True,
+        "evidence_integrity_valid": integrity.get("evaluation_eligible") is True,
         "blockers": sorted(set(blockers)),
     }
 
@@ -300,16 +370,105 @@ def assess_model_promotion(
     quality = safe_dict(quality_report)
     limits = {**DEFAULT_PROMOTION_THRESHOLDS, **safe_dict(thresholds)}
     blockers: List[str] = []
+    expected_dataset_fingerprint = safe_str(dataset_fingerprint).lower()
+    quality_dataset_fingerprint = safe_str(quality.get("dataset_fingerprint")).lower()
+    if expected_dataset_fingerprint and quality_dataset_fingerprint != expected_dataset_fingerprint:
+        blockers.append("evaluation_dataset_fingerprint_mismatch")
     if safe_str(quality.get("evaluation_status")) != "measured_against_ground_truth":
         blockers.append("ground_truth_evaluation_missing")
     attestation = assess_ground_truth_attestation(quality)
     blockers.extend(safe_list(attestation.get("blockers")))
+    integrity = safe_dict(quality.get("evidence_integrity"))
+    integrity_validation = validate_evidence_integrity_report(integrity)
+    if integrity_validation["promotion_eligible"] is not True:
+        integrity_blockers = safe_list(integrity.get("blockers"))
+        blockers.extend(
+            f"evidence_integrity:{item}"
+            for item in [*safe_list(integrity_validation.get("blockers")), *integrity_blockers]
+        )
+        if not integrity_blockers:
+            blockers.append("promotion_evidence_integrity_invalid")
+    evaluation_reservation = safe_dict(quality.get("evaluation_reservation_manifest"))
+    reservation_assessment = (
+        validate_evaluation_reservation_manifest(evaluation_reservation)
+        if evaluation_reservation
+        else {
+            "valid": False,
+            "blockers": ["evaluation_reservation_manifest_missing"],
+            "manifest_sha256": "",
+            "evaluation_dataset_fingerprint": "",
+        }
+    )
+    if not reservation_assessment["valid"]:
+        blockers.extend(reservation_assessment["blockers"])
+    elif (
+        safe_str(evaluation_reservation.get("evaluation_dataset_fingerprint")).lower()
+        != safe_str(quality.get("dataset_fingerprint") or dataset_fingerprint).lower()
+        or safe_str(evaluation_reservation.get("test_image_membership_sha256")).lower()
+        != frozen_test_image_membership_fingerprint(safe_dict(integrity.get("frozen_test_manifest")))
+    ):
+        blockers.append("evaluation_reservation_quality_evidence_mismatch")
     calibration_record = safe_dict(quality.get("threshold_calibration"))
+    receipt = safe_dict(quality.get("test_consumption_receipt"))
+    receipt_assessment = (
+        validate_test_consumption_receipt(
+            receipt,
+            evaluation_dataset_fingerprint=safe_str(quality.get("dataset_fingerprint") or dataset_fingerprint),
+            model_artifact_sha256=safe_str(quality.get("model_artifact_sha256")),
+            threshold_calibration_fingerprint=safe_str(calibration_record.get("calibration_fingerprint")),
+        )
+        if receipt
+        else {
+            "valid": False,
+            "blockers": ["test_consumption_receipt_missing"],
+            "receipt_sha256": "",
+            "candidate_id": "",
+            "evaluation_dataset_fingerprint": "",
+        }
+    )
+    if not receipt_assessment.get("promotion_eligible"):
+        blockers.extend(receipt_assessment["blockers"])
+        if receipt_assessment["valid"]:
+            blockers.append("test_consumption_receipt_not_pre_evaluation")
+    if receipt and evaluation_reservation and (
+        safe_str(receipt.get("evaluation_reservation_manifest_sha256")).lower()
+        != safe_str(evaluation_reservation.get("manifest_sha256")).lower()
+        or safe_str(receipt.get("test_image_membership_sha256")).lower()
+        != safe_str(evaluation_reservation.get("test_image_membership_sha256")).lower()
+    ):
+        blockers.append("test_consumption_evaluation_reservation_mismatch")
+    ledger = safe_dict(quality.get("test_consumption_ledger"))
+    ledger_assessment = (
+        validate_test_consumption_ledger(
+            ledger,
+            expected_receipt_sha256=safe_str(receipt.get("receipt_sha256")),
+        )
+        if ledger
+        else {
+            "valid": False,
+            "blockers": ["test_consumption_ledger_missing"],
+            "ledger_sha256": "",
+            "entry_count": 0,
+            "recorded_receipt_sha256": [],
+        }
+    )
+    if not ledger_assessment.get("promotion_eligible"):
+        blockers.extend(ledger_assessment["blockers"])
+        if ledger_assessment["valid"]:
+            blockers.append("test_consumption_ledger_not_promotion_eligible")
     calibration_assessment = (
         validate_threshold_calibration(
             calibration_record,
-            dataset_fingerprint=safe_str(dataset_fingerprint or calibration_record.get("dataset_fingerprint")),
+            dataset_fingerprint=safe_str(
+                quality.get("evidence_family_fingerprint")
+                or dataset_fingerprint
+                or calibration_record.get("dataset_fingerprint")
+            ),
             require_promotion_eligible=True,
+            validation_dataset_fingerprint=safe_str(quality.get("validation_dataset_fingerprint")),
+            training_dataset_fingerprint=safe_str(quality.get("training_dataset_fingerprint")),
+            validation_package_sha256=safe_str(evaluation_reservation.get("training_package_sha256")),
+            model_artifact_sha256=safe_str(quality.get("model_artifact_sha256")),
         )
         if calibration_record
         else {
@@ -393,6 +552,10 @@ def assess_model_promotion(
         "thresholds": limits,
         "blockers": sorted(set(blockers)),
         "ground_truth_attestation": attestation,
+        "evidence_integrity": integrity,
+        "evaluation_reservation_manifest": reservation_assessment,
+        "test_consumption_receipt": receipt_assessment,
+        "test_consumption_ledger": ledger_assessment,
         "threshold_calibration": calibration_assessment,
         "baseline_comparison": baseline_assessment,
         "evaluation_scope": scope,
@@ -414,6 +577,7 @@ def build_model_manifest(
     classes: Dict[int | str, str],
     quality_report: Dict[str, Any],
     dataset_fingerprint: str,
+    evaluation_dataset_fingerprint: str = "",
     approved_by: str,
     thresholds: Optional[Dict[str, Any]] = None,
     required_classes: Optional[Sequence[str]] = None,
@@ -433,16 +597,26 @@ def build_model_manifest(
     evaluated_classes = list(required_classes) if required_classes is not None else sorted(
         {label for label in model_classes.values() if label != "background"}
     )
+    training_fingerprint = safe_str(dataset_fingerprint).lower()
+    evaluation_fingerprint = safe_str(evaluation_dataset_fingerprint or dataset_fingerprint).lower()
+    artifact_sha256 = file_sha256(path)
     promotion = assess_model_promotion(
         quality_report,
         thresholds=thresholds,
         required_classes=evaluated_classes,
-        dataset_fingerprint=dataset_fingerprint,
+        dataset_fingerprint=evaluation_fingerprint,
     )
     blockers = list(safe_list(promotion.get("blockers")))
-    fingerprint = safe_str(dataset_fingerprint).lower()
-    if len(fingerprint) != 64 or any(character not in "0123456789abcdef" for character in fingerprint):
+    if safe_str(safe_dict(quality_report).get("model_artifact_sha256")).lower() != artifact_sha256:
+        blockers.append("evaluation_model_artifact_fingerprint_mismatch")
+    if len(training_fingerprint) != 64 or any(
+        character not in "0123456789abcdef" for character in training_fingerprint
+    ):
         blockers.append("training_dataset_fingerprint_invalid")
+    if len(evaluation_fingerprint) != 64 or any(
+        character not in "0123456789abcdef" for character in evaluation_fingerprint
+    ):
+        blockers.append("evaluation_dataset_fingerprint_invalid")
     if not safe_str(approved_by):
         blockers.append("model_approver_missing")
     if not safe_str(model_license):
@@ -472,7 +646,7 @@ def build_model_manifest(
         "adapter": adapter,
         "artifact": {
             "weights_path": weights_path or path.name,
-            "weights_sha256": file_sha256(path),
+            "weights_sha256": artifact_sha256,
         },
         "classes": model_classes,
         "input": {
@@ -495,7 +669,9 @@ def build_model_manifest(
             "tile_overlap": 0.2,
         },
         "provenance": {
-            "dataset_fingerprint": fingerprint,
+            "dataset_fingerprint": training_fingerprint,
+            "training_dataset_fingerprint": training_fingerprint,
+            "evaluation_dataset_fingerprint": evaluation_fingerprint,
             "training_code_revision": safe_str(training_code_revision),
             "model_license": safe_str(model_license),
         },

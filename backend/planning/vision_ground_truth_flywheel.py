@@ -18,6 +18,8 @@ COVERAGE_VERSION = "civora_vision_ground_truth_coverage_v1"
 WORKSPACE_VERSION = "civora_vision_review_workspace_v1"
 SPLIT_REGISTRY_VERSION = "civora_vision_split_registry_v1"
 CLASS_READINESS_VERSION = "civora_vision_class_readiness_v1"
+PRIVACY_AGGREGATE_VERSION = "civora_vision_privacy_safe_correction_aggregate_v1"
+LEARNING_CONSENT_VERSION = "civora_vision_learning_consent_v1"
 EVENT_HASH_CANONICALIZATION = "json_browser_numeric_v1"
 
 GROUND_TRUTH_ACTIONS = {
@@ -34,6 +36,17 @@ GROUND_TRUTH_ACTIONS = {
 POSITIVE_ACTIONS = {"accept", "correct", "reclassify", "redraw", "merge", "split"}
 DEFAULT_SPLIT_SEED = "civora-ground-truth-v1"
 DEFAULT_CLASS_TARGET = 500
+PRIVACY_SAFE_ACTIONS = frozenset(GROUND_TRUTH_ACTIONS)
+PRIVACY_SAFE_CLASSES = frozenset(TRAINABLE_FEATURE_TYPES)
+PRIVACY_SAFE_RIGHTS_BLOCKERS = frozenset(
+    {
+        "source_imagery_missing_license",
+        "source_imagery_storage_rights_not_confirmed",
+        "source_imagery_training_rights_not_confirmed",
+        "source_label_missing_license",
+        "source_label_training_rights_not_confirmed",
+    }
+)
 
 
 def _now_iso() -> str:
@@ -760,6 +773,17 @@ def build_ground_truth_coverage(
             "target_ready": not blockers,
             "blockers": blockers,
         }
+    source_dataset_count = max(0, int(safe_float(dataset.get("source_dataset_count"))))
+    consent_validated_count = max(0, int(safe_float(dataset.get("learning_consent_validated_count"))))
+    consent_required = dataset.get("learning_consent_required") is True
+    consent_ready = (
+        consent_required
+        and source_dataset_count > 0
+        and consent_validated_count == source_dataset_count
+        and dataset.get("export_ready") is True
+    )
+    privacy_aggregate = build_privacy_safe_correction_aggregate([dataset])
+    privacy_validation = validate_privacy_safe_correction_aggregate(privacy_aggregate)
     return {
         "version": COVERAGE_VERSION,
         "required_classes": required,
@@ -770,6 +794,12 @@ def build_ground_truth_coverage(
         "season_count": len(all_seasons),
         "imagery_quality_band_count": len(all_quality_bands),
         "license_count": len(licenses),
+        "source_dataset_count": source_dataset_count,
+        "learning_consent_required": consent_required,
+        "learning_consent_validated_count": consent_validated_count,
+        "learning_consent_ready": consent_ready,
+        "privacy_safe_aggregate": privacy_aggregate,
+        "privacy_safe_aggregate_validation": privacy_validation,
         "model_promotion_implied": False,
         "truth_label": (
             "Coverage targets describe the evidence still needed for robust model development. Meeting a count target "
@@ -778,8 +808,48 @@ def build_ground_truth_coverage(
     }
 
 
-def merge_ground_truth_datasets(datasets: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+def validate_learning_consent(consent: Dict[str, Any], *, dataset_fingerprint: str) -> Dict[str, Any]:
+    rec = safe_dict(consent)
+    blockers: List[str] = []
+    if safe_str(rec.get("version")) != LEARNING_CONSENT_VERSION:
+        blockers.append("learning_consent_record_missing")
+    if safe_str(rec.get("status")) != "granted":
+        blockers.append("learning_consent_not_granted")
+    scopes = {safe_str(item) for item in safe_list(rec.get("scopes")) if safe_str(item)}
+    if "model_training" not in scopes:
+        blockers.append("model_training_consent_scope_missing")
+    if "cross_project_aggregation" not in scopes:
+        blockers.append("cross_project_aggregation_consent_scope_missing")
+    if safe_str(rec.get("dataset_fingerprint")) != safe_str(dataset_fingerprint):
+        blockers.append("learning_consent_dataset_mismatch")
+    if safe_str(rec.get("granted_by_role")) not in {"data_owner", "company_admin"}:
+        blockers.append("learning_consent_authority_missing")
+    if not safe_str(rec.get("granted_at")):
+        blockers.append("learning_consent_timestamp_missing")
+    if rec.get("revocable") is not True:
+        blockers.append("learning_consent_not_revocable")
+    if rec.get("private_identifiers_exported") is not False:
+        blockers.append("learning_consent_private_identifier_boundary_missing")
+    return {
+        "valid": not blockers,
+        "blockers": sorted(set(blockers)),
+        "dataset_fingerprint": safe_str(dataset_fingerprint),
+        "scopes": sorted(scopes),
+    }
+
+
+def merge_ground_truth_datasets(
+    datasets: Iterable[Dict[str, Any]],
+    *,
+    learning_consents: Optional[Iterable[Dict[str, Any]]] = None,
+    require_learning_consent: bool = True,
+) -> Dict[str, Any]:
     inputs = [safe_dict(item) for item in datasets if safe_dict(item)]
+    consents_by_fingerprint = {
+        safe_str(safe_dict(item).get("dataset_fingerprint")): safe_dict(item)
+        for item in learning_consents or []
+        if safe_str(safe_dict(item).get("dataset_fingerprint"))
+    }
     blockers: List[str] = []
     assignments: Dict[str, str] = {}
     examples_by_id: Dict[str, Dict[str, Any]] = {}
@@ -808,6 +878,14 @@ def merge_ground_truth_datasets(datasets: Iterable[Dict[str, Any]]) -> Dict[str,
         source_fingerprint = safe_str(dataset.get("dataset_fingerprint"))
         if source_fingerprint:
             source_fingerprints.append(source_fingerprint)
+        if require_learning_consent:
+            consent_validation = validate_learning_consent(
+                consents_by_fingerprint.get(source_fingerprint, {}),
+                dataset_fingerprint=source_fingerprint,
+            )
+            blockers.extend(
+                f"source_dataset_{index}:{item}" for item in consent_validation["blockers"]
+            )
         registry = safe_dict(dataset.get("split_registry"))
         for frame_id, split in safe_dict(registry.get("assignments")).items():
             normalized_frame_id = safe_str(frame_id)
@@ -854,7 +932,8 @@ def merge_ground_truth_datasets(datasets: Iterable[Dict[str, Any]]) -> Dict[str,
         "package_scope": "multi_project_aggregate",
         "generated_at": _now_iso(),
         "source_dataset_fingerprints": sorted(set(source_fingerprints)),
-        "source_dataset_count": len(inputs),
+        "source_dataset_count": len(set(source_fingerprints)),
+        "source_input_file_count": len(inputs),
         "examples": examples,
         "negative_frames": negatives,
         "annotation_count": len(examples),
@@ -876,6 +955,15 @@ def merge_ground_truth_datasets(datasets: Iterable[Dict[str, Any]]) -> Dict[str,
         "export_ready": not blockers,
         "export_blockers": sorted(set(blockers)),
         "promotion_eligible": False,
+        "learning_consent_required": require_learning_consent,
+        "learning_consent_validated_count": sum(
+            1
+            for fingerprint in set(source_fingerprints)
+            if validate_learning_consent(
+                consents_by_fingerprint.get(fingerprint, {}),
+                dataset_fingerprint=fingerprint,
+            )["valid"]
+        ),
         "truth_label": (
             "This aggregate combines reviewed labels without image bytes and preserves permanent frame splits. It is "
             "training input only; independent evaluation and human model approval remain separate gates."
@@ -883,6 +971,124 @@ def merge_ground_truth_datasets(datasets: Iterable[Dict[str, Any]]) -> Dict[str,
     }
     payload["dataset_fingerprint"] = ground_truth_dataset_fingerprint(payload)
     return payload
+
+
+def build_privacy_safe_correction_aggregate(datasets: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    inputs = [safe_dict(item) for item in datasets if safe_dict(item)]
+    counts_by_action: Dict[str, int] = {}
+    counts_by_class: Dict[str, int] = {}
+    counts_by_split: Dict[str, int] = {"train": 0, "validation": 0, "test": 0}
+    rights_blocker_counts: Dict[str, int] = {}
+    eligible_annotation_count = 0
+    blocked_annotation_count = 0
+    negative_frame_count = 0
+    for dataset in inputs:
+        negative_frame_count += max(0, int(safe_float(dataset.get("negative_frame_count"))))
+        for item in safe_list(dataset.get("examples")):
+            rec = safe_dict(item)
+            raw_action = safe_str(rec.get("review_action"))
+            raw_feature_type = safe_str(rec.get("feature_type"))
+            action = raw_action if raw_action in PRIVACY_SAFE_ACTIONS else "unknown"
+            feature_type = raw_feature_type if raw_feature_type in PRIVACY_SAFE_CLASSES else "unknown"
+            split = safe_str(rec.get("split"))
+            counts_by_action[action] = counts_by_action.get(action, 0) + 1
+            counts_by_class[feature_type] = counts_by_class.get(feature_type, 0) + 1
+            if split in counts_by_split:
+                counts_by_split[split] += 1
+            blockers = [safe_str(value) for value in safe_list(rec.get("blockers")) if safe_str(value)]
+            if blockers:
+                blocked_annotation_count += 1
+            else:
+                eligible_annotation_count += 1
+            for blocker in blockers:
+                if blocker in PRIVACY_SAFE_RIGHTS_BLOCKERS:
+                    key = blocker
+                elif "rights" in blocker or "license" in blocker:
+                    key = "other_rights_or_license_blocker"
+                else:
+                    continue
+                rights_blocker_counts[key] = rights_blocker_counts.get(key, 0) + 1
+    payload = {
+        "version": PRIVACY_AGGREGATE_VERSION,
+        "generated_at": _now_iso(),
+        "source_dataset_count": len(inputs),
+        "annotation_count": eligible_annotation_count + blocked_annotation_count,
+        "eligible_annotation_count": eligible_annotation_count,
+        "blocked_annotation_count": blocked_annotation_count,
+        "negative_frame_count": negative_frame_count,
+        "counts_by_action": dict(sorted(counts_by_action.items())),
+        "counts_by_class": dict(sorted(counts_by_class.items())),
+        "counts_by_split": counts_by_split,
+        "rights_blocker_counts": dict(sorted(rights_blocker_counts.items())),
+        "contains_image_bytes": False,
+        "contains_geometry": False,
+        "contains_addresses": False,
+        "contains_source_urls": False,
+        "contains_project_or_reviewer_identifiers": False,
+        "model_training_input": False,
+        "visible_detection_influence": False,
+        "truth_label": (
+            "This aggregate contains correction counts only. It omits imagery, geometry, locations, source URLs, "
+            "project IDs, candidate IDs, and reviewer identities, and cannot be used as model training input."
+        ),
+    }
+    payload["aggregate_fingerprint"] = _sha256(
+        {key: value for key, value in payload.items() if key not in {"generated_at", "truth_label"}}
+    )
+    return payload
+
+
+def validate_privacy_safe_correction_aggregate(payload: Dict[str, Any]) -> Dict[str, Any]:
+    rec = safe_dict(payload)
+    blockers: List[str] = []
+    if safe_str(rec.get("version")) != PRIVACY_AGGREGATE_VERSION:
+        blockers.append("privacy_safe_correction_aggregate_missing")
+    for field in (
+        "contains_image_bytes",
+        "contains_geometry",
+        "contains_addresses",
+        "contains_source_urls",
+        "contains_project_or_reviewer_identifiers",
+        "model_training_input",
+        "visible_detection_influence",
+    ):
+        if rec.get(field) is not False:
+            blockers.append(f"privacy_safe_correction_boundary_invalid:{field}")
+    allowed_fields = {
+        "version",
+        "generated_at",
+        "source_dataset_count",
+        "annotation_count",
+        "eligible_annotation_count",
+        "blocked_annotation_count",
+        "negative_frame_count",
+        "counts_by_action",
+        "counts_by_class",
+        "counts_by_split",
+        "rights_blocker_counts",
+        "contains_image_bytes",
+        "contains_geometry",
+        "contains_addresses",
+        "contains_source_urls",
+        "contains_project_or_reviewer_identifiers",
+        "model_training_input",
+        "visible_detection_influence",
+        "truth_label",
+        "aggregate_fingerprint",
+    }
+    unexpected_fields = sorted(set(rec) - allowed_fields)
+    blockers.extend(f"privacy_safe_correction_unexpected_field:{field}" for field in unexpected_fields)
+    expected_fingerprint = _sha256(
+        {key: value for key, value in rec.items() if key not in {"generated_at", "truth_label", "aggregate_fingerprint"}}
+    )
+    if safe_str(rec.get("aggregate_fingerprint")) != expected_fingerprint:
+        blockers.append("privacy_safe_correction_aggregate_fingerprint_mismatch")
+    return {
+        "valid": not blockers,
+        "blockers": sorted(set(blockers)),
+        "aggregate_fingerprint": expected_fingerprint,
+        "storage_scope": "aggregate_counts_only_no_private_identifiers",
+    }
 
 
 def _confidence_number(value: Any) -> Optional[float]:
@@ -1072,6 +1278,8 @@ __all__ = [
     "COVERAGE_VERSION",
     "DATASET_VERSION",
     "LEDGER_VERSION",
+    "LEARNING_CONSENT_VERSION",
+    "PRIVACY_AGGREGATE_VERSION",
     "SPLIT_REGISTRY_VERSION",
     "WORKSPACE_VERSION",
     "append_ground_truth_review_event",
@@ -1080,10 +1288,13 @@ __all__ = [
     "build_class_model_readiness",
     "build_ground_truth_coverage",
     "build_ground_truth_dataset",
+    "build_privacy_safe_correction_aggregate",
     "build_split_registry",
     "build_vision_review_workspace",
     "ground_truth_dataset_fingerprint",
     "merge_ground_truth_datasets",
+    "validate_learning_consent",
+    "validate_privacy_safe_correction_aggregate",
     "verify_ground_truth_dataset",
     "verify_ground_truth_ledger",
 ]

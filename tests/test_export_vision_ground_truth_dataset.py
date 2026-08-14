@@ -8,7 +8,11 @@ import sys
 import tempfile
 import unittest
 
-from backend.planning.vision_ground_truth_flywheel import DATASET_VERSION, ground_truth_dataset_fingerprint
+from backend.planning.vision_ground_truth_flywheel import (
+    DATASET_VERSION,
+    LEARNING_CONSENT_VERSION,
+    ground_truth_dataset_fingerprint,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +46,19 @@ def _dataset() -> dict:
     return dataset
 
 
+def _consent(dataset: dict) -> dict:
+    return {
+        "version": LEARNING_CONSENT_VERSION,
+        "status": "granted",
+        "scopes": ["model_training", "cross_project_aggregation"],
+        "dataset_fingerprint": dataset["dataset_fingerprint"],
+        "granted_by_role": "company_admin",
+        "granted_at": "2026-08-13T00:00:00Z",
+        "revocable": True,
+        "private_identifiers_exported": False,
+    }
+
+
 class ExportVisionGroundTruthDatasetTests(unittest.TestCase):
     def test_cli_merges_deduplicates_and_writes_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -50,8 +67,12 @@ class ExportVisionGroundTruthDatasetTests(unittest.TestCase):
             second = temp / "second.json"
             output = temp / "merged.json"
             coverage = temp / "coverage.json"
-            first.write_text(json.dumps(_dataset()), encoding="utf-8")
-            second.write_text(json.dumps(_dataset()), encoding="utf-8")
+            privacy = temp / "privacy.json"
+            dataset = _dataset()
+            first.write_text(json.dumps(dataset), encoding="utf-8")
+            second.write_text(json.dumps(dataset), encoding="utf-8")
+            consent = temp / "consent.json"
+            consent.write_text(json.dumps(_consent(dataset)), encoding="utf-8")
 
             completed = subprocess.run(
                 [
@@ -63,6 +84,10 @@ class ExportVisionGroundTruthDatasetTests(unittest.TestCase):
                     str(output),
                     "--coverage-output",
                     str(coverage),
+                    "--privacy-aggregate-output",
+                    str(privacy),
+                    "--learning-consent",
+                    str(consent),
                 ],
                 cwd=ROOT,
                 capture_output=True,
@@ -73,9 +98,14 @@ class ExportVisionGroundTruthDatasetTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             merged = json.loads(output.read_text(encoding="utf-8"))
             coverage_report = json.loads(coverage.read_text(encoding="utf-8"))
+            privacy_report = json.loads(privacy.read_text(encoding="utf-8"))
             self.assertEqual(merged["annotation_count"], 1)
             self.assertEqual(merged["counts_by_split"], {"test": 0, "train": 1, "validation": 0})
             self.assertIn("building_footprint", coverage_report["blocked_classes"])
+            self.assertTrue(coverage_report["learning_consent_ready"])
+            self.assertTrue(coverage_report["privacy_safe_aggregate_validation"]["valid"])
+            self.assertFalse(privacy_report["contains_project_or_reviewer_identifiers"])
+            self.assertNotIn("annotation-1", json.dumps(privacy_report))
 
     def test_cli_fails_closed_on_permanent_split_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -91,9 +121,24 @@ class ExportVisionGroundTruthDatasetTests(unittest.TestCase):
             conflicting["examples"][0]["split"] = "test"
             conflicting["dataset_fingerprint"] = ground_truth_dataset_fingerprint(conflicting)
             second.write_text(json.dumps(conflicting), encoding="utf-8")
+            first_consent = temp / "first-consent.json"
+            second_consent = temp / "second-consent.json"
+            first_consent.write_text(json.dumps(_consent(_dataset())), encoding="utf-8")
+            second_consent.write_text(json.dumps(_consent(conflicting)), encoding="utf-8")
 
             completed = subprocess.run(
-                [sys.executable, str(SCRIPT), str(first), str(second), "--output", str(output)],
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    str(first),
+                    str(second),
+                    "--output",
+                    str(output),
+                    "--learning-consent",
+                    str(first_consent),
+                    "--learning-consent",
+                    str(second_consent),
+                ],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,

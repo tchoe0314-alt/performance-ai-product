@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
+from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
 
 import numpy as np
@@ -40,7 +42,22 @@ class FeatureDetectionEngine:
 
     def detect(self, image_path: str) -> FeatureDetectionResult:
         try:
-            image = Image.open(image_path).convert("RGB")
+            image_bytes = Path(image_path).read_bytes()
+        except Exception as exc:
+            return FeatureDetectionResult(
+                success=False,
+                message=f"Unable to open image: {exc}",
+                image_width=0,
+                image_height=0,
+                detections=[],
+                warnings=["Image could not be read."],
+                meta={},
+            )
+        return self.detect_bytes(image_bytes)
+
+    def detect_bytes(self, image_bytes: bytes) -> FeatureDetectionResult:
+        try:
+            image = Image.open(BytesIO(image_bytes)).convert("RGB")
         except Exception as exc:
             return FeatureDetectionResult(
                 success=False,
@@ -104,8 +121,7 @@ class FeatureDetectionEngine:
             ("driveway", driveway_mask, min_area),
             ("sidewalk", light_mask, min_area),
             ("open_space", green_mask, min_area),
-            ("basin", blue_mask, min_area),
-            ("pool", blue_mask, min_area),
+            ("surface_water", blue_mask, min_area),
         ):
             # Merge nearby fragments before component extraction so adjacent detections become a single shape.
             if kind in {"road", "parking", "driveway", "sidewalk", "open_space", "building"}:

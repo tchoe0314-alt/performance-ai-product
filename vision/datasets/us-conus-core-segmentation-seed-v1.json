@@ -12,7 +12,7 @@
     },
     {
       "category_id": 3,
-      "category_name": "water",
+      "category_name": "surface_water",
       "feature_type": "water/pond/basin",
       "source_id": "usgs_nhd_surface_water"
     }
@@ -32,7 +32,7 @@
     "minimum_proposals_per_class_per_split": {
       "building": 5,
       "road": 5,
-      "water": 1
+      "surface_water": 1
     }
   },
   "split_policy": {

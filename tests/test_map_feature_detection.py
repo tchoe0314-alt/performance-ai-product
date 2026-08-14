@@ -257,6 +257,21 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertFalse(draft["construction_release_allowed"])
         self.assertEqual(draft["audit_trail"][0]["action"], "accepted_candidate_as_draft")
 
+    def test_visible_surface_water_never_silently_becomes_engineered_basin(self) -> None:
+        report = build_map_feature_detection_report(
+            image_detections=[
+                {"kind": "surface_water", "bbox": [10, 20, 40, 50], "confidence": 0.72},
+            ]
+        )
+
+        draft = accept_feature_candidate_as_draft_object(report["feature_candidates"][0])
+
+        self.assertEqual(draft["object_type"], "surface_water_candidate")
+        self.assertTrue(draft["engineering_classification_required"])
+        self.assertIn("detention_basin", draft["allowed_reclassifications"])
+        self.assertIn("stream", draft["allowed_reclassifications"])
+        self.assertIn("unclassified", draft["truth_label"])
+
     def test_accepted_source_building_preserves_height_and_source_properties(self) -> None:
         report = build_map_feature_detection_report(
             gis_layers={

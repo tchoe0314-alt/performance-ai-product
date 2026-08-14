@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import hashlib
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -10,16 +11,24 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request
 from unittest.mock import MagicMock, patch
+from PIL import Image
 
 from backend.planning.vision_ground_truth_flywheel import (
     DATASET_VERSION,
     LEDGER_VERSION,
     verify_ground_truth_ledger,
 )
+from backend.planning.vision_evidence_integrity import (
+    build_frozen_split_manifest,
+    build_held_out_test_commitment,
+    coco_dataset_fingerprint,
+)
 from backend.planning.vision_public_bootstrap import (
     build_geographic_tile_grid,
     build_public_review_sprint,
+    build_scoped_weak_supervision_package,
     build_weak_supervision_package,
+    merge_weak_supervision_packages,
     verify_public_review_sprint,
     verify_weak_supervision_package,
     weak_supervision_package_fingerprint,
@@ -32,14 +41,24 @@ from backend.scripts.apply_public_vision_review_decisions import (
 )
 from backend.scripts.bootstrap_public_vision_dataset import (
     _buffer_line_feature,
+    _collect_additional_label_sets,
     _open_source_request,
+    _restore_verified_imagery_tile,
     _select_usgs_records,
     _usgs_export_url,
+    _write_imagery_tile_checkpoint,
 )
+from backend.scripts.bootstrap_public_vision_collection import verify_resumable_region
 from backend.scripts.merge_public_vision_datasets import merge_public_vision_packages
 
 
 REGISTRY_FINGERPRINT = "f" * 64
+
+
+def _png_bytes(*, size: tuple[int, int]) -> bytes:
+    output = io.BytesIO()
+    Image.new("RGB", size, (90, 120, 80)).save(output, format="PNG")
+    return output.getvalue()
 
 
 def _source_record(*, source_id: str, source_role: str, license_name: str):
@@ -141,6 +160,128 @@ def _decisions(sprint, rows):
 
 
 class PublicVisionReviewSprintTests(unittest.TestCase):
+    def test_split_scoped_packages_physically_separate_training_and_frozen_test(self) -> None:
+        first, _ = _review_sprint()
+        first["images"][0]["split"] = "train"
+        first["images"][0]["geography_id"] = "train-city"
+        first["splits"] = {"train": [1], "validation": [], "test": []}
+        first["dataset_fingerprint"] = weak_supervision_package_fingerprint(first)
+        second = deepcopy(first)
+        second["images"][0].update({
+            "imagery_frame_id": "test-frame",
+            "source_sha256": "b" * 64,
+            "split": "test",
+            "geography_id": "test-city",
+        })
+        second["splits"] = {"train": [], "validation": [], "test": [1]}
+        second["dataset_fingerprint"] = weak_supervision_package_fingerprint(second)
+        merged = merge_weak_supervision_packages(
+            [first, second],
+            source_names=["train-city", "test-city"],
+            split_policy={
+                "strategy": "geography_disjoint",
+                "grouping_field": "geography_id",
+                "required_splits": ["train", "test"],
+                "test_split_frozen": True,
+            },
+        )
+        merged["images"][0]["hidden_test_labels"] = [{"category_id": 1}]
+        merged["annotations"][0]["hidden_test_geography"] = "test-city"
+        merged["categories"][0]["hidden_test_count"] = 12
+        merged["source_datasets"][0]["hidden_test_summary"] = "test-city"
+        merged["label_source_status"].append(
+            {
+                "source_dataset": "train-city",
+                "source_id": "fixture-source",
+                "status": "ready",
+                "fallback_used": False,
+                "feature_count": 1,
+                "hidden_test_status": "test-city",
+            }
+        )
+        merged["review_candidates"]["features"][0]["properties"]["hidden_test_status"] = "test-city"
+        merged["split_policy"]["hidden_test_labels"] = [1, 2, 3]
+        merged["licenses"][0]["hidden_test_location"] = "test-city"
+        merged["dataset_fingerprint"] = weak_supervision_package_fingerprint(merged)
+        merged["coco_evidence_fingerprint"] = coco_dataset_fingerprint(merged)
+        merged["frozen_split_manifest"] = build_frozen_split_manifest(merged)
+
+        training = build_scoped_weak_supervision_package(
+            merged,
+            included_splits=("train",),
+            dataset_role="training_and_validation",
+        )
+        test = build_scoped_weak_supervision_package(
+            merged,
+            included_splits=("test",),
+            dataset_role="frozen_test",
+        )
+
+        self.assertEqual({item["split"] for item in training["images"]}, {"train"})
+        self.assertEqual(training["splits"]["test"], [])
+        self.assertFalse(training["test_records_in_package"])
+        encoded_training = json.dumps(training)
+        self.assertNotIn("hidden_test_labels", encoded_training)
+        self.assertNotIn("hidden_test_geography", encoded_training)
+        self.assertNotIn("hidden_test_count", encoded_training)
+        self.assertNotIn("hidden_test_summary", encoded_training)
+        self.assertNotIn("hidden_test_status", encoded_training)
+        self.assertNotIn("hidden_test_location", encoded_training)
+        self.assertEqual(
+            training["held_out_test_manifest"]["test_image_membership_sha256"],
+            build_held_out_test_commitment(merged["frozen_split_manifest"])[
+                "test_image_membership_sha256"
+            ],
+        )
+        self.assertNotIn("test_annotation_count", training["held_out_test_manifest"])
+        self.assertEqual({item["split"] for item in test["images"]}, {"test"})
+        self.assertEqual(test["splits"]["train"], [])
+        self.assertFalse(test["training_records_in_package"])
+        self.assertTrue(verify_weak_supervision_package(training)["valid"])
+        self.assertTrue(verify_weak_supervision_package(test)["valid"])
+
+    def test_optional_label_source_outage_is_recorded_without_fabricating_fallback(self) -> None:
+        source_id = "usgs_nhd_surface_water"
+        source_registry = {
+            source_id: {
+                "source_role": "weak_label_proposals_only",
+                "name": "USGS National Hydrography Dataset",
+                "source_url": "https://www.usgs.gov/national-hydrography",
+                "service_url": "https://hydro.nationalmap.gov/arcgis/rest/services/nhd/MapServer",
+                "service_layers": [{"layer_id": 9}, {"layer_id": 12}],
+                "license": "public-domain",
+                "license_url": "https://www.usgs.gov/license",
+                "rights": {
+                    "training_use_allowed": True,
+                    "storage_allowed": True,
+                    "derivative_labels_allowed": True,
+                    "redistribution_allowed": True,
+                },
+            }
+        }
+        with patch(
+            "backend.scripts.bootstrap_public_vision_dataset._query_arcgis_geojson_features",
+            side_effect=SystemExit("Approved source returned HTTP 500; no fallback source was used."),
+        ) as query:
+            label_sets, statuses = _collect_additional_label_sets(
+                source_configs=[{
+                    "source_id": source_id,
+                    "category_id": 3,
+                    "category_name": "surface_water",
+                    "feature_type": "water/pond/basin",
+                }],
+                source_registry=source_registry,
+                registry_fingerprint=REGISTRY_FINGERPRINT,
+                bbox={"west": -123, "south": 47, "east": -122, "north": 48},
+            )
+
+        self.assertEqual(query.call_count, 2)
+        self.assertEqual(label_sets[0]["features"], [])
+        self.assertEqual(statuses[0]["status"], "unavailable")
+        self.assertEqual(statuses[0]["feature_count"], 0)
+        self.assertFalse(statuses[0]["fallback_used"])
+        self.assertEqual(len(statuses[0]["blockers"]), 2)
+
     def test_buffered_road_centerline_becomes_one_closed_review_corridor(self) -> None:
         buffered = _buffer_line_feature(
             {
@@ -237,6 +378,76 @@ class PublicVisionReviewSprintTests(unittest.TestCase):
         ), patch("backend.scripts.bootstrap_public_vision_dataset.time.sleep"):
             with self.assertRaisesRegex(SystemExit, "after 3 attempts; no fallback source was used"):
                 _open_source_request(request, timeout=5, attempts=3)
+
+    def test_source_request_honors_bounded_retry_after(self) -> None:
+        request = Request("https://imagery.nationalmap.gov/approved")
+        failure = HTTPError(request.full_url, 429, "Too Many Requests", {"Retry-After": "60"}, None)
+        response = MagicMock()
+        with patch(
+            "backend.scripts.bootstrap_public_vision_dataset.urlopen",
+            side_effect=[failure, response],
+        ), patch("backend.scripts.bootstrap_public_vision_dataset.time.sleep") as sleep:
+            result = _open_source_request(request, timeout=5, attempts=2)
+
+        self.assertIs(result, response)
+        sleep.assert_called_once_with(15.0)
+
+    def test_interrupted_region_reuses_only_checksum_verified_imagery_tile(self) -> None:
+        tile = build_geographic_tile_grid(
+            center_longitude=-96.237,
+            center_latitude=41.185,
+            rows=1,
+            columns=1,
+            tile_meters=320,
+            image_pixels=32,
+            permanent_split="train",
+        )[0]
+        tile.update(
+            {
+                "sha256": "",
+                "source_url": (
+                    "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/"
+                    "ImageServer/exportImage?mosaicRule=locked"
+                ),
+                "source_item_ids": [123],
+                "source_item_names": ["NAIP fixture"],
+                "geography_id": "gretna_ne",
+            }
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / tile["file_name"]
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(_png_bytes(size=(32, 32)))
+            tile["sha256"] = hashlib.sha256(destination.read_bytes()).hexdigest()
+            checkpoint = root / "tile.json"
+            _write_imagery_tile_checkpoint(tile, checkpoint)
+            expected = dict(tile)
+            restored = {
+                key: value
+                for key, value in tile.items()
+                if key not in {"sha256", "source_url", "source_item_ids", "source_item_names", "geography_id"}
+            }
+
+            self.assertTrue(
+                _restore_verified_imagery_tile(
+                    restored,
+                    destination=destination,
+                    checkpoint_path=checkpoint,
+                    image_pixels=32,
+                )
+            )
+            self.assertEqual(restored, expected)
+
+            destination.write_bytes(b"tampered")
+            self.assertFalse(
+                _restore_verified_imagery_tile(
+                    dict(restored),
+                    destination=destination,
+                    checkpoint_path=checkpoint,
+                    image_pixels=32,
+                )
+            )
 
     def test_gallery_renders_registered_frames_and_truthful_review_controls(self) -> None:
         _, sprint = _review_sprint()
@@ -361,10 +572,85 @@ class PublicVisionReviewSprintTests(unittest.TestCase):
 
             self.assertTrue(verify_weak_supervision_package(merged)["valid"])
             self.assertEqual(merged["source_datasets"][0]["dataset_fingerprint"], package["dataset_fingerprint"])
+            self.assertEqual(
+                merged["coco_evidence_fingerprint"],
+                coco_dataset_fingerprint(merged),
+            )
+            self.assertEqual(
+                merged["frozen_split_manifest"],
+                build_frozen_split_manifest(merged),
+            )
             self.assertEqual(merged["images"][0]["file_name"], "gretna/naip-r00-c00.png")
             self.assertEqual(
                 (Path(result["image_root"]) / merged["images"][0]["file_name"]).read_bytes(),
                 image_bytes,
+            )
+
+    def test_resume_region_requires_verified_package_manifest_split_and_image(self) -> None:
+        package, _ = _review_sprint()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_root = root / "images"
+            image_root.mkdir()
+            image_path = image_root / package["images"][0]["file_name"]
+            image_path.write_bytes(b"resume-image")
+            package["images"][0]["source_sha256"] = hashlib.sha256(image_path.read_bytes()).hexdigest()
+            package["images"][0]["split"] = "train"
+            package["splits"] = {"train": [package["images"][0]["id"]], "validation": [], "test": []}
+            package["geography_id"] = "gretna_ne"
+            package["image_root"] = str(image_root)
+            package["label_source_status"] = [
+                {
+                    "source_id": item["source_id"],
+                    "status": "ready",
+                    "feature_count": 1,
+                    "blockers": [],
+                    "fallback_used": False,
+                }
+                for item in package["licenses"]
+                if item.get("source_role") == "weak_label_proposals_only"
+            ]
+            package["dataset_fingerprint"] = weak_supervision_package_fingerprint(package)
+            (root / "weak-coco-package.json").write_text(json.dumps(package), encoding="utf-8")
+            (root / "source-manifest.json").write_text(
+                json.dumps({"dataset_fingerprint": package["dataset_fingerprint"]}),
+                encoding="utf-8",
+            )
+
+            verified = verify_resumable_region(root, geography_id="gretna_ne", expected_split="train")
+            self.assertTrue(verified["valid"])
+
+            image_path.unlink()
+            rejected = verify_resumable_region(root, geography_id="gretna_ne", expected_split="train")
+            self.assertFalse(rejected["valid"])
+            self.assertIn("completed_region_image_file_missing", rejected["blockers"])
+
+    def test_resume_region_rejects_legacy_package_without_source_status_evidence(self) -> None:
+        package, _ = _review_sprint()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image_root = root / "images"
+            image_root.mkdir()
+            image_path = image_root / package["images"][0]["file_name"]
+            image_path.write_bytes(b"resume-image")
+            package["images"][0]["source_sha256"] = hashlib.sha256(image_path.read_bytes()).hexdigest()
+            package["images"][0]["split"] = "train"
+            package["splits"] = {"train": [package["images"][0]["id"]], "validation": [], "test": []}
+            package["geography_id"] = "gretna_ne"
+            package["image_root"] = str(image_root)
+            package.pop("label_source_status", None)
+            package["dataset_fingerprint"] = weak_supervision_package_fingerprint(package)
+            (root / "weak-coco-package.json").write_text(json.dumps(package), encoding="utf-8")
+            (root / "source-manifest.json").write_text(
+                json.dumps({"dataset_fingerprint": package["dataset_fingerprint"]}),
+                encoding="utf-8",
+            )
+
+            rejected = verify_resumable_region(root, geography_id="gretna_ne", expected_split="train")
+
+            self.assertFalse(rejected["valid"])
+            self.assertTrue(
+                any(item.startswith("completed_region_label_source_status_missing:") for item in rejected["blockers"])
             )
 
     def test_usgs_selection_requires_exact_latest_usda_naip_records_and_locks_export(self) -> None:
@@ -425,13 +711,13 @@ class PublicVisionReviewSprintTests(unittest.TestCase):
         self.assertFalse(plan["output_policy"]["promotion_eligible"])
         self.assertEqual(
             {item["category_name"] for item in core_plan["additional_label_sources"]},
-            {"road", "water"},
+            {"road", "surface_water"},
         )
         self.assertEqual(core_plan["tile_defaults"]["rows"], 3)
         self.assertEqual(core_plan["tile_defaults"]["columns"], 3)
         self.assertEqual(
             core_plan["coverage_policy"]["minimum_proposals_per_class_per_split"],
-            {"building": 5, "road": 5, "water": 1},
+            {"building": 5, "road": 5, "surface_water": 1},
         )
         self.assertFalse(diagnostic["decision"]["promotion_eligible"])
         self.assertFalse(diagnostic["decision"]["deployed_as_primary"])

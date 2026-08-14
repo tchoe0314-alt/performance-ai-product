@@ -13,6 +13,13 @@ import rasterio
 from PIL import Image
 from rasterio.warp import transform as transform_coordinates
 
+from .vision_evidence_integrity import (
+    assess_coco_evidence_integrity,
+    build_evaluation_reservation_manifest,
+    build_frozen_split_manifest,
+    build_split_scoped_coco_evidence_packages,
+    coco_dataset_fingerprint,
+)
 from .vision_model_lifecycle import COCO_PACKAGE_VERSION
 
 
@@ -147,6 +154,10 @@ def import_spacenet2_building_benchmark(
         "images": images,
         "annotations": annotations,
         "splits": splits,
+        "split_policy": {
+            "strategy": "source_identity_disjoint",
+            "test_split_frozen": True,
+        },
         "region_split_counts": region_split_counts,
         "excluded_examples": exclusions,
         "eligible_image_count": len(images),
@@ -186,18 +197,59 @@ def import_spacenet2_building_benchmark(
             "generalization and does not make detections survey or engineering evidence."
         ),
     }
-    package["dataset_fingerprint"] = _stable_hash(
-        {
-            "categories": package["categories"],
-            "images": images,
-            "annotations": annotations,
-            "splits": splits,
-            "attestation": package["ground_truth_attestation"],
-        }
+    package["dataset_fingerprint"] = coco_dataset_fingerprint(package)
+    package["frozen_split_manifest"] = build_frozen_split_manifest(package)
+    package["evidence_integrity"] = assess_coco_evidence_integrity(
+        package,
+        evaluation_split="test",
+        training_package=package,
+        required_classes=["building"],
     )
+    package["evaluation_eligible"] = package["evidence_integrity"]["evaluation_eligible"]
+    package["promotion_eligible"] = package["evidence_integrity"]["promotion_eligible"]
+    package["promotion_blockers"] = list(package["evidence_integrity"]["blockers"])
     package_path = destination / "spacenet2-buildings-coco.json"
     package_path.write_text(json.dumps(package, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return {**package, "package_path": str(package_path), "image_root": str(image_root)}
+    training_path = destination / "spacenet2-buildings-training-validation-coco.json"
+    evaluation_path = destination / "spacenet2-buildings-frozen-test-coco.json"
+    reservation_path = destination / "spacenet2-buildings-evaluation-reservation.json"
+    split_artifact_blockers: List[str] = []
+    try:
+        scoped = build_split_scoped_coco_evidence_packages(
+            package,
+            required_classes=["building"],
+        )
+    except ValueError as exc:
+        split_artifact_blockers.append(str(exc))
+    else:
+        training_path.write_text(
+            json.dumps(scoped["training_validation"], indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        evaluation_path.write_text(
+            json.dumps(scoped["frozen_test"], indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        reservation = build_evaluation_reservation_manifest(
+            scoped["frozen_test"],
+            scoped["training_validation"],
+            evaluation_package_sha256=_file_sha256(evaluation_path),
+            training_package_sha256=_file_sha256(training_path),
+            required_classes=["building"],
+        )
+        reservation_path.write_text(
+            json.dumps(reservation, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    return {
+        **package,
+        "package_path": str(package_path),
+        "training_validation_package_path": str(training_path) if training_path.is_file() else "",
+        "frozen_test_package_path": str(evaluation_path) if evaluation_path.is_file() else "",
+        "evaluation_reservation_manifest_path": str(reservation_path) if reservation_path.is_file() else "",
+        "split_artifact_blockers": split_artifact_blockers,
+        "image_root": str(image_root),
+    }
 
 
 def _discover_regions(source: Path) -> List[Path]:

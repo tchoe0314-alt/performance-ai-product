@@ -37,6 +37,12 @@ metrics file contains only counts, per-class agreement/IoU summaries, timestamps
 imagery bytes, source URLs, addresses, bounding boxes, coordinates, or shadow geometry. Agreement between two detectors
 is not an accuracy measurement and cannot promote a model.
 
+Persisted shadow evidence uses `civora_vision_shadow_metrics_v2`, declares the aggregate-only storage scope, and carries
+a SHA-256 integrity checksum. Readiness remains blocked until health proves a valid record was restored after a real
+process restart. Missing, unreadable, version-mismatched, scope-mismatched, or tampered records are rejected.
+Repository tests create the record in one Python process and restore it in a second independent process. That proves the
+software path, not a hosted volume. A deployment still needs a mounted persistent volume and post-restart health capture.
+
 `civora` remains a backward-compatible alias for `civora_heuristic`. New deployments should use an explicit mode.
 
 ## Railway Service Setup
@@ -174,6 +180,14 @@ The road source is U.S. Census TIGERweb centerline data buffered into approximat
 The surface-water source is USGS NHD mapped hydrography. Both can differ from the contemporaneous aerial frame, remain
 weak proposals, and require accept/reject/redraw review before training. Empty classes at a location remain empty.
 
+For the broader V3 diagnostic, use `vision/datasets/us-conus-core-segmentation-v3.json` with `--resume`. The merger writes
+separate training/validation and frozen-test packages. Train only from `training-validation-coco-package.json`, select
+thresholds on its three validation geographies, and pass `frozen-test-coco-package.json` only to the final evaluator. The
+five frozen test geographies are opened once. Even a strong weak-label diagnostic remains blocked until reviewed
+correction coverage, independent attested ground truth, durable live shadow evidence, baseline comparison, and named
+approval all pass. The measured V3 candidate was rejected before deployment; see
+`vision/datasets/us-conus-core-segmentation-diagnostic-v3-report.json`.
+
 ### Independent SpaceNet benchmark import
 
 The SpaceNet 2 importer converts official RGB PanSharpen imagery and building polygons into a traceable COCO package.
@@ -213,7 +227,7 @@ PYTHONPATH=. python3 backend/scripts/merge_public_vision_datasets.py \
   --output-root private/vision/bootstrap/multi-city-v1
 ```
 
-Train and run the held-out diagnostic:
+Train and run the physically separated weak-label diagnostic:
 
 ```bash
 python3.11 -m venv private/vision/training-venv
@@ -222,21 +236,49 @@ private/vision/training-venv/bin/pip install \
   -r requirements_imagery_gateway.txt
 
 PYTHONPATH=. private/vision/training-venv/bin/python vision/train_semantic_model.py \
-  --dataset private/vision/bootstrap/multi-city-v1/weak-coco-package.json \
+  --dataset private/vision/bootstrap/multi-city-v1/training-validation-coco-package.json \
   --image-root private/vision/bootstrap/multi-city-v1/images \
   --output-dir private/vision/runs/multi-city-building-v1
 
 PYTHONPATH=. private/vision/training-venv/bin/python -m backend.scripts.run_vision_model_diagnostic \
   --model private/vision/runs/multi-city-building-v1/civora_semantic.onnx \
   --classes private/vision/runs/multi-city-building-v1/classes.json \
-  --dataset private/vision/bootstrap/multi-city-v1/weak-coco-package.json \
+  --dataset private/vision/bootstrap/multi-city-v1/training-validation-coco-package.json \
   --image-root private/vision/bootstrap/multi-city-v1/images \
+  --output-dir private/vision/runs/multi-city-building-v1/validation \
+  --split validation
+
+PYTHONPATH=. private/vision/training-venv/bin/python -m backend.scripts.calibrate_vision_model_thresholds \
+  --predictions private/vision/runs/multi-city-building-v1/validation/predictions.json \
+  --ground-truth private/vision/runs/multi-city-building-v1/validation/ground-truth.json \
+  --dataset private/vision/bootstrap/multi-city-v1/training-validation-coco-package.json \
+  --output private/vision/runs/multi-city-building-v1/threshold-calibration.json
+
+PYTHONPATH=. private/vision/training-venv/bin/python -m backend.scripts.run_vision_model_diagnostic \
+  --model private/vision/runs/multi-city-building-v1/civora_semantic.onnx \
+  --classes private/vision/runs/multi-city-building-v1/classes.json \
+  --dataset private/vision/bootstrap/multi-city-v1/frozen-test-coco-package.json \
+  --training-dataset private/vision/bootstrap/multi-city-v1/training-validation-coco-package.json \
+  --evaluation-reservation-manifest private/vision/bootstrap/multi-city-v1/evaluation-reservation-manifest.json \
+  --calibration private/vision/runs/multi-city-building-v1/threshold-calibration.json \
+  --image-root private/vision/bootstrap/multi-city-v1/images \
+  --test-consumption-ledger private/vision/evidence/frozen-test-consumption-ledger.json \
   --output-dir private/vision/runs/multi-city-building-v1/diagnostic
 ```
 
-The diagnostic deliberately scopes matching by image ID. Its precision/recall are weak-label diagnostics, not independent
-ground-truth measurements. Review every candidate image, correct omissions and geometry, reserve multiple untouched
-geographies for evaluation, export a `reviewer_labeled` package, and only then use the promotion command below.
+The test runner first validates the candidate class map, ONNX load, synthetic inference, validation-only calibration, and
+the exact development-package bytes. Calibration records must exactly match the reviewed validation annotations in that
+package, and the calibration is bound to the package and model SHA-256 values. These failures do not consume the test set. It then atomically reserves the frozen
+evidence before parsing frozen records or opening image bytes, records a label-blind tamper-evident receipt bound to the
+exact validation calibration in a durable
+ledger, and runs the heuristic baseline in the same campaign as the learned candidate using the same verified image bytes.
+A second use of those source identities fails closed, including after repackaging. The reservation and receipt disclose no
+test annotation counts, class counts, source URLs, or locations. Standalone test evaluation and standalone test-baseline
+commands are disabled so two separate runs cannot quietly create incompatible comparison evidence. Validation runs remain
+available for diagnostics and threshold selection. The diagnostic deliberately scopes matching by image ID. Its precision/recall are weak-label
+diagnostics, not independent ground-truth measurements. Review every candidate image, correct omissions and geometry,
+reserve multiple untouched geographies for evaluation, export a `reviewer_labeled` package, and only then use the promotion
+command below.
 
 1. Collect candidate accept/reject/correct/redraw feedback through Civora Vision.
 2. Register only local source images whose licenses permit both storage and model training. The asset registry must map `imagery_frame_id` to a safe relative `file_name`, dimensions, SHA-256, and source-rights record.
@@ -246,37 +288,68 @@ geographies for evaluation, export a `reviewer_labeled` package, and only then u
 PYTHONPATH=. python3 backend/scripts/export_vision_training_dataset.py \
   --learning-package reports/vision/learning-package.json \
   --asset-registry private/vision/asset-registry.json \
-  --output private/vision/coco-package.json
+  --output private/vision/reviewed-coco-package.json
 ```
+
+When all three deterministic splits are present, this command also writes
+`reviewed-coco-package-training-validation.json`, `reviewed-coco-package-frozen-test.json`, and
+`reviewed-coco-package-evaluation-reservation.json`. If the reviewed corpus is too small or misses a split/class, the
+combined audit manifest is still written, but `split_artifacts_ready` is false with an exact reason. Do not train or
+promote from the combined audit manifest.
 
 4. Train Civora's semantic model on a GPU-capable training machine:
 
 ```bash
 python3 -m pip install -r requirements_vision_training.txt
 PYTHONPATH=. python3 vision/train_semantic_model.py \
-  --dataset private/vision/coco-package.json \
+  --dataset private/vision/reviewed-coco-package-training-validation.json \
   --image-root private/vision/images \
   --output-dir private/vision/runs/v1
 ```
 
 The trainer emits ONNX weights and run metrics, but deliberately marks the model unready for promotion. Training loss or pixel IoU alone is not deployment proof.
 
-5. Run object-level evaluation against a separate rights-cleared ground-truth set:
+5. Run the candidate against validation and freeze its thresholds without opening test evidence:
 
 ```bash
-PYTHONPATH=. python3 backend/scripts/evaluate_vision_model.py \
-  --predictions private/vision/evaluation/predictions.json \
-  --ground-truth private/vision/evaluation/ground-truth.json \
-  --output private/vision/evaluation/quality.json
+PYTHONPATH=. python3 -m backend.scripts.run_vision_model_diagnostic \
+  --model private/vision/runs/v1/civora_semantic.onnx \
+  --classes private/vision/runs/v1/classes.json \
+  --dataset private/vision/reviewed-coco-package-training-validation.json \
+  --image-root private/vision/images \
+  --output-dir private/vision/runs/v1/validation \
+  --split validation
+
+PYTHONPATH=. python3 -m backend.scripts.calibrate_vision_model_thresholds \
+  --predictions private/vision/runs/v1/validation/predictions.json \
+  --ground-truth private/vision/runs/v1/validation/ground-truth.json \
+  --dataset private/vision/reviewed-coco-package-training-validation.json \
+  --output private/vision/runs/v1/threshold-calibration.json
 ```
 
-6. Create the fingerprinted model manifest. Promotion fails if ground-truth metrics, provenance, license, dataset fingerprint, or approver are missing:
+6. Run object-level evaluation once against a separate rights-cleared ground-truth set. Use a new empty output directory:
+
+```bash
+PYTHONPATH=. python3 -m backend.scripts.run_vision_model_diagnostic \
+  --model private/vision/runs/v1/civora_semantic.onnx \
+  --classes private/vision/runs/v1/classes.json \
+  --dataset private/vision/reviewed-coco-package-frozen-test.json \
+  --training-dataset private/vision/reviewed-coco-package-training-validation.json \
+  --evaluation-reservation-manifest private/vision/reviewed-coco-package-evaluation-reservation.json \
+  --calibration private/vision/runs/v1/threshold-calibration.json \
+  --image-root private/vision/images \
+  --test-consumption-ledger private/vision/evidence/frozen-test-consumption-ledger.json \
+  --output-dir private/vision/evaluation
+```
+
+7. Create the fingerprinted model manifest. Promotion fails if ground-truth metrics, provenance, license, dataset fingerprint, or approver are missing:
 
 ```bash
 PYTHONPATH=. python3 backend/scripts/promote_vision_model.py \
   --model private/vision/runs/v1/civora_semantic.onnx \
   --quality-report private/vision/evaluation/quality.json \
-  --dataset-package private/vision/coco-package.json \
+  --training-dataset-package private/vision/reviewed-coco-package-training-validation.json \
+  --evaluation-dataset-package private/vision/reviewed-coco-package-frozen-test.json \
   --classes private/vision/runs/v1/classes.json \
   --name civora-aerial-segmentation \
   --version v1 \

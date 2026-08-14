@@ -6,6 +6,7 @@ import unittest
 from backend.planning.vision_model_calibration import (
     calibrate_detection_thresholds,
     compare_model_to_baseline,
+    threshold_calibration_fingerprint,
     validate_baseline_comparison,
     validate_threshold_calibration,
 )
@@ -50,6 +51,10 @@ class VisionModelCalibrationTests(unittest.TestCase):
             precision_floor=0.8,
             ground_truth_attested=True,
             source_supervision_status="reviewer_labeled",
+            validation_dataset_fingerprint="v" * 64,
+            training_dataset_fingerprint="t" * 64,
+            validation_package_sha256="c" * 64,
+            model_artifact_sha256="m" * 64,
         )
 
         self.assertEqual(calibration["evaluation_split"], "validation")
@@ -59,7 +64,41 @@ class VisionModelCalibrationTests(unittest.TestCase):
             {"confidence": 0.5, "minimum_component_pixels": 20, "mask": 0.5},
         )
         self.assertTrue(
-            validate_threshold_calibration(calibration, dataset_fingerprint="a" * 64)["valid"]
+            validate_threshold_calibration(
+                calibration,
+                dataset_fingerprint="a" * 64,
+                validation_dataset_fingerprint="v" * 64,
+                training_dataset_fingerprint="t" * 64,
+                validation_package_sha256="c" * 64,
+                model_artifact_sha256="m" * 64,
+            )["valid"]
+        )
+
+        wrong_model = validate_threshold_calibration(
+            calibration,
+            dataset_fingerprint="a" * 64,
+            model_artifact_sha256="x" * 64,
+        )
+        self.assertIn("threshold_calibration_model_artifact_mismatch", wrong_model["blockers"])
+
+        wrong_validation_package = validate_threshold_calibration(
+            calibration,
+            dataset_fingerprint="a" * 64,
+            validation_dataset_fingerprint="x" * 64,
+        )
+        self.assertIn(
+            "threshold_calibration_validation_dataset_mismatch",
+            wrong_validation_package["blockers"],
+        )
+
+        wrong_validation_bytes = validate_threshold_calibration(
+            calibration,
+            dataset_fingerprint="a" * 64,
+            validation_package_sha256="x" * 64,
+        )
+        self.assertIn(
+            "threshold_calibration_validation_package_sha256_mismatch",
+            wrong_validation_bytes["blockers"],
         )
 
         tampered = deepcopy(calibration)
@@ -67,6 +106,13 @@ class VisionModelCalibrationTests(unittest.TestCase):
         validation = validate_threshold_calibration(tampered, dataset_fingerprint="a" * 64)
         self.assertFalse(validation["valid"])
         self.assertIn("threshold_calibration_fingerprint_mismatch", validation["blockers"])
+
+        smuggled = deepcopy(calibration)
+        smuggled["test_annotation_count"] = 42
+        smuggled["calibration_fingerprint"] = threshold_calibration_fingerprint(smuggled)
+        validation = validate_threshold_calibration(smuggled, dataset_fingerprint="a" * 64)
+        self.assertFalse(validation["valid"])
+        self.assertIn("threshold_calibration_schema_mismatch", validation["blockers"])
 
     def test_weak_calibration_remains_ineligible_for_promotion(self) -> None:
         calibration = calibrate_detection_thresholds(
@@ -82,6 +128,28 @@ class VisionModelCalibrationTests(unittest.TestCase):
         self.assertFalse(calibration["promotion_eligible"])
         validation = validate_threshold_calibration(calibration, dataset_fingerprint="b" * 64)
         self.assertIn("threshold_calibration_not_promotion_eligible", validation["blockers"])
+
+    def test_reviewed_validation_labels_are_sufficient_without_claiming_test_quality(self) -> None:
+        truth = [{"image_id": 1, "kind": "building", "geometry": _polygon(0, 0, 10, 10)}]
+        calibration = calibrate_detection_thresholds(
+            [{**truth[0], "confidence": 0.9, "properties": {"component_pixel_count": 100}}],
+            truth,
+            dataset_fingerprint="a" * 64,
+            confidence_values=[0.5],
+            minimum_component_pixels_values=[24],
+            ground_truth_attested=False,
+            validation_labels_reviewed=True,
+            source_supervision_status="reviewer_labeled",
+            validation_package_sha256="c" * 64,
+        )
+
+        self.assertTrue(calibration["promotion_eligible"])
+        self.assertTrue(calibration["validation_labels_reviewed"])
+        self.assertFalse(calibration["ground_truth_attested"])
+        self.assertEqual(calibration["chosen_quality"]["evaluation_status"], "measured_on_validation_split")
+        self.assertTrue(
+            validate_threshold_calibration(calibration, dataset_fingerprint="a" * 64)["valid"]
+        )
 
     def test_baseline_gate_requires_real_gain_without_more_false_positives(self) -> None:
         baseline = {

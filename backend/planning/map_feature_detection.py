@@ -84,6 +84,7 @@ IMAGE_KIND_FEATURE_TYPES = {
     "basin": "water/pond/basin",
     "pond": "water/pond/basin",
     "water": "water/pond/basin",
+    "surface_water": "water/pond/basin",
     "vegetation": "vegetation/tree_area",
     "tree_area": "vegetation/tree_area",
     "tree": "vegetation/tree_area",
@@ -114,7 +115,7 @@ DRAFT_OBJECT_TYPES = {
     "parcel_or_site_boundary": "site_boundary_candidate",
     "terrain": "terrain_candidate",
     "sidewalk_or_path": "sidewalk",
-    "water/pond/basin": "basin",
+    "water/pond/basin": "surface_water_candidate",
     "vegetation/tree_area": "open_space",
     "constraint_area": "constraint_area",
     "utility": "existing_utility",
@@ -127,7 +128,7 @@ FEATURE_TYPE_LABELS = {
     "parcel_or_site_boundary": "parcel/site boundary",
     "terrain": "terrain/elevation",
     "sidewalk_or_path": "sidewalk/path",
-    "water/pond/basin": "water/wetland/floodplain constraint",
+    "water/pond/basin": "surface water (classification required)",
     "vegetation/tree_area": "vegetation/tree area",
     "constraint_area": "constraint",
     "utility": "existing utility",
@@ -494,6 +495,7 @@ def accept_feature_candidate_as_draft_object(candidate: Dict[str, Any], *, accep
         raise ValueError("Unsupported feature candidate type.")
     if safe_str(rec.get("source_type")) == "unavailable":
         raise ValueError("Unavailable feature candidates cannot become draft objects.")
+    classification_required = feature_type == "water/pond/basin"
     return {
         "object_id": f"draft_{safe_str(rec.get('candidate_id'), 'feature')}",
         "object_type": DRAFT_OBJECT_TYPES[feature_type],
@@ -510,6 +512,10 @@ def accept_feature_candidate_as_draft_object(candidate: Dict[str, Any], *, accep
         "acceptance_status": "accepted",
         "trusted_canonical": False,
         "needs_engineer_review": True,
+        "engineering_classification_required": classification_required,
+        "allowed_reclassifications": ["detention_basin", "pond", "pool", "stream", "ditch", "other_surface_water"]
+        if classification_required
+        else [],
         "accepted_by": safe_str(accepted_by, "user"),
         "construction_release_allowed": False,
         "audit_trail": [
@@ -520,7 +526,11 @@ def accept_feature_candidate_as_draft_object(candidate: Dict[str, Any], *, accep
                 "result_status": "draft_review_required",
             }
         ],
-        "truth_label": "Accepted candidate became a draft/review-required object only; licensed engineer/user review remains required.",
+        "truth_label": (
+            "Accepted surface water remains unclassified until a reviewer assigns its engineering meaning."
+            if classification_required
+            else "Accepted candidate became a draft/review-required object only; licensed engineer/user review remains required."
+        ),
     }
 
 

@@ -29,7 +29,7 @@ const VISION_FEATURE_OPTIONS = [
   ["road_or_drive", "Road / driveway"],
   ["parking_area", "Parking"],
   ["sidewalk_or_path", "Sidewalk / path"],
-  ["water/pond/basin", "Water / basin"],
+  ["water/pond/basin", "Surface water"],
   ["vegetation/tree_area", "Vegetation / trees"],
   ["utility", "Visible utility object"],
   ["constraint_area", "Constraint / other"],

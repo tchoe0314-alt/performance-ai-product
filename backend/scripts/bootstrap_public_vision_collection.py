@@ -3,9 +3,18 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import sys
 from typing import Any, Dict, List
 
-from backend.planning.vision_public_bootstrap import build_public_review_sprint
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from backend.planning.vision_public_bootstrap import (
+    build_public_review_sprint,
+    verify_weak_supervision_package,
+)
 from backend.planning.vision_review_gallery import build_public_review_gallery_html
 from backend.scripts.bootstrap_public_vision_dataset import bootstrap_public_vision_region
 from backend.scripts.merge_public_vision_datasets import merge_public_vision_packages
@@ -21,11 +30,17 @@ def main() -> int:
     parser.add_argument("--plan", required=True, type=Path)
     parser.add_argument("--source-registry", default="vision/datasets/public-source-registry-v1.json", type=Path)
     parser.add_argument("--output-root", required=True, type=Path)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Reuse a completed, verified region package and collect only unfinished geographies.",
+    )
     args = parser.parse_args()
     result = bootstrap_public_vision_collection(
         plan_path=args.plan,
         source_registry_path=args.source_registry,
         output_root=args.output_root,
+        resume=args.resume,
     )
     print(json.dumps(result, indent=2))
     return 0 if result["success"] else 2
@@ -36,6 +51,7 @@ def bootstrap_public_vision_collection(
     plan_path: Path,
     source_registry_path: Path,
     output_root: Path,
+    resume: bool = False,
 ) -> Dict[str, Any]:
     plan = _read_object(plan_path)
     if plan.get("version") != COLLECTION_PLAN_VERSION:
@@ -65,6 +81,33 @@ def bootstrap_public_vision_collection(
     package_paths: List[Path] = []
     for geography in geographies:
         geography_id = str(geography["geography_id"])
+        region_output = region_root / geography_id
+        existing_package = region_output / "weak-coco-package.json"
+        existing_manifest = region_output / "source-manifest.json"
+        if resume and existing_package.is_file() and existing_manifest.is_file():
+            verification = verify_resumable_region(
+                region_output,
+                geography_id=geography_id,
+                expected_split=str(geography["split"]),
+            )
+            if verification["valid"] is not True:
+                raise SystemExit(f"Completed region failed resume verification: {geography_id}")
+            package = verification["package"]
+            image_ids = verification["image_ids"]
+            region_results.append(
+                {
+                    "geography_id": geography_id,
+                    "success": True,
+                    "resumed": True,
+                    "package": str(existing_package),
+                    "image_root": str(region_output / "images"),
+                    "imagery_tiles": len(image_ids),
+                    "weak_proposals_by_class": _annotation_counts_by_class(package),
+                    "promotion_eligible": False,
+                }
+            )
+            package_paths.append(existing_package)
+            continue
         result = bootstrap_public_vision_region(
             center_latitude=float(geography["center_latitude"]),
             center_longitude=float(geography["center_longitude"]),
@@ -72,7 +115,7 @@ def bootstrap_public_vision_collection(
             columns=int(geography.get("columns") or defaults.get("columns") or 2),
             tile_meters=float(geography.get("tile_meters") or defaults.get("tile_meters") or 320),
             image_pixels=int(geography.get("image_pixels") or defaults.get("image_pixels") or 512),
-            output_root=region_root / geography_id,
+            output_root=region_output,
             geography_id=geography_id,
             permanent_split=str(geography["split"]),
             source_registry_path=source_registry_path,
@@ -84,7 +127,7 @@ def bootstrap_public_vision_collection(
                 if isinstance(item, dict)
             ],
         )
-        region_results.append({"geography_id": geography_id, **result})
+        region_results.append({"geography_id": geography_id, "resumed": False, **result})
         package_paths.append(Path(result["package"]))
 
     merged_root = output_root / "merged"
@@ -149,6 +192,77 @@ def bootstrap_public_vision_collection(
     }
 
 
+def verify_resumable_region(
+    region_output: Path,
+    *,
+    geography_id: str,
+    expected_split: str,
+) -> Dict[str, Any]:
+    root = region_output.expanduser().resolve()
+    package_path = root / "weak-coco-package.json"
+    manifest_path = root / "source-manifest.json"
+    blockers: List[str] = []
+    if not package_path.is_file() or not manifest_path.is_file():
+        return {
+            "valid": False,
+            "blockers": ["completed_region_artifacts_missing"],
+            "package": {},
+            "image_ids": set(),
+        }
+    package = _read_object(package_path)
+    manifest = _read_object(manifest_path)
+    package_validation = verify_weak_supervision_package(package)
+    blockers.extend(package_validation["blockers"])
+    expected_label_sources = {
+        str(item.get("source_id") or "")
+        for item in package.get("licenses") or []
+        if isinstance(item, dict)
+        and str(item.get("source_role") or "") == "weak_label_proposals_only"
+        and str(item.get("source_id") or "")
+    }
+    observed_label_sources = {
+        str(item.get("source_id") or "")
+        for item in package.get("label_source_status") or []
+        if isinstance(item, dict) and str(item.get("source_id") or "")
+    }
+    blockers.extend(
+        f"completed_region_label_source_status_missing:{source_id}"
+        for source_id in sorted(expected_label_sources - observed_label_sources)
+    )
+    image_ids = {
+        int(item.get("id") or 0)
+        for item in package.get("images") or []
+        if isinstance(item, dict) and int(item.get("id") or 0) > 0
+    }
+    declared_ids = {
+        int(item)
+        for item in (package.get("splits") or {}).get(expected_split) or []
+        if int(item) > 0
+    }
+    if package.get("geography_id") != geography_id:
+        blockers.append("completed_region_geography_mismatch")
+    if not image_ids:
+        blockers.append("completed_region_images_missing")
+    if image_ids != declared_ids:
+        blockers.append("completed_region_split_mismatch")
+    if manifest.get("dataset_fingerprint") != package.get("dataset_fingerprint"):
+        blockers.append("completed_region_manifest_fingerprint_mismatch")
+    image_root = Path(str(package.get("image_root") or root / "images")).expanduser().resolve()
+    for image in package.get("images") or []:
+        if not isinstance(image, dict):
+            continue
+        image_path = (image_root / str(image.get("file_name") or "")).resolve()
+        if image_root not in image_path.parents or not image_path.is_file():
+            blockers.append("completed_region_image_file_missing")
+            break
+    return {
+        "valid": not blockers,
+        "blockers": sorted(set(blockers)),
+        "package": package,
+        "image_ids": image_ids,
+    }
+
+
 def _collection_coverage(
     package: Dict[str, Any],
     review_sprint: Dict[str, Any],
@@ -196,6 +310,43 @@ def _collection_coverage(
         for label, count in by_split_and_class.get(split, {}).items()
         if count < minimums[label]
     )
+    label_source_status = [
+        dict(item)
+        for item in package.get("label_source_status") or []
+        if isinstance(item, dict)
+    ]
+    source_datasets = {
+        str(item.get("name") or "")
+        for item in package.get("source_datasets") or []
+        if isinstance(item, dict) and str(item.get("name") or "")
+    }
+    expected_source_ids = {
+        str(item.get("source_id") or "")
+        for item in package.get("licenses") or []
+        if isinstance(item, dict)
+        and str(item.get("source_role") or "") == "weak_label_proposals_only"
+        and str(item.get("source_id") or "")
+    }
+    observed_source_keys = {
+        (str(item.get("source_dataset") or ""), str(item.get("source_id") or ""))
+        for item in label_source_status
+    }
+    missing_source_status = sorted(
+        f"weak_label_source_status_not_recorded:{source_dataset}:{source_id}"
+        for source_dataset in source_datasets
+        for source_id in expected_source_ids
+        if (source_dataset, source_id) not in observed_source_keys
+    )
+    source_availability_blockers = sorted(
+        {
+            *missing_source_status,
+            *(
+                f"weak_label_source_unavailable:{item.get('source_dataset') or 'region'}:{item.get('source_id') or 'unknown'}"
+                for item in label_source_status
+                if str(item.get("status") or "") != "ready"
+            ),
+        }
+    )
     return {
         "version": "civora_public_vision_collection_coverage_v1",
         "imagery_frame_count": len(images),
@@ -208,6 +359,10 @@ def _collection_coverage(
         },
         "training_coverage_ready": not coverage_blockers,
         "training_coverage_blockers": coverage_blockers,
+        "label_source_status": label_source_status,
+        "source_availability_evidence_complete": not missing_source_status,
+        "source_availability_complete": not source_availability_blockers,
+        "source_availability_blockers": source_availability_blockers,
         "ground_truth_annotation_count": int(review_sprint.get("ground_truth_annotation_count") or 0),
         "geographies": sorted({str(item.get("geography_id") or item.get("source_dataset") or "") for item in images if item.get("geography_id") or item.get("source_dataset")}),
         "seasons": sorted({str(item.get("season") or "") for item in images if item.get("season")}),

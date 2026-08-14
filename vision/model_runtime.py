@@ -795,8 +795,8 @@ def _normalize_kind(value: str) -> str:
         return "sidewalk"
     if "tree" in text or "canopy" in text or "landscape" in text:
         return "tree"
-    if "basin" in text or "pond" in text or "detention" in text or "water" in text:
-        return "basin"
+    if "basin" in text or "pond" in text or "detention" in text or "water" in text or "pool" in text:
+        return "surface_water"
     if "utility" in text or "hydrant" in text or "manhole" in text or "inlet" in text:
         return "utility"
     if "open" in text or "grass" in text or "vegetation" in text:

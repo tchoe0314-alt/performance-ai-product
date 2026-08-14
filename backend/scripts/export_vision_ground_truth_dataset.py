@@ -16,6 +16,7 @@ from backend.planning.vision_ground_truth_flywheel import (
     DATASET_VERSION,
     build_ground_truth_coverage,
     build_ground_truth_dataset,
+    build_privacy_safe_correction_aggregate,
     merge_ground_truth_datasets,
 )
 
@@ -52,17 +53,37 @@ def main() -> int:
     parser.add_argument("inputs", nargs="+", type=Path, help="Project exports or ground-truth dataset JSON files.")
     parser.add_argument("--output", type=Path, required=True, help="Destination aggregate dataset JSON.")
     parser.add_argument("--coverage-output", type=Path, help="Optional destination coverage report JSON.")
+    parser.add_argument(
+        "--privacy-aggregate-output",
+        type=Path,
+        help="Optional count-only correction telemetry JSON with no imagery, geometry, locations, or identifiers.",
+    )
+    parser.add_argument(
+        "--learning-consent",
+        action="append",
+        default=[],
+        type=Path,
+        help="Consent JSON bound to a source dataset fingerprint. Repeat for each data owner/package.",
+    )
     parser.add_argument("--allow-blocked", action="store_true", help="Write a blocked package instead of returning exit code 2.")
     args = parser.parse_args()
 
     datasets = [_dataset_from_payload(_read_json(path)) for path in args.inputs]
-    aggregate = merge_ground_truth_datasets(datasets)
+    consents = [_read_json(path) for path in args.learning_consent]
+    aggregate = merge_ground_truth_datasets(datasets, learning_consents=consents)
     coverage = build_ground_truth_coverage(aggregate)
+    privacy_aggregate = build_privacy_safe_correction_aggregate([aggregate])
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(aggregate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if args.coverage_output:
         args.coverage_output.parent.mkdir(parents=True, exist_ok=True)
         args.coverage_output.write_text(json.dumps(coverage, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if args.privacy_aggregate_output:
+        args.privacy_aggregate_output.parent.mkdir(parents=True, exist_ok=True)
+        args.privacy_aggregate_output.write_text(
+            json.dumps(privacy_aggregate, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     print(
         json.dumps(
             {
@@ -72,6 +93,10 @@ def main() -> int:
                 "counts_by_split": aggregate.get("counts_by_split"),
                 "blocked_classes": coverage.get("blocked_classes"),
                 "blockers": aggregate.get("export_blockers"),
+                "learning_consent_ready": coverage.get("learning_consent_ready"),
+                "privacy_safe_aggregate_valid": (
+                    coverage.get("privacy_safe_aggregate_validation") or {}
+                ).get("valid"),
                 "output": str(args.output),
             },
             sort_keys=True,

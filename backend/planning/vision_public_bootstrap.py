@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from copy import deepcopy
 import hashlib
 import json
 import math
@@ -9,6 +10,16 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple
 from .common import safe_dict, safe_float, safe_list, safe_str
 from .vision_detection_learning import build_imagery_frame_v2
 from .vision_model_lifecycle import COCO_PACKAGE_VERSION
+from .vision_evidence_integrity import (
+    build_frozen_split_manifest,
+    build_held_out_test_commitment,
+    coco_dataset_fingerprint,
+    scope_coco_annotation_record,
+    scope_coco_category_record,
+    scope_coco_image_record,
+    scope_coco_license_records,
+    scope_registry_fingerprints,
+)
 
 
 PUBLIC_BOOTSTRAP_VERSION = "civora_public_vision_bootstrap_v1"
@@ -410,6 +421,7 @@ def merge_weak_supervision_packages(
     merged_annotations: List[Dict[str, Any]] = []
     review_features: List[Dict[str, Any]] = []
     source_datasets: List[Dict[str, Any]] = []
+    label_source_status: List[Dict[str, Any]] = []
     licenses: List[Dict[str, Any]] = []
     license_keys: set[Tuple[str, str, str]] = set()
     categories: List[Dict[str, Any]] = []
@@ -494,6 +506,11 @@ def merge_weak_supervision_packages(
                 "annotation_count": len(safe_list(package.get("annotations"))),
             }
         )
+        label_source_status.extend(
+            {**safe_dict(item), "source_dataset": source_name}
+            for item in safe_list(package.get("label_source_status"))
+            if safe_dict(item)
+        )
     registry_fingerprints = sorted(
         {
             safe_str(safe_dict(item.get("source_rights")).get("rights_registry_fingerprint"))
@@ -506,6 +523,14 @@ def merge_weak_supervision_packages(
         merged_images,
         grouping_field=safe_str(normalized_split_policy.get("grouping_field"), "geography_id"),
         required_splits=safe_list(normalized_split_policy.get("required_splits")),
+    )
+    source_availability_blockers = sorted(
+        {
+            "weak_label_source_unavailable:"
+            f"{safe_str(item.get('source_dataset'))}:{safe_str(item.get('source_id'))}"
+            for item in label_source_status
+            if safe_str(item.get("status")) != "ready"
+        }
     )
     payload: Dict[str, Any] = {
         "version": COCO_PACKAGE_VERSION,
@@ -536,8 +561,10 @@ def merge_weak_supervision_packages(
             "weak_labels_require_image_by_image_review",
             "independent_reviewed_ground_truth_evaluation_missing",
             "multi_geography_generalization_not_measured",
+            *source_availability_blockers,
         ],
         "source_datasets": source_datasets,
+        "label_source_status": label_source_status,
         "review_candidates": {"type": "FeatureCollection", "features": review_features},
         "truth_label": (
             "This merged corpus can bootstrap diagnostic training across multiple geographies. Its labels remain weak, "
@@ -546,6 +573,215 @@ def merge_weak_supervision_packages(
     }
     payload["dataset_fingerprint"] = weak_supervision_package_fingerprint(payload)
     return payload
+
+
+def build_scoped_weak_supervision_package(
+    package: Dict[str, Any],
+    *,
+    included_splits: Sequence[str],
+    dataset_role: str,
+) -> Dict[str, Any]:
+    """Create a sealed split-scoped package without copying image bytes.
+
+    A training process should receive only the train/validation package. The
+    frozen-test package is a separate artifact opened by the evaluator once.
+    """
+
+    source = deepcopy(safe_dict(package))
+    source_validation = verify_weak_supervision_package(source)
+    if not source_validation["valid"]:
+        raise ValueError(
+            "Cannot scope an invalid weak-supervision package: "
+            + ", ".join(source_validation["blockers"])
+        )
+    splits = tuple(dict.fromkeys(safe_str(item).lower() for item in included_splits if safe_str(item)))
+    if not splits or any(item not in VISION_DATASET_SPLITS for item in splits):
+        raise ValueError("Scoped package requires train, validation, and/or test split names.")
+    role = safe_str(dataset_role)
+    if role not in {"training_and_validation", "frozen_test"}:
+        raise ValueError("Scoped package role must be training_and_validation or frozen_test.")
+    if role == "training_and_validation" and "test" in splits:
+        raise ValueError("Training package cannot contain the frozen test split.")
+    if role == "frozen_test" and splits != ("test",):
+        raise ValueError("Frozen-test package can contain only the test split.")
+
+    images = [
+        scope_coco_image_record(item)
+        for item in safe_list(source.get("images"))
+        if safe_str(safe_dict(item).get("split")).lower() in splits
+    ]
+    selected_image_ids = {int(safe_float(item.get("id"))) for item in images}
+    annotations = [
+        scope_coco_annotation_record(item)
+        for item in safe_list(source.get("annotations"))
+        if int(safe_float(safe_dict(item).get("image_id"))) in selected_image_ids
+    ]
+    represented_sources = {
+        safe_str(item.get("source_dataset"))
+        for item in images
+        if safe_str(item.get("source_dataset"))
+    }
+    annotation_counts = {
+        source_name: sum(
+            1 for item in annotations if safe_str(item.get("source_dataset")) == source_name
+        )
+        for source_name in represented_sources
+    }
+    image_counts = {
+        source_name: sum(
+            1 for item in images if safe_str(item.get("source_dataset")) == source_name
+        )
+        for source_name in represented_sources
+    }
+    source_datasets = [
+        _scoped_source_dataset(
+            item,
+            image_count=image_counts.get(safe_str(safe_dict(item).get("name")), 0),
+            annotation_count=annotation_counts.get(safe_str(safe_dict(item).get("name")), 0),
+        )
+        for item in safe_list(source.get("source_datasets"))
+        if safe_str(safe_dict(item).get("name")) in represented_sources
+    ]
+    label_source_status = [
+        _scoped_label_source_status(item)
+        for item in safe_list(source.get("label_source_status"))
+        if safe_str(safe_dict(item).get("source_dataset")) in represented_sources
+    ]
+    review_features = [
+        _scoped_review_feature(item)
+        for item in safe_list(safe_dict(source.get("review_candidates")).get("features"))
+        if int(safe_float(safe_dict(safe_dict(item).get("properties")).get("image_id")))
+        in selected_image_ids
+    ]
+    split_policy = _scoped_split_policy(source.get("split_policy"), required_splits=splits)
+    scoped = {
+        "version": safe_str(source.get("version")),
+        "bootstrap_version": safe_str(source.get("bootstrap_version")),
+        "generated_at": safe_str(source.get("generated_at")),
+        "info": {
+            "description": "Split-scoped rights-cleared weak-supervision package.",
+            "contains_image_bytes": False,
+        },
+        "licenses": scope_coco_license_records(source.get("licenses")),
+        "categories": [
+            scope_coco_category_record(item)
+            for item in safe_list(source.get("categories"))
+            if safe_dict(item)
+        ],
+        "dataset_role": role,
+        "parent_dataset_fingerprint": safe_str(source.get("dataset_fingerprint")),
+        "parent_coco_evidence_fingerprint": safe_str(source.get("coco_evidence_fingerprint")),
+        "images": images,
+        "annotations": annotations,
+        "splits": {
+            split: [
+                int(safe_float(item.get("id")))
+                for item in images
+                if safe_str(item.get("split")).lower() == split
+            ]
+            for split in VISION_DATASET_SPLITS
+        },
+        "split_policy": split_policy,
+        "split_integrity": build_split_integrity(
+            images,
+            grouping_field=safe_str(split_policy.get("grouping_field"), "geography_id"),
+            required_splits=splits,
+        ),
+        "eligible_image_count": len(images),
+        "annotation_count": len(annotations),
+        "source_datasets": source_datasets,
+        "label_source_status": label_source_status,
+        "review_candidates": {"type": "FeatureCollection", "features": review_features},
+        "contains_image_bytes": False,
+        "supervision_status": WEAK_SUPERVISION_STATUS,
+        "promotion_eligible": False,
+        "promotion_blockers": sorted(
+            set(
+                [
+                    "weak_labels_require_image_by_image_review",
+                    "training_package_is_not_independent_evaluation"
+                    if role == "training_and_validation"
+                    else "frozen_test_package_is_evaluation_only"
+                ]
+            )
+        ),
+        "source_registry_fingerprints": scope_registry_fingerprints(
+            source.get("source_registry_fingerprints")
+        ),
+        "truth_label": (
+            "This split-scoped package contains weak visual proposals only. It is not reviewed ground truth and cannot "
+            "qualify a model for promotion."
+        ),
+    }
+    if role == "training_and_validation":
+        scoped["held_out_test_manifest"] = build_held_out_test_commitment(
+            safe_dict(source.get("frozen_split_manifest"))
+        )
+        scoped["test_records_in_package"] = False
+    else:
+        scoped["training_records_in_package"] = False
+    scoped["dataset_fingerprint"] = weak_supervision_package_fingerprint(scoped)
+    scoped["coco_evidence_fingerprint"] = coco_dataset_fingerprint(scoped)
+    if role == "frozen_test":
+        scoped["frozen_split_manifest"] = build_frozen_split_manifest(scoped)
+    verification = verify_weak_supervision_package(scoped)
+    if not verification["valid"]:
+        raise ValueError(
+            "Scoped weak-supervision package failed verification: "
+            + ", ".join(verification["blockers"])
+        )
+    return scoped
+
+
+def _scoped_source_dataset(value: Any, *, image_count: int, annotation_count: int) -> Dict[str, Any]:
+    source = safe_dict(value)
+    allowed = {"name", "dataset_fingerprint", "source_region_bbox_wgs84"}
+    record = {key: deepcopy(source[key]) for key in allowed if key in source}
+    record["image_count"] = max(0, int(image_count))
+    record["annotation_count"] = max(0, int(annotation_count))
+    return record
+
+
+def _scoped_label_source_status(value: Any) -> Dict[str, Any]:
+    source = safe_dict(value)
+    allowed = {"source_dataset", "source_id", "status", "fallback_used", "feature_count"}
+    return {key: deepcopy(source[key]) for key in allowed if key in source}
+
+
+def _scoped_review_feature(value: Any) -> Dict[str, Any]:
+    source = safe_dict(value)
+    allowed_properties = {
+        "annotation_id",
+        "feature_type",
+        "image_id",
+        "review_status",
+        "source_dataset",
+        "supervision",
+    }
+    properties = safe_dict(source.get("properties"))
+    return {
+        "type": safe_str(source.get("type"), "Feature"),
+        "geometry": deepcopy(source.get("geometry")),
+        "properties": {
+            key: deepcopy(properties[key])
+            for key in allowed_properties
+            if key in properties
+        },
+    }
+
+
+def _scoped_split_policy(value: Any, *, required_splits: Sequence[str]) -> Dict[str, Any]:
+    source = safe_dict(value)
+    allowed = {
+        "strategy",
+        "grouping_field",
+        "test_split_frozen",
+        "test_split_use",
+        "threshold_selection_split",
+    }
+    record = {key: deepcopy(source[key]) for key in allowed if key in source}
+    record["required_splits"] = list(required_splits)
+    return record
 
 
 def verify_weak_supervision_package(package: Dict[str, Any]) -> Dict[str, Any]:
@@ -567,6 +803,26 @@ def verify_weak_supervision_package(package: Dict[str, Any]) -> Dict[str, Any]:
         blockers.append("category_ids_must_be_contiguous")
     if any(not safe_str(item.get("name")) or not safe_str(item.get("source_feature_type")) for item in categories):
         blockers.append("category_name_or_feature_type_missing")
+    label_source_status = [
+        safe_dict(item) for item in safe_list(rec.get("label_source_status")) if safe_dict(item)
+    ]
+    source_ids = [safe_str(item.get("source_id")) for item in label_source_status]
+    source_keys = [
+        (safe_str(item.get("source_dataset")), safe_str(item.get("source_id")))
+        for item in label_source_status
+    ]
+    if label_source_status and (any(not item for item in source_ids) or len(source_keys) != len(set(source_keys))):
+        blockers.append("label_source_status_ids_missing_or_duplicate")
+    for item in label_source_status:
+        status = safe_str(item.get("status"))
+        if status not in {"ready", "partial", "unavailable"}:
+            blockers.append("label_source_status_invalid")
+        if item.get("fallback_used") is not False:
+            blockers.append("label_source_status_fallback_boundary_invalid")
+        if int(safe_float(item.get("feature_count"), -1)) < 0:
+            blockers.append("label_source_status_feature_count_invalid")
+        if status in {"partial", "unavailable"} and not safe_list(item.get("blockers")):
+            blockers.append("label_source_status_failure_reason_missing")
     licenses = [safe_dict(item) for item in safe_list(rec.get("licenses")) if safe_dict(item)]
     source_roles = {safe_str(item.get("source_role")) for item in licenses if safe_str(item.get("source_role"))}
     if "training_imagery" not in source_roles:
@@ -659,8 +915,20 @@ def weak_supervision_package_fingerprint(package: Dict[str, Any]) -> str:
         "source_registry_fingerprints": safe_list(rec.get("source_registry_fingerprints")),
         "supervision_status": safe_str(rec.get("supervision_status")),
     }
+    if safe_list(rec.get("label_source_status")):
+        fingerprint_payload["label_source_status"] = safe_list(rec.get("label_source_status"))
     if safe_list(rec.get("source_datasets")):
         fingerprint_payload["source_datasets"] = safe_list(rec.get("source_datasets"))
+    for key in (
+        "dataset_role",
+        "parent_dataset_fingerprint",
+        "parent_coco_evidence_fingerprint",
+        "held_out_test_manifest",
+        "test_records_in_package",
+        "training_records_in_package",
+    ):
+        if key in rec:
+            fingerprint_payload[key] = rec.get(key)
     return stable_fingerprint(fingerprint_payload)
 
 
@@ -1101,6 +1369,7 @@ __all__ = [
     "WEAK_SUPERVISION_STATUS",
     "build_geographic_tile_grid",
     "build_public_review_sprint",
+    "build_scoped_weak_supervision_package",
     "build_weak_supervision_package",
     "capture_date_from_epoch_ms",
     "capture_season",

@@ -630,14 +630,20 @@ def evaluate_detection_quality(
 def _evaluation_label(item: Dict[str, Any]) -> str:
     explicit = safe_str(item.get("model_label") or item.get("category_name") or item.get("kind") or item.get("label"))
     if explicit:
-        return {"water": "basin", "pond": "basin", "basin_or_pond": "basin"}.get(explicit, explicit)
+        return {
+            "water": "surface_water",
+            "pond": "surface_water",
+            "pool": "surface_water",
+            "basin": "surface_water",
+            "basin_or_pond": "surface_water",
+        }.get(explicit, explicit)
     aliases = {
         "building_footprint": "building",
         "road_or_drive": "road",
         "parking_area": "parking",
         "sidewalk_or_path": "sidewalk",
         "vegetation/tree_area": "tree",
-        "water/pond/basin": "basin",
+        "water/pond/basin": "surface_water",
         "visible_utility_structure": "utility",
         "constraint_area": "constraint",
     }

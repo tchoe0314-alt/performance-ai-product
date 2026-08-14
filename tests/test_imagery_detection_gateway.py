@@ -1,5 +1,7 @@
 import os
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from io import BytesIO
@@ -483,12 +485,17 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
             ):
                 gateway._SHADOW_STATS_PATH_LOADED = ""
                 gateway._SHADOW_STATS = gateway._empty_shadow_stats()
+                gateway._SHADOW_STATS_RESTORED_FROM_DISK = False
+                gateway._SHADOW_STATS_RESTORE_INTEGRITY_VALID = False
+                gateway._SHADOW_STATS_RESTORE_BLOCKER = "not_loaded"
                 gateway._record_shadow_submission()
                 gateway._record_shadow_completion(report)
 
                 stored_text = metrics_path.read_text(encoding="utf-8")
                 stored = json.loads(stored_text)
                 self.assertEqual(stored["statistics"]["aggregate"]["sample_count"], 1)
+                self.assertEqual(stored["version"], gateway.SHADOW_METRICS_VERSION)
+                self.assertEqual(len(stored["integrity_sha256"]), 64)
                 self.assertNotIn("private.example", stored_text)
                 self.assertNotIn("Private Project", stored_text)
                 self.assertNotIn("bbox", stored_text)
@@ -496,14 +503,114 @@ class ImageryDetectionGatewayTests(unittest.TestCase):
 
                 gateway._SHADOW_STATS_PATH_LOADED = ""
                 gateway._SHADOW_STATS = gateway._empty_shadow_stats()
+                gateway._SHADOW_STATS_RESTORED_FROM_DISK = False
+                gateway._SHADOW_STATS_RESTORE_INTEGRITY_VALID = False
+                gateway._SHADOW_STATS_RESTORE_BLOCKER = "not_loaded"
                 restored = gateway._shadow_runtime_statistics()
                 self.assertEqual(restored["submitted_count"], 1)
                 self.assertEqual(restored["completed_count"], 1)
                 self.assertEqual(restored["aggregate"]["sample_count"], 1)
                 self.assertEqual(restored["aggregate"]["per_class"]["building"]["matched_count"], 1)
                 self.assertTrue(restored["persistence_configured"])
+                self.assertTrue(restored["persistence_restore_observed"])
+                self.assertTrue(restored["persistence_integrity_valid"])
+                self.assertEqual(restored["persistence_restore_blocker"], "")
                 self.assertTrue(restored["persistent_volume_required"])
                 self.assertEqual(restored["storage_scope"], "aggregate_metrics_only_no_imagery_or_geometry")
+
+                stored["statistics"]["aggregate"]["sample_count"] = 999
+                metrics_path.write_text(json.dumps(stored), encoding="utf-8")
+                gateway._SHADOW_STATS_PATH_LOADED = ""
+                gateway._SHADOW_STATS = gateway._empty_shadow_stats()
+                gateway._SHADOW_STATS_RESTORED_FROM_DISK = False
+                gateway._SHADOW_STATS_RESTORE_INTEGRITY_VALID = False
+                gateway._SHADOW_STATS_RESTORE_BLOCKER = "not_loaded"
+                rejected = gateway._shadow_runtime_statistics()
+                self.assertEqual(rejected["aggregate"]["sample_count"], 0)
+                self.assertFalse(rejected["persistence_restore_observed"])
+                self.assertFalse(rejected["persistence_integrity_valid"])
+                self.assertEqual(rejected["persistence_restore_blocker"], "persistence_integrity_mismatch")
+
+    def test_shadow_metrics_restore_across_independent_processes(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        report = {
+            "version": "civora_vision_shadow_report_v1",
+            "status": "ready",
+            "source_url": "https://private.example/customer.png?token=secret",
+            "address": "Private Project Address",
+            "baseline_provider": "civora_heuristic",
+            "baseline_count": 2,
+            "shadow_count": 1,
+            "matched_count": 1,
+            "agreement_rate": 0.5,
+            "per_class": {
+                "building": {
+                    "baseline_count": 2,
+                    "shadow_count": 1,
+                    "matched_count": 1,
+                    "count_delta": -1,
+                    "agreement_rate": 0.5,
+                    "mean_matched_iou": 0.72,
+                    "bbox": [1, 2, 3, 4],
+                }
+            },
+            "shadow_model": {
+                "model_name": "candidate",
+                "model_version": "v3",
+                "model_sha256": "b" * 64,
+                "promotion_status": "candidate_blocked",
+            },
+            "shadow_geometry": {"coordinates": [[1, 2], [3, 4]]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            metrics_path = Path(directory) / "shadow-metrics.json"
+            environment = os.environ.copy()
+            environment["CIVORA_GATEWAY_SHADOW_METRICS_PATH"] = str(metrics_path)
+            environment["PYTHONPATH"] = os.pathsep.join(
+                item for item in (str(root), environment.get("PYTHONPATH", "")) if item
+            )
+            writer = (
+                "import json; "
+                "from backend.scripts import imagery_detection_gateway as g; "
+                f"r=json.loads({json.dumps(json.dumps(report))}); "
+                "g._record_shadow_submission(); g._record_shadow_completion(r); "
+                "print(json.dumps(g._shadow_runtime_statistics()))"
+            )
+            first = subprocess.run(
+                [sys.executable, "-c", writer],
+                cwd=root,
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(json.loads(first.stdout)["completed_count"], 1)
+
+            reader = (
+                "import json; "
+                "from backend.scripts import imagery_detection_gateway as g; "
+                "print(json.dumps(g._shadow_runtime_statistics()))"
+            )
+            second = subprocess.run(
+                [sys.executable, "-c", reader],
+                cwd=root,
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            restored = json.loads(second.stdout)
+            stored_text = metrics_path.read_text(encoding="utf-8")
+
+            self.assertEqual(restored["submitted_count"], 1)
+            self.assertEqual(restored["completed_count"], 1)
+            self.assertEqual(restored["aggregate"]["sample_count"], 1)
+            self.assertTrue(restored["persistence_restore_observed"])
+            self.assertTrue(restored["persistence_integrity_valid"])
+            self.assertNotIn("private.example", stored_text)
+            self.assertNotIn("Private Project", stored_text)
+            self.assertNotIn("bbox", stored_text)
+            self.assertNotIn("coordinates", stored_text)
 
     def test_gateway_runs_promoted_learned_model_and_reports_exact_runtime(self) -> None:
         session = _CivoraImageSession()

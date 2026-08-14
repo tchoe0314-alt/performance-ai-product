@@ -9,6 +9,7 @@ import json
 import math
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 import time
 from typing import Any, Dict, Iterable, List
@@ -17,6 +18,11 @@ from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from PIL import Image
+
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from backend.planning.vision_public_bootstrap import (
     build_geographic_tile_grid,
@@ -27,6 +33,7 @@ from backend.planning.vision_public_bootstrap import (
     imagery_quality_band,
     normalize_microsoft_partition_url,
     quadkeys_for_bbox,
+    weak_supervision_package_fingerprint,
 )
 
 
@@ -41,7 +48,8 @@ ALLOWED_SOURCE_HOSTS = {
     "tigerweb.geo.census.gov",
 }
 RETRYABLE_HTTP_STATUS_CODES = {408, 429, 500, 502, 503, 504}
-SOURCE_REQUEST_ATTEMPTS = 3
+SOURCE_REQUEST_ATTEMPTS = 5
+SOURCE_REQUEST_MAX_RETRY_DELAY_SECONDS = 15.0
 
 
 def main() -> int:
@@ -144,6 +152,14 @@ def bootstrap_public_vision_region(
     )
     for tile in tiles:
         destination = image_root / str(tile["file_name"])
+        checkpoint_path = cache_root / f"imagery-{tile['frame_id']}.json"
+        if _restore_verified_imagery_tile(
+            tile,
+            destination=destination,
+            checkpoint_path=checkpoint_path,
+            image_pixels=image_pixels,
+        ):
+            continue
         source_records = _select_usgs_records(
             _query_usgs_catalog(usgs_image_server, tile["bbox_wgs84"], where=record_filter)
         )
@@ -175,6 +191,7 @@ def bootstrap_public_vision_region(
         tile["source_vendor"] = ", ".join(sorted({str(record.get("vendor") or "") for record in source_records if record.get("vendor")}))
         tile["sensor_type"] = ", ".join(sorted({str(record.get("sensor_type") or "") for record in source_records if record.get("sensor_type")}))
         tile["datum"] = ", ".join(sorted({str(record.get("datum") or "") for record in source_records if record.get("datum")}))
+        _write_imagery_tile_checkpoint(tile, checkpoint_path)
 
     region_bbox = {
         "west": min(tile["bbox_wgs84"]["west"] for tile in tiles),
@@ -196,12 +213,22 @@ def bootstrap_public_vision_region(
         if not cache_path.is_file():
             _download_file(partition_url, cache_path)
         footprints.extend(_read_footprints(cache_path, region_bbox))
-    additional_label_sets = _collect_additional_label_sets(
+    additional_label_sets, additional_label_source_status = _collect_additional_label_sets(
         source_configs=additional_source_configs,
         source_registry=sources,
         registry_fingerprint=registry_fingerprint,
         bbox=region_bbox,
     )
+    label_source_status = [
+        {
+            "source_id": label_source_id,
+            "status": "ready",
+            "feature_count": len(footprints),
+            "blockers": [],
+            "fallback_used": False,
+        },
+        *additional_label_source_status,
+    ]
     package = build_weak_supervision_package(
         tiles=tiles,
         footprint_features=footprints,
@@ -234,6 +261,22 @@ def bootstrap_public_vision_region(
         "imagery_source_id": imagery_source_id,
         "label_source_id": label_source_id,
     }
+    package["label_source_status"] = label_source_status
+    unavailable_sources = [
+        item["source_id"]
+        for item in label_source_status
+        if item.get("status") != "ready"
+    ]
+    if unavailable_sources:
+        package["promotion_blockers"] = sorted(
+            set(
+                list(package.get("promotion_blockers") or [])
+                + [f"weak_label_source_unavailable:{source_id}" for source_id in unavailable_sources]
+            )
+        )
+    # Source availability is evidence. Seal it even when every source is healthy so
+    # later verification detects status tampering instead of silently accepting it.
+    package["dataset_fingerprint"] = weak_supervision_package_fingerprint(package)
     package["image_root"] = str(image_root)
     package_path = output_root / "weak-coco-package.json"
     review_path = output_root / "review-candidates.geojson"
@@ -254,6 +297,7 @@ def bootstrap_public_vision_region(
                 "seasons": sorted({str(tile.get("season") or "") for tile in tiles if tile.get("season")}),
                 "imagery_quality_bands": sorted({str(tile.get("imagery_quality_band") or "") for tile in tiles if tile.get("imagery_quality_band")}),
                 "source_registry_fingerprint": registry_fingerprint,
+                "label_source_status": label_source_status,
                 "supervision_status": package["supervision_status"],
                 "promotion_eligible": False,
                 "promotion_blockers": package["promotion_blockers"],
@@ -276,6 +320,7 @@ def bootstrap_public_vision_region(
         "seasons": sorted({str(tile.get("season") or "") for tile in tiles if tile.get("season")}),
         "imagery_quality_bands": sorted({str(tile.get("imagery_quality_band") or "") for tile in tiles if tile.get("imagery_quality_band")}),
         "splits": package["splits"],
+        "label_source_status": label_source_status,
         "promotion_eligible": False,
         "promotion_blockers": package["promotion_blockers"],
     }
@@ -287,20 +332,23 @@ def _collect_additional_label_sets(
     source_registry: Dict[str, Any],
     registry_fingerprint: str,
     bbox: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     result: List[Dict[str, Any]] = []
+    statuses: List[Dict[str, Any]] = []
     for config in source_configs:
         source_id = str(config.get("source_id") or "")
         spec = dict(source_registry.get(source_id) or {})
         service_url = str(spec.get("service_url") or "")
         layer_specs = [dict(item) for item in spec.get("service_layers") or [] if isinstance(item, dict)]
         features: List[Dict[str, Any]] = []
+        source_blockers: List[str] = []
         for layer_spec in layer_specs:
-            layer_features = _query_arcgis_geojson_features(
-                service_url,
-                int(layer_spec.get("layer_id") or 0),
-                bbox,
-            )
+            layer_id = int(layer_spec.get("layer_id") or 0)
+            try:
+                layer_features = _query_arcgis_geojson_features(service_url, layer_id, bbox)
+            except SystemExit as exc:
+                source_blockers.append(f"layer_{layer_id}:{_bounded_failure_reason(exc)}")
+                continue
             buffer_meters = float(layer_spec.get("centerline_buffer_meters") or 0.0)
             if buffer_meters > 0:
                 for feature in layer_features:
@@ -308,6 +356,15 @@ def _collect_additional_label_sets(
             else:
                 features.extend(layer_features)
         features = _dedupe_geojson_features(features)
+        statuses.append(
+            {
+                "source_id": source_id,
+                "status": "partial" if features and source_blockers else "unavailable" if source_blockers else "ready",
+                "feature_count": len(features),
+                "blockers": sorted(set(source_blockers)),
+                "fallback_used": False,
+            }
+        )
         result.append(
             {
                 "category_id": int(config.get("category_id") or 0),
@@ -325,7 +382,12 @@ def _collect_additional_label_sets(
                 },
             }
         )
-    return result
+    return result, statuses
+
+
+def _bounded_failure_reason(exc: BaseException) -> str:
+    text = " ".join(str(exc).split())[:240]
+    return text or exc.__class__.__name__
 
 
 def _dedupe_geojson_features(features: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -542,6 +604,64 @@ def _download_image(url: str, destination: Path) -> None:
     temp_path.replace(destination)
 
 
+def _restore_verified_imagery_tile(
+    tile: Dict[str, Any],
+    *,
+    destination: Path,
+    checkpoint_path: Path,
+    image_pixels: int,
+) -> bool:
+    if not destination.is_file() or not checkpoint_path.is_file():
+        return False
+    try:
+        checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(checkpoint, dict) or checkpoint.get("version") != "civora_vision_imagery_tile_checkpoint_v1":
+        return False
+    restored = checkpoint.get("tile")
+    if not isinstance(restored, dict):
+        return False
+    for key in ("frame_id", "file_name", "bbox_wgs84", "pixel_width", "pixel_height", "permanent_split"):
+        if restored.get(key) != tile.get(key):
+            return False
+    source_url = str(restored.get("source_url") or "")
+    source_item_ids = restored.get("source_item_ids")
+    expected_sha256 = str(restored.get("sha256") or "")
+    if not source_url or not isinstance(source_item_ids, list) or not source_item_ids or len(expected_sha256) != 64:
+        return False
+    try:
+        _require_allowed_https(source_url)
+        if _file_sha256(destination) != expected_sha256:
+            return False
+        with Image.open(destination) as image:
+            if image.size != (image_pixels, image_pixels):
+                return False
+            image.verify()
+    except (OSError, SystemExit):
+        return False
+    tile.update(restored)
+    return True
+
+
+def _write_imagery_tile_checkpoint(tile: Dict[str, Any], checkpoint_path: Path) -> None:
+    payload = {
+        "version": "civora_vision_imagery_tile_checkpoint_v1",
+        "tile": tile,
+    }
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=checkpoint_path.parent,
+        delete=False,
+    ) as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        temp_path = Path(handle.name)
+    temp_path.replace(checkpoint_path)
+
+
 def _download_file(url: str, destination: Path) -> None:
     normalized = normalize_microsoft_partition_url(url)
     _require_allowed_https(normalized)
@@ -579,6 +699,7 @@ def _open_source_request(request: Request, *, timeout: float, attempts: int = SO
     attempt_count = max(1, int(attempts))
     hostname = str(urlsplit(request.full_url).hostname or "approved source")
     for attempt in range(1, attempt_count + 1):
+        retry_after = 0.0
         try:
             # Every caller validates the URL against the approved HTTPS source allowlist before reaching this helper.
             return urlopen(request, timeout=timeout)  # nosec B310
@@ -589,14 +710,23 @@ def _open_source_request(request: Request, *, timeout: float, attempts: int = SO
                     f"Approved source {hostname} returned HTTP {exc.code} after {attempt} attempt"
                     f"{'s' if attempt != 1 else ''}; no fallback source was used."
                 ) from exc
+            retry_after = _retry_after_seconds(exc.headers.get("Retry-After") if exc.headers else None)
         except (URLError, TimeoutError) as exc:
             if attempt >= attempt_count:
                 raise SystemExit(
                     f"Approved source {hostname} could not be reached after {attempt_count} attempts; "
                     "no fallback source was used."
                 ) from exc
-        time.sleep(min(2.0, 0.25 * (2 ** (attempt - 1))))
+        delay = max(retry_after, float(2 ** (attempt - 1)))
+        time.sleep(min(SOURCE_REQUEST_MAX_RETRY_DELAY_SECONDS, delay))
     raise AssertionError("Source request retry loop exited unexpectedly.")
+
+
+def _retry_after_seconds(value: Any) -> float:
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _load_source_registry(path: Path) -> tuple[Dict[str, Any], str]:

@@ -11,7 +11,7 @@ type ReviewedOutline = {
 
 function friendlyClass(value: string) {
   return value
-    .replace("water/pond/basin", "water / basin")
+    .replace("water/pond/basin", "surface water")
     .replaceAll("_", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }

@@ -1,0 +1,174 @@
+{
+  "version": "civora_public_vision_collection_plan_v1",
+  "collection_id": "us-conus-core-segmentation-v3",
+  "imagery_source_id": "usgs_naip_conus",
+  "label_source_id": "microsoft_global_building_footprints",
+  "additional_label_sources": [
+    {
+      "category_id": 2,
+      "category_name": "road",
+      "feature_type": "road_or_drive",
+      "source_id": "us_census_tigerweb_roads"
+    },
+    {
+      "category_id": 3,
+      "category_name": "surface_water",
+      "feature_type": "water/pond/basin",
+      "source_id": "usgs_nhd_surface_water"
+    }
+  ],
+  "tile_defaults": {
+    "columns": 3,
+    "image_pixels": 512,
+    "rows": 3,
+    "tile_meters": 320
+  },
+  "coverage_policy": {
+    "required_splits": [
+      "train",
+      "validation",
+      "test"
+    ],
+    "minimum_proposals_per_class_per_split": {
+      "building": 50,
+      "road": 25,
+      "surface_water": 5
+    }
+  },
+  "split_policy": {
+    "strategy": "geography_disjoint",
+    "grouping_field": "geography_id",
+    "required_splits": [
+      "train",
+      "validation",
+      "test"
+    ],
+    "test_split_frozen": true,
+    "threshold_selection_split": "validation",
+    "test_split_use": "one_way_final_diagnostic_only"
+  },
+  "geographies": [
+    {
+      "center_latitude": 41.1852405,
+      "center_longitude": -96.2370225,
+      "geography_id": "gretna_ne",
+      "split": "train"
+    },
+    {
+      "center_latitude": 32.8208,
+      "center_longitude": -96.7308,
+      "geography_id": "dallas_tx",
+      "split": "train"
+    },
+    {
+      "center_latitude": 33.4325,
+      "center_longitude": -111.936,
+      "geography_id": "phoenix_az",
+      "split": "train"
+    },
+    {
+      "center_latitude": 30.2672,
+      "center_longitude": -97.7431,
+      "geography_id": "austin_tx",
+      "split": "train"
+    },
+    {
+      "center_latitude": 44.9495,
+      "center_longitude": -93.289,
+      "geography_id": "minneapolis_mn",
+      "split": "train"
+    },
+    {
+      "center_latitude": 27.9697,
+      "center_longitude": -82.482,
+      "geography_id": "tampa_fl",
+      "split": "train"
+    },
+    {
+      "center_latitude": 33.7537,
+      "center_longitude": -84.3863,
+      "geography_id": "atlanta_ga",
+      "split": "train"
+    },
+    {
+      "center_latitude": 39.7475,
+      "center_longitude": -105.0485,
+      "geography_id": "denver_co",
+      "split": "validation"
+    },
+    {
+      "center_latitude": 29.7604,
+      "center_longitude": -95.3698,
+      "geography_id": "houston_tx",
+      "split": "validation"
+    },
+    {
+      "center_latitude": 45.5165,
+      "center_longitude": -122.6757,
+      "geography_id": "portland_or",
+      "split": "validation"
+    },
+    {
+      "center_latitude": 35.29,
+      "center_longitude": -80.965,
+      "geography_id": "charlotte_nc",
+      "split": "test"
+    },
+    {
+      "center_latitude": 47.6062,
+      "center_longitude": -122.3321,
+      "geography_id": "seattle_wa",
+      "split": "test"
+    },
+    {
+      "center_latitude": 29.946,
+      "center_longitude": -90.064,
+      "geography_id": "new_orleans_la",
+      "split": "test"
+    },
+    {
+      "center_latitude": 25.773,
+      "center_longitude": -80.19,
+      "geography_id": "miami_fl",
+      "split": "test"
+    },
+    {
+      "center_latitude": 42.3601,
+      "center_longitude": -71.0589,
+      "geography_id": "boston_ma",
+      "split": "test"
+    }
+  ],
+  "evidence_policy": {
+    "atomic_test_consumption_required": true,
+    "candidate_preflight_before_test_consumption": true,
+    "evaluation_reservation_version": "civora_vision_evaluation_reservation_v2",
+    "label_blind_held_out_commitment_required": true,
+    "operating_classes": [
+      "building",
+      "road",
+      "surface_water"
+    ],
+    "surface_water_is_not_engineering_classification": true,
+    "weak_labels_require_image_by_image_review": true,
+    "training_and_evaluation_source_identity_overlap_allowed": false,
+    "test_geographies_may_be_used_for_threshold_selection": false,
+    "test_label_statistics_may_be_exposed_before_consumption": false,
+    "excluded_product_training_sources": [
+      {
+        "name": "OpenEarthMap",
+        "reason": "Mixed upstream label rights include noncommercial terms; not accepted for Civora product training."
+      },
+      {
+        "name": "LandCover.ai",
+        "reason": "CC BY-NC-SA licensing is not accepted for Civora product training."
+      }
+    ]
+  },
+  "output_policy": {
+    "commit_source_images": false,
+    "ground_truth_at_collection_time": false,
+    "promotion_eligible": false,
+    "review_every_weak_label": true
+  }
+}

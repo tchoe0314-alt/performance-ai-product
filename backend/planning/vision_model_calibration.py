@@ -10,6 +10,28 @@ from .vision_detection_learning import evaluate_detection_quality
 
 CALIBRATION_VERSION = "civora_vision_threshold_calibration_v1"
 BASELINE_COMPARISON_VERSION = "civora_vision_baseline_comparison_v1"
+CALIBRATION_FIELDS = {
+    "version",
+    "dataset_fingerprint",
+    "evidence_family_fingerprint",
+    "validation_dataset_fingerprint",
+    "training_dataset_fingerprint",
+    "validation_package_sha256",
+    "model_artifact_sha256",
+    "evaluation_split",
+    "test_data_used",
+    "source_supervision_status",
+    "ground_truth_attested",
+    "validation_labels_reviewed",
+    "search",
+    "chosen_thresholds",
+    "chosen_quality",
+    "trials",
+    "promotion_eligible",
+    "blockers",
+    "truth_label",
+    "calibration_fingerprint",
+}
 
 
 def calibrate_detection_thresholds(
@@ -23,6 +45,11 @@ def calibrate_detection_thresholds(
     mask_threshold: float = 0.5,
     ground_truth_attested: bool = False,
     source_supervision_status: str = "",
+    validation_dataset_fingerprint: str = "",
+    training_dataset_fingerprint: str = "",
+    validation_package_sha256: str = "",
+    model_artifact_sha256: str = "",
+    validation_labels_reviewed: bool = False,
 ) -> Dict[str, Any]:
     predicted = [safe_dict(item) for item in predictions if safe_dict(item)]
     truth = [safe_dict(item) for item in ground_truth if safe_dict(item)]
@@ -30,6 +57,7 @@ def calibrate_detection_thresholds(
     component_grid = sorted({max(1, int(item)) for item in minimum_component_pixels_values})
     if not confidence_grid or not component_grid:
         raise ValueError("Calibration requires confidence and component-size search values.")
+    reviewed_validation = ground_truth_attested is True or validation_labels_reviewed is True
     trials: List[Dict[str, Any]] = []
     floor = min(max(float(precision_floor), 0.0), 1.0)
     fixed_mask_threshold = min(max(float(mask_threshold), 0.0), 1.0)
@@ -44,7 +72,7 @@ def calibrate_detection_thresholds(
             quality = evaluate_detection_quality(selected, truth)
             quality["evaluation_status"] = (
                 "measured_on_validation_split"
-                if ground_truth_attested
+                if reviewed_validation
                 else "unattested_or_weak_label_diagnostic"
             )
             trials.append(
@@ -74,17 +102,25 @@ def calibrate_detection_thresholds(
         blockers.append("calibration_ground_truth_missing")
     if not chosen["precision_floor_satisfied"]:
         blockers.append("calibration_precision_floor_not_met")
-    if not ground_truth_attested:
+    if not reviewed_validation:
         blockers.append("calibration_ground_truth_not_attested")
     if source_supervision_status not in {"reviewer_labeled", "independent_benchmark_annotated"}:
         blockers.append("calibration_supervision_not_promotion_eligible")
+    if not _is_sha256(validation_package_sha256):
+        blockers.append("calibration_validation_package_sha256_missing")
     result: Dict[str, Any] = {
         "version": CALIBRATION_VERSION,
         "dataset_fingerprint": safe_str(dataset_fingerprint),
+        "evidence_family_fingerprint": safe_str(dataset_fingerprint),
+        "validation_dataset_fingerprint": safe_str(validation_dataset_fingerprint or dataset_fingerprint),
+        "training_dataset_fingerprint": safe_str(training_dataset_fingerprint),
+        "validation_package_sha256": safe_str(validation_package_sha256).lower(),
+        "model_artifact_sha256": safe_str(model_artifact_sha256).lower(),
         "evaluation_split": "validation",
         "test_data_used": False,
         "source_supervision_status": safe_str(source_supervision_status),
         "ground_truth_attested": ground_truth_attested is True,
+        "validation_labels_reviewed": reviewed_validation,
         "search": {
             "confidence_values": confidence_grid,
             "minimum_component_pixels_values": component_grid,
@@ -114,13 +150,37 @@ def validate_threshold_calibration(
     *,
     dataset_fingerprint: str,
     require_promotion_eligible: bool = True,
+    validation_dataset_fingerprint: str = "",
+    training_dataset_fingerprint: str = "",
+    validation_package_sha256: str = "",
+    model_artifact_sha256: str = "",
 ) -> Dict[str, Any]:
     rec = safe_dict(calibration)
     blockers: List[str] = []
+    if set(rec) != CALIBRATION_FIELDS:
+        blockers.append("threshold_calibration_schema_mismatch")
     if safe_str(rec.get("version")) != CALIBRATION_VERSION:
         blockers.append("unsupported_threshold_calibration_version")
     if safe_str(rec.get("dataset_fingerprint")) != safe_str(dataset_fingerprint):
         blockers.append("threshold_calibration_dataset_mismatch")
+    if validation_dataset_fingerprint and safe_str(rec.get("validation_dataset_fingerprint")) != safe_str(
+        validation_dataset_fingerprint
+    ):
+        blockers.append("threshold_calibration_validation_dataset_mismatch")
+    if training_dataset_fingerprint and safe_str(rec.get("training_dataset_fingerprint")) != safe_str(
+        training_dataset_fingerprint
+    ):
+        blockers.append("threshold_calibration_training_dataset_mismatch")
+    if not _is_sha256(rec.get("validation_package_sha256")):
+        blockers.append("threshold_calibration_validation_package_sha256_invalid")
+    if validation_package_sha256 and safe_str(rec.get("validation_package_sha256")).lower() != safe_str(
+        validation_package_sha256
+    ).lower():
+        blockers.append("threshold_calibration_validation_package_sha256_mismatch")
+    if model_artifact_sha256 and safe_str(rec.get("model_artifact_sha256")).lower() != safe_str(
+        model_artifact_sha256
+    ).lower():
+        blockers.append("threshold_calibration_model_artifact_mismatch")
     if safe_str(rec.get("evaluation_split")) != "validation":
         blockers.append("threshold_calibration_not_validation_only")
     if rec.get("test_data_used") is not False:
@@ -132,7 +192,7 @@ def validate_threshold_calibration(
         blockers.append("threshold_calibration_component_size_invalid")
     if not 0.0 <= safe_float(thresholds.get("mask"), -1.0) <= 1.0:
         blockers.append("threshold_calibration_mask_invalid")
-    if require_promotion_eligible and rec.get("ground_truth_attested") is not True:
+    if require_promotion_eligible and rec.get("validation_labels_reviewed") is not True:
         blockers.append("threshold_calibration_ground_truth_not_attested")
     if require_promotion_eligible and safe_str(rec.get("source_supervision_status")) not in {
         "reviewer_labeled",
@@ -260,6 +320,11 @@ def _component_pixel_count(item: Dict[str, Any]) -> int:
     if len(bbox) >= 4:
         return max(1, int(safe_float(bbox[2]) * safe_float(bbox[3])))
     return 1
+
+
+def _is_sha256(value: Any) -> bool:
+    text = safe_str(value).lower()
+    return len(text) == 64 and all(character in "0123456789abcdef" for character in text)
 
 
 def _quality_summary(quality: Dict[str, Any]) -> Dict[str, Any]:

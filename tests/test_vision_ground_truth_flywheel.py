@@ -9,6 +9,7 @@ from backend.planning.candidate_review_inbox import apply_candidate_review_decis
 from backend.planning.vision_detection_learning import build_imagery_frame_v2, build_vision_detection_report_v2
 from backend.planning.vision_ground_truth_flywheel import (
     DATASET_VERSION,
+    LEARNING_CONSENT_VERSION,
     LEDGER_VERSION,
     SPLIT_REGISTRY_VERSION,
     append_ground_truth_review_event,
@@ -107,6 +108,19 @@ def _vision_meta(*, second_candidate: bool = False):
             "civora_vision_detection_report_v2": report,
             "imagery_object_detection_report_v1": {"civora_vision_detection_report_v2": report},
         }
+    }
+
+
+def _learning_consent(dataset):
+    return {
+        "version": LEARNING_CONSENT_VERSION,
+        "status": "granted",
+        "scopes": ["model_training", "cross_project_aggregation"],
+        "dataset_fingerprint": dataset["dataset_fingerprint"],
+        "granted_by_role": "data_owner",
+        "granted_at": "2026-08-13T00:00:00Z",
+        "revocable": True,
+        "private_identifiers_exported": False,
     }
 
 
@@ -401,7 +415,11 @@ class VisionGroundTruthFlywheelTests(unittest.TestCase):
             reviewer_id="reviewer-1",
         )
         dataset = result[DATASET_VERSION]
-        merged = merge_ground_truth_datasets([dataset, deepcopy(dataset)])
+        consent = _learning_consent(dataset)
+        merged = merge_ground_truth_datasets(
+            [dataset, deepcopy(dataset)],
+            learning_consents=[consent],
+        )
         self.assertEqual(merged["annotation_count"], 1)
         self.assertTrue(merged["export_ready"])
         self.assertFalse(merged["promotion_eligible"])
@@ -410,7 +428,10 @@ class VisionGroundTruthFlywheelTests(unittest.TestCase):
         frame_id = next(iter(conflicting["split_registry"]["assignments"]))
         current = conflicting["split_registry"]["assignments"][frame_id]
         conflicting["split_registry"]["assignments"][frame_id] = "test" if current != "test" else "train"
-        blocked = merge_ground_truth_datasets([dataset, conflicting])
+        blocked = merge_ground_truth_datasets(
+            [dataset, conflicting],
+            learning_consents=[consent, _learning_consent(conflicting)],
+        )
         self.assertFalse(blocked["export_ready"])
         self.assertTrue(any(item.startswith("conflicting_permanent_split:") for item in blocked["export_blockers"]))
 

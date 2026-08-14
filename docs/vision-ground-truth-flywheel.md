@@ -28,11 +28,18 @@ Use the aggregate exporter for reviewed project manifests:
 ```bash
 python3 backend/scripts/export_vision_ground_truth_dataset.py \
   reports/project-a-vision.json reports/project-b-vision.json \
+  --learning-consent reports/project-a-learning-consent.json \
+  --learning-consent reports/project-b-learning-consent.json \
   --output reports/vision/ground-truth-dataset.json \
-  --coverage-output reports/vision/ground-truth-coverage.json
+  --coverage-output reports/vision/ground-truth-coverage.json \
+  --privacy-aggregate-output reports/vision/privacy-safe-correction-summary.json
 ```
 
 The exporter fails closed when event integrity is invalid, frame split assignments conflict, source rights are missing, or reviewed geometry is not registered to imagery.
+Each source package also needs explicit, revocable `model_training` and `cross_project_aggregation` consent from a data
+owner or company administrator, bound to that package fingerprint. A privacy-safe correction summary may aggregate class,
+action, split, and blocker counts; it excludes imagery, geometry, locations, source URLs, project/candidate identifiers,
+and reviewer identities and is never itself training input.
 
 ## Data Rights And Provenance
 
@@ -65,11 +72,60 @@ Census TIGERweb road centerlines buffered as approximate road corridors plus USG
 classes remain weak proposals. Road corridors are not surveyed pavement edges, mapped water can be stale, and neither
 source becomes ground truth without explicit review against the registered NAIP frame.
 
+The V3 development plan at `vision/datasets/us-conus-core-segmentation-v3.json` expands the diagnostic corpus to 15
+geography-disjoint regions: seven training, three validation, and five frozen test regions. Its merged package carries a
+weak-package fingerprint and a separate canonical COCO evidence fingerprint. The merger emits physically separate
+`training-validation-coco-package.json` and `frozen-test-coco-package.json` artifacts. The trainer accepts only the former.
+Its held-out reference is label-blind: it includes immutable image-membership hashes but no test image records,
+annotation records, annotation counts, per-class counts, source URLs, or locations. The sealed evaluation package SHA-256
+binds the complete hidden package without exposing its labels to model development.
+The development package is built from an explicit metadata allowlist rather than by copying the source package and deleting
+known test fields. This prevents geography names, source-availability messages, or future unrecognized metadata from
+crossing the frozen-test boundary. Tests reject arbitrary top-level side channels as well as label statistics in the
+reservation, receipt, ledger, held-out commitment, or threshold-calibration artifact.
+
+The final evaluator requires the V2 `evaluation-reservation-manifest.json` emitted beside those packages. Before consuming
+the test set it validates the model artifact and class map, loads the ONNX runtime, runs synthetic inference, verifies the
+validation-only calibration, and validates the exact development-package bytes against the reservation. It then atomically
+records the candidate, model hash, exact validation-calibration fingerprint, evaluation fingerprint, image-membership commitment, and hashed source identities in a
+durable one-way ledger. Only after reservation succeeds may it parse the frozen package or open test image bytes. It gives
+the exact same verified image bytes to the learned candidate and heuristic baseline in that single campaign, then refuses
+every subsequent use of those source identities even when repackaged under another dataset fingerprint.
+The ledger stores only SHA-256 digests of source identities, not source URLs or locations, and blocks reuse even if the same
+images are repackaged under a different dataset fingerprint. Standalone test evaluation is disabled. `--resume` reuses a
+region only after validating its package, manifest, geography, split, every registered image file, and complete per-source
+availability status. Legacy packages without that status must be recollected rather than silently accepted.
+Candidate weights, class map, reservation, calibration, development package, frozen package, image root, ledger, and
+diagnostic output must remain physically distinct. The evaluator rejects aliases, hard links, evidence files placed inside
+the image root, a disposable ledger, and non-empty test output directories before opening frozen records.
+Calibration accepts only reviewed validation annotations that exactly match the development package and binds its result to
+the exact development-package SHA-256, model SHA-256, validation fingerprint, and training fingerprint. Editing a copied
+ground-truth file, changing the package bytes, or adding undeclared calibration fields fails closed.
+
+V3 calls the visible class `surface_water`. A surface-water polygon is not automatically a detention basin, pond,
+wetland, stream, pool, or drainage facility. A reviewer must assign that engineering meaning after accepting it.
+
 The collector reports proposal counts by class and permanent split. The trainer refuses a declared class that is absent
-from train, validation, or test, and records measured class weights. The first 45-frame diagnostic is documented in
+from train or validation and records measured class weights. Frozen-test class depth is checked independently by the
+evaluation and promotion gates, never by training. The first 45-frame diagnostic is documented in
 `vision/datasets/us-conus-core-segmentation-diagnostic-v2-report.json`. It was rejected before deployment: its held-out
 weak-label F1 was `0.0208`, building and basin recall were zero, and no labels had completed human review. This report is
 rejection evidence, not an accuracy claim.
+
+The expanded 135-frame V3 run is documented in
+`vision/datasets/us-conus-core-segmentation-diagnostic-v3-report.json`. Its physical split isolation and frozen-manifest
+integrity passed, but it was also rejected. Against 45 untouched test frames with weak, unattested labels, the learned
+candidate produced F1 `0.0037` versus the existing heuristic's `0.0147`, with zero building and road recall. No candidate
+weights or manifest were deployed as primary or shadow. These values are weak-label diagnostics, not accuracy estimates.
+Because this one-way test package was opened for V3, it is recorded as consumed and is not untouched evidence for a future
+candidate. This first V3 run predates both the atomic ledger and the label-blind V2 reservation. Its legacy reservation
+exposed aggregate label statistics, so its durable receipt is explicitly historical post-hoc rejection evidence and can
+never satisfy a current promotion gate. A later candidate requires a newly sealed geography-disjoint test package, a V2
+label-blind reservation, and a pre-evaluation atomic receipt.
+The legacy V3 development artifact also inherited one test-geography source-availability message through permissive
+top-level metadata copying. It did not contain test image or annotation records, but it still violated the intended
+label-blind development boundary. The current allowlisted package builder fixes that defect; the historical V3 result
+remains rejected and cannot be reclassified as current-protocol evidence.
 
 Collect the planned corpus and create a zero-ground-truth review sprint:
 
@@ -78,6 +134,16 @@ PYTHONPATH=. python3 backend/scripts/bootstrap_public_vision_collection.py \
   --plan vision/datasets/us-conus-building-seed-v1.json \
   --source-registry vision/datasets/public-source-registry-v1.json \
   --output-root private/vision/collections/us-conus-building-seed-v1
+```
+
+Build or resume the V3 diagnostic corpus:
+
+```bash
+python3 backend/scripts/bootstrap_public_vision_collection.py \
+  --plan vision/datasets/us-conus-core-segmentation-v3.json \
+  --source-registry vision/datasets/public-source-registry-v1.json \
+  --output-root private/vision/collections/us-conus-core-segmentation-v3 \
+  --resume
 ```
 
 Open the generated reviewer from an HTTP server so its checksum exporter is available:
@@ -177,3 +243,25 @@ Even a promoted class may create visual review candidates only. It does not beco
 7. Review per-class gates and provenance.
 8. Require named human approval for each class.
 9. Roll out the approved class gradually while retaining rollback and monitoring.
+
+The fail-closed V3 readiness report has five independent lanes: durable privacy-safe shadow monitoring, consented
+reviewed corrections, reviewed training evidence, frozen independent evaluation, and model promotion. Shadow evidence
+must survive a restart with a valid checksum and aggregate-only storage scope, include at least 100 samples, cover every
+required class, and remain below the bounded failure/drop-rate gate. Shadow agreement is operational evidence only; it
+cannot substitute for ground-truth precision or recall. If any lane is blocked, do not deploy the candidate.
+
+Generate the readiness report with the physically isolated packages and explicit evidence inputs:
+
+```bash
+PYTHONPATH=. python3 backend/scripts/report_vision_v3_readiness.py \
+  --training-dataset private/vision/collections/us-conus-core-segmentation-v3/merged/training-validation-coco-package.json \
+  --evaluation-dataset private/vision/collections/us-conus-core-segmentation-v3/merged/frozen-test-coco-package.json \
+  --quality-report private/vision/runs/us-conus-core-segmentation-v3/test-diagnostic/diagnostic-quality.json \
+  --correction-coverage private/vision/reviewed-corrections/ground-truth-coverage.json \
+  --gateway-health-file private/vision/evidence/gateway-health-after-restart.json \
+  --output private/vision/evidence/vision-v3-readiness.json \
+  --allow-blocked
+```
+
+`--allow-blocked` only permits the CLI to save a truthful blocked report for inspection. It does not relax a gate or
+authorize deployment.
