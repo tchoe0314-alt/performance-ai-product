@@ -60,7 +60,7 @@ export function Preview2DOverlayStack({
             data-draft-point-count={draftPointCount}
             role="region"
             aria-label="Drawing surface"
-            className={`absolute inset-0 ${drawMode !== "select" && drawMode !== "pan" ? "z-[35]" : "z-[14]"} ${
+            className={`absolute ${drawMode !== "select" && drawMode !== "pan" ? "z-[35]" : "z-[14]"} ${
               drawMode === "select"
                 ? "pointer-events-none"
                 : drawMode === "pan"
@@ -69,6 +69,14 @@ export function Preview2DOverlayStack({
                     : "pointer-events-auto cursor-grab active:cursor-grabbing"
                   : "pointer-events-auto cursor-crosshair"
             }`}
+            style={{
+              left: interactionBounds?.left ?? 0,
+              top: interactionBounds?.top ?? 0,
+              width: interactionBounds?.width ?? "100%",
+              height: interactionBounds?.height ?? "100%",
+              transformOrigin: "top left",
+              transform: viewportTransformStyle.transform,
+            }}
           />
           <div
             data-testid="preview-drawing-overlays"

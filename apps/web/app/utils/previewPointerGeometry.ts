@@ -33,13 +33,9 @@ export function normalizePreviewPointerSitePoint({
   const relX = rawSitePoint.x / Math.max(effectiveLotWidth, 1);
   const relY = rawSitePoint.y / Math.max(effectiveLotHeight, 1);
   if (!Number.isFinite(relX) || !Number.isFinite(relY)) return null;
-  const isDrawingMode =
-    drawMode === "site" ||
-    drawMode === "polyline" ||
-    drawMode === "polygon" ||
-    drawMode === "rect" ||
-    drawMode === "point";
-  if (!isDrawingMode && (relX < 0 || relX > 1 || relY < 0 || relY > 1)) return null;
+  // A pointer outside the rendered site is not a site point. Clamping it to an
+  // edge makes the cursor and committed geometry visibly disagree.
+  if (relX < 0 || relX > 1 || relY < 0 || relY > 1) return null;
   const clampedRelX = Math.min(Math.max(relX, 0), 1);
   const clampedRelY = Math.min(Math.max(relY, 0), 1);
   const clampedX = Math.min(Math.max(rawSitePoint.x, 0), effectiveLotWidth);

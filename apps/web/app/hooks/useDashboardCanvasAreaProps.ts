@@ -71,6 +71,7 @@ type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectN
   onSetPreviewMode: PreviewPanelProps["onSetPreviewMode"];
   onSetPreviewInteraction: PreviewPanelProps["onSetPreviewInteraction"];
   onSetPreviewQuality: PreviewPanelProps["onSetPreviewQuality"];
+  onDrawingActiveChange: NonNullable<PreviewPanelProps["onDrawingActiveChange"]>;
   onRecordRecentChange: (change: Omit<RecentChange, "id" | "createdAt">) => void;
   onPushRecoveryMessage: (message: string) => void;
   previewRefreshing: boolean;
@@ -170,6 +171,7 @@ export function useDashboardCanvasAreaProps({
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
+  onDrawingActiveChange,
   onRecordRecentChange,
   onPushRecoveryMessage,
   previewRefreshing,
@@ -302,6 +304,7 @@ export function useDashboardCanvasAreaProps({
       onSetPreviewMode,
       onSetPreviewInteraction,
       onSetPreviewQuality,
+      onDrawingActiveChange,
       onAiRealismChange: handleAiRealismChange,
       previewRefreshing,
       previewRefreshNote,

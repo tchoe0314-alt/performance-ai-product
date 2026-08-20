@@ -132,8 +132,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("cad-tool-box")).toBeVisible();
     await expect(page.getByTestId("draw-cad-tools-section")).toContainText("Modify");
     await expect(page.getByTestId("draw-cad-tools-section")).toContainText("Annotate / Organize");
-    await expect(page.getByTestId("draw-selected-object-card")).toBeVisible();
-    await expect(page.getByTestId("draw-selected-object-card")).toContainText("Selected Object");
+    await expect(page.getByTestId("draw-selected-object-card")).toHaveCount(0);
     await expect(page.getByTestId("object-manager-panel")).toBeVisible();
     await expect(page.getByTestId("object-manager-list")).toBeVisible();
     await expect(page.getByTestId("object-manager-quick-stats")).toContainText("Visible");

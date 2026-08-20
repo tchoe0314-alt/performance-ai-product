@@ -177,6 +177,7 @@ export default function PreviewPanel({
   onSetPreviewMode,
   onSetPreviewInteraction,
   onSetPreviewQuality,
+  onDrawingActiveChange,
   onAiRealismChange,
   preview3DEffectiveItems,
   usingAnnotation3D,
@@ -278,6 +279,11 @@ export default function PreviewPanel({
   const fullscreenContainerReady = false;
   const [cursorSitePoint, setCursorSitePoint] = useState<{ x: number; y: number } | null>(null);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
+
+  useEffect(() => {
+    onDrawingActiveChange?.(drawMode !== "select");
+    return () => onDrawingActiveChange?.(false);
+  }, [drawMode, onDrawingActiveChange]);
   const [cadSnapEnabled, setCadSnapEnabled] = useState(true);
   const [cadOrthoEnabled, setCadOrthoEnabled] = useState(false);
   const [cadOffsetDistance, setCadOffsetDistance] = useState("10");
@@ -2647,9 +2653,11 @@ export default function PreviewPanel({
           />
           <CadPrecisionDock
             visible={previewMode === "2d" && allowEdits && hasCadCommandActivity}
-            openRequestToken={`${cadActiveCommand?.command || cadCommandDraft.trim().split(/\s+/, 1)[0] || ""}:${
-              cadToolRequest?.tool === "command" ? cadToolRequest.id : ""
-            }`}
+            openRequestToken={
+              cadActiveCommand?.command ||
+              cadCommandDraft.trim().split(/\s+/, 1)[0] ||
+              (cadToolRequest?.tool === "command" ? String(cadToolRequest.id) : "")
+            }
             selectedCadObject={selectedCadObject}
             selectedCadIds={selectedCadIds}
             selectedBuildingId={selectedBuildingId}
@@ -2710,6 +2718,7 @@ export default function PreviewPanel({
           allowEdits &&
           !hasCadCommandActivity &&
           drawMode === "select" &&
+          !cadCommandStatusDisplay.startsWith("SELECT tool active") &&
           ((cadToolRequest && !cadToolRequest.silent) || cadCommandHistoryDisplay.length > 0) ? (
             <div
               className="pointer-events-none absolute bottom-[4.75rem] left-3 z-[255] max-w-[min(24rem,calc(100%-1.5rem))] rounded-[7px] border border-slate-200 bg-white/97 px-3 py-2 text-xs font-medium text-slate-700 shadow-[0_16px_46px_-30px_rgba(15,23,42,0.5)] backdrop-blur-xl"

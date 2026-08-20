@@ -219,7 +219,7 @@ export function CadPrecisionDock({
   return (
     <details
       ref={detailsRef}
-      className="civora-cad-dock group relative z-20 mb-3 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white/95 shadow-sm"
+      className="civora-cad-dock group relative z-20 mb-3 shrink-0 overflow-hidden rounded-[8px] border border-slate-200 bg-white/95 shadow-sm"
       data-testid="cad-precision-tools"
     >
       <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 px-3 py-2 text-left marker:hidden">

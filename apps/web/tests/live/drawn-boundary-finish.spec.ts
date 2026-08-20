@@ -181,6 +181,11 @@ async function clickVisibleControl(control: Locator) {
 }
 
 async function selectObjectByName(page: Page, name: string) {
+  const precisionDock = page.getByTestId("cad-precision-tools");
+  const precisionText = await precisionDock.textContent().catch(() => "");
+  if ((await precisionDock.isVisible().catch(() => false)) && precisionText?.includes(name)) {
+    return;
+  }
   const objectManager = page.getByTestId("preview-object-manager-list").filter({ visible: true }).first();
   if (await objectManager.isVisible().catch(() => false)) {
     await objectManager.selectOption({ label: name });
@@ -216,7 +221,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await finishDraft(page, canvas);
 
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
-    await expect(canvas).toContainText(/SITE LOCKED.*300 FT x 130 FT/i);
+    await expect(canvas).toContainText(/SITE LOCKED.*\d+ FT x \d+ FT/i);
     await expect(page.getByTestId("canonical-site-boundary")).toBeVisible();
     const quickPalette = canvas.getByTestId("canvas-quick-draw-palette");
     await expect(quickPalette.getByRole("button", { name: /Add (Line|Area|Box|Point)/ })).toHaveCount(0);

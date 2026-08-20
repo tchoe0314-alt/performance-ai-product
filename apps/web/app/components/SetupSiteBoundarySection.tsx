@@ -42,7 +42,6 @@ export function SetupSiteBoundarySection({
   const canLockBoundary = hasSiteDimensions || hasTypedSiteSize;
   return (
     <DisclosurePanel
-      defaultOpen
       testId="setup-site-box-controls"
       title="Site Boundary"
       subtitle={hasSiteDimensions ? `${lotBounds.w!.toFixed(0)} ft x ${lotBounds.h!.toFixed(0)} ft` : "No site boundary yet"}

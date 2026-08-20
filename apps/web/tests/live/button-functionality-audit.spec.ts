@@ -53,6 +53,10 @@ async function clickCadTool(page: Page, tool: string, expected: RegExp) {
     await expect(page.getByTestId("draw-active-tool")).toContainText(activeDrawLabels[tool], { timeout: 5_000 });
     return;
   }
+  if (tool === "select") {
+    await expect(page.getByRole("button", { name: "Select and edit objects" })).toHaveAttribute("aria-pressed", "true");
+    return;
+  }
   await expect(page.getByTestId("cad-command-feedback-panel")).toContainText(expected, { timeout: 5_000 });
 }
 

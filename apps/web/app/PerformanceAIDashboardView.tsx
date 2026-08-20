@@ -506,6 +506,7 @@ function PerformanceAIDashboardView({
   const [showSiteBounds, setShowSiteBounds] = useState(false);
   const [fitToSiteRequest, setFitToSiteRequest] = useState(0);
   const [siteDrawRequest, setSiteDrawRequest] = useState(0);
+  const [canvasDrawingActive, setCanvasDrawingActive] = useState(false);
   const [mapCenterRequest, setMapCenterRequest] = useState(0);
   const [alignToRoadRequest, setAlignToRoadRequest] = useState(0);
   const debugPreview = useMemo(() => {
@@ -5089,7 +5090,7 @@ function PerformanceAIDashboardView({
   const canvasPreviewInteraction =
     canvasDrawControlsActive || previewInteraction === "edit" ? "edit" : "static";
   const commandBarVisible = !previewFullscreenOpen;
-  const commandBarDockVisible = commandBarVisible;
+  const commandBarDockVisible = commandBarVisible && !canvasDrawingActive;
   const handleCopyIssueDiagnostic = async () => {
     try {
       await navigator.clipboard.writeText(issueDiagnosticSummary);
@@ -5689,6 +5690,7 @@ function PerformanceAIDashboardView({
     onSetPreviewMode: handleSetPreviewMode,
     onSetPreviewInteraction: setPreviewInteraction,
     onSetPreviewQuality: handleSetPreviewQuality,
+    onDrawingActiveChange: setCanvasDrawingActive,
     onRecordRecentChange: recordRecentChange,
     onPushRecoveryMessage: pushRecoveryMessage,
     previewRefreshing,

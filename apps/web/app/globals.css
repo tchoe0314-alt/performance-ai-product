@@ -167,15 +167,11 @@ body,
   left: 0.75rem;
   right: auto;
   bottom: 4.75rem;
-  width: min(44rem, calc(100% - 1.5rem));
+  width: min(30rem, calc(100% - 1.5rem));
   max-height: min(42svh, 28rem);
   margin-bottom: 0;
   opacity: 1;
   pointer-events: auto;
-}
-
-.civora-preview-canvas-container:has(.civora-active-draw-hud) .civora-cad-dock {
-  bottom: 8.25rem;
 }
 
 .civora-preview-zoom-controls,

@@ -231,6 +231,7 @@ export type PreviewPanelProps = {
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetPreviewInteraction: (value: "static" | "edit") => void;
   onSetPreviewQuality: (value: "standard" | "high") => void;
+  onDrawingActiveChange?: (active: boolean) => void;
   onAiRealismChange?: (event: { type: "generated" | "stale" | "blocked"; detail: string }) => void;
   previewRefreshing: boolean;
   previewRefreshNote: string | null;

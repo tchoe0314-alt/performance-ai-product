@@ -23,7 +23,7 @@ export function PreviewCanvasControlStack({
         <PreviewCanvasHeaderControls {...headerProps} />
       </div>
       {activeDrawHudProps.drawMode !== "select" ? (
-        <div className="civora-active-draw-hud absolute bottom-[4.75rem] left-1/2 z-[250] hidden w-[min(42rem,calc(100%-1.5rem))] -translate-x-1/2 overflow-hidden rounded-[8px] border border-slate-200 bg-white/97 shadow-[0_16px_46px_-28px_rgba(15,23,42,0.55)] backdrop-blur-xl md:block">
+        <div className="civora-active-draw-hud absolute left-1/2 top-20 z-[250] hidden w-[min(36rem,calc(100%-1.5rem))] -translate-x-1/2 overflow-hidden rounded-[8px] border border-slate-200 bg-white/97 shadow-[0_16px_46px_-28px_rgba(15,23,42,0.55)] backdrop-blur-xl md:block">
           <PreviewActiveDrawHud {...activeDrawHudProps} />
         </div>
       ) : null}

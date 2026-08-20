@@ -168,7 +168,12 @@ export function PreviewEditableObjectHitTargets({
             return false;
           }
           const editableSiteBox =
-            item.type === "site" && previewInteraction === "edit" && !siteLocked && showSiteBounds && !showMap;
+            item.type === "site" &&
+            drawMode !== "site" &&
+            previewInteraction === "edit" &&
+            !siteLocked &&
+            showSiteBounds &&
+            !showMap;
           return (
             (item.type !== "site" || editableSiteBox) &&
             item.placed &&

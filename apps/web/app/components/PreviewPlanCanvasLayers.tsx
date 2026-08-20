@@ -143,7 +143,7 @@ export function PreviewPlanCanvasLayers({
       {!showMap && !siteLocked && (showSiteBounds || drawMode === "site") ? (
         <div
           data-testid="local-site-bounds-overlay"
-          className={`absolute inset-0 rounded-[16px] border border-dashed ${legendPalette.siteBorder} ${legendPalette.siteFill}`}
+          className={`absolute inset-0 border border-dashed ${legendPalette.siteBorder}`}
           style={viewportTransformStyle}
         />
       ) : null}

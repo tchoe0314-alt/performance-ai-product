@@ -97,7 +97,7 @@ export function SelectedObjectCard({
     selectedObject && /building/.test(String(selectedObject.type || "")),
   );
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="draw-selected-object-card">
+    <div className="rounded-[8px] border border-slate-200 bg-white p-4" data-testid="draw-selected-object-card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">

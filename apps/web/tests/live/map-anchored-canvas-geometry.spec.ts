@@ -117,6 +117,28 @@ test.describe("map anchored canvas geometry transforms", () => {
     expect(second!.y - first!.y).toBe(150);
   });
 
+  test("drawing ignores pointers outside the rendered site instead of clamping them to an edge", () => {
+    const outside = normalizePreviewPointerSitePoint({
+      rawSitePoint: { x: -25, y: 400 },
+      drawMode: "site",
+      drawingLotWidth: 1000,
+      drawingLotHeight: 1000,
+      lotWidth: 1000,
+      lotHeight: 1000,
+    });
+    const inside = normalizePreviewPointerSitePoint({
+      rawSitePoint: { x: 250.2, y: 400.4 },
+      drawMode: "site",
+      drawingLotWidth: 1000,
+      drawingLotHeight: 1000,
+      lotWidth: 1000,
+      lotHeight: 1000,
+    });
+
+    expect(outside).toBeNull();
+    expect(inside).toMatchObject({ x: 250, y: 400, relX: 0.2502, relY: 0.4004 });
+  });
+
   test("camera pan and zoom change projection but not canonical rectangle geometry", () => {
     const building = rectangleBuilding();
     const canonicalBefore = structuredClone(building);

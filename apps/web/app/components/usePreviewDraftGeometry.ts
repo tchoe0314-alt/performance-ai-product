@@ -164,9 +164,10 @@ export function usePreviewDraftGeometry({
       clearDraftGeometry();
       setDrawMode("site");
       onSetPreviewInteraction("edit");
+      setCadCommandStatus("Draw Site Boundary active. Click inside the site canvas, then Finish or Cancel.");
     });
     return () => window.cancelAnimationFrame(handle);
-  }, [cadToolRequest?.id, cadToolRequest?.tool, clearDraftGeometry, lastSiteDrawRequestRef, onSetPreviewInteraction, setDrawMode, siteDrawRequest, siteLocked]);
+  }, [cadToolRequest?.id, cadToolRequest?.tool, clearDraftGeometry, lastSiteDrawRequestRef, onSetPreviewInteraction, setCadCommandStatus, setDrawMode, siteDrawRequest, siteLocked]);
 
   const finishDraftGeometry = useCallback(() => {
     if (drawMode !== "site" && drawMode !== "polyline" && drawMode !== "polygon" && drawMode !== "rect") {

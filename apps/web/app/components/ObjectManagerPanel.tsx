@@ -43,9 +43,7 @@ export function ObjectManagerPanel({
         <div data-testid="preview-object-manager">
           <SelectedObjectCard {...selectedObject} />
         </div>
-      ) : (
-        <SelectedObjectCard {...selectedObject} />
-      )}
+      ) : null}
       {statusMessage ? (
         <p className="rounded-[7px] border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600" data-testid="object-manager-status">
           {statusMessage}
@@ -53,7 +51,7 @@ export function ObjectManagerPanel({
       ) : null}
 
       <DisclosurePanel
-        defaultOpen={!selectedObject.selectedObject}
+        defaultOpen={!selectedObject.selectedObject && overview.totalCount > 0}
         title="Objects"
         subtitle="Select, focus, rename, hide, or delete"
         status={overview.totalCount}
