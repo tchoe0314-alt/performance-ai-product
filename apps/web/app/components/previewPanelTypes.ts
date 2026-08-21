@@ -220,6 +220,7 @@ export type PreviewPanelProps = {
   previewMode: "2d" | "3d";
   previewInteraction: "static" | "edit";
   draftingWorkspaceActive?: boolean;
+  transientMenuCloseToken?: string;
   previewQuality: "standard" | "high";
   systemStatuses: EngineeringSystemStatuses;
   hasTerrainSource: boolean;

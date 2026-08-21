@@ -51,15 +51,21 @@ export function SetupAddressSection({
   onSaveSiteAddress,
   onStartBlankSite,
 }: SetupAddressSectionProps) {
+  const addressSavedLocally =
+    autoExistingConditionsStatus.status === "blocked" &&
+    /address saved locally/i.test(autoExistingConditionsStatus.message);
+
   return (
     <DisclosurePanel
       defaultOpen
       testId="setup-address-truth"
       title="Address / Location"
       subtitle={pendingAddressEdit ? siteAddress.trim() : appliedAddress || siteAddress.trim() || "No address applied"}
-      status={addressNeedsApply ? "Needs apply" : hasAppliedAddress ? "Applied" : localAddressLocked ? "Local" : "Not set"}
+      status={addressSavedLocally ? "Saved locally" : addressNeedsApply ? "Needs apply" : hasAppliedAddress ? "Applied" : localAddressLocked ? "Local" : "Not set"}
       statusClassName={
-        addressNeedsApply
+        addressSavedLocally
+          ? "bg-emerald-50 text-emerald-700"
+          : addressNeedsApply
           ? "bg-amber-50 text-amber-700"
           : hasAppliedAddress || localAddressLocked
             ? "bg-emerald-50 text-emerald-700"

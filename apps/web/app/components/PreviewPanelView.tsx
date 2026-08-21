@@ -169,6 +169,7 @@ export default function PreviewPanel({
   previewMode,
   previewInteraction,
   draftingWorkspaceActive = false,
+  transientMenuCloseToken,
   previewQuality,
   systemStatuses,
   hasTerrainSource,
@@ -2600,6 +2601,7 @@ export default function PreviewPanel({
               sourceLayerVisibility,
               sourceLayerCounts,
               precisionToolsVisible: cadPrecisionToolsVisible,
+              transientMenuCloseToken,
               onSetPreviewQuality,
               onSetPreviewMode: (nextMode) => {
                 if (nextMode === "3d" && drawMode !== "select") {

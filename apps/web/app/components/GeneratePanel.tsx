@@ -127,6 +127,39 @@ export function GeneratePanel({
       }, new Map<string, Issue>())
       .values(),
   ).slice(0, 6);
+  const systemsPanel = (
+    <PanelCard testId="generate-system-list">
+      <p className="text-sm font-semibold text-slate-900">Systems</p>
+      <div className="mt-2 divide-y divide-slate-100">
+        {systemReadinessRows.map((row) => (
+          <button
+            key={row.key}
+            type="button"
+            data-testid={`generate-${row.key}`}
+            onClick={() => onGenerateSystem(row.runTarget)}
+            disabled={actionBusy || isAwaitingApproval}
+            className="flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left text-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="min-w-0">
+              <span className="block font-semibold text-slate-900">{row.label}</span>
+              <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
+                {row.status === "fresh" ? "Current in this workspace" : row.blockers[0] || "Ready to run"}
+              </span>
+            </span>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+              row.status === "fresh"
+                ? "bg-emerald-50 text-emerald-700"
+                : row.blockers.length
+                  ? "bg-amber-50 text-amber-700"
+                  : "bg-slate-100 text-slate-500"
+            }`}>
+              {row.status === "fresh" ? "Current" : row.blockers.length ? "Needs input" : "Ready"}
+            </span>
+          </button>
+        ))}
+      </div>
+    </PanelCard>
+  );
 
   return (
     <div className="space-y-3" data-testid="clean-generate-panel">
@@ -250,37 +283,14 @@ export function GeneratePanel({
         </details>
       </PanelCard>
 
-      <PanelCard testId="generate-system-list">
-        <p className="text-sm font-semibold text-slate-900">Systems</p>
-        <div className="mt-2 divide-y divide-slate-100">
-          {systemReadinessRows.map((row) => (
-            <button
-              key={row.key}
-              type="button"
-              data-testid={`generate-${row.key}`}
-              onClick={() => onGenerateSystem(row.runTarget)}
-              disabled={actionBusy || isAwaitingApproval}
-              className="flex w-full items-center justify-between gap-3 px-1 py-2.5 text-left text-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span className="min-w-0">
-                <span className="block font-semibold text-slate-900">{row.label}</span>
-                <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
-                  {row.status === "fresh" ? "Current in this workspace" : row.blockers[0] || "Ready to run"}
-                </span>
-              </span>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                row.status === "fresh"
-                  ? "bg-emerald-50 text-emerald-700"
-                  : row.blockers.length
-                    ? "bg-amber-50 text-amber-700"
-                    : "bg-slate-100 text-slate-500"
-              }`}>
-                {row.status === "fresh" ? "Current" : row.blockers.length ? "Needs input" : "Ready"}
-              </span>
-            </button>
-          ))}
-        </div>
-      </PanelCard>
+      {missingSite ? (
+        <details className="rounded-[8px] border border-slate-200 bg-white px-3 py-2" data-testid="generate-system-readiness-details">
+          <summary className="cursor-pointer list-none text-xs font-semibold text-slate-600">
+            System details
+          </summary>
+          <div className="mt-3">{systemsPanel}</div>
+        </details>
+      ) : systemsPanel}
 
       {issueActions.length ? (
         <PanelCard testId="generate-issue-actions">

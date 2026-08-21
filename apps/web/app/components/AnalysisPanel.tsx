@@ -27,15 +27,24 @@ export function AnalysisPanel({
   onRunAccessAnalysis,
   onOpenDashboard,
 }: AnalysisPanelProps) {
+  const needsSystemInput = blockedSystemCount > 0;
+  const hasAttentionItems = issues.length > 0 || needsSystemInput;
+
   return (
     <div className="space-y-3" data-testid="clean-review-panel">
       <section className="rounded-[8px] border border-slate-200 bg-white p-3">
         <div className="flex items-start gap-3">
-          <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] ${issues.length ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
-            {issues.length ? <CircleAlert className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+          <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] ${hasAttentionItems ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
+            {hasAttentionItems ? <CircleAlert className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-950">{issues.length ? `${issues.length} item${issues.length === 1 ? "" : "s"} need attention` : "No active review issues"}</p>
+            <p className="text-sm font-semibold text-slate-950">
+              {issues.length
+                ? `${issues.length} item${issues.length === 1 ? "" : "s"} need attention`
+                : needsSystemInput
+                  ? "Setup needs input before a full review"
+                  : "No active review issues"}
+            </p>
             <p className="mt-1 text-xs leading-5 text-slate-500">{systemsCompleteCount} systems current · {blockedSystemCount} need input</p>
           </div>
         </div>
@@ -69,7 +78,13 @@ export function AnalysisPanel({
               </div>
             </div>
           ))}
-          {!issues.length ? <p className="px-3 py-5 text-center text-xs text-slate-500">This project has no active review issues.</p> : null}
+          {!issues.length ? (
+            <p className="px-3 py-5 text-center text-xs text-slate-500">
+              {needsSystemInput
+                ? "No conflicts are detected yet. Complete the needed inputs, then run the review scan."
+                : "This project has no active review issues."}
+            </p>
+          ) : null}
         </div>
       </section>
 

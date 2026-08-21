@@ -61,7 +61,11 @@ export function WorkspaceCanvasArea({
             className="civora-workspace-canvas-frame pointer-events-auto absolute inset-y-0 z-0 overflow-hidden"
           >
             <div className="h-full w-full">
-              <PreviewPanel key={previewSessionVersion} {...previewPanelProps} />
+              <PreviewPanel
+                key={previewSessionVersion}
+                {...previewPanelProps}
+                transientMenuCloseToken={`${sidePanelForRender ?? "none"}:${rightRailCollapsed ? "closed" : "open"}`}
+              />
             </div>
           </div>
         </div>

@@ -49,6 +49,7 @@ type PreviewCanvasHeaderControlsProps = {
   sourceLayerVisibility: PreviewSourceLayerVisibility;
   sourceLayerCounts: { detectedExisting: number; proposedDesign: number };
   precisionToolsVisible: boolean;
+  transientMenuCloseToken?: string;
   onSetPreviewQuality: (value: "standard" | "high") => void;
   onSetPreviewMode: (value: "2d" | "3d") => void;
   onSetAiVisualizationOff: () => void;
@@ -99,6 +100,7 @@ export function PreviewCanvasHeaderControls({
   sourceLayerVisibility,
   sourceLayerCounts,
   precisionToolsVisible,
+  transientMenuCloseToken,
   onSetPreviewQuality,
   onSetPreviewMode,
   onSetAiVisualizationOff,
@@ -129,6 +131,10 @@ export function PreviewCanvasHeaderControls({
     const preloadTimer = window.setTimeout(() => void loadPreview3DCanvas(), 1500);
     return () => window.clearTimeout(preloadTimer);
   }, [canUse3D]);
+
+  useEffect(() => {
+    closeHeaderMenus();
+  }, [transientMenuCloseToken]);
 
   return (
     <div className="pointer-events-auto relative flex min-w-0 items-center gap-1 rounded-[8px] border border-slate-200/90 bg-white/96 p-1 shadow-[0_16px_44px_-30px_rgba(15,23,42,0.55)] backdrop-blur-xl">

@@ -182,6 +182,13 @@ export function DeliverPanel({
   const visiblePackageNextAction = visiblePackageMissing.length
     ? `Review or add: ${visiblePackageMissing.slice(0, 3).join("; ")}`
     : "Review the package, then export or share it for qualified review.";
+  const currentPackageMissingCount = [
+    !planPreviewUrl,
+    !hasBackendResult,
+    !placedObjectCount,
+    ...planSheetBlockers.slice(0, 3).map(Boolean),
+  ].filter(Boolean).length;
+  const packageNeedsInput = Boolean(reviewPackageFlowSummary?.blocked || currentPackageMissingCount);
 
   return (
     <div className="space-y-3" data-testid="clean-deliver-panel">
@@ -192,9 +199,9 @@ export function DeliverPanel({
             <p className="mt-1 text-xs leading-5 text-slate-500">Package the current plan, sources, results, and notes.</p>
           </div>
           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-            reviewPackageFlowSummary?.blocked ? "bg-amber-50 text-amber-700" : reviewPackageFlowSummary ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+            packageNeedsInput ? "bg-amber-50 text-amber-700" : reviewPackageFlowSummary ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
           }`}>
-            {reviewPackageFlowSummary?.blocked ? "Needs input" : reviewPackageFlowSummary ? "Made" : "Review"}
+            {packageNeedsInput ? "Needs input" : reviewPackageFlowSummary ? "Made" : "Not made"}
           </span>
         </div>
         <button
@@ -232,25 +239,20 @@ export function DeliverPanel({
         testId="deliver-package-contents"
         title="Package contents"
         subtitle="What will be included and what is still missing"
-        status={visiblePackageMissing.length ? `${visiblePackageMissing.length} missing` : "Ready"}
+        status={currentPackageMissingCount ? `${currentPackageMissingCount} missing` : "Ready"}
       >
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
           <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
             <p className="font-semibold uppercase tracking-[0.12em] text-emerald-700">Included</p>
             <p className="mt-1 text-lg font-semibold text-emerald-900">
-              {[planPreviewUrl, hasBackendResult, placedObjectCount > 0, sidebarTrustScore].filter(Boolean).length}
+              {[planPreviewUrl, hasBackendResult, placedObjectCount > 0, autoSiteContextFlowSummary.candidateCount > 0].filter(Boolean).length}
             </p>
-            <p className="mt-1 text-[11px] font-medium text-emerald-700">items ready for review</p>
+            <p className="mt-1 text-[11px] font-medium text-emerald-700">items currently available</p>
           </div>
           <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-3">
             <p className="font-semibold uppercase tracking-[0.12em] text-amber-700">Missing</p>
             <p className="mt-1 text-lg font-semibold text-amber-900">
-              {[
-                !planPreviewUrl,
-                !hasBackendResult,
-                !placedObjectCount,
-                ...planSheetBlockers.slice(0, 3).map(Boolean),
-              ].filter(Boolean).length}
+              {currentPackageMissingCount}
             </p>
             <p className="mt-1 text-[11px] font-medium text-amber-700">items to review or add</p>
           </div>

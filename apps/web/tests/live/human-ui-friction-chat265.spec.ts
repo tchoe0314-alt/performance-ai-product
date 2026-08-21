@@ -105,6 +105,10 @@ test.describe("Chat 265 human UI friction repair", () => {
     await expect(page.getByTestId("preview-layer-visibility-summary")).toContainText("Existing hidden");
     await existingLayer.click();
     await expect(existingLayer).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+    await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
+    await expect(page.getByTestId("preview-semantic-layer-controls")).toBeHidden();
     expect(consoleErrors).toEqual([]);
   });
 
@@ -192,6 +196,7 @@ test.describe("Chat 265 human UI friction repair", () => {
     const siteSection = page.getByTestId("setup-site-box-controls");
     await expect(siteSection).not.toContainText(/No boundary locked|Needs lock/i);
     await expect(siteSection).toContainText(/No site boundary yet|Not set/i);
+    await siteSection.getByText("Site Boundary", { exact: true }).click();
 
     await expect(siteSection.getByRole("button", { name: "Enter a size" })).toBeDisabled();
     await siteSection.getByTestId("use-1000-site-size").click();
@@ -201,5 +206,23 @@ test.describe("Chat 265 human UI friction repair", () => {
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
     await page.waitForTimeout(700);
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
+  });
+
+  test("empty projects stay honest and uncluttered across Generate, Review, and Deliver", async ({ page }) => {
+    await openDemoWorkspace(page, "debugPreview=1&seedDemo=0");
+
+    await page.getByRole("button", { name: /^Generate$/ }).filter({ visible: true }).first().click();
+    await expect(page.getByTestId("generate-main-action")).toContainText(/needs site boundary/i);
+    await expect(page.getByTestId("generate-system-readiness-details")).toBeVisible();
+    await expect(page.getByTestId("generate-system-list")).toBeHidden();
+
+    await page.getByRole("button", { name: /^Review$/ }).filter({ visible: true }).first().click();
+    await expect(page.getByTestId("clean-review-panel")).toContainText("Setup needs input before a full review");
+    await expect(page.getByTestId("clean-review-panel")).toContainText("No conflicts are detected yet");
+
+    await page.getByRole("button", { name: /^Deliver$/ }).filter({ visible: true }).first().click();
+    await expect(page.getByTestId("deliver-review-package-flow")).toContainText("Needs input");
+    await expect(page.getByTestId("deliver-package-contents")).toContainText(/\d+ missing/i);
+    await expect(page.getByTestId("deliver-package-contents")).toContainText(/Included0items currently available/i);
   });
 });
