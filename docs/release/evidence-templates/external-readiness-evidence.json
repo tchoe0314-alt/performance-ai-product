@@ -1,0 +1,11 @@
+{
+  "billing_activation_review": {"status": "pending", "owner": "", "evidence_date": "", "evidence_url": ""},
+  "incident_response_owner": {"status": "pending", "owner": "", "evidence_date": "", "evidence_url": ""},
+  "independent_engineer_benchmark_review": {"status": "pending", "owner": "", "evidence_date": "", "evidence_url": ""},
+  "legal_terms_and_privacy_review": {"status": "pending", "owner": "", "evidence_date": "", "evidence_url": ""},
+  "professional_liability_insurance_review": {"status": "pending", "owner": "", "evidence_date": "", "evidence_url": ""},
+  "provider_backup_restore_drill": {"status": "pending", "owner": "", "evidence_date": "", "evidence_url": ""},
+  "security_assessment": {"status": "pending", "owner": "", "evidence_date": "", "evidence_url": ""},
+  "source_license_and_rights_review": {"status": "pending", "owner": "", "evidence_date": "", "evidence_url": ""},
+  "support_owner": {"status": "pending", "owner": "", "evidence_date": "", "evidence_url": ""}
+}

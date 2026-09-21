@@ -1,0 +1,15 @@
+{
+  "revision": "",
+  "integrated_actions": [],
+  "browser_verified_actions": [],
+  "required_actions": [
+    "accept_detected_conditions",
+    "change_accepted_standards",
+    "apply_major_design_fix",
+    "reroute_engineering_system",
+    "delete_protected_object",
+    "regenerate_affected_systems",
+    "create_review_package"
+  ],
+  "notes": "Only add an action after its product path calls the shared confirmation contract and its built-site browser proof passes."
+}

@@ -1,0 +1,18 @@
+{
+  "projects": [
+    {
+      "project_id": "",
+      "project_type": "",
+      "software_revision": "",
+      "input_artifact_hashes": [],
+      "reviewer": "",
+      "reviewer_qualification": "",
+      "review_date": "",
+      "disposition": "pending",
+      "disciplines": [],
+      "comparisons": [
+        {"metric": "", "expected": null, "observed": null, "tolerance": null, "units": ""}
+      ]
+    }
+  ]
+}
