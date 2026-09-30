@@ -101,6 +101,19 @@ export default function PilotPage() {
             .
           </p>
         </section>
+
+        <section className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-5">
+          <h2 className="text-lg font-semibold text-emerald-950">Real-terrain validation</h2>
+          <p className="mt-2 text-sm leading-7 text-emerald-900">
+            See Civora&apos;s rights-cleared USGS terrain benchmark, the checks it passed, and the evidence that still requires professional review.
+          </p>
+          <Link
+            className="mt-3 inline-flex rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
+            href="/validation/terrain"
+          >
+            View terrain validation
+          </Link>
+        </section>
       </div>
     </main>
   );
