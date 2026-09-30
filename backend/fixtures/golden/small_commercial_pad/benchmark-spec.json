@@ -1,0 +1,83 @@
+{
+  "benchmark_id": "commercial-pad-001",
+  "benchmark_version": "1.0.0",
+  "scenario_id": "small_commercial_pad",
+  "name": "Small Commercial Pad Internal Reference",
+  "project_type": "commercial_pad",
+  "data_classification": "repository_owned_synthetic_reference",
+  "intended_use": "Deterministic product regression and preparation for independent engineer review.",
+  "prohibited_claims": [
+    "real customer project",
+    "independently engineered reference",
+    "permit ready",
+    "construction ready"
+  ],
+  "inputs": [
+    {
+      "path": "backend/fixtures/golden/small_commercial_pad/survey.csv",
+      "source": "Civora deterministic fixture",
+      "rights_status": "repository_owned",
+      "coordinate_system": "EPSG:2276",
+      "horizontal_datum": "NAD83",
+      "vertical_datum": "NAVD88",
+      "limitation": "Synthetic four-point surface; not a professional survey."
+    },
+    {
+      "path": "backend/fixtures/golden/small_commercial_pad/constraints.geojson",
+      "source": "Civora deterministic fixture",
+      "rights_status": "repository_owned",
+      "coordinate_system": "EPSG:2276",
+      "horizontal_datum": "NAD83",
+      "vertical_datum": "not_applicable",
+      "limitation": "Synthetic parcel and constraint geometry; not jurisdictional evidence."
+    }
+  ],
+  "expected_outcomes": [
+    {
+      "metric": "lot_area_sf",
+      "expected": 35200.0,
+      "tolerance": 0.0,
+      "tolerance_type": "absolute",
+      "units": "square_feet",
+      "method": "220 ft by 160 ft rectangular boundary"
+    },
+    {
+      "metric": "storm_segment_count",
+      "minimum": 1,
+      "units": "count",
+      "method": "Canonical storm network existence check"
+    },
+    {
+      "metric": "sanitary_segment_count",
+      "minimum": 1,
+      "units": "count",
+      "method": "Canonical sanitary network existence check"
+    },
+    {
+      "metric": "utility_segment_count",
+      "minimum": 1,
+      "units": "count",
+      "method": "Canonical utility network existence check"
+    },
+    {
+      "metric": "pipe_length_ft",
+      "minimum": 25.0,
+      "units": "feet",
+      "method": "Canonical quantity or storm-segment length total"
+    },
+    {
+      "metric": "civil_production_ready",
+      "equals": false,
+      "units": "boolean",
+      "method": "Fail-closed readiness contract"
+    }
+  ],
+  "independent_review": {
+    "required": true,
+    "status": "pending",
+    "reviewer": "",
+    "reviewer_qualification": "",
+    "review_date": "",
+    "evidence_url": ""
+  }
+}
