@@ -21,6 +21,13 @@ async function enableHighQuality(page: Page) {
   await expect(page.getByTestId("ai-realism-toggle")).toBeVisible();
 }
 
+async function openAiVisualizationControls(page: Page) {
+  const toggle = page.getByTestId("ai-realism-toggle");
+  if (await toggle.isVisible().catch(() => false)) return;
+  await page.getByLabel("Preview view options").click();
+  await expect(toggle).toBeVisible();
+}
+
 async function expectTechnicalPlanGeometry(page: Page) {
   const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
   if ((await mapCanvas.count()) > 0) {
@@ -154,6 +161,7 @@ test.describe("Chat 226 AI visualization preview", () => {
     await expect(page.getByTestId("cad-command-feedback-panel")).toContainText("LINE created");
 
     await page.keyboard.press("Escape");
+    await openAiVisualizationControls(page);
     await page.getByTestId("ai-realism-on").click();
     await page.getByTestId("ai-realism-details-toggle").click();
     await expect(page.getByTestId("ai-realism-stale-warning")).toContainText(
