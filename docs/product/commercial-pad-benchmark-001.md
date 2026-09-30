@@ -30,6 +30,33 @@ python3 backend/scripts/run_commercial_site_benchmark.py
 
 The report is written to `reports/validation/commercial-pad-001.json` by default.
 
+Prepare a reviewer worksheet that is already bound to the exact software revision
+and input hashes:
+
+```bash
+python3 backend/scripts/run_commercial_site_benchmark.py \
+  --write-review-template private/validation/commercial-pad-001-review.json
+```
+
+The worksheet is intentionally fail-closed: attestations, calculation results,
+reactive-change checks, reviewer identity, and disposition begin incomplete. Keep
+completed reviewer evidence outside the public repository when it contains names,
+license details, customer information, or confidential project data.
+
+After the independent reviewer completes the worksheet, validate it without
+editing the generated benchmark report:
+
+```bash
+python3 backend/scripts/run_commercial_site_benchmark.py \
+  --review-evidence private/validation/commercial-pad-001-review.json
+```
+
+Evidence is accepted only when its benchmark version, software revision, and full
+input hash manifest match the current run; every named calculation has an
+independent method, notes, and a passing result; and the building-move reactive
+workflow is fully reviewed. Acceptance changes pilot validation status only. It
+never changes construction readiness or authorizes professional release.
+
 ## Human evidence still required
 
 Use `docs/independent-engineer-validation-protocol.md` to replace the synthetic
