@@ -35,6 +35,18 @@ The external review should record the reviewer, date, input artifact hashes, exp
 
 Use `docs/independent-engineer-validation-protocol.md` for the review packet and sign-off record. A completed packet is evidence for a named benchmark and software revision only; it is not a blanket construction-release authorization.
 
+## Rights-Cleared Real Terrain
+
+The USGS 3DEP benchmark proves that Civora can ingest and independently cross-check a real public-domain terrain raster without treating it as a professional survey:
+
+```bash
+python3 backend/scripts/run_usgs_real_terrain_benchmark.py \
+  --input private/validation/usgs-real-terrain-001/source/usgs-3dep-dem-64x64.tif \
+  --expected-sha256 99e476142b91129365bc5ba81eb66bf5a5dc815145d65b8cad374cfc5b52f0dd
+```
+
+The pinned source URL, extent, rights statement, and hash are recorded in the generated report. This benchmark must remain review-only until survey control, a site boundary, vertical-datum acceptance, and independent engineer review are attached.
+
 ## Internal Assurance Bundle
 
 After the validation report exists, build a hashed evidence bundle without sending artifacts to an external AI provider:
