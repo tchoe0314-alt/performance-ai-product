@@ -753,14 +753,13 @@ class JobQueueService:
             return None
         job_types = sorted(self._handlers.keys())
         placeholders = ", ".join("?" for _ in job_types)
-        query = f"""
-                SELECT job_id
-                FROM jobs
-                WHERE status = 'queued'
-                  AND job_type IN ({placeholders})
-                ORDER BY created_at ASC
-                LIMIT 1
-                """
+        # Only placeholder tokens are interpolated; every job type remains a
+        # bound parameter. This keeps queue selection indexed and injection-safe.
+        query = (
+            "SELECT job_id FROM jobs WHERE status = 'queued' "  # nosec B608
+            + f"AND job_type IN ({placeholders}) "
+            + "ORDER BY created_at ASC LIMIT 1"
+        )
         connection = self.db.connect()
         try:
             row = connection.execute(

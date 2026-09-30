@@ -89,7 +89,8 @@ test.describe("Chat 220 preview fidelity", () => {
 
   test("map lock is a real reversible control and does not leak clicks into the map", async ({ page }) => {
     await openDemoWorkspace(page);
-    const mapLock = page.getByTestId("preview-map-lock-toggle");
+    await page.getByLabel("Preview view options").filter({ visible: true }).first().click();
+    const mapLock = page.getByTestId("preview-map-lock-toggle").filter({ visible: true }).first();
     if ((await mapLock.count()) === 0) {
       test.skip(true, "Map lock requires a configured map provider in this environment.");
       return;

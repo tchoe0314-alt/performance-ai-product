@@ -80,7 +80,8 @@ test.describe("canvas-first workspace redesign", () => {
     await expect(page.getByTestId("workspace-right-panel")).toBeHidden();
     const mobileTools = page.locator(".civora-preview-mobile-draw-toolbar");
     await expect(mobileTools).toBeVisible();
-    expect(overlap(await box(mobileTools), await box(page.getByTestId("floating-command-bar")))).toBe(0);
+    await expect(page.getByTestId("floating-command-bar")).toHaveCount(0);
+    expect(overlap(await box(mobileTools), await box(page.getByTestId("left-sidebar")))).toBe(0);
     await mobileTools.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(mobileTools).toHaveCount(0);
   });
@@ -90,6 +91,10 @@ test.describe("canvas-first workspace redesign", () => {
     await openCleanWorkspace(page);
 
     await page.getByRole("button", { name: "Setup", exact: true }).click();
+    const siteBoundarySection = page.getByTestId("setup-site-box-controls");
+    if (!(await siteBoundarySection.evaluate((node) => (node as HTMLDetailsElement).open))) {
+      await siteBoundarySection.locator(":scope > summary").click();
+    }
     await page.getByTestId("use-1000-site-size").click();
     await page.getByRole("button", { name: "Use this site", exact: true }).click();
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");

@@ -92,8 +92,8 @@ test.describe("RC1 accessibility and browser/device contract", () => {
     expect(overflow).toBeLessThanOrEqual(1);
     expect(await page.getByTestId("workspace-canvas-shell").count()).toBe(1);
     if (isMobile) {
-      await expect(page.getByTestId("header-chat-button-mobile")).toBeVisible();
-      await expect(page.getByTestId("header-projects-button-mobile")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Chat", exact: true }).filter({ visible: true }).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Projects", exact: true }).filter({ visible: true }).first()).toBeVisible();
     }
     runtime.assertClean();
   });

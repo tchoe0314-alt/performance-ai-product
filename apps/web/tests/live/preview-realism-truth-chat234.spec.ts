@@ -49,7 +49,7 @@ test.describe("Chat 234 preview realism truth pass", () => {
     if (liveMapVisible) {
       await expect(page.locator(".mapboxgl-canvas")).toHaveCount(1);
       await expect(page.locator(".mapboxgl-canvas")).toBeVisible();
-      await expect(page.getByTestId("plan-road-corridor").first()).toBeVisible();
+      await expect(page.locator('div[data-object-overlay][aria-label="Select Internal Loop Road"]')).toBeVisible();
       await expect(page.getByTestId("professional-building-footprint")).toHaveCount(0);
     } else {
       await expect(page.getByTestId("professional-building-footprint").first()).toBeVisible();
@@ -82,6 +82,11 @@ test.describe("Chat 234 preview realism truth pass", () => {
 
   test("keeps road width and the interactive site extent aligned in both quality modes", async ({ page }) => {
     await openDemoWorkspace(page);
+    const mapToggle = page.getByRole("button", { name: "Map", exact: true });
+    if ((await mapToggle.getAttribute("aria-pressed")) === "true") {
+      await mapToggle.click();
+      await expect(mapToggle).toHaveAttribute("aria-pressed", "false");
+    }
 
     await setPreviewQuality(page, "standard");
     const standardCorridor = page.getByTestId("plan-road-corridor").first();

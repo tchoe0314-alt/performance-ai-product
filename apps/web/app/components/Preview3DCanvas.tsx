@@ -178,6 +178,7 @@ const shouldIncludePreview3DItem = (item: Preview3DItem) => {
     minPlanDimension < 18 &&
     (layer === "OBJECT" || layer === "PARKING" || layer === "ROAD");
   const isSmallPavementDetail =
+    item.geometryType !== "polygon" &&
     (layer === "PARKING" || layer === "ROAD") &&
     minPlanDimension > 0 &&
     (minPlanDimension < 28 ||

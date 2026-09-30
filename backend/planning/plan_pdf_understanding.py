@@ -24,7 +24,7 @@ ANALYSIS_VERSION = "plan_pdf_analysis_v1"
 EDITABLE_VERSION = "plan_pdf_editable_sheet_v1"
 
 DIMENSION_RE = re.compile(
-    r"\b(?:\d+(?:\.\d+)?\s*(?:'|ft|feet|in|\"|inch|inches|lf|sf)|\d+\s*[- ]?\d*/\d+\s*(?:\"|in)?)\b",
+    r"\b(?:\d+(?:\.\d+)?\s*(?:['’′]|ft|feet|in|[\"“”″]|inch|inches|lf|sf)|\d+\s*[- ]?\d*/\d+\s*(?:[\"“”″]|in)?)\b",
     re.IGNORECASE,
 )
 ELEVATION_RE = re.compile(
@@ -32,7 +32,7 @@ ELEVATION_RE = re.compile(
     re.IGNORECASE,
 )
 SCALE_RE = re.compile(
-    r"(?:\bscale\s*[:=]?\s*)?(?:\d+\s*(?:\"|in)\s*=\s*\d+\s*(?:'|ft|feet)|\b1\s*:\s*\d+\b|\bnot\s+to\s+scale\b|\bnts\b)",
+    r"(?:\bscale\s*[:=]?\s*)?(?:\d+\s*(?:[\"“”″]|in)\s*=\s*\d+\s*(?:['’′]|ft|feet)|\b1\s*:\s*\d+\b|\bnot\s+to\s+scale\b|\bnts\b)",
     re.IGNORECASE,
 )
 MATCHLINE_RE = re.compile(r"\bmatch\s*line|matchline|see\s+sheet\b", re.IGNORECASE)

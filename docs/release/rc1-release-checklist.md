@@ -34,7 +34,7 @@ PYTHONPATH=. python3 backend/scripts/run_rc1_engineering_validation.py
 Install the pinned release-audit utilities outside the runtime dependency set before recording security evidence:
 
 ```bash
-python3 -m pip install -r requirements_audit.txt
+python3 -m pip install -r requirements_test.txt -r requirements_audit.txt
 ```
 
 The RC1 evidence runner audits npm, every pinned Python requirements set, and medium/high Bandit findings across `backend` and `scripts`. Missing audit tooling is a failed evidence item, not a silent skip.

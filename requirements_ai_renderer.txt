@@ -1,4 +1,4 @@
-accelerate==1.14.0
+accelerate==1.15.0
 diffusers==0.39.0
 fastapi==0.141.1
 pillow==12.3.0

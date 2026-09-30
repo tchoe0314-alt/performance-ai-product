@@ -2852,7 +2852,7 @@ export default function PreviewPanel({
                 setPreviewImageBounds,
                 updateImageBounds,
                 onMouseDown: (event) => {
-                  if (allowMapInteraction) return;
+                  if (allowMapInteraction && (drawMode === "select" || drawMode === "pan")) return;
                   if (drawMode === "pan") {
                     handleDrawPointer(event, overlayBoundsResolved);
                     return;

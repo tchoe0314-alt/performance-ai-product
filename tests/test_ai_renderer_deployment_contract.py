@@ -23,7 +23,7 @@ def test_renderer_dependencies_satisfy_diffusers_runtime_floor() -> None:
 
     assert "diffusers==0.39.0" in requirements
     assert "safetensors==0.8.0" in requirements
-    assert "accelerate==1.14.0" in requirements
+    assert "accelerate==1.15.0" in requirements
     assert "transformers==5.14.1" in requirements
 
 

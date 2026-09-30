@@ -489,7 +489,7 @@ export function useDashboardSiteAddressAction({
           });
         } catch (error) {
           if (!workspaceIsCurrent()) return;
-          if (error instanceof Error && error.name === "AbortError") {
+          if (sourceContextController.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
             const preservedDiscovery = nextSiteInputs.online_existing_conditions_discovery_v1;
             setAutoExistingConditionsStatus({
               status: "waiting",
@@ -739,7 +739,7 @@ export function useDashboardSiteAddressAction({
         });
       } catch (error) {
         if (!workspaceIsCurrent()) return;
-        if (error instanceof Error && error.name === "AbortError") {
+        if (sourceContextController.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
           const preservedDiscovery = nextSiteInputs.online_existing_conditions_discovery_v1;
           setAutoExistingConditionsStatus({
             status: "waiting",

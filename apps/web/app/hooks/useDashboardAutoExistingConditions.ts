@@ -249,7 +249,7 @@ export function useDashboardAutoExistingConditions({
             },
           });
         } catch (error) {
-          if (error instanceof Error && error.name === "AbortError") throw error;
+          if (sourceContextController.signal.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
           onlineFetch = {
             success: false,
             status: "fetch_failed",
@@ -450,7 +450,7 @@ export function useDashboardAutoExistingConditions({
           void handleGenerateSystemRef.current?.("grading", { slopeEstimateOverride });
         }
       } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
+        if (sourceContextController.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
           autoExistingRunKeyRef.current = "";
           setAutoExistingConditionsStatus({
             status: "waiting",

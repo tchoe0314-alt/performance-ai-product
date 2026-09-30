@@ -1,44 +1,21 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
+import { setPreviewQuality } from "./testUiHelpers";
+
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 async function clickExposedSurface(surface: Locator, xRatio: number, yRatio: number) {
   await surface.scrollIntoViewIfNeeded();
-  const point = await surface.evaluate(
-    (element, ratios) => {
-      const rect = element.getBoundingClientRect();
-      const clamp = (value: number) => Math.max(0.08, Math.min(0.92, value));
-      const candidates: Array<{ x: number; y: number; distance: number }> = [];
-      for (const xOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24]) {
-        for (const yOffset of [0, -0.08, 0.08, -0.16, 0.16, -0.24, 0.24]) {
-          const nextXRatio = clamp(ratios.xRatio + xOffset);
-          const nextYRatio = clamp(ratios.yRatio + yOffset);
-          const x = rect.left + rect.width * nextXRatio;
-          const y = rect.top + rect.height * nextYRatio;
-          const hit = document.elementFromPoint(x, y);
-          const blocked = hit?.closest?.(
-            '[data-object-overlay],button,input,select,textarea,aside,header,[data-testid="cad-precision-tools"],[data-testid="workspace-right-panel"]',
-          );
-          if ((hit === element || element.contains(hit)) && !blocked) {
-            candidates.push({
-              x,
-              y,
-              distance: Math.abs(nextXRatio - ratios.xRatio) + Math.abs(nextYRatio - ratios.yRatio),
-            });
-          }
-        }
-      }
-      candidates.sort((a, b) => a.distance - b.distance);
-      return candidates[0] ?? {
-        x: rect.left + rect.width * clamp(ratios.xRatio),
-        y: rect.top + rect.height * clamp(ratios.yRatio),
-      };
+  const bounds = await surface.boundingBox();
+  expect(bounds).not.toBeNull();
+  await surface.click({
+    position: {
+      x: bounds!.width * Math.max(0.08, Math.min(0.92, xRatio)),
+      y: bounds!.height * Math.max(0.08, Math.min(0.92, yRatio)),
     },
-    { xRatio, yRatio },
-  );
-  await surface.page().mouse.click(point.x, point.y);
+  });
 }
 
 function candidateInbox(statuses: Record<string, "pending" | "accepted" | "rejected"> = {}) {
@@ -668,16 +645,26 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await page.getByRole("button", { name: "Apply address" }).click();
 
   await onlineFetchStarted;
+  const mapToggleBeforeDrawing = page.getByTestId("preview-inner-map-toggle");
+  if ((await mapToggleBeforeDrawing.getAttribute("aria-pressed")) === "true") {
+    await mapToggleBeforeDrawing.click();
+    await expect(mapToggleBeforeDrawing).toHaveAttribute("aria-pressed", "false");
+  }
   const drawingSurface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
   const siteBoundarySection = page.getByTestId("setup-site-box-controls");
   if (!(await siteBoundarySection.evaluate((node) => (node as HTMLDetailsElement).open))) {
     await siteBoundarySection.locator(":scope > summary").click();
   }
   await page.getByTestId("setup-draw-site-boundary").click();
-  await clickExposedSurface(drawingSurface, 0.2, 0.25);
-  await clickExposedSurface(drawingSurface, 0.72, 0.28);
-  await clickExposedSurface(drawingSurface, 0.68, 0.78);
-  await clickExposedSurface(drawingSurface, 0.24, 0.75);
+  for (const [index, [x, y]] of [
+    [0.2, 0.25],
+    [0.72, 0.28],
+    [0.68, 0.78],
+    [0.24, 0.75],
+  ].entries()) {
+    await clickExposedSurface(drawingSurface, x, y);
+    await expect(drawingSurface).toHaveAttribute("data-draft-point-count", String(index + 1));
+  }
   await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
   await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
@@ -702,6 +689,9 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
 
   const runtimeMapToggle = page.getByTestId("preview-inner-map-toggle");
   if (await runtimeMapToggle.isEnabled()) {
+    if ((await runtimeMapToggle.getAttribute("aria-pressed")) !== "true") {
+      await runtimeMapToggle.click();
+    }
     await expect
       .poll(
         () => page.evaluate(() => Boolean((window as unknown as Record<string, unknown>).__civoraMapOverlayEnabled)),
@@ -732,11 +722,11 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
       .toBeCloseTo(-96.8, 3);
 
     const canvas = page.getByTestId("workspace-canvas-shell");
-    await canvas.getByTestId("preview-quality-high").click();
+    await setPreviewQuality(page, "high");
     await expect(page.getByText("Creating AI realism", { exact: true })).toHaveCount(0);
     for (let cycle = 0; cycle < 3; cycle += 1) {
       await canvas.getByTestId("preview-mode-3d").click();
-      await expect(canvas).toContainText(/3D Model|3D geometry not ready yet/i);
+      await expect(canvas.getByTestId("civil-3d-viewer")).toBeVisible();
       await canvas.getByTestId("preview-mode-2d").click();
       await expect(page.locator(".mapboxgl-canvas")).toHaveCount(1, { timeout: 20_000 });
       await expect(page.locator(".mapboxgl-canvas")).toBeVisible({ timeout: 20_000 });

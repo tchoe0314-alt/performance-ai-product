@@ -1,6 +1,6 @@
 annotated-doc==0.0.4
 annotated-types==0.7.0
-anyio==4.12.1
+anyio==4.14.2
 affine==2.4.0
 attrs==26.1.0
 certifi==2026.2.25
@@ -36,7 +36,7 @@ pillow==12.3.0
 psycopg[binary,pool]==3.2.9
 pydantic==2.12.5
 pydantic_core==2.41.5
-pypdf==6.15.0
+pypdf==6.16.1
 pyparsing==3.3.2
 pyogrio==0.11.1
 pyproj==3.6.1
@@ -46,7 +46,7 @@ python-multipart==0.0.31
 pytz==2026.2
 rasterio==1.4.3
 requests==2.33.0
-urllib3==2.7.0
+urllib3==2.8.0
 shapely==2.0.7
 six==1.17.0
 sniffio==1.3.1

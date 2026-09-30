@@ -101,6 +101,9 @@ test("opening Chat during the first site save keeps the newer panel open", async
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
   const siteSection = page.getByTestId("setup-site-box-controls");
+  if (!(await siteSection.evaluate((node) => node.hasAttribute("open")))) {
+    await siteSection.locator("summary").click();
+  }
   await siteSection.getByTestId("use-1000-site-size").click();
   await siteSection.getByRole("button", { name: "Use this site" }).click();
 

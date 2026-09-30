@@ -53,17 +53,23 @@ async function drawArea(page: Page, points: Array<[number, number]>) {
 
 async function drawSiteBoundary(page: Page) {
   await page.getByRole("button", { name: /^Setup$/ }).first().click();
+  const siteBoundarySection = page.getByTestId("setup-site-box-controls");
+  if (!(await siteBoundarySection.evaluate((node) => (node as HTMLDetailsElement).open))) {
+    await siteBoundarySection.locator(":scope > summary").click();
+  }
   await page.getByTestId("setup-draw-site-boundary").filter({ visible: true }).first().click();
   await expect(page.getByTestId("draw-active-tool")).toContainText("Site Boundary");
   const surface = page.getByTestId("preview-drawing-surface").filter({ visible: true }).first();
   await expect(surface).toBeVisible();
-  for (const [x, y] of [
+  const boundaryPoints = [
     [0.12, 0.16],
     [0.62, 0.16],
     [0.62, 0.72],
     [0.12, 0.72],
-  ] as Array<[number, number]>) {
+  ] as Array<[number, number]>;
+  for (const [index, [x, y]] of boundaryPoints.entries()) {
     await clickExposedSurface(surface, surface, x, y);
+    await expect(surface).toHaveAttribute("data-draft-point-count", String(index + 1));
   }
   const siteStatus = page.getByTestId("site-status");
   if ((await siteStatus.textContent())?.includes("Site Locked")) {
@@ -118,7 +124,9 @@ test("keeps available map context and preserves complex building and parking pol
     [0.38, 0.31],
   ]);
   await page.getByTestId("preview-object-manager-rename").filter({ visible: true }).first().fill("Angled Visitor Parking");
-  await page.getByTestId("preview-object-manager-type").filter({ visible: true }).first().selectOption("parking");
+  const parkingType = page.getByTestId("preview-object-manager-type").filter({ visible: true }).first();
+  await parkingType.selectOption("parking");
+  await expect(parkingType).toHaveValue("parking");
 
   await expect(page.getByTestId("object-manager-row").filter({ hasText: "L-Shaped Research Building" }).first()).toBeVisible();
   await expect(page.getByTestId("object-manager-row").filter({ hasText: "Angled Visitor Parking" }).first()).toBeVisible();

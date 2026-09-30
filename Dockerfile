@@ -16,7 +16,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements_backend.txt .
-RUN pip install -r requirements_backend.txt
+RUN pip install --upgrade pip "setuptools>=83.0.0" \
+    && pip install -r requirements_backend.txt
 
 COPY . .
 

@@ -17,7 +17,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements_ai_renderer.txt ./
-RUN python3 -m pip install --break-system-packages \
+RUN python3 -m pip install --break-system-packages --upgrade pip "setuptools>=83.0.0" \
+    && python3 -m pip install --break-system-packages \
       --index-url https://download.pytorch.org/whl/cu128 \
       torch==2.11.0 torchvision==0.26.0 \
     && python3 -m pip install --break-system-packages -r requirements_ai_renderer.txt
