@@ -33,6 +33,16 @@ test("cul-de-sac and pipe are native editable project objects", async ({ page })
   await page.getByLabel("I reviewed the occupied extents and elevation datum.").check();
   await page.getByRole("button", { name: "Apply elevation envelope", exact: true }).click();
   await expect(page.getByLabel("Lowest occupied elevation (ft)")).toHaveValue("-6");
+  const requirements = page.getByTestId("object-coordination-properties");
+  await requirements.locator("summary").click();
+  await page.getByLabel("Additional protection distance (ft)").fill("5");
+  await page.getByLabel("Buffer purpose", { exact: true }).selectOption("separation");
+  await page.getByLabel("Buffer evidence source").fill("Reviewed pilot separation drawing");
+  await page.getByLabel("I reviewed this horizontal buffer.").check();
+  await page.getByRole("button", { name: "Apply horizontal buffer", exact: true }).click();
+  await requirements.locator("summary").click();
+  await expect(page.getByLabel("Additional protection distance (ft)")).toHaveValue("5");
+  await expect(page.getByLabel("Buffer purpose", { exact: true })).toHaveValue("separation");
   await expect(page.getByTestId("site-interference-panel")).toContainText("Type-aware draft checks");
   expect(errors).toEqual([]);
 });
@@ -48,4 +58,48 @@ test("standalone JSON imports road and building into the main project without re
   const road = page.getByTestId("object-manager-row").filter({ has: page.getByText("Imported cul-de-sac", { exact: true }) });
   await road.getByRole("button", { name: "Select", exact: true }).click();
   await expect(page.getByRole("slider", { name: "Project cul-de-sac road width" })).toHaveValue("40");
+});
+
+test("setback meaning and scope are editable native object evidence", async ({ page }) => {
+  await page.route("**/api/**", route => route.fulfill({ json: { success: true } }));
+  await page.goto("/demo/workspace?debugPreview=1&debugPanel=libraries");
+  await page.getByRole("button", { name: "Setback Zone", exact: true }).click();
+  await openDraw(page);
+  const row = page.getByTestId("object-manager-row").filter({ has: page.getByText("Setback Zone", { exact: true }) });
+  await row.getByRole("button", { name: "Select", exact: true }).click();
+  const requirements = page.getByTestId("object-coordination-properties");
+  await requirements.locator("summary").click();
+  await page.getByLabel("Setback area meaning").selectOption("buildable_area");
+  await page.getByLabel("Setback evidence source").fill("Reviewed pilot constraint drawing");
+  await page.getByLabel("I reviewed this setback rule.").check();
+  await page.getByRole("button", { name: "Apply setback rule", exact: true }).click();
+  await requirements.locator("summary").click();
+  await expect(page.getByLabel("Setback area meaning")).toHaveValue("buildable_area");
+  await expect(page.getByLabel("Setback evidence source")).toHaveValue("Reviewed pilot constraint drawing");
+  await expect(page.getByLabel("I reviewed this setback rule.")).toBeChecked();
+});
+
+test("reviewed surface connections use the normal undo and redo history", async ({ page }) => {
+  await page.route("**/api/**", route => route.fulfill({ json: { success: true } }));
+  await page.goto("/demo/workspace?debugPreview=1&debugPanel=libraries");
+  await page.getByTestId("add-project-cul-de-sac").click();
+  await page.getByTestId("add-project-cul-de-sac").click();
+  await openDraw(page);
+  await page.getByTestId("object-manager-row").filter({ has: page.getByText("Cul-de-sac", { exact: true }) }).first().getByRole("button", { name: "Select", exact: true }).click();
+  const requirements = page.getByTestId("object-coordination-properties");
+  await requirements.locator("summary").click();
+  const choices = page.getByLabel("Intentional connection to");
+  const target = await choices.locator("option").nth(1).getAttribute("value");
+  await choices.selectOption(target!);
+  await page.getByLabel("Connection evidence source").fill("Reviewed junction drawing");
+  await page.getByLabel("I reviewed this intentional connection.").check();
+  await page.getByRole("button", { name: "Apply intentional connection", exact: true }).click();
+  await requirements.locator("summary").click();
+  await expect(choices).toHaveValue(target!);
+  await page.getByRole("button", { name: "Undo last draft change", exact: true }).click();
+  await requirements.locator("summary").click();
+  await expect(page.getByLabel("Connection evidence source")).toHaveValue("");
+  await page.getByRole("button", { name: "Redo draft change", exact: true }).click();
+  await requirements.locator("summary").click();
+  await expect(page.getByLabel("Connection evidence source")).toHaveValue("Reviewed junction drawing");
 });

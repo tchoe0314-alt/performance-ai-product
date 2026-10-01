@@ -27,7 +27,7 @@ test("pipes are conditional crossings, never blanket exemptions", () => {
 test("broader object rules handle fixtures, connected access, restrictions and hidden/pending objects", () => {
   const other = (type: BuildingPlacement["type"]) => ({ ...building, id: "other", label: "Other", type });
   expect(assessSiteInterference([building, other("road")])[0].severity).toBe("conflict");
-  expect(assessSiteInterference([other("road"), { ...other("sidewalk"), id: "path" }])).toEqual([]);
+  expect(assessSiteInterference([other("road"), { ...other("sidewalk"), id: "path" }])[0].code).toBe("surface_connection_unverified");
   expect(assessSiteInterference([building, other("hydrant")])[0].severity).toBe("review");
   expect(assessSiteInterference([building, other("no_build_zone")])[0].code).toBe("restricted_area_contact");
   expect(assessSiteInterference([building, other("site")])).toEqual([]);
@@ -76,7 +76,13 @@ test("native project serialization/restoration preserves road parameters and pip
   expect(restoredRoad.geometry).toEqual(road.geometry); expect(restoredRoad.meta?.cul_de_sac_v1).toEqual(road.meta?.cul_de_sac_v1);
   expect(restoredPipe.meta?.vertical_extent_v1).toEqual(objects[1].meta?.vertical_extent_v1);
   expect(objectFootprints(restoredPipe)).toEqual(objectFootprints(objects[1]));
-  expect(buildCanonicalGeometryHandoffV1(road, "ft").engineering_attributes.cul_de_sac_v1).toEqual(road.meta?.cul_de_sac_v1);
-  expect(buildCanonicalGeometryHandoffV1(objects[1], "ft").engineering_attributes.vertical_extent_v1).toEqual(objects[1].meta?.vertical_extent_v1);
-  expect(buildCanonicalGeometryHandoffV1(objects[1], "ft").engineering_attributes.pipe_diameter_ft).toBe(pipe.meta?.pipe_diameter_ft);
+  const roadHandoff = buildCanonicalGeometryHandoffV1(road, "ft");
+  const pipeHandoff = buildCanonicalGeometryHandoffV1(objects[1], "ft");
+  expect(roadHandoff).not.toBeNull();
+  expect(roadHandoff?.engineering_attributes).toBeDefined();
+  expect(pipeHandoff).not.toBeNull();
+  expect(pipeHandoff?.engineering_attributes).toBeDefined();
+  expect(roadHandoff!.engineering_attributes!.cul_de_sac_v1).toEqual(road.meta?.cul_de_sac_v1);
+  expect(pipeHandoff!.engineering_attributes!.vertical_extent_v1).toEqual(objects[1].meta?.vertical_extent_v1);
+  expect(pipeHandoff!.engineering_attributes!.pipe_diameter_ft).toBe(pipe.meta?.pipe_diameter_ft);
 });

@@ -673,12 +673,15 @@ export const buildCanonicalGeometryHandoffV1 = (
         ? "accepted_detected_candidate"
         : "canvas_object",
     engineering_attributes: {
+      ...(metadata.engineering_attributes && typeof metadata.engineering_attributes === "object"
+        ? Object.fromEntries(Object.entries(metadata.engineering_attributes as Record<string, unknown>).filter(([key]) => !["cul_de_sac_v1", "vertical_extent_v1", "pipe_diameter_ft", "coordination_envelope_v1", "setback_rule_v1", "intentional_connections_v1"].includes(key)))
+        : {}),
+      ...(metadata.coordination_envelope_v1 ? { coordination_envelope_v1: metadata.coordination_envelope_v1 } : {}),
+      ...(metadata.setback_rule_v1 ? { setback_rule_v1: metadata.setback_rule_v1 } : {}),
+      ...(metadata.intentional_connections_v1 ? { intentional_connections_v1: metadata.intentional_connections_v1 } : {}),
       ...(metadata.cul_de_sac_v1 ? { cul_de_sac_v1: metadata.cul_de_sac_v1 } : {}),
       ...(metadata.vertical_extent_v1 ? { vertical_extent_v1: metadata.vertical_extent_v1 } : {}),
       ...(typeof metadata.pipe_diameter_ft === "number" ? { pipe_diameter_ft: metadata.pipe_diameter_ft } : {}),
-      ...(metadata.engineering_attributes && typeof metadata.engineering_attributes === "object"
-        ? metadata.engineering_attributes as Record<string, unknown>
-        : {}),
       ...(typeof item.h === "number" ? { height_ft: item.h } : {}),
       ...(typeof item.stallCount === "number" ? { stall_count: item.stallCount } : {}),
       ...(typeof metadata.footprint_area_sf === "number" ? { footprint_area_sf: metadata.footprint_area_sf } : {}),

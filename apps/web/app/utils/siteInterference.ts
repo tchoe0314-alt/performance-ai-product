@@ -1,6 +1,8 @@
 import type { BuildingPlacement } from "../types";
 import { checkFootprint, polygonContains, segmentsTouch, type FootprintPoint } from "./culDeSacConcept";
 import { culDeSacFrame } from "./parametricRoad";
+import { objectRule, readCoordinationEnvelope, hasReviewedConnection, SITE_OBJECT_RULEBOOK } from "./siteObjectRulebook";
+import type { SiteObjectType } from "../types";
 
 export type VerticalExtent = { version: 1; minFt: number; maxFt: number; datum: string; source: string; reviewed: boolean; requiredClearanceFt: number | null };
 export type InterferenceResult = { code: string; objectIds: string[]; severity: "conflict" | "review" | "clear"; message: string };
@@ -14,15 +16,7 @@ export function readVerticalExtent(item: BuildingPlacement): VerticalExtent | nu
     (z.requiredClearanceFt === null || (Number.isFinite(z.requiredClearanceFt) && Number(z.requiredClearanceFt) >= 0)) ? z : null;
 }
 function category(item: BuildingPlacement) {
-  const t = item.type ?? "custom";
-  if (t.includes("building") || ["pad", "pool", "amenity", "basin"].includes(t)) return "structure";
-  if (["road", "driveway", "entrance", "parking", "sidewalk"].includes(t)) return "surface";
-  if (item.meta?.asset_kind === "pipe" || t === "utility_corridor" || (item.geometryType === "polyline" && item.meta?.network)) return "utility";
-  if (["hydrant", "manhole", "inlet", "outfall"].includes(t)) return "fixture";
-  if (["landscape", "open_space"].includes(t)) return "landscape";
-  if (["site", "lot_block", "setback_zone"].includes(t)) return "container";
-  if (t === "no_build_zone") return "restriction";
-  return "unknown";
+  return objectRule(item).category;
 }
 export function objectFootprints(item: BuildingPlacement): FootprintPoint[][] {
   if (item.geometryType === "polygon" && item.geometry?.length) return [item.geometry];
@@ -63,6 +57,36 @@ function planContact(a: BuildingPlacement, b: BuildingPlacement, shapes: Map<Bui
   if (otherRoad && !road) return planContact(b, a, shapes);
   return shapes.get(a)!.some(p => shapes.get(b)!.some(q => polygonsTouch(p, q)));
 }
+function pointSegmentDistance(p: FootprintPoint, a: FootprintPoint, b: FootprintPoint) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], length2 = dx * dx + dy * dy;
+  const t = length2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2)) : 0;
+  return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
+}
+function footprintDistance(a: FootprintPoint[][], b: FootprintPoint[][]) {
+  let distance = Infinity;
+  for (const p of a) for (const q of b) {
+    if (polygonsTouch(p, q)) return 0;
+    for (const v of p) for (let i = 0; i < q.length; i++) distance = Math.min(distance, pointSegmentDistance(v, q[i], q[(i + 1) % q.length]));
+    for (const v of q) for (let i = 0; i < p.length; i++) distance = Math.min(distance, pointSegmentDistance(v, p[i], p[(i + 1) % p.length]));
+  }
+  return distance;
+}
+/** Split each edge at boundary crossings so a concave notch cannot be missed by checking vertices alone. */
+export function footprintInside(boundary: FootprintPoint[], footprint: FootprintPoint[]) {
+  if (!footprint.every(p => polygonContains(boundary, p))) return false;
+  const cross = (a: FootprintPoint, b: FootprintPoint) => a[0] * b[1] - a[1] * b[0];
+  return footprint.every((a, i) => {
+    const b = footprint[(i + 1) % footprint.length], r: FootprintPoint = [b[0] - a[0], b[1] - a[1]], splits = [0, 1];
+    boundary.forEach((c, j) => {
+      const d = boundary[(j + 1) % boundary.length], s: FootprintPoint = [d[0] - c[0], d[1] - c[1]], delta: FootprintPoint = [c[0] - a[0], c[1] - a[1]], denominator = cross(r, s);
+      if (Math.abs(denominator) < 1e-10) return;
+      const t = cross(delta, s) / denominator, u = cross(delta, r) / denominator;
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) splits.push(t);
+    });
+    splits.sort((x, y) => x - y);
+    return splits.slice(1).every((t, j) => { const mid = (splits[j] + t) / 2; return polygonContains(boundary, [a[0] + mid * r[0], a[1] + mid * r[1]]); });
+  });
+}
 /** Draft coordination rules, not a claim of regulatory or engineering approval. */
 export function assessSiteInterference(objects: BuildingPlacement[]): InterferenceResult[] {
   // A combined object's hull is an editing wrapper, not another occupied volume.
@@ -70,10 +94,11 @@ export function assessSiteInterference(objects: BuildingPlacement[]): Interferen
   const candidates = objects.filter(o => o.placed && Number.isFinite(o.x) && Number.isFinite(o.y) && category(o) !== "container" && !(Array.isArray(o.meta?.combined_from_object_ids) && o.meta.combined_from_object_ids.length > 0));
   const results: InterferenceResult[] = [];
   const shapes = new Map(candidates.map(o => [o, objectFootprints(o)]));
+  for (const o of candidates) if (o.meta?.coordination_envelope_v1 && !readCoordinationEnvelope(o)) results.push({ severity: "review", code: "coordination_envelope_unreviewed", objectIds: [o.id], message: `${o.label}: horizontal protection/access buffer is incomplete or unreviewed; it has not been used to establish clearance.` });
   const site = objects.find(o => o.type === "site" && o.placed);
   if (site) {
     const boundary = objectFootprints(site)[0];
-    for (const o of candidates) if (shapes.get(o)!.some(p => p.some(v => !polygonContains(boundary, v)))) {
+    for (const o of candidates) if (shapes.get(o)!.some(p => !footprintInside(boundary, p))) {
       results.push({ severity: "review", code: "outside_site_boundary", objectIds: [site.id, o.id], message: `${o.label}: modeled geometry extends beyond the current site boundary; review placement and boundary evidence.` });
     }
   }
@@ -82,21 +107,44 @@ export function assessSiteInterference(objects: BuildingPlacement[]): Interferen
   }
   candidates.forEach((a, i) => candidates.slice(i + 1).forEach(b => {
     const A = category(a), B = category(b);
-    // Access surfaces intentionally connect; landscape regions intentionally overlap.
+    const objectIds = [a.id, b.id], names = `${a.label} / ${b.label}`;
+    const result = (severity: InterferenceResult["severity"], code: string, detail: string) => results.push({ severity, code, objectIds, message: `${names}: ${detail}` });
+    if ((a.meta?.coordinate_units ?? "ft") !== (b.meta?.coordinate_units ?? "ft")) { result("review", "coordinate_units_mismatch", "coordinate units differ; normalize the objects before evaluating interference."); return; }
+    const zone = a.type === "setback_zone" ? a : b.type === "setback_zone" ? b : null;
+    if (zone) {
+      const other = zone === a ? b : a;
+      if (category(other) === "restriction") return;
+      const rule = zone.meta?.setback_rule_v1 as { version?: number; mode?: string; appliesTo?: string[]; source?: string; reviewed?: boolean } | undefined;
+      const valid = rule?.version === 1 && ["excluded_area", "buildable_area"].includes(rule.mode ?? "") && Array.isArray(rule.appliesTo) && rule.appliesTo.length > 0 && rule.appliesTo.every(t => SITE_OBJECT_RULEBOOK[t as SiteObjectType] && !["container", "restriction"].includes(SITE_OBJECT_RULEBOOK[t as SiteObjectType].category)) && typeof rule.source === "string" && rule.source.trim() && rule.reviewed === true;
+      if (!valid) { result("review", "setback_rule_unknown", "setback meaning, applicable types and reviewed source are missing; do not infer compliance from its outline."); return; }
+      if (!rule!.appliesTo!.includes(other.type ?? "custom")) return;
+      const violation = rule!.mode === "excluded_area" ? planContact(zone, other, shapes) : shapes.get(other)!.some(p => !footprintInside(shapes.get(zone)![0], p));
+      if (violation) result("conflict", "setback_rule_violation", rule!.mode === "excluded_area" ? "contacts the entered excluded setback area." : "extends outside the entered buildable setback area.");
+      return;
+    }
+    const contact = planContact(a, b, shapes);
+    const eA = readCoordinationEnvelope(a), eB = readCoordinationEnvelope(b);
+    if (eA || eB) {
+      const unitsA = a.meta?.coordinate_units ?? "ft";
+      const buffer = (eA?.bufferFt ?? 0) + (eB?.bufferFt ?? 0);
+      const distanceFt = footprintDistance(shapes.get(a)!, shapes.get(b)!) / (unitsA === "m" ? .3048 : 1);
+      if (buffer > 0 && distanceFt < buffer) { result("review", "coordination_envelope_contact", `footprint gap ${distanceFt.toFixed(2)} ft intrudes into entered ${[eA?.purpose, eB?.purpose].filter(Boolean).join(" / ")} buffers totaling ${buffer.toFixed(2)} ft. Vertical separation or a connection does not waive this requirement.`); }
+    }
+    if (!contact) return;
+    if (A === "restriction" || B === "restriction") { result("review", "restricted_area_contact", "overlaps a no-build restriction; confirm applicable exclusions."); return; }
+    // Only documented surface/network connections are intentional; access/roots remain separately checked.
     if (A === "surface" && B === "surface") {
       const frame = culDeSacFrame(a) ?? culDeSacFrame(b), other = culDeSacFrame(a) ? b : a;
       if (frame && shapes.get(other)!.some(p => checkFootprint(frame.layout, p.map(frame.toLocal)).island)) {
         results.push({ severity: "review", code: "access_crosses_island", objectIds: [a.id, b.id], message: `${a.label} / ${b.label}: access surface crosses the landscaped island; review curb and access geometry.` });
-      }
+      } else if (!hasReviewedConnection(a, b)) result("review", "surface_connection_unverified", "overlapping access surfaces need a reviewed intentional connection; confirm junction, stall, curb and accessibility geometry.");
       return;
     }
-    if ((A === "landscape" && B === "landscape") || !planContact(a, b, shapes)) return;
-    const objectIds = [a.id, b.id], names = `${a.label} / ${b.label}`;
-    const result = (severity: InterferenceResult["severity"], code: string, detail: string) => results.push({ severity, code, objectIds, message: `${names}: ${detail}` });
+    if (A === "landscape" && B === "landscape") return;
     if ([a, b].some(o => isLinearUtility(o) && !(typeof o.meta?.pipe_diameter_ft === "number" && Number.isFinite(o.meta.pipe_diameter_ft) && o.meta.pipe_diameter_ft > 0))) {
       result("review", "pipe_size_unknown", "pipe outside diameter is unknown; do not infer physical clearance from the centerline."); return;
     }
-    if (A === "restriction" || B === "restriction") { result("review", "restricted_area_contact", "overlaps a no-build restriction; confirm applicable exclusions."); return; }
+    if ((A === "utility" || A === "fixture") && (B === "utility" || B === "fixture") && hasReviewedConnection(a, b)) { result("review", "network_connection_review", "documented network connection; verify fitting/shaft geometry, network compatibility and maintenance access rather than treating it as an unrelated clash."); return; }
     const zA = readVerticalExtent(a), zB = readVerticalExtent(b);
     if ([[a, zA], [b, zB]].some(([o, z]) => {
       const object = o as BuildingPlacement, extent = z as VerticalExtent | null;
