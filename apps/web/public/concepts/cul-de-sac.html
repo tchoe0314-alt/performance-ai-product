@@ -27,6 +27,12 @@
 <input id="width" type="range" min="20" max="48" step="1" value="30">
 <dl><div><dt>Island radius</dt><dd id="islandValue">15 ft</dd></div><div><dt>Transition radius</dt><dd id="filletValue">20 ft</dd></div><div><dt>Radial pavement width</dt><dd id="pavementValue">35 ft</dd></div><div><dt>Approach</dt><dd>Bidirectional</dd></div></dl>
 <p id="calculationStatus" class="note" role="status">Engineering checks not connected.</p>
+<h2>Collision test block</h2>
+<label for="buildingX">Building X <output id="buildingXValue">60 ft</output></label>
+<input id="buildingX" type="range" min="-100" max="100" step="1" value="60">
+<label for="buildingY">Building Y <output id="buildingYValue">0 ft</output></label>
+<input id="buildingY" type="range" min="-80" max="220" step="1" value="0">
+<p class="note">Move this 20 × 20 ft test block using the sliders. Red indicates possible bounding-box conflict, not confirmed pavement overlap. Curved-edge clearance and other engineering checks remain unverified.</p>
 <button id="reset" type="button">Reset to 50 ft / 30 ft</button>
 <p class="note">Tangent circular transitions are recalculated for every dimension change. Road width measures asphalt edge to edge.</p>
 <p class="note">Concept only. Turning paths, fire access, drainage, curb design, and local standards need project-specific review. This study does not modify your saved project.</p>
@@ -37,7 +43,9 @@
 <script>
 "use strict";
 // Authoritative design inputs only; geometry is derived on every render.
-const canvasState={roadWidth:30,bulbRadius:50,islandRadius:15,transitionRadius:20,isStale:false,revision:0};
+const canvasState={roadWidth:30,bulbRadius:50,islandRadius:15,transitionRadius:20,isStale:true,revision:0,building:{x:60,y:0,w:20,d:20}};
+let collisionResult={revision:-1,issues:[],status:"pending"};
+let pendingCheck;
 const canvas=document.getElementById("plan"),ctx=canvas.getContext("2d");
 const radius=document.getElementById("radius"),width=document.getElementById("width");
 // The outside transition circle is externally tangent to the bulb and tangent
@@ -63,7 +71,8 @@ function renderSite(state=canvasState){
  ctx.arc(0,0,g.R,Math.PI-g.theta,2*Math.PI+g.theta,false);
  ctx.arc(g.x,g.y,g.f,-Math.PI+g.theta,-Math.PI,true);
  ctx.lineTo(g.a,g.bottom);ctx.closePath();ctx.fillStyle="#465265";ctx.fill();
- ctx.strokeStyle="#263344";ctx.lineWidth=1.4;ctx.stroke();
+ const conflict=collisionResult.revision===state.revision&&collisionResult.issues.length>0;
+ ctx.strokeStyle=conflict?"#c52b35":"#263344";ctx.lineWidth=1.4;ctx.stroke();
  // Nominal 4-inch paired stripes; retain a visible gap at small display scales.
  const stripe=Math.max(1/3,1.25/scale),gap=Math.max(1/3,1.5/scale),offset=(stripe+gap)/2;
  ctx.strokeStyle="#f9ca46";ctx.lineWidth=stripe;
@@ -74,6 +83,9 @@ function renderSite(state=canvasState){
  dimension(0,0,g.R*Math.cos(-Math.PI/4),g.R*Math.sin(-Math.PI/4),`R ${g.R} ft`);
  ctx.fillStyle="#27496d";ctx.fillText(`R ${state.islandRadius} ft`,0,4/scale);ctx.fillStyle="#dce9f8";
  dimension(-g.a,g.y+70,g.a,g.y+70,`${g.W} ft`);
+ ctx.fillStyle=conflict?"#f6c7ca":"#d2deef";ctx.fillRect(state.building.x,state.building.y,state.building.w,state.building.d);
+ ctx.strokeStyle=conflict?"#c52b35":"#245bc2";ctx.strokeRect(state.building.x,state.building.y,state.building.w,state.building.d);
+ ctx.fillStyle="#17243a";ctx.fillText("Test",state.building.x+10,state.building.y+10);
  ctx.restore();
  // Sheet annotations stay readable at every viewport size.
  ctx.fillStyle="#52657d";ctx.font="11px system-ui";ctx.textAlign="left";
@@ -85,21 +97,41 @@ function renderSite(state=canvasState){
  document.getElementById("islandValue").textContent=`${state.islandRadius} ft`;
  document.getElementById("filletValue").textContent=`${g.f} ft`;
  document.getElementById("pavementValue").textContent=`${g.R-state.islandRadius} ft`;
- document.getElementById("calculationStatus").textContent=state.isStale?"Dimensions changed — engineering recalculation required. Checks not connected.":"Engineering checks not connected.";
+ for(const axis of ["X","Y"]){const value=state.building[axis.toLowerCase()];document.getElementById(`building${axis}`).value=String(value);document.getElementById(`building${axis}Value`).value=`${value} ft`;}
+ document.getElementById("calculationStatus").textContent=state.isStale?(collisionResult.status==="error"?"Collision check unavailable — results stale. Retry by changing a dimension.":"Collision recalculation required — checking current layout…"):(conflict?"Possible road/building conflict — bounding boxes touch or overlap. Exact curved-edge review required.":"No bounding-box conflict detected. Other engineering checks remain unverified.");
  canvas.setAttribute("aria-label",`Concept plan: ${g.R}-foot bulb radius, ${g.W}-foot two-way road width, ${state.islandRadius}-foot island radius, ${g.f}-foot tangent transition radius.`);
  canvas.dataset.radius=String(g.R);canvas.dataset.roadWidth=String(g.W);
  canvas.dataset.stale=String(state.isStale);canvas.dataset.revision=String(state.revision);
 }
 function updateDimensions(changes){
  const changed=Object.entries(changes).some(([key,value])=>canvasState[key]!==value);
- if(changed){Object.assign(canvasState,changes);canvasState.revision++;canvasState.isStale=true;}
+ if(changed){Object.assign(canvasState,changes);canvasState.revision++;canvasState.isStale=true;collisionResult.status="pending";}
  // Rendering never clears engineering staleness or claims checks have run.
  renderSite(canvasState);
+ if(changed)triggerCivoraCalculations(canvasState);
+}
+async function triggerCivoraCalculations(state){
+ const snapshot=JSON.parse(JSON.stringify(state));
+ pendingCheck?.abort();const controller=new AbortController();pendingCheck=controller;
+ const timeout=setTimeout(()=>controller.abort(),10000);
+ try{
+  const response=await fetch("/api/concepts/cul-de-sac/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(snapshot),signal:controller.signal});
+  if(!response.ok)throw new Error("Collision check failed");
+  const result=await response.json();
+  if(result.revision!==snapshot.revision||!Array.isArray(result.issues)||result.check!=="bounding-box-only")throw new Error("Invalid collision result");
+  if(canvasState.revision!==snapshot.revision)return;
+  collisionResult={...result,status:"complete"};canvasState.isStale=false;
+ }catch{
+  if(canvasState.revision!==snapshot.revision)return;
+  collisionResult={revision:snapshot.revision,issues:[],status:"error"};canvasState.isStale=true;
+ }finally{clearTimeout(timeout);if(canvasState.revision===snapshot.revision)renderSite(canvasState);}
 }
 radius.addEventListener("input",event=>updateDimensions({bulbRadius:Number(event.target.value)}));
 width.addEventListener("input",event=>updateDimensions({roadWidth:Number(event.target.value)}));
+for(const axis of ["X","Y"])document.getElementById(`building${axis}`).addEventListener("input",event=>updateDimensions({building:{...canvasState.building,[axis.toLowerCase()]:Number(event.target.value)}}));
 document.getElementById("reset").addEventListener("click",()=>updateDimensions({bulbRadius:50,roadWidth:30}));
 new ResizeObserver(()=>renderSite(canvasState)).observe(canvas);renderSite(canvasState);
+triggerCivoraCalculations(canvasState);
 </script>
 </body>
 </html>
