@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "concept:sync": "node scripts/build-cul-de-sac-core.mjs",
+    "concept:check": "node scripts/build-cul-de-sac-core.mjs --check",
     "clean:next": "node scripts/clean-next-artifacts.mjs",
     "dev": "next dev --webpack",
     "dev:test": "npm run clean:next && next dev --webpack",

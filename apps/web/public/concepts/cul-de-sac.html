@@ -32,7 +32,7 @@
 <input id="buildingX" type="range" min="-100" max="100" step="1" value="60">
 <label for="buildingY">Building Y <output id="buildingYValue">0 ft</output></label>
 <input id="buildingY" type="range" min="-80" max="220" step="1" value="0">
-<p class="note">Move this 20 × 20 ft test block using the sliders. Red indicates possible bounding-box conflict, not confirmed pavement overlap. Curved-edge clearance and other engineering checks remain unverified.</p>
+<p class="note">Move this 20 × 20 ft test block using the sliders. Red means contact with asphalt or the landscaped island. These geometry checks do not establish setbacks or engineering approval.</p>
 <button id="reset" type="button">Reset to 50 ft / 30 ft</button>
 <p class="note">Tangent circular transitions are recalculated for every dimension change. Road width measures asphalt edge to edge.</p>
 <p class="note">Concept only. Turning paths, fire access, drainage, curb design, and local standards need project-specific review. This study does not modify your saved project.</p>
@@ -42,18 +42,132 @@
 </main>
 <script>
 "use strict";
+// BEGIN GENERATED CONCEPT CORE
+const ConceptCore=(()=>{const exports={};
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.defaultLayout = defaultLayout;
+exports.parseLayout = parseLayout;
+exports.serializeLayout = serializeLayout;
+exports.geometry = geometry;
+exports.pointInRoad = pointInRoad;
+exports.checkConcept = checkConcept;
+const EPS = 1e-7; // feet, floating-point contact tolerance, not a design setback
+const TAU = Math.PI * 2;
+function defaultLayout() {
+    return { schemaVersion: 1, units: "ft", kind: "cul-de-sac-study", roadWidth: 30,
+        bulbRadius: 50, islandRadius: 15, transitionRadius: 20,
+        position: { x: 0, y: 0 }, building: { x: 60, y: 0, w: 20, d: 20 } };
+}
+/** Strict, bounded input; copy known fields, never accept cached results. */
+function parseLayout(value) {
+    if (!value || typeof value !== "object")
+        throw new Error("Layout must be an object.");
+    const s = value;
+    const number = (v, min, max) => typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
+    const p = s.position, b = s.building;
+    if (s.schemaVersion !== 1 || s.units !== "ft" || s.kind !== "cul-de-sac-study" ||
+        !number(s.roadWidth, 20, 48) || !number(s.bulbRadius, 35, 80) ||
+        s.islandRadius !== 15 || s.transitionRadius !== 20 ||
+        !p || !number(p.x, -100, 100) || !number(p.y, -80, 80) ||
+        !b || !number(b.x, -150, 150) || !number(b.y, -120, 300) || b.w !== 20 || b.d !== 20) {
+        throw new Error("Unsupported schema, units, or dimensions. Expected a version 1 feet-based concept layout.");
+    }
+    return { schemaVersion: 1, units: "ft", kind: "cul-de-sac-study", roadWidth: s.roadWidth,
+        bulbRadius: s.bulbRadius, islandRadius: 15, transitionRadius: 20,
+        position: { x: p.x, y: p.y }, building: { x: b.x, y: b.y, w: 20, d: 20 } };
+}
+function serializeLayout(state) { return JSON.stringify(parseLayout(state), null, 2); }
+function geometry(R, W, f = 20) {
+    const a = W / 2, x = a + f, y = Math.sqrt((R + f) ** 2 - x * x), theta = Math.atan2(y, x);
+    return { R, W, f, a, x, y, theta, tx: R * x / (R + f), ty: R * y / (R + f), bottom: y + 110 };
+}
+function contains(rect, point) {
+    return point.x >= rect.x - EPS && point.x <= rect.x + rect.w + EPS &&
+        point.y >= rect.y - EPS && point.y <= rect.y + rect.d + EPS;
+}
+function onArc(arc, point) {
+    const angle = Math.atan2(point.y - arc.y, point.x - arc.x);
+    const distance = arc.sweep >= 0 ? angle - arc.start : arc.start - angle;
+    const progress = ((distance % TAU) + TAU) % TAU;
+    return progress <= Math.abs(arc.sweep) + EPS / arc.r || TAU - progress <= EPS / arc.r;
+}
+function arcTouchesRect(arc, rect) {
+    const start = { x: arc.x + arc.r * Math.cos(arc.start), y: arc.y + arc.r * Math.sin(arc.start) };
+    const end = { x: arc.x + arc.r * Math.cos(arc.start + arc.sweep), y: arc.y + arc.r * Math.sin(arc.start + arc.sweep) };
+    if (contains(rect, start) || contains(rect, end))
+        return true;
+    for (const x of [rect.x, rect.x + rect.w]) {
+        const h2 = arc.r ** 2 - (x - arc.x) ** 2;
+        if (h2 < -EPS * arc.r * 2)
+            continue;
+        for (const y of [arc.y - Math.sqrt(Math.max(0, h2)), arc.y + Math.sqrt(Math.max(0, h2))]) {
+            if (contains(rect, { x, y }) && onArc(arc, { x, y }))
+                return true;
+        }
+    }
+    for (const y of [rect.y, rect.y + rect.d]) {
+        const h2 = arc.r ** 2 - (y - arc.y) ** 2;
+        if (h2 < -EPS * arc.r * 2)
+            continue;
+        for (const x of [arc.x - Math.sqrt(Math.max(0, h2)), arc.x + Math.sqrt(Math.max(0, h2))]) {
+            if (contains(rect, { x, y }) && onArc(arc, { x, y }))
+                return true;
+        }
+    }
+    return false;
+}
+function pointInRoad(point, layout, includeIsland = false) {
+    const g = geometry(layout.bulbRadius, layout.roadWidth, layout.transitionRadius);
+    const x = point.x - layout.position.x, y = point.y - layout.position.y;
+    if (y < -g.R - EPS || y > g.bottom + EPS)
+        return false;
+    const extent = y <= g.ty ? Math.sqrt(Math.max(0, g.R ** 2 - y ** 2)) :
+        y < g.y ? g.x - Math.sqrt(Math.max(0, g.f ** 2 - (y - g.y) ** 2)) : g.a;
+    return Math.abs(x) <= extent + EPS && (includeIsland || Math.hypot(x, y) >= layout.islandRadius - EPS);
+}
+/** Analytic line/arc contact, not sampled polylines or rendered pixels. */
+function checkConcept(layout) {
+    const g = geometry(layout.bulbRadius, layout.roadWidth, layout.transitionRadius);
+    const b = { ...layout.building, x: layout.building.x - layout.position.x, y: layout.building.y - layout.position.y };
+    const arcs = [
+        { x: -g.x, y: g.y, r: g.f, start: 0, sweep: -g.theta },
+        { x: 0, y: 0, r: g.R, start: Math.PI - g.theta, sweep: Math.PI + 2 * g.theta },
+        { x: g.x, y: g.y, r: g.f, start: -Math.PI + g.theta, sweep: -g.theta },
+    ];
+    const corners = [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y },
+        { x: b.x, y: b.y + b.d }, { x: b.x + b.w, y: b.y + b.d }];
+    const local = { ...layout, position: { x: 0, y: 0 } };
+    const verticalHit = (x) => x >= b.x - EPS && x <= b.x + b.w + EPS &&
+        g.y <= b.y + b.d + EPS && g.bottom >= b.y - EPS;
+    const bottomHit = g.bottom >= b.y - EPS && g.bottom <= b.y + b.d + EPS &&
+        -g.a <= b.x + b.w + EPS && g.a >= b.x - EPS;
+    const island = { x: 0, y: 0, r: layout.islandRadius, start: 0, sweep: TAU };
+    const pavement = corners.some(p => pointInRoad(p, local)) || arcs.some(a => arcTouchesRect(a, b)) ||
+        verticalHit(-g.a) || verticalHit(g.a) || bottomHit || arcTouchesRect(island, b);
+    const nearX = Math.max(b.x, Math.min(0, b.x + b.w));
+    const nearY = Math.max(b.y, Math.min(0, b.y + b.d));
+    const islandContact = Math.hypot(nearX, nearY) <= layout.islandRadius + EPS;
+    const issues = [];
+    if (pavement)
+        issues.push({ code: "pavement_contact", objectIds: ["concept-road", "test-building"], message: "Building touches or overlaps the asphalt pavement boundary." });
+    if (islandContact)
+        issues.push({ code: "island_contact", objectIds: ["concept-island", "test-building"], message: "Building touches or overlaps the landscaped island." });
+    return issues;
+}
+
+return exports;})();
+// END GENERATED CONCEPT CORE
 // Authoritative design inputs only; geometry is derived on every render.
-const canvasState={roadWidth:30,bulbRadius:50,islandRadius:15,transitionRadius:20,isStale:true,revision:0,building:{x:60,y:0,w:20,d:20}};
+window.conceptTestCore=ConceptCore;
+const canvasState={...ConceptCore.defaultLayout(),isStale:true,revision:0};
 let collisionResult={revision:-1,issues:[],status:"pending"};
 let pendingCheck;
 const canvas=document.getElementById("plan"),ctx=canvas.getContext("2d");
 const radius=document.getElementById("radius"),width=document.getElementById("width");
 // The outside transition circle is externally tangent to the bulb and tangent
 // to the straight pavement edge. Its center lies at (halfWidth + fillet, y).
-function geometry(R,W,f=canvasState.transitionRadius){
- const a=W/2,x=a+f,y=Math.sqrt((R+f)**2-x*x),theta=Math.atan2(y,x);
- return {R,W,f,a,x,y,theta,tx:R*x/(R+f),ty:R*y/(R+f),bottom:y+110};
-}
+function geometry(R,W,f=canvasState.transitionRadius){return ConceptCore.geometry(R,W,f);}
 function renderSite(state=canvasState){
  const g=geometry(state.bulbRadius,state.roadWidth,state.transitionRadius);
  radius.value=String(state.bulbRadius);width.value=String(state.roadWidth);
@@ -71,13 +185,14 @@ function renderSite(state=canvasState){
  ctx.arc(0,0,g.R,Math.PI-g.theta,2*Math.PI+g.theta,false);
  ctx.arc(g.x,g.y,g.f,-Math.PI+g.theta,-Math.PI,true);
  ctx.lineTo(g.a,g.bottom);ctx.closePath();ctx.fillStyle="#465265";ctx.fill();
- const conflict=collisionResult.revision===state.revision&&collisionResult.issues.length>0;
- ctx.strokeStyle=conflict?"#c52b35":"#263344";ctx.lineWidth=1.4;ctx.stroke();
+ const issues=collisionResult.revision===state.revision?collisionResult.issues:[];
+ const conflict=issues.length>0,pavementConflict=issues.some(issue=>issue.code==="pavement_contact"),islandConflict=issues.some(issue=>issue.code==="island_contact");
+ ctx.strokeStyle=pavementConflict?"#c52b35":"#263344";ctx.lineWidth=1.4;ctx.stroke();
  // Nominal 4-inch paired stripes; retain a visible gap at small display scales.
  const stripe=Math.max(1/3,1.25/scale),gap=Math.max(1/3,1.5/scale),offset=(stripe+gap)/2;
  ctx.strokeStyle="#f9ca46";ctx.lineWidth=stripe;
  for(const x of [-offset,offset]){ctx.beginPath();ctx.moveTo(x,g.bottom);ctx.lineTo(x,g.R+4);ctx.stroke();}
- ctx.beginPath();ctx.arc(0,0,state.islandRadius,0,2*Math.PI);ctx.fillStyle="#b7d6bf";ctx.fill();ctx.strokeStyle="#edf3e9";ctx.lineWidth=1;ctx.stroke();
+ ctx.beginPath();ctx.arc(0,0,state.islandRadius,0,2*Math.PI);ctx.fillStyle="#b7d6bf";ctx.fill();ctx.strokeStyle=islandConflict?"#c52b35":"#edf3e9";ctx.lineWidth=1;ctx.stroke();
  ctx.strokeStyle="#dce9f8";ctx.fillStyle="#dce9f8";ctx.lineWidth=1/scale;ctx.font=`${12/scale}px system-ui`;ctx.textAlign="center";
  function dimension(x1,y1,x2,y2,label){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();for(const [x,y] of [[x1,y1],[x2,y2]]){ctx.beginPath();ctx.moveTo(x-2,y-2);ctx.lineTo(x+2,y+2);ctx.stroke();}ctx.fillText(label,(x1+x2)/2,(y1+y2)/2-5/scale);}
  dimension(0,0,g.R*Math.cos(-Math.PI/4),g.R*Math.sin(-Math.PI/4),`R ${g.R} ft`);
@@ -98,7 +213,7 @@ function renderSite(state=canvasState){
  document.getElementById("filletValue").textContent=`${g.f} ft`;
  document.getElementById("pavementValue").textContent=`${g.R-state.islandRadius} ft`;
  for(const axis of ["X","Y"]){const value=state.building[axis.toLowerCase()];document.getElementById(`building${axis}`).value=String(value);document.getElementById(`building${axis}Value`).value=`${value} ft`;}
- document.getElementById("calculationStatus").textContent=state.isStale?(collisionResult.status==="error"?"Collision check unavailable — results stale. Retry by changing a dimension.":"Collision recalculation required — checking current layout…"):(conflict?"Possible road/building conflict — bounding boxes touch or overlap. Exact curved-edge review required.":"No bounding-box conflict detected. Other engineering checks remain unverified.");
+ document.getElementById("calculationStatus").textContent=state.isStale?(collisionResult.status==="error"?"Collision check unavailable — results stale. Retry by changing a dimension.":"Collision recalculation required — checking current layout…"):(conflict?issues.map(issue=>issue.message).join(" "):"No pavement or island contact detected. Other engineering checks remain unverified.");
  canvas.setAttribute("aria-label",`Concept plan: ${g.R}-foot bulb radius, ${g.W}-foot two-way road width, ${state.islandRadius}-foot island radius, ${g.f}-foot tangent transition radius.`);
  canvas.dataset.radius=String(g.R);canvas.dataset.roadWidth=String(g.W);
  canvas.dataset.stale=String(state.isStale);canvas.dataset.revision=String(state.revision);
@@ -118,7 +233,7 @@ async function triggerCivoraCalculations(state){
   const response=await fetch("/api/concepts/cul-de-sac/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(snapshot),signal:controller.signal});
   if(!response.ok)throw new Error("Collision check failed");
   const result=await response.json();
-  if(result.revision!==snapshot.revision||!Array.isArray(result.issues)||result.check!=="bounding-box-only")throw new Error("Invalid collision result");
+  if(result.revision!==snapshot.revision||!Array.isArray(result.issues)||result.check!=="analytic-pavement-and-island")throw new Error("Invalid collision result");
   if(canvasState.revision!==snapshot.revision)return;
   collisionResult={...result,status:"complete"};canvasState.isStale=false;
  }catch{

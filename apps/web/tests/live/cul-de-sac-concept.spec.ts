@@ -36,22 +36,22 @@ test("design state drives rendering and preserves engineering staleness", async 
 test("Civora overlap adapter reports separation, contact and overlap", async ({ page, request }) => {
   await page.goto("/concepts/cul-de-sac.html");
   const status = page.locator("#calculationStatus");
-  await expect(status).toContainText("No bounding-box conflict");
+  await expect(status).toContainText("No pavement or island contact");
   const x = page.getByRole("slider", { name: /Building X/ });
   await x.focus();
   for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowLeft");
   await expect(page.locator("#buildingX")).toHaveValue("50");
-  await expect(status).toContainText("Possible road/building conflict");
+  await expect(status).toContainText("Building touches or overlaps the asphalt");
   await expect(page.locator("canvas")).toHaveAttribute("data-stale", "false");
   await page.keyboard.press("ArrowLeft");
-  await expect(status).toContainText("Possible road/building conflict");
+  await expect(status).toContainText("Building touches or overlaps the asphalt");
   await x.press("End");
-  await expect(status).toContainText("No bounding-box conflict");
+  await expect(status).toContainText("No pavement or island contact");
   await page.getByRole("slider", { name: /Bulb radius/ }).press("End");
   // Building at x=100 remains clear; move to x=80 for exact contact.
   await x.focus();
   for (let i = 0; i < 20; i++) await page.keyboard.press("ArrowLeft");
-  await expect(status).toContainText("Possible road/building conflict");
+  await expect(status).toContainText("Building touches or overlaps the asphalt");
   const invalid = await request.post("/api/concepts/cul-de-sac/check", { data: { bulbRadius: -1 } });
   expect(invalid.status()).toBe(400);
 });
@@ -62,14 +62,14 @@ test("outdated collision responses cannot clear the current revision", async ({ 
     const state = route.request().postDataJSON();
     const call = ++calls;
     if (call === 1) await new Promise(resolve => setTimeout(resolve, 250));
-    await route.fulfill({ json: { revision: state.revision, check: "bounding-box-only", issues: call === 1 ? [{ code: "overlapping_site_objects" }] : [] } }).catch(() => {});
+    await route.fulfill({ json: { revision: state.revision, check: "analytic-pavement-and-island", issues: call === 1 ? [{ code: "pavement_contact", message: "Old conflict" }] : [] } }).catch(() => {});
   });
   await page.goto("/concepts/cul-de-sac.html");
   await page.getByRole("slider", { name: /Approach road width/ }).press("ArrowRight");
   await expect(page.locator("canvas")).toHaveAttribute("data-revision", "1");
-  await expect(page.locator("#calculationStatus")).toContainText("No bounding-box conflict");
+  await expect(page.locator("#calculationStatus")).toContainText("No pavement or island contact");
   await page.waitForTimeout(350);
-  await expect(page.locator("#calculationStatus")).toContainText("No bounding-box conflict");
+  await expect(page.locator("#calculationStatus")).toContainText("No pavement or island contact");
 });
 
 test("cul-de-sac sliders preserve tangent pavement joins over their full ranges", async ({ page }, testInfo) => {
