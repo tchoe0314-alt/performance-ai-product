@@ -3,10 +3,40 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import subprocess
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 START_SCRIPT = ROOT / "scripts" / "start_backend_service.sh"
+
+
+@pytest.mark.parametrize("blocked_variable", ["PERFORMANCE_AI_STORAGE_DIR", "MPLCONFIGDIR"])
+def test_startup_rejects_runtime_path_that_is_a_file(tmp_path: Path, blocked_variable: str) -> None:
+    blocked = tmp_path / "existing-file"
+    blocked.write_text("preserve this content", encoding="utf-8")
+    env = {**os.environ, "PERFORMANCE_AI_STORAGE_DIR": str(tmp_path / "data"),
+           "MPLCONFIGDIR": str(tmp_path / "mpl"), blocked_variable: str(blocked)}
+    result = subprocess.run(["sh", str(START_SCRIPT)], cwd=ROOT, env=env, capture_output=True, text=True)
+    assert result.returncode == 1
+    assert "Civora startup blocked" in result.stderr
+    assert "10001" in result.stderr
+    assert blocked.read_text(encoding="utf-8") == "preserve this content"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="Root bypasses normal directory permissions")
+@pytest.mark.parametrize("blocked_variable", ["PERFORMANCE_AI_STORAGE_DIR", "MPLCONFIGDIR"])
+def test_startup_rejects_read_only_runtime_directory(tmp_path: Path, blocked_variable: str) -> None:
+    blocked = tmp_path / "read-only"
+    blocked.mkdir()
+    blocked.chmod(0o500)
+    try:
+        env = {**os.environ, "PERFORMANCE_AI_STORAGE_DIR": str(tmp_path / "data"),
+               "MPLCONFIGDIR": str(tmp_path / "mpl"), blocked_variable: str(blocked)}
+        result = subprocess.run(["sh", str(START_SCRIPT)], cwd=ROOT, env=env, capture_output=True, text=True)
+        assert result.returncode == 1
+        assert "Civora startup blocked" in result.stderr
+    finally:
+        blocked.chmod(0o700)
 
 
 def _run_startup(tmp_path: Path, *, role: str, extra_env: dict[str, str] | None = None) -> str:

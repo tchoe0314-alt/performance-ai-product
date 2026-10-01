@@ -24,6 +24,13 @@ COPY . .
 ENV PERFORMANCE_AI_STORAGE_DIR=/data
 ENV MPLCONFIGDIR=/tmp/mplconfig
 
+RUN groupadd --gid 10001 civora \
+    && useradd --uid 10001 --gid civora --no-create-home --shell /usr/sbin/nologin civora \
+    && mkdir -p /data /tmp/mplconfig \
+    && chown civora:civora /data /tmp/mplconfig
+
+USER 10001:10001
+
 EXPOSE 8002
 
 CMD ["sh", "scripts/start_backend_service.sh"]

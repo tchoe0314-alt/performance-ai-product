@@ -19,6 +19,21 @@ Use the repo root as the Railway service source so Railway can build the root [D
 
 Set these Railway variables:
 
+Both backend images run as UID/GID `10001:10001`. Mount persistent storage
+at `/data` with write and directory traversal permission for that identity,
+including existing database, upload, and artifact files. The image prepares
+its own `/data` and `/tmp/mplconfig` directories, but a mounted volume replaces
+the image directory and may have different ownership. Prepare or migrate
+volume ownership before switching an existing deployment; take a backup first.
+The startup script reports inaccessible runtime directories and stops. It does
+not change ownership of existing customer data. Application code in `/app`
+remains owned by root and is not writable by the service user.
+
+Verify a fresh image and a restored-volume image before release: health check,
+registration/login, project save/reload, upload/download, export, and worker
+completion. Static configuration and local tests do not replace this container
+runtime check.
+
 ```bash
 CIVORA_PRODUCT_MODE=private_alpha
 CIVORA_DEPLOYMENT_TARGET=railway
