@@ -89,4 +89,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        # Annotations remain readable through the public checks API even when
+        # GitHub requires sign-in to download complete job logs.
+        import traceback
+        message = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print("::error title=Container runtime verification::" + message, flush=True)
+        raise
