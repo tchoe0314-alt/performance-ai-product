@@ -7,6 +7,7 @@ RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next-release-regression-$$}"
 PLAYWRIGHT_CASES=(
   "tests/live/ui-functionality-chat32.spec.ts"
   "tests/live/civil-3d-viewer.spec.ts"
+  "tests/live/security-headers.spec.ts"
 )
 BACKEND_SMOKE_TESTS=(
   "tests/test_release_gates.py"
@@ -110,6 +111,10 @@ release_artifacts_ready() {
     [[ -f "$WEB_DIR/$RELEASE_DIST_DIR/server/pages-manifest.json" ]]
 }
 
+browser_source_maps_absent() {
+  ! find "$WEB_DIR/$RELEASE_DIST_DIR/static" -type f -name '*.map' -print -quit 2>/dev/null | grep -q .
+}
+
 printf 'Civora release regression\n'
 printf 'Root: %s\n' "$ROOT_DIR"
 printf 'Frontend release distDir: %s\n' "$RELEASE_DIST_DIR"
@@ -131,7 +136,6 @@ else
       cd "$WEB_DIR" &&
         NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}" \
         NEXT_DIST_DIR="$RELEASE_DIST_DIR" \
-        NEXT_PRODUCTION_BROWSER_SOURCE_MAPS=0 \
         npm run build
     )
     build_status=$?
@@ -145,6 +149,11 @@ else
 
     if [[ $build_status -eq 0 ]] && ! release_artifacts_ready; then
       record_fail "frontend build" "release artifacts missing in $RELEASE_DIST_DIR"
+      build_status=1
+    fi
+
+    if [[ $build_status -eq 0 ]] && ! browser_source_maps_absent; then
+      record_fail "frontend build" "production browser source maps must remain disabled"
       build_status=1
     fi
 

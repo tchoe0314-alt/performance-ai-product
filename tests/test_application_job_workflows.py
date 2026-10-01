@@ -455,7 +455,7 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(response["job"]["status"], "queued")
         self.assertEqual(response["operational_summary"]["retry_of_job_id"], "job_failed")
 
-    def test_revise_existing_job_requeues_current_phase_with_saved_project_input(self):
+    def test_revise_existing_job_requeues_requested_phase_with_saved_project_input(self):
         store = FakeProjectStore(
             {
                 "user_id": "u1",
@@ -547,6 +547,7 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             job_queue=queue,
             user_id="u1",
             job_id="job_await",
+            target_phase="DRAINAGE_STORM",
         )
 
         self.assertTrue(response["success"])
@@ -555,9 +556,12 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         saved_final_plan = store.saved_payload["latest_result"]["final_plan"]
         self.assertFalse(saved_final_plan["release_ready"])
         self.assertFalse(saved_final_plan["export_ready"])
-        self.assertEqual(saved_final_plan["meta"]["stage_completeness"]["statuses"]["grading"], "pending")
-        self.assertEqual(saved_final_plan["meta"]["phase_checkpoints"]["grading"]["status"], "pending")
-        self.assertFalse(saved_final_plan["meta"]["phase_checkpoints"]["grading"]["ready"])
+        self.assertEqual(saved_final_plan["meta"]["stage_completeness"]["statuses"]["grading"], "complete")
+        self.assertEqual(saved_final_plan["meta"]["stage_completeness"]["statuses"]["drainage"], "pending")
+        self.assertEqual(saved_final_plan["meta"]["phase_checkpoints"]["grading"]["status"], "complete")
+        self.assertTrue(saved_final_plan["meta"]["phase_checkpoints"]["grading"]["ready"])
+        self.assertEqual(saved_final_plan["meta"]["phase_checkpoints"]["drainage_storm"]["status"], "pending")
+        self.assertFalse(saved_final_plan["meta"]["phase_checkpoints"]["drainage_storm"]["ready"])
         self.assertEqual(saved_final_plan["meta"]["phase_checkpoints"]["combined_view"]["status"], "pending")
 
     def test_build_orchestrate_job_runner_updates_project(self):

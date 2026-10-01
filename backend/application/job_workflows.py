@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
 from backend.application.design_workflows import prepare_reactive_orchestration_payload
-from backend.planning.common import blocker_explanations, safe_dict, safe_float, safe_int, safe_list, safe_str
+from backend.planning.common import blocker_explanations, lower_text, safe_dict, safe_float, safe_int, safe_list, safe_str
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -15,7 +15,7 @@ from backend.planning.release_gates import (
 from backend.planning.review_issue_tracker import build_review_issue_tracker
 from backend.planning.smart_fix import build_smart_fix_recommendations
 from core.utils import safe_bool
-from core.config import POND_RADIUS
+from core.config import DEFAULT_PAD_ELEV, POND_RADIUS
 
 
 class JobQueueProtocol(Protocol):

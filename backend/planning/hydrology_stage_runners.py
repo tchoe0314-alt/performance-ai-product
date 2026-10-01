@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from core.config import (
     DEFAULT_LOT_X,
@@ -740,7 +740,7 @@ def run_drainage_stage(
                             inlets=alt_inlets,
                             basin_records=basin_records,
                             follow_surface=True,
-                            min_slope=min_slope,
+                            min_slope=max(MIN_SLOPE, 0.001),
                             max_steps=500,
                             mode=safe_str(getattr(summary, "mode", "assisted"), "assisted"),
                             hydraulic=None,

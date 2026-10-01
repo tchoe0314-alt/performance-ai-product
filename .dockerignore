@@ -1,5 +1,8 @@
 .git
 .gitignore
+.env
+.env.*
+!.env.example
 .venv
 venv
 __pycache__
@@ -9,6 +12,12 @@ node_modules
 apps/web/node_modules
 apps/web/.next
 data
+private
+reports
+test-results
+playwright-report
+apps/web/test-results
+apps/web/playwright-report
 uploads
 *.pyc
 *.pyo

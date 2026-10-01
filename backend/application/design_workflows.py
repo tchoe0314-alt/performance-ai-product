@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 import uuid
 from copy import deepcopy
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import HTTPException
 
