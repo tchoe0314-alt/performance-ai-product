@@ -70,13 +70,18 @@ def main() -> None:
     assert artifact.text == "artifact file access proven"
     sys.path.insert(0, "/app")
     from backend.services.database import Database
+    from backend.services.auth_store import AuthStore
     from backend.services.job_queue import JobQueueService
-    queue = JobQueueService(Database(Path("/data/permission-worker.db")), worker_count=1)
+    worker_db = Database(Path("/data/permission-worker.db"))
+    worker_user = AuthStore(worker_db).register_user(
+        email=f"worker-{args.phase}@example.test", password="disposable-worker-proof-123", name="Worker Proof",
+    )["user"]["user_id"]
+    queue = JobQueueService(worker_db, worker_count=1)
     try:
         queue.register_handler("permission_probe", lambda job: {"success": True})
-        job = queue.submit_job(user_id=user_id, project_id=None, job_type="permission_probe", payload={})
+        job = queue.submit_job(user_id=worker_user, project_id=None, job_type="permission_probe", payload={})
         for attempt in range(60):
-            result = queue.get_job(user_id=user_id, job_id=job["job_id"])
+            result = queue.get_job(user_id=worker_user, job_id=job["job_id"])
             if result and result["status"] == "completed":
                 break
             time.sleep(0.5)
