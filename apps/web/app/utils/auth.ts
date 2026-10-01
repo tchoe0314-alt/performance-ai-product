@@ -40,19 +40,18 @@ export function shouldRestoreStoredToken() {
 }
 
 export function uploadedImageSrc(pathOrUrl: string, token: string): string {
-  const safeToken = encodeURIComponent(token);
   if (!pathOrUrl || !token) {
     return "";
   }
 
   if (pathOrUrl.startsWith("/api/uploads/")) {
-    return `${toApiUrl(pathOrUrl)}?access_token=${safeToken}`;
+    return toApiUrl(pathOrUrl.split("?")[0]);
   }
 
-  const filename = pathOrUrl.split("/").pop();
+  const filename = pathOrUrl.split("?")[0].split("/").pop();
   if (!filename) {
     return "";
   }
 
-  return `${toApiUrl(`/api/uploads/${filename}`)}?access_token=${safeToken}`;
+  return toApiUrl(`/api/uploads/${filename}`);
 }

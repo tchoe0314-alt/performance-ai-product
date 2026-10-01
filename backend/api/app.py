@@ -2285,10 +2285,9 @@ def geocode_address(
 def get_uploaded_image(
     filename: str,
     authorization: Optional[str] = Header(default=None),
-    access_token: Optional[str] = Query(default=None),
     _rate_limit: None = Depends(rate_limit("export")),
 ) -> FileResponse:
-    token = str(access_token or "").strip() or _bearer_token(authorization)
+    token = _bearer_token(authorization)
     return application_get_uploaded_image_response(
         upload_dir=UPLOAD_DIR,
         auth_store=AUTH_STORE,

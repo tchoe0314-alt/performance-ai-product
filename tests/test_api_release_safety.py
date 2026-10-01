@@ -1,6 +1,7 @@
 import os
 import unittest
 import importlib
+import tempfile
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -30,6 +31,25 @@ api_app_module = importlib.import_module("backend.api.app")
 
 
 class ApiReleaseSafetyTest(unittest.TestCase):
+    def test_private_upload_requires_header_auth_and_rejects_other_users(self) -> None:
+        client = TestClient(app)
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "owner_plan.pdf").write_bytes(b"%PDF-1.4\n")
+            with patch.object(api_app_module, "UPLOAD_DIR", Path(directory)), patch.object(
+                api_app_module.AUTH_STORE, "authenticate_token",
+                side_effect=lambda token: {"user_id": "owner"} if token == "owner-session" else
+                ({"user_id": "other"} if token == "other-session" else None),
+            ):
+                query_only = client.get("/api/uploads/owner_plan.pdf?access_token=owner-session")
+                self.assertEqual(query_only.status_code, 401)
+                self.assertEqual(client.get("/api/uploads/owner_plan.pdf").status_code, 401)
+                forbidden = client.get("/api/uploads/owner_plan.pdf", headers={"Authorization": "Bearer other-session"})
+                self.assertEqual(forbidden.status_code, 403)
+                allowed = client.get("/api/uploads/owner_plan.pdf", headers={"Authorization": "Bearer owner-session"})
+                self.assertEqual(allowed.status_code, 200)
+                self.assertEqual(allowed.content, b"%PDF-1.4\n")
+                self.assertEqual(allowed.headers["cache-control"], "no-store")
+
     def test_debug_runtime_requires_authentication(self) -> None:
         client = TestClient(app)
         response = client.get("/api/debug/runtime")

@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { getJson, postJson } from "../lib/api";
+import { useAuthenticatedUploadUrl } from "./hooks/useAuthenticatedUploadUrl";
 
 import type {
   Assumption,
@@ -467,7 +468,7 @@ function PerformanceAIDashboardView({
     createDefaultPlanSheetSet("Untitled Project"),
   );
   const [uploadedImagePreviewUrl, setUploadedImagePreviewUrl] = useState("");
-  const [uploadedImageApiUrl, setUploadedImageApiUrl] = useState("");
+  const [uploadedImageSourceUrl, setUploadedImageApiUrl] = useState("");
   const [planPdfUploadState, setPlanPdfUploadState] = useState<"idle" | "uploading" | "uploaded" | "failed">("idle");
   const [planPdfUploadMessage, setPlanPdfUploadMessage] = useState("");
   const [selectedPlanPdfElementId, setSelectedPlanPdfElementId] = useState("");
@@ -752,6 +753,7 @@ function PerformanceAIDashboardView({
       setProjectId("");
     },
   });
+  const uploadedImageApiUrl = useAuthenticatedUploadUrl(uploadedImageSourceUrl, token);
   const effectiveUser: UserRecord | null =
     user ??
     (effectiveDemoWorkspaceEnabled

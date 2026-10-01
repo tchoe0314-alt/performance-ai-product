@@ -179,6 +179,12 @@ test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", a
   );
 
   const token = await loginAndSeedToken(request, page);
+  const privateFileRequests: Array<{ url: string; authorization: string }> = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.startsWith("/api/uploads/")) {
+      privateFileRequests.push({ url: request.url(), authorization: request.headers()["authorization"] ?? "" });
+    }
+  });
   const workflow = await openPdfPanel(page);
   await expectNoHorizontalPageOverflow(page);
 
@@ -186,6 +192,13 @@ test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", a
   await fileInput.setInputFiles(POOL_PDF_PATH);
   await expect(workflow).toContainText("pool-geometric.pdf", { timeout: 120_000 });
   await expect(workflow).toContainText("imported_pdf_review_required");
+  await expect(workflow.locator('iframe[title="Plan PDF source preview"]')).toHaveAttribute("src", /^blob:/);
+  expect(privateFileRequests.length).toBeGreaterThan(0);
+  for (const fileRequest of privateFileRequests) {
+    expect(fileRequest.url).not.toContain("access_token");
+    expect(fileRequest.url).not.toContain(token);
+    expect(fileRequest.authorization === `Bearer ${token}`).toBe(true);
+  }
 
   for (const label of ["Text", "Labels", "Dimensions", "Title block", "Scale", "Elevations", "Matchlines", "Details"]) {
     await expect(workflow.getByText(label, { exact: true }).first()).toBeVisible();

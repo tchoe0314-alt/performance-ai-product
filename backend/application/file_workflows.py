@@ -706,7 +706,11 @@ def get_uploaded_image_response(
         raise HTTPException(status_code=404, detail="Uploaded image not found.")
 
     media_type, _ = mimetypes.guess_type(str(target))
-    return FileResponse(target, media_type=media_type or "application/octet-stream")
+    return FileResponse(
+        target,
+        media_type=media_type or "application/octet-stream",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 def download_artifact_response(

@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 
 import { toApiUrl } from "../../lib/api";
+import { useAuthenticatedUploadUrl } from "./useAuthenticatedUploadUrl";
 import type { PlanMeta, PlanPdfElement } from "../types";
 
 type DashboardPlanPdfDerivedStateOptions = {
@@ -33,9 +34,10 @@ export function useDashboardPlanPdfDerivedState({
     [planPdfElements, selectedPlanPdfElementId],
   );
   const planPdfFirstPage = planPdfAnalysis?.pages?.[0] ?? null;
-  const planPdfSourceUrl = planPdfAnalysis?.source_pdf?.file_url
-    ? toApiUrl(`${planPdfAnalysis.source_pdf.file_url}?access_token=${encodeURIComponent(token || "")}`)
-    : "";
+  const planPdfSourceUrl = useAuthenticatedUploadUrl(
+    planPdfAnalysis?.source_pdf?.file_url ? toApiUrl(planPdfAnalysis.source_pdf.file_url) : "",
+    token,
+  );
   const planPdfSummary = planPdfAnalysis?.summary ?? {};
   const planPdfBlockers = planPdfAnalysis?.blockers ?? [];
   const planPdfChangedReport = currentPlanMeta.plan_pdf_changed_elements_v1 ?? planPdfEditableSheet?.changed_elements ?? null;
