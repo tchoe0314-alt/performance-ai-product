@@ -60,3 +60,42 @@ relationships, never a blanket waiver for a building. Network connections stay
 review-required for fitting, network compatibility and access checks. The new
 metadata is preserved through project JSON and canonical engineering attributes.
 Mixed coordinate units are flagged rather than compared as if identical.
+
+## Detailed occupied models and route profiles
+
+Selected physical objects have an additional detailed-geometry editor. A complete
+occupied model uses local-footprint rectangular prisms with separate vertical
+limits for each body, foundation, deck and support. Bridges require all three
+deck/support/foundation kinds. Component projections outside the displayed main
+footprint participate in interference and boundary screening. The model must
+explicitly include all occupied parts; completeness is a user assertion, not an
+independent engineering certification.
+
+Pipe profiles give center elevations at every route vertex, linearly interpolated
+between vertices. Actual outside diameter, a shared datum, evidence source and
+required clearance remain necessary. Analytic horizontal swept-disk entry/exit
+parameters limit the vertical comparison to each crossing interval, instead of
+using the pipe's highest/lowest point anywhere along the entire route. Vertical
+intervals are conservative envelopes, not an exact 3D solid-intersection proof.
+Two varying-depth pipes still require explicit review; no tube-to-tube separation
+is inferred. Irregular foundations require subdivision into suitable conservative
+prisms; these are not arbitrary BIM solids.
+
+Detailed evidence binds to the object's geometry, units and pipe diameter.
+Geometry edits invalidate that binding and require re-review/reapplication.
+Malformed or stale detailed data never silently falls back to a clear result.
+The metadata follows save/restore, engineering handoff, and undo/redo paths.
+Detailed solids/profile elevations are NOT yet rendered in the main 3D preview;
+the editor explicitly warns about this distinction.
+
+## Public reference case
+
+[City of Madison: 3575 University Avenue plans](https://www.cityofmadison.com/public-works/documents/private-development-plans/15902_UniversityAve3575.pdf),
+project 15902, sheets U-1 and U-SCH, were inspected on September 30, 2026.
+Libraries links to the unchanged original and can add a straight schematic of
+the scheduled SAS#1–SAS#2 segment. Its source observations remain in
+`public_reference_v1`; the drawing is not republished or relicensed. Original
+ownership/notices are retained. A plan's nominal pipe size and inverts do not
+establish outside diameter, center elevation, datum, actual survey coordinates
+or engineering clearance. None of these missing values is automatically filled
+or marked reviewed. This reference is not a field-verified pilot site.

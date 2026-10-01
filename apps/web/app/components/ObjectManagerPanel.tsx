@@ -12,6 +12,8 @@ import { DisclosurePanel } from "./ui";
 import { ObjectEngineeringProperties } from "./ObjectEngineeringProperties";
 import { SiteInterferencePanel } from "./SiteInterferencePanel";
 import { ObjectCoordinationProperties } from "./ObjectCoordinationProperties";
+import { ObjectDetailedGeometryProperties } from "./ObjectDetailedGeometryProperties";
+import { detailedGeometryBinding } from "../utils/detailedObjectGeometry";
 
 export type ObjectManagerPanelProps = {
   cadTools: ComponentProps<typeof DrawCadToolsPanel>;
@@ -47,6 +49,7 @@ export function ObjectManagerPanel({
           <SelectedObjectCard {...selectedObject} />
           {selectedObject.onEngineeringMeta && selectedObject.selectedObject.type !== "site" ? <ObjectEngineeringProperties key={`${selectedObject.selectedObject.id}:${JSON.stringify(selectedObject.selectedObject.meta?.vertical_extent_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.cul_de_sac_v1)}:${selectedObject.selectedObject.meta?.pipe_diameter_ft}`} item={selectedObject.selectedObject} onCommit={selectedObject.onEngineeringMeta} /> : null}
           {selectedObject.onEngineeringMeta && !["site", "lot_block"].includes(selectedObject.selectedObject.type ?? "") ? <ObjectCoordinationProperties key={`${selectedObject.selectedObject.id}:${JSON.stringify(selectedObject.selectedObject.meta?.coordination_envelope_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.setback_rule_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.intentional_connections_v1)}`} item={selectedObject.selectedObject} objects={objectList.objects} onCommit={selectedObject.onEngineeringMeta} /> : null}
+          {selectedObject.onEngineeringMeta && !["site", "lot_block", "setback_zone", "no_build_zone"].includes(selectedObject.selectedObject.type ?? "") ? <ObjectDetailedGeometryProperties key={`${detailedGeometryBinding(selectedObject.selectedObject)}:${JSON.stringify(selectedObject.selectedObject.meta?.occupied_components_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.pipe_profile_v1)}`} item={selectedObject.selectedObject} onCommit={selectedObject.onEngineeringMeta} /> : null}
         </div>
       ) : null}
       <SiteInterferencePanel objects={objectList.objects} />

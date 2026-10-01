@@ -3,6 +3,7 @@ import { checkFootprint, polygonContains, segmentsTouch, type FootprintPoint } f
 import { culDeSacFrame } from "./parametricRoad";
 import { objectRule, readCoordinationEnvelope, hasReviewedConnection, SITE_OBJECT_RULEBOOK } from "./siteObjectRulebook";
 import type { SiteObjectType } from "../types";
+import { assessDetailedPair, reviewedComponentFootprints, validateComponentModel, validatePipeProfile } from "./detailedObjectGeometry";
 
 export type VerticalExtent = { version: 1; minFt: number; maxFt: number; datum: string; source: string; reviewed: boolean; requiredClearanceFt: number | null };
 export type InterferenceResult = { code: string; objectIds: string[]; severity: "conflict" | "review" | "clear"; message: string };
@@ -93,7 +94,11 @@ export function assessSiteInterference(objects: BuildingPlacement[]): Interferen
   // Keep its underlying sources (including hidden ones) as the physical objects.
   const candidates = objects.filter(o => o.placed && Number.isFinite(o.x) && Number.isFinite(o.y) && category(o) !== "container" && !(Array.isArray(o.meta?.combined_from_object_ids) && o.meta.combined_from_object_ids.length > 0));
   const results: InterferenceResult[] = [];
-  const shapes = new Map(candidates.map(o => [o, objectFootprints(o)]));
+  const shapes = new Map(candidates.map(o => [o, [...objectFootprints(o), ...reviewedComponentFootprints(o)]]));
+  for (const o of candidates) {
+    const error = o.meta?.occupied_components_v1 ? validateComponentModel(o.meta.occupied_components_v1, o) : o.meta?.pipe_profile_v1 ? validatePipeProfile(o.meta.pipe_profile_v1, o) : null;
+    if (error) results.push({ severity: "review", code: "detailed_evidence_invalid", objectIds: [o.id], message: `${o.label}: ${error}` });
+  }
   for (const o of candidates) if (o.meta?.coordination_envelope_v1 && !readCoordinationEnvelope(o)) results.push({ severity: "review", code: "coordination_envelope_unreviewed", objectIds: [o.id], message: `${o.label}: horizontal protection/access buffer is incomplete or unreviewed; it has not been used to establish clearance.` });
   const site = objects.find(o => o.type === "site" && o.placed);
   if (site) {
@@ -146,6 +151,11 @@ export function assessSiteInterference(objects: BuildingPlacement[]): Interferen
     }
     if ((A === "utility" || A === "fixture") && (B === "utility" || B === "fixture") && hasReviewedConnection(a, b)) { result("review", "network_connection_review", "documented network connection; verify fitting/shaft geometry, network compatibility and maintenance access rather than treating it as an unrelated clash."); return; }
     const zA = readVerticalExtent(a), zB = readVerticalExtent(b);
+    const detailed = assessDetailedPair(a, b, objectFootprints(a), objectFootprints(b), zA, zB);
+    if (detailed !== null) {
+      detailed.forEach(finding => result(finding.severity, finding.code, finding.message));
+      return;
+    }
     if ([[a, zA], [b, zB]].some(([o, z]) => {
       const object = o as BuildingPlacement, extent = z as VerticalExtent | null;
       return isLinearUtility(object) && extent && extent.maxFt - extent.minFt + 1e-7 < Number(object.meta?.pipe_diameter_ft);

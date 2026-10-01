@@ -3,6 +3,7 @@ import type { AddObjectOptions } from "../utils/dashboardObjectPlacementBuilder"
 import { defaultCulDeSacParameters } from "../utils/parametricRoad";
 import { useRef, useState } from "react";
 import { parseLayout } from "../utils/culDeSacConcept";
+import { PUBLIC_PLAN_REFERENCE } from "../utils/publicPlanReference";
 
 export type LibraryPanelItem = {
   type: string;
@@ -51,6 +52,13 @@ export function LibrariesPanel({
           Cul-de-sac · adjustable 2D plan
         </a>
         <p className="mt-2 text-xs text-slate-500">Explore bulb and road dimensions in a separate concept study.</p>
+      </PanelCard>
+      <PanelCard>
+        <p className="text-xs font-semibold">Public reference case · Madison University Avenue</p>
+        <a className="mt-2 block text-xs text-blue-700 underline" href={PUBLIC_PLAN_REFERENCE.url} target="_blank" rel="noopener noreferrer">Open original utility plans (City of Madison)</a>
+        <p className="mt-2 text-xs text-slate-600">Published sewer schedule: SAS#1 → SAS#2, 65 ft, nominal 8-inch PVC. Original attribution retained. This is not a surveyed pilot or an approved Civora design.</p>
+        <button type="button" data-testid="add-public-reference-segment" className="mt-2 rounded-xl border border-slate-200 px-3 py-3 text-xs font-semibold" onClick={() => { const scale = units === "m" ? .3048 : 1; onAddObject("utility_corridor", { label: "Public-plan sewer segment (schematic)", placed: true, geometryType: "polyline", width: PUBLIC_PLAN_REFERENCE.segment.planLengthFt * scale, depth: scale, meta: { asset_kind: "pipe", network: "sanitary", public_reference_v1: PUBLIC_PLAN_REFERENCE, draft_review_required: true } }); }}>Add reference segment (unverified)</button>
+        <p className="mt-2 text-[11px] text-slate-500">Straight schematic only. Inverts remain source observations—not center elevations. Outside diameter, datum, clearance and field accuracy still need verification.</p>
       </PanelCard>
       {sections.map((group) => (
         <PanelCard key={group.key}>

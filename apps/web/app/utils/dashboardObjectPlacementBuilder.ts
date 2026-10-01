@@ -357,6 +357,12 @@ export function buildDashboardObjectPlacement({
       [lot.w * endX, lot.h * yFactor],
       ...rightSideRun,
     ];
+    // A specific pipe object owns its placed route dimensions; it is not the
+    // site's generic network corridor (which may not be initialized yet).
+    if (nextPlacement.meta?.asset_kind === "pipe") {
+      const x = nextPlacement.x ?? 24, y = (nextPlacement.y ?? 24) + nextPlacement.d / 2;
+      nextPlacement.geometry = [[x, y], [x + nextPlacement.w / 2, y], [x + nextPlacement.w, y]];
+    }
     nextPlacement.capabilities = {
       movable: true,
       resizable: false,

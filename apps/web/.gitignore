@@ -44,5 +44,6 @@ yarn-error.log*
 # typescript
 .next-object-integration/
 .next-object-rulebook/
+.next-detailed-object-check/
 *.tsbuildinfo
 next-env.d.ts

@@ -53,7 +53,7 @@ export function buildDashboardObjectUpdateRecentChange({
       undo,
     };
   }
-  const engineeringKeys = ["cul_de_sac_v1", "vertical_extent_v1", "pipe_diameter_ft", "coordination_envelope_v1", "setback_rule_v1", "intentional_connections_v1"];
+  const engineeringKeys = ["cul_de_sac_v1", "vertical_extent_v1", "pipe_diameter_ft", "coordination_envelope_v1", "setback_rule_v1", "intentional_connections_v1", "occupied_components_v1", "pipe_profile_v1"];
   if (updates.meta && engineeringKeys.some(key => key in updates.meta! && JSON.stringify(updates.meta![key]) !== JSON.stringify(target.meta?.[key]))) {
     return { type: "object_style_changed", label: "Object engineering requirements changed", detail: `${target.label} engineering dimensions or coordination evidence changed.`, undo };
   }

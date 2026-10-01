@@ -674,9 +674,11 @@ export const buildCanonicalGeometryHandoffV1 = (
         : "canvas_object",
     engineering_attributes: {
       ...(metadata.engineering_attributes && typeof metadata.engineering_attributes === "object"
-        ? Object.fromEntries(Object.entries(metadata.engineering_attributes as Record<string, unknown>).filter(([key]) => !["cul_de_sac_v1", "vertical_extent_v1", "pipe_diameter_ft", "coordination_envelope_v1", "setback_rule_v1", "intentional_connections_v1"].includes(key)))
+        ? Object.fromEntries(Object.entries(metadata.engineering_attributes as Record<string, unknown>).filter(([key]) => !["cul_de_sac_v1", "vertical_extent_v1", "pipe_diameter_ft", "coordination_envelope_v1", "setback_rule_v1", "intentional_connections_v1", "occupied_components_v1", "pipe_profile_v1"].includes(key)))
         : {}),
       ...(metadata.coordination_envelope_v1 ? { coordination_envelope_v1: metadata.coordination_envelope_v1 } : {}),
+      ...(metadata.occupied_components_v1 ? { occupied_components_v1: metadata.occupied_components_v1 } : {}),
+      ...(metadata.pipe_profile_v1 ? { pipe_profile_v1: metadata.pipe_profile_v1 } : {}),
       ...(metadata.setback_rule_v1 ? { setback_rule_v1: metadata.setback_rule_v1 } : {}),
       ...(metadata.intentional_connections_v1 ? { intentional_connections_v1: metadata.intentional_connections_v1 } : {}),
       ...(metadata.cul_de_sac_v1 ? { cul_de_sac_v1: metadata.cul_de_sac_v1 } : {}),
