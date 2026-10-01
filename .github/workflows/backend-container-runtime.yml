@@ -1,0 +1,64 @@
+name: Backend container runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/container-runtime-verification
+  pull_request:
+    paths:
+      - Dockerfile
+      - Dockerfile.backend
+      - scripts/start_backend_service.sh
+      - scripts/verify_backend_container.py
+      - .github/workflows/backend-container-runtime.yml
+
+permissions:
+  contents: read
+
+jobs:
+  container-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dockerfile: Dockerfile
+            port: 8002
+          - dockerfile: Dockerfile.backend
+            port: 8080
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build restricted-user backend
+        run: docker build --file "${{ matrix.dockerfile }}" --tag civora-container-proof .
+      - name: Verify fresh and restored volume
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker volume create civora-proof-data
+          docker run --rm --user 0:0 --volume civora-proof-data:/data --entrypoint sh civora-container-proof -c 'chown 10001:10001 /data'
+          cleanup() {
+            docker rm --force civora-proof >/dev/null 2>&1 || true
+            docker volume rm civora-proof-data >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          mkdir -p container-evidence
+          for phase in fresh restored; do
+            docker run --detach --name civora-proof --volume civora-proof-data:/data \
+              --env CIVORA_PRODUCT_MODE=private_alpha --env CIVORA_AI_PROVIDER=none \
+              --env CIVORA_AI_VISUALIZATION_PROVIDER=none --env CIVORA_IMAGERY_DETECTION_PROVIDER=none \
+              civora-container-proof
+            if ! docker exec civora-proof python scripts/verify_backend_container.py --port "${{ matrix.port }}" --phase "$phase" | tee "container-evidence/$phase.json"; then
+              docker logs civora-proof
+              exit 1
+            fi
+            docker stop civora-proof
+            docker rm civora-proof
+          done
+      - name: Upload runtime evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-container-${{ matrix.port }}-${{ github.sha }}
+          path: container-evidence
+          if-no-files-found: error
