@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
+import { openCadPrecisionTools } from "./testUiHelpers";
 
 const TOKEN_KEY = "civora-ai-token";
 
@@ -800,11 +801,7 @@ test.describe("project drawer reliability", () => {
 
     // Physical map scale is measured without intentional CAD snap displacement.
     // Snap behavior has dedicated drafting coverage elsewhere in this suite.
-    const cadTools = page.getByTestId("cad-precision-tools").filter({ visible: true }).first();
-    await expect(cadTools).toBeVisible();
-    if (!(await cadTools.evaluate((element) => (element as HTMLDetailsElement).open))) {
-      await cadTools.locator("summary").click();
-    }
+    const cadTools = await openCadPrecisionTools(page);
     const snapToggle = cadTools.getByLabel("Snap");
     await expect(snapToggle).toBeChecked();
     await snapToggle.uncheck();
