@@ -54,12 +54,8 @@ export function buildDashboardDemoWorkspaceSeed({
       auto_file_named: false,
       site_inputs: {
         address: "Pinecrest Mixed-Use Demo Site",
-        geocode: {
-          lat: 32.7767,
-          lng: -96.797,
-          display_name: "Pinecrest Mixed-Use Demo Site",
-          provider: "demo",
-        },
+        // Fictional local-coordinate geometry has no real-world map anchor.
+        geocode: undefined,
         site_rotation_deg: 0,
         site_alignment_locked: true,
         use_survey_for_grading: true,

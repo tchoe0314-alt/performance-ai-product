@@ -1104,11 +1104,11 @@ export const createDemoPlanResponse = (): PlanResponse => ({
   ],
   final_plan: {
     actions: [
-      { label: "Multifamily Building A", layer: "BUILDING", task: "rectangle", origin: [120, 95], width: 110, height: 58, meta: { preview_role: "final" } } as Record<string, unknown>,
-      { label: "Multifamily Building B", layer: "BUILDING", task: "rectangle", origin: [330, 82], width: 110, height: 58, meta: { preview_role: "final" } } as Record<string, unknown>,
-      { label: "Retail Building", layer: "BUILDING", task: "rectangle", origin: [96, 350], width: 70, height: 45, meta: { preview_role: "final" } } as Record<string, unknown>,
-      { label: "Residential Parking", layer: "PARKING", task: "rectangle", origin: [255, 190], width: 210, height: 104, meta: { preview_role: "final", system: "parking" } } as Record<string, unknown>,
-      { label: "Detention Basin A", layer: "POND", task: "rectangle", origin: [540, 380], width: 150, height: 86, meta: { preview_role: "final", system: "drainage" } } as Record<string, unknown>,
+      { label: "Multifamily Building A", layer: "BUILDING", task: "rectangle", origin: [120, 95], width: 110, height: 58, meta: { preview_role: "final", site_object_id: "demo-building-a" } } as Record<string, unknown>,
+      { label: "Multifamily Building B", layer: "BUILDING", task: "rectangle", origin: [330, 82], width: 110, height: 58, meta: { preview_role: "final", site_object_id: "demo-building-b" } } as Record<string, unknown>,
+      { label: "Retail Building", layer: "BUILDING", task: "rectangle", origin: [96, 350], width: 70, height: 45, meta: { preview_role: "final", site_object_id: "demo-retail" } } as Record<string, unknown>,
+      { label: "Residential Parking", layer: "PARKING", task: "rectangle", origin: [255, 190], width: 210, height: 104, meta: { preview_role: "final", system: "parking", site_object_id: "demo-parking-north" } } as Record<string, unknown>,
+      { label: "Detention Basin A", layer: "POND", task: "rectangle", origin: [540, 380], width: 150, height: 86, meta: { preview_role: "final", system: "drainage", site_object_id: "demo-basin-a" } } as Record<string, unknown>,
     ] as unknown as NonNullable<NonNullable<PlanResponse["final_plan"]>["actions"]>,
     meta: {
       engineering_status: { success: true, status: "demo_ready", trust_score: 82 },
@@ -1248,6 +1248,15 @@ export const createDemoPlanResponse = (): PlanResponse => ({
       grading: {
         grading_source_quality: "demo_surface",
         grading_source_detail: "Seeded northwest-to-southeast slope for UI QA.",
+        // Supply the samples claimed by this synthetic fixture, not surveyed terrain.
+        surface_model: {
+          source: "Synthetic demo surface — visual QA only, not survey/control",
+          spot_elevations: Array.from({ length: 64 }, (_, index) => {
+            const xRatio = (index % 8) / 7;
+            const yRatio = Math.floor(index / 8) / 7;
+            return { x: xRatio * 760, y: yRatio * 520, z: 648 - 6.8 * (xRatio + yRatio) / 2 };
+          }),
+        },
         existing_surface: {
           range_z: 6.8,
           high_points: [{ x: 60, y: 60, z: 648.0 }],
@@ -1255,7 +1264,7 @@ export const createDemoPlanResponse = (): PlanResponse => ({
           terrain_profile: {
             source_quality: "demo_surface",
             source_detail: "Synthetic surface for visual QA only.",
-            terrain_stats: { sample_count: 144, missing_count: 0 },
+            terrain_stats: { sample_count: 64, missing_count: 0 },
             downhill_dx: 0.45,
             downhill_dy: -0.7,
           },

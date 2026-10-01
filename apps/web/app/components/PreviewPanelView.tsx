@@ -517,6 +517,7 @@ export default function PreviewPanel({
   } as const;
   const legendPalette = previewQuality === "high" ? highPalette : normalPalette;
   useEffect(() => {
+    if (geocode?.lat == null || geocode?.lng == null) return;
     const lat = Number(geocode?.lat);
     const lng = Number(geocode?.lng);
     if (!mapboxToken || !Number.isFinite(lat) || !Number.isFinite(lng)) return;

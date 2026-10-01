@@ -286,7 +286,8 @@ function corridorSurfaceGeometry(
     const right = left + 1;
     const nextLeft = left + 2;
     const nextRight = left + 3;
-    indices.push(left, right, nextLeft, right, nextRight, nextLeft);
+    // Plan Y maps to scene Z; reverse winding so the visible face points up.
+    indices.push(left, nextLeft, right, right, nextLeft, nextRight);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -471,6 +472,13 @@ export default function Preview3DCanvas({
     const terrainZRange = terrainZValues.length ? Math.max(...terrainZValues) - Math.min(...terrainZValues) : 0;
     const hasReviewContourSamples = sourceSamples.some((item) => /review contour/i.test(String(item.source || "")));
     const hasSourceDemSamples = sourceSamples.some((item) => item.meta?.source_surface_ready === true);
+    if (sourceSamples.length && sourceSamples.every((item) => /synthetic demo surface/i.test(String(item.source || "")))) {
+      return {
+        label: "Synthetic demo terrain — not survey/control",
+        detail: `${sourceSamples.length} fictional elevation samples for visual QA only.`,
+        mode: terrainZRange >= 0.5 ? "terrain" as const : "flat-source" as const,
+      };
+    }
     if (!sourceSamples.length) {
       if (hasTerrainSource) {
         return {
@@ -885,9 +893,6 @@ export default function Preview3DCanvas({
         edges.scale.copy(mesh.scale);
         object.add(edges);
       };
-      const simplifyLowConfidencePlanGeometry =
-        state === "low" && (layer === "ROAD" || layer === "PARKING" || layer === "SIDEWALK");
-
       if (isTreeSymbol && layer === "LANDSCAPE") {
         const trunk = new THREE.Mesh(
           new THREE.CylinderGeometry(0.34, 0.42, 4.2, 8),
@@ -921,7 +926,6 @@ export default function Preview3DCanvas({
         object.add(outline);
         renderedCadGeometry = true;
       } else if (
-        !simplifyLowConfidencePlanGeometry &&
         (item.geometryType === "polyline" || item.geometryType === "polygon") &&
         Array.isArray(item.geometry) &&
         item.geometry.length >= 2
@@ -1132,6 +1136,18 @@ export default function Preview3DCanvas({
             centerY,
           );
           if (corridorGeometry) {
+            // Visual draping only: a flat corridor otherwise disappears into
+            // sloping terrain. This does not create engineering grade evidence.
+            const positions = corridorGeometry.getAttribute("position");
+            for (let vertex = 0; vertex < positions.count; vertex += 1) {
+              const x = positions.getX(vertex) + centerX;
+              const y = positions.getZ(vertex) + centerY;
+              positions.setY(vertex, terrainElevationAt(x, y) + itemOffset + visualLift + slabDepth + 0.05);
+            }
+            positions.needsUpdate = true;
+            corridorGeometry.computeVertexNormals();
+            const normals = corridorGeometry.getAttribute("normal");
+            object.userData.corridorFacesUp = Array.from({ length: normals.count }, (_, index) => normals.getY(index)).every(y => y > 0);
             const corridor = new THREE.Mesh(corridorGeometry, slabMaterial);
             corridor.userData = object.userData;
             corridor.receiveShadow = true;
@@ -1141,7 +1157,7 @@ export default function Preview3DCanvas({
           if (layer === "ROAD") {
             const centerline = new THREE.Line(
               new THREE.BufferGeometry().setFromPoints(
-                planPoints.map(([x, y]) => toScene(x, y, baseY + visualLift + slabDepth + 0.15)),
+                planPoints.map(([x, y]) => toScene(x, y, terrainElevationAt(x, y) + itemOffset + visualLift + slabDepth + 0.15)),
               ),
               lineMaterial,
             );
@@ -1594,10 +1610,17 @@ export default function Preview3DCanvas({
         object.rotation.y = THREE.MathUtils.degToRad(-rotationDeg);
       }
 
+      object.userData.renderedGeometryType = renderedCadGeometry ? item.geometryType : "rect";
       root.add(object);
       pickables.push(object);
     });
     pickablesRef.current = pickables;
+    // Read-only diagnostics describe the actual mesh path, not just input geometry.
+    renderer.domElement.dataset.renderedGeometry = JSON.stringify(pickables.map(object => ({
+      id: object.userData.itemId,
+      geometryType: object.userData.renderedGeometryType,
+      corridorFacesUp: object.userData.corridorFacesUp,
+    })));
 
     const renderScene = () => {
       controls.update();

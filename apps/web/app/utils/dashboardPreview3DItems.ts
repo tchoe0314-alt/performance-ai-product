@@ -427,7 +427,7 @@ export function buildBackendPreview3DItems({
       color: "#bbf7d0",
       label: `Elevation sample ${index + 1}`,
       layer: "TERRAIN",
-      source: "preview elevation sample",
+    source: String(rawSurfaceModel.source || "preview elevation sample"),
       confidence: "review required",
       terrainSample: true,
     });
