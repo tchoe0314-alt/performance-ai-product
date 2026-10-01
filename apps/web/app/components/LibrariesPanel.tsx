@@ -20,6 +20,13 @@ export function LibrariesPanel({
 }) {
   return (
     <div className="space-y-4">
+      <PanelCard>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Concept studies</p>
+        <a href="/concepts/cul-de-sac.html" target="_blank" rel="noopener noreferrer" className="mt-3 block rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold text-blue-700 hover:bg-slate-50">
+          Cul-de-sac · adjustable 2D plan
+        </a>
+        <p className="mt-2 text-xs text-slate-500">Explore bulb and road dimensions in a separate concept study.</p>
+      </PanelCard>
       {sections.map((group) => (
         <PanelCard key={group.key}>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{group.title}</p>

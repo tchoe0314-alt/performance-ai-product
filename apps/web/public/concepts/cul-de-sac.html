@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cul-de-sac concept · Civora</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#17243a;font:15px system-ui,-apple-system,sans-serif}main{max-width:1160px;margin:auto;padding:24px}nav{display:flex;justify-content:space-between;gap:16px;align-items:center}a{color:#245bc2;text-decoration:none}a:hover{text-decoration:underline}.brand{font-weight:700}.badge{font-size:12px;padding:7px 12px;border:1px solid #cbd5e1;border-radius:20px;background:white}h1{font-size:clamp(26px,4vw,40px);letter-spacing:-.04em;margin:30px 0 8px}p{line-height:1.6;color:#59677c}.layout{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:20px;margin-top:24px}.sheet,aside{background:white;border:1px solid #d9e0ea;border-radius:16px;overflow:hidden}.sheet header{padding:15px 20px;border-bottom:1px solid #e3e8ef;display:flex;justify-content:space-between;font-size:12px;color:#59677c}canvas{display:block;width:100%;height:640px}aside{padding:24px;align-self:start}h2{font-size:17px;margin:0 0 24px}label{display:flex;justify-content:space-between;gap:10px;font-weight:600;font-size:14px}output{color:#245bc2;white-space:nowrap}input[type=range]{width:100%;margin:18px 0 28px;accent-color:#245bc2;cursor:pointer}input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #4e8dff;outline-offset:4px}dl{font-size:13px;border-top:1px solid #e3e8ef;padding-top:12px}dl div{display:flex;justify-content:space-between;padding:7px 0}dt{color:#59677c}dd{margin:0;font-weight:600}button{width:100%;padding:11px;border:1px solid #ccd5e2;background:#f8fafc;border-radius:8px;cursor:pointer;color:#17243a;font:inherit}button:hover{background:#eef3fb}.note{font-size:12px;margin:20px 0 0}.legend{display:flex;flex-wrap:wrap;gap:20px;padding:14px 20px;font-size:12px;border-top:1px solid #e3e8ef}.dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}.footer{font-size:12px;margin-top:20px}@media(max-width:760px){main{padding:16px}.layout{grid-template-columns:1fr}aside{grid-row:1}canvas{height:520px}h2{margin-bottom:20px}input[type=range]{margin-bottom:18px}}
+</style>
+</head>
+<body>
+<main>
+<nav><a class="brand" href="/">Civora / Workspace</a><span class="badge">Engineering concept · feet</span></nav>
+<h1>Cul-de-sac concept</h1>
+<p>A circular asphalt bulb, central island, and two-way approach. Adjust the dimensions to explore the layout.</p>
+<div class="layout">
+<section class="sheet" aria-label="Concept plan sheet">
+<header><span>PLAN VIEW · CONCEPT 01</span><span>Dimensions in feet</span></header>
+<canvas id="plan" aria-label="Cul-de-sac plan with tangent transitions, double-yellow centerline, and landscaped island">Your browser needs Canvas support to display this plan.</canvas>
+<div class="legend"><span><i class="dot" style="background:#465265"></i>Asphalt</span><span><i class="dot" style="background:#b7d6bf"></i>Landscaped island</span><span><i class="dot" style="background:#f9ca46"></i>Double-yellow line</span></div>
+</section>
+<aside>
+<h2>Plan dimensions</h2>
+<label for="radius">Bulb radius <output id="radiusValue" for="radius">50 ft</output></label>
+<input id="radius" type="range" min="35" max="80" step="1" value="50">
+<label for="width">Approach road width <output id="widthValue" for="width">30 ft</output></label>
+<input id="width" type="range" min="20" max="48" step="1" value="30">
+<dl><div><dt>Island radius</dt><dd>15 ft</dd></div><div><dt>Transition radius</dt><dd id="filletValue">20 ft</dd></div><div><dt>Radial pavement width</dt><dd id="pavementValue">35 ft</dd></div><div><dt>Approach</dt><dd>Bidirectional</dd></div></dl>
+<button id="reset" type="button">Reset to 50 ft / 30 ft</button>
+<p class="note">Tangent circular transitions are recalculated for every dimension change. Road width measures asphalt edge to edge.</p>
+<p class="note">Concept only. Turning paths, fire access, drainage, curb design, and local standards need project-specific review. This study does not modify your saved project.</p>
+</aside>
+</div>
+<p class="footer">Civora · Geometry study · Island and approach shown for conceptual review</p>
+</main>
+<script>
+"use strict";
+const canvas=document.getElementById("plan"),ctx=canvas.getContext("2d");
+const radius=document.getElementById("radius"),width=document.getElementById("width");
+// The outside transition circle is externally tangent to the bulb and tangent
+// to the straight pavement edge. Its center lies at (halfWidth + fillet, y).
+function geometry(R,W){
+ const f=20,a=W/2,x=a+f,y=Math.sqrt((R+f)**2-x*x),theta=Math.atan2(y,x);
+ return {R,W,f,a,x,y,theta,tx:R*x/(R+f),ty:R*y/(R+f),bottom:y+110};
+}
+function draw(){
+ const g=geometry(Number(radius.value),Number(width.value));
+ const rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+ canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);
+ ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,rect.width,rect.height);
+ const margin=62,scale=Math.min((rect.width-2*margin)/(2*(g.R+22)),(rect.height-2*margin)/(g.R+g.bottom));
+ const ox=rect.width/2,oy=margin+g.R*scale;
+ ctx.save();ctx.translate(ox,oy);ctx.scale(scale,scale);
+ ctx.strokeStyle="#e9edf3";ctx.lineWidth=.6/scale;
+ for(let x=-200;x<=200;x+=10){ctx.beginPath();ctx.moveTo(x,-100);ctx.lineTo(x,300);ctx.stroke();}
+ for(let y=-100;y<=300;y+=10){ctx.beginPath();ctx.moveTo(-200,y);ctx.lineTo(200,y);ctx.stroke();}
+ ctx.beginPath();ctx.moveTo(-g.a,g.bottom);ctx.lineTo(-g.a,g.y);
+ ctx.arc(-g.x,g.y,g.f,0,-g.theta,true);
+ ctx.arc(0,0,g.R,Math.PI-g.theta,2*Math.PI+g.theta,false);
+ ctx.arc(g.x,g.y,g.f,-Math.PI+g.theta,-Math.PI,true);
+ ctx.lineTo(g.a,g.bottom);ctx.closePath();ctx.fillStyle="#465265";ctx.fill();
+ ctx.strokeStyle="#263344";ctx.lineWidth=1.4;ctx.stroke();
+ // Nominal 4-inch paired stripes; retain a visible gap at small display scales.
+ const stripe=Math.max(1/3,1.25/scale),gap=Math.max(1/3,1.5/scale),offset=(stripe+gap)/2;
+ ctx.strokeStyle="#f9ca46";ctx.lineWidth=stripe;
+ for(const x of [-offset,offset]){ctx.beginPath();ctx.moveTo(x,g.bottom);ctx.lineTo(x,g.R+4);ctx.stroke();}
+ ctx.beginPath();ctx.arc(0,0,15,0,2*Math.PI);ctx.fillStyle="#b7d6bf";ctx.fill();ctx.strokeStyle="#edf3e9";ctx.lineWidth=1;ctx.stroke();
+ ctx.strokeStyle="#dce9f8";ctx.fillStyle="#dce9f8";ctx.lineWidth=1/scale;ctx.font=`${12/scale}px system-ui`;ctx.textAlign="center";
+ function dimension(x1,y1,x2,y2,label){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();for(const [x,y] of [[x1,y1],[x2,y2]]){ctx.beginPath();ctx.moveTo(x-2,y-2);ctx.lineTo(x+2,y+2);ctx.stroke();}ctx.fillText(label,(x1+x2)/2,(y1+y2)/2-5/scale);}
+ dimension(0,0,g.R*Math.cos(-Math.PI/4),g.R*Math.sin(-Math.PI/4),`R ${g.R} ft`);
+ ctx.fillStyle="#27496d";ctx.fillText("R 15 ft",0,4/scale);ctx.fillStyle="#dce9f8";
+ dimension(-g.a,g.y+70,g.a,g.y+70,`${g.W} ft`);
+ ctx.restore();
+ // Sheet annotations stay readable at every viewport size.
+ ctx.fillStyle="#52657d";ctx.font="11px system-ui";ctx.textAlign="left";
+ ctx.fillText("N",rect.width-30,28);ctx.beginPath();ctx.moveTo(rect.width-27,37);ctx.lineTo(rect.width-27,59);ctx.strokeStyle="#52657d";ctx.lineWidth=1.5;ctx.stroke();
+ ctx.beginPath();ctx.moveTo(rect.width-27,33);ctx.lineTo(rect.width-31,42);ctx.lineTo(rect.width-23,42);ctx.closePath();ctx.fill();
+ const sx=22,sy=rect.height-23;ctx.fillRect(sx,sy,20*scale,3);ctx.fillText("0",sx,sy-6);ctx.fillText("20 ft",sx+20*scale,sy-6);
+ document.getElementById("radiusValue").value=`${g.R} ft`;
+ document.getElementById("widthValue").value=`${g.W} ft`;
+ document.getElementById("pavementValue").textContent=`${g.R-15} ft`;
+ canvas.setAttribute("aria-label",`Concept plan: ${g.R}-foot bulb radius, ${g.W}-foot two-way road width, 15-foot island radius, 20-foot tangent transition radius.`);
+ canvas.dataset.radius=String(g.R);canvas.dataset.roadWidth=String(g.W);
+}
+radius.addEventListener("input",draw);width.addEventListener("input",draw);
+document.getElementById("reset").addEventListener("click",()=>{radius.value="50";width.value="30";draw();});
+new ResizeObserver(draw).observe(canvas);draw();
+</script>
+</body>
+</html>
