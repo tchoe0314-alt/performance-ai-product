@@ -7,12 +7,16 @@
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#17243a;font:15px system-ui,-apple-system,sans-serif}main{max-width:1160px;margin:auto;padding:24px}nav{display:flex;justify-content:space-between;gap:16px;align-items:center}a{color:#245bc2;text-decoration:none}a:hover{text-decoration:underline}.brand{font-weight:700}.badge{font-size:12px;padding:7px 12px;border:1px solid #cbd5e1;border-radius:20px;background:white}h1{font-size:clamp(26px,4vw,40px);letter-spacing:-.04em;margin:30px 0 8px}p{line-height:1.6;color:#59677c}.layout{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:20px;margin-top:24px}.sheet,aside{background:white;border:1px solid #d9e0ea;border-radius:16px;overflow:hidden}.sheet header{padding:15px 20px;border-bottom:1px solid #e3e8ef;display:flex;justify-content:space-between;font-size:12px;color:#59677c}canvas{display:block;width:100%;height:640px}aside{padding:24px;align-self:start}h2{font-size:17px;margin:0 0 24px}label{display:flex;justify-content:space-between;gap:10px;font-weight:600;font-size:14px}output{color:#245bc2;white-space:nowrap}input[type=range]{width:100%;margin:18px 0 28px;accent-color:#245bc2;cursor:pointer}input:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #4e8dff;outline-offset:4px}dl{font-size:13px;border-top:1px solid #e3e8ef;padding-top:12px}dl div{display:flex;justify-content:space-between;padding:7px 0}dt{color:#59677c}dd{margin:0;font-weight:600}button{width:100%;padding:11px;border:1px solid #ccd5e2;background:#f8fafc;border-radius:8px;cursor:pointer;color:#17243a;font:inherit}button:hover{background:#eef3fb}.note{font-size:12px;margin:20px 0 0}.legend{display:flex;flex-wrap:wrap;gap:20px;padding:14px 20px;font-size:12px;border-top:1px solid #e3e8ef}.dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}.footer{font-size:12px;margin-top:20px}@media(max-width:760px){main{padding:16px}.layout{grid-template-columns:1fr}aside{grid-row:1}canvas{height:520px}h2{margin-bottom:20px}input[type=range]{margin-bottom:18px}}
 </style>
+<style>
+canvas{touch-action:none;cursor:grab;height:clamp(360px,calc(100vh - 130px),640px)}canvas.dragging{cursor:grabbing}.sheet{align-self:start;position:sticky;top:16px;z-index:2}.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}.actions button{font-size:13px}button:disabled{opacity:.5;cursor:not-allowed}.section-title{margin:22px 0 14px}.warning{color:#b32936}#fileInput{display:none}#storageStatus{min-height:2.8em}
+@media(max-width:760px){aside{grid-row:auto}.sheet{top:8px}canvas{height:30vh;min-height:180px;max-height:300px}.sheet header{font-size:10px;padding:10px 12px}.legend{gap:8px;font-size:10px;padding:9px 12px}aside input,aside button{scroll-margin-top:calc(30vh + 100px)}}
+</style>
 </head>
 <body>
 <main>
 <nav><a class="brand" href="/">Civora / Workspace</a><span class="badge">Engineering concept · feet</span></nav>
 <h1>Cul-de-sac concept</h1>
-<p>A circular asphalt bulb, central island, and two-way approach. Adjust the dimensions to explore the layout.</p>
+<p>Adjust dimensions, drag the road or building, and save this independent concept study.</p>
 <div class="layout">
 <section class="sheet" aria-label="Concept plan sheet">
 <header><span>PLAN VIEW · CONCEPT 01</span><span>Dimensions in feet</span></header>
@@ -27,13 +31,24 @@
 <input id="width" type="range" min="20" max="48" step="1" value="30">
 <dl><div><dt>Island radius</dt><dd id="islandValue">15 ft</dd></div><div><dt>Transition radius</dt><dd id="filletValue">20 ft</dd></div><div><dt>Radial pavement width</dt><dd id="pavementValue">35 ft</dd></div><div><dt>Approach</dt><dd>Bidirectional</dd></div></dl>
 <p id="calculationStatus" class="note" role="status">Engineering checks not connected.</p>
-<h2>Collision test block</h2>
+<button id="retry" type="button">Recheck geometry</button>
+<h2 class="section-title">Road position</h2>
+<label for="roadX">Road X <output id="roadXValue">0 ft</output></label>
+<input id="roadX" type="range" min="-100" max="100" step="any" value="0">
+<label for="roadY">Road Y <output id="roadYValue">0 ft</output></label>
+<input id="roadY" type="range" min="-80" max="80" step="any" value="0">
+<h2 class="section-title">Building test block</h2>
 <label for="buildingX">Building X <output id="buildingXValue">60 ft</output></label>
-<input id="buildingX" type="range" min="-100" max="100" step="1" value="60">
+<input id="buildingX" type="range" min="-150" max="150" step="any" value="60">
 <label for="buildingY">Building Y <output id="buildingYValue">0 ft</output></label>
-<input id="buildingY" type="range" min="-80" max="220" step="1" value="0">
-<p class="note">Move this 20 × 20 ft test block using the sliders. Red means contact with asphalt or the landscaped island. These geometry checks do not establish setbacks or engineering approval.</p>
+<input id="buildingY" type="range" min="-120" max="300" step="any" value="0">
+<p class="note">Drag the road or 20 × 20 ft building, or use the position sliders. Red means contact with asphalt or the landscaped island. These geometry checks do not establish setbacks or engineering approval.</p>
 <button id="reset" type="button">Reset to 50 ft / 30 ft</button>
+<div class="actions"><button id="undo" type="button" disabled>Undo</button><button id="redo" type="button" disabled>Redo</button></div>
+<h2 class="section-title">Save this study</h2>
+<div class="actions"><button id="save" type="button">Save on this device</button><button id="export" type="button">Export JSON</button><button id="import" type="button">Import JSON</button></div>
+<input id="fileInput" type="file" accept=".json,application/json" aria-label="Import concept layout JSON">
+<p id="storageStatus" class="note" role="status">Not saved. Saving here does not update a Civora project.</p>
 <p class="note">Tangent circular transitions are recalculated for every dimension change. Road width measures asphalt edge to edge.</p>
 <p class="note">Concept only. Turning paths, fire access, drainage, curb design, and local standards need project-specific review. This study does not modify your saved project.</p>
 </aside>
@@ -163,6 +178,8 @@ window.conceptTestCore=ConceptCore;
 const canvasState={...ConceptCore.defaultLayout(),isStale:true,revision:0};
 let collisionResult={revision:-1,issues:[],status:"pending"};
 let pendingCheck;
+let checkTimer,view,drag=null,checkGeneration=0;
+const past=[],future=[],storageKey="civora.cul-de-sac-study.v1";
 const canvas=document.getElementById("plan"),ctx=canvas.getContext("2d");
 const radius=document.getElementById("radius"),width=document.getElementById("width");
 // The outside transition circle is externally tangent to the bulb and tangent
@@ -174,12 +191,18 @@ function renderSite(state=canvasState){
  const rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
  canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);
  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,rect.width,rect.height);
- const margin=62,scale=Math.min((rect.width-2*margin)/(2*(g.R+22)),(rect.height-2*margin)/(g.R+g.bottom));
- const ox=rect.width/2,oy=margin+g.R*scale;
+ if(!drag){
+  const minX=Math.min(state.position.x-g.R,state.building.x)-22,maxX=Math.max(state.position.x+g.R,state.building.x+state.building.w)+22;
+  const minY=Math.min(state.position.y-g.R,state.building.y)-22,maxY=Math.max(state.position.y+g.bottom,state.building.y+state.building.d)+22;
+  const margin=rect.width<500?22:45,scale=Math.min((rect.width-2*margin)/(maxX-minX),(rect.height-2*margin)/(maxY-minY));
+  view={scale,ox:rect.width/2-(minX+maxX)*scale/2,oy:rect.height/2-(minY+maxY)*scale/2};
+ }
+ const {scale,ox,oy}=view;
  ctx.save();ctx.translate(ox,oy);ctx.scale(scale,scale);
  ctx.strokeStyle="#e9edf3";ctx.lineWidth=.6/scale;
  for(let x=-200;x<=200;x+=10){ctx.beginPath();ctx.moveTo(x,-100);ctx.lineTo(x,300);ctx.stroke();}
  for(let y=-100;y<=300;y+=10){ctx.beginPath();ctx.moveTo(-200,y);ctx.lineTo(200,y);ctx.stroke();}
+ ctx.translate(state.position.x,state.position.y);
  ctx.beginPath();ctx.moveTo(-g.a,g.bottom);ctx.lineTo(-g.a,g.y);
  ctx.arc(-g.x,g.y,g.f,0,-g.theta,true);
  ctx.arc(0,0,g.R,Math.PI-g.theta,2*Math.PI+g.theta,false);
@@ -193,14 +216,15 @@ function renderSite(state=canvasState){
  ctx.strokeStyle="#f9ca46";ctx.lineWidth=stripe;
  for(const x of [-offset,offset]){ctx.beginPath();ctx.moveTo(x,g.bottom);ctx.lineTo(x,g.R+4);ctx.stroke();}
  ctx.beginPath();ctx.arc(0,0,state.islandRadius,0,2*Math.PI);ctx.fillStyle="#b7d6bf";ctx.fill();ctx.strokeStyle=islandConflict?"#c52b35":"#edf3e9";ctx.lineWidth=1;ctx.stroke();
- ctx.strokeStyle="#dce9f8";ctx.fillStyle="#dce9f8";ctx.lineWidth=1/scale;ctx.font=`${12/scale}px system-ui`;ctx.textAlign="center";
+ ctx.strokeStyle="#dce9f8";ctx.fillStyle="#dce9f8";ctx.lineWidth=1/scale;ctx.font=`${(rect.width<500?10:12)/scale}px system-ui`;ctx.textAlign="center";
  function dimension(x1,y1,x2,y2,label){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();for(const [x,y] of [[x1,y1],[x2,y2]]){ctx.beginPath();ctx.moveTo(x-2,y-2);ctx.lineTo(x+2,y+2);ctx.stroke();}ctx.fillText(label,(x1+x2)/2,(y1+y2)/2-5/scale);}
  dimension(0,0,g.R*Math.cos(-Math.PI/4),g.R*Math.sin(-Math.PI/4),`R ${g.R} ft`);
- ctx.fillStyle="#27496d";ctx.fillText(`R ${state.islandRadius} ft`,0,4/scale);ctx.fillStyle="#dce9f8";
+ ctx.fillStyle="#27496d";if(state.islandRadius*scale*2>40)ctx.fillText(`R ${state.islandRadius} ft`,0,4/scale);ctx.fillStyle="#dce9f8";
  dimension(-g.a,g.y+70,g.a,g.y+70,`${g.W} ft`);
+ ctx.translate(-state.position.x,-state.position.y);
  ctx.fillStyle=conflict?"#f6c7ca":"#d2deef";ctx.fillRect(state.building.x,state.building.y,state.building.w,state.building.d);
  ctx.strokeStyle=conflict?"#c52b35":"#245bc2";ctx.strokeRect(state.building.x,state.building.y,state.building.w,state.building.d);
- ctx.fillStyle="#17243a";ctx.fillText("Test",state.building.x+10,state.building.y+10);
+ ctx.fillStyle="#17243a";ctx.font=`${9/scale}px system-ui`;ctx.fillText("BLDG",state.building.x+10,state.building.y+10);
  ctx.restore();
  // Sheet annotations stay readable at every viewport size.
  ctx.fillStyle="#52657d";ctx.font="11px system-ui";ctx.textAlign="left";
@@ -213,39 +237,122 @@ function renderSite(state=canvasState){
  document.getElementById("filletValue").textContent=`${g.f} ft`;
  document.getElementById("pavementValue").textContent=`${g.R-state.islandRadius} ft`;
  for(const axis of ["X","Y"]){const value=state.building[axis.toLowerCase()];document.getElementById(`building${axis}`).value=String(value);document.getElementById(`building${axis}Value`).value=`${value} ft`;}
+ for(const axis of ["X","Y"]){const value=state.position[axis.toLowerCase()];document.getElementById(`road${axis}`).value=String(value);document.getElementById(`road${axis}Value`).value=`${value} ft`;}
  document.getElementById("calculationStatus").textContent=state.isStale?(collisionResult.status==="error"?"Collision check unavailable — results stale. Retry by changing a dimension.":"Collision recalculation required — checking current layout…"):(conflict?issues.map(issue=>issue.message).join(" "):"No pavement or island contact detected. Other engineering checks remain unverified.");
+ if(location.protocol==="file:"&&!state.isStale)document.getElementById("calculationStatus").textContent+=" Checked locally (standalone mode).";
  canvas.setAttribute("aria-label",`Concept plan: ${g.R}-foot bulb radius, ${g.W}-foot two-way road width, ${state.islandRadius}-foot island radius, ${g.f}-foot tangent transition radius.`);
  canvas.dataset.radius=String(g.R);canvas.dataset.roadWidth=String(g.W);
  canvas.dataset.stale=String(state.isStale);canvas.dataset.revision=String(state.revision);
+ canvas.dataset.pavementConflict=String(pavementConflict);canvas.dataset.islandConflict=String(islandConflict);
+ document.getElementById("undo").disabled=!past.length;document.getElementById("redo").disabled=!future.length;
+ document.getElementById("calculationStatus").classList.toggle("warning",conflict||collisionResult.status==="error");
 }
-function updateDimensions(changes){
- const changed=Object.entries(changes).some(([key,value])=>canvasState[key]!==value);
- if(changed){Object.assign(canvasState,changes);canvasState.revision++;canvasState.isStale=true;collisionResult.status="pending";}
+function designSnapshot(){return ConceptCore.parseLayout(canvasState);}
+function pushHistory(snapshot){past.push(snapshot);if(past.length>100)past.shift();future.length=0;}
+function updateDimensions(changes,record=true){
+ const next=ConceptCore.parseLayout({...canvasState,...changes});
+ const changed=ConceptCore.serializeLayout(next)!==ConceptCore.serializeLayout(canvasState);
+ if(changed){
+  if(record)pushHistory(designSnapshot());
+  Object.assign(canvasState,next);canvasState.revision++;canvasState.isStale=true;
+  // Local geometry warnings update instantly; server verification is separate.
+  collisionResult={revision:canvasState.revision,issues:ConceptCore.checkConcept(next),status:"pending"};
+  document.getElementById("storageStatus").textContent="Unsaved changes. Save on this device or export JSON to keep this layout.";
+ }
  // Rendering never clears engineering staleness or claims checks have run.
  renderSite(canvasState);
- if(changed)triggerCivoraCalculations(canvasState);
+ if(changed){pendingCheck?.abort();clearTimeout(checkTimer);checkTimer=setTimeout(()=>triggerCivoraCalculations(canvasState),80);}
 }
 async function triggerCivoraCalculations(state){
  const snapshot=JSON.parse(JSON.stringify(state));
+ const generation=++checkGeneration;
+ clearTimeout(checkTimer);
+ // A downloaded standalone file uses the same core without a server.
+ if(location.protocol==="file:"){
+  collisionResult={revision:snapshot.revision,issues:ConceptCore.checkConcept(snapshot),status:"complete"};
+  canvasState.isStale=false;renderSite(canvasState);return;
+ }
  pendingCheck?.abort();const controller=new AbortController();pendingCheck=controller;
  const timeout=setTimeout(()=>controller.abort(),10000);
  try{
   const response=await fetch("/api/concepts/cul-de-sac/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(snapshot),signal:controller.signal});
   if(!response.ok)throw new Error("Collision check failed");
   const result=await response.json();
-  if(result.revision!==snapshot.revision||!Array.isArray(result.issues)||result.check!=="analytic-pavement-and-island")throw new Error("Invalid collision result");
-  if(canvasState.revision!==snapshot.revision)return;
+  if(result.revision!==snapshot.revision||!Array.isArray(result.issues)||result.check!=="analytic-pavement-and-island"||result.issues.some(issue=>!issue||!["pavement_contact","island_contact"].includes(issue.code)||typeof issue.message!=="string"))throw new Error("Invalid collision result");
+  if(canvasState.revision!==snapshot.revision||generation!==checkGeneration)return;
   collisionResult={...result,status:"complete"};canvasState.isStale=false;
  }catch{
-  if(canvasState.revision!==snapshot.revision)return;
-  collisionResult={revision:snapshot.revision,issues:[],status:"error"};canvasState.isStale=true;
- }finally{clearTimeout(timeout);if(canvasState.revision===snapshot.revision)renderSite(canvasState);}
+  if(canvasState.revision!==snapshot.revision||generation!==checkGeneration)return;
+  collisionResult={revision:snapshot.revision,issues:ConceptCore.checkConcept(snapshot),status:"error"};canvasState.isStale=true;
+ }finally{clearTimeout(timeout);if(canvasState.revision===snapshot.revision&&generation===checkGeneration)renderSite(canvasState);}
 }
 radius.addEventListener("input",event=>updateDimensions({bulbRadius:Number(event.target.value)}));
 width.addEventListener("input",event=>updateDimensions({roadWidth:Number(event.target.value)}));
-for(const axis of ["X","Y"])document.getElementById(`building${axis}`).addEventListener("input",event=>updateDimensions({building:{...canvasState.building,[axis.toLowerCase()]:Number(event.target.value)}}));
+for(const axis of ["X","Y"]){
+ document.getElementById(`building${axis}`).addEventListener("input",event=>updateDimensions({building:{...canvasState.building,[axis.toLowerCase()]:Number(event.target.value)}}));
+ document.getElementById(`road${axis}`).addEventListener("input",event=>updateDimensions({position:{...canvasState.position,[axis.toLowerCase()]:Number(event.target.value)}}));
+}
 document.getElementById("reset").addEventListener("click",()=>updateDimensions({bulbRadius:50,roadWidth:30}));
-new ResizeObserver(()=>renderSite(canvasState)).observe(canvas);renderSite(canvasState);
+document.getElementById("retry").addEventListener("click",()=>{canvasState.isStale=true;collisionResult.status="pending";renderSite();triggerCivoraCalculations(canvasState);});
+document.getElementById("undo").addEventListener("click",()=>{if(!past.length)return;future.push(designSnapshot());updateDimensions(past.pop(),false);renderSite();});
+document.getElementById("redo").addEventListener("click",()=>{if(!future.length)return;past.push(designSnapshot());updateDimensions(future.pop(),false);renderSite();});
+function worldPoint(event){const rect=canvas.getBoundingClientRect();return {x:(event.clientX-rect.left-view.ox)/view.scale,y:(event.clientY-rect.top-view.oy)/view.scale};}
+// Exposed coordinate conversion is useful for later editor integration and tests.
+function worldToCanvas(point){return {x:point.x*view.scale+view.ox,y:point.y*view.scale+view.oy};}
+canvas.addEventListener("pointerdown",event=>{
+ if(event.button!==0||drag)return;
+ const point=worldPoint(event),b=canvasState.building;
+ const target=point.x>=b.x&&point.x<=b.x+b.w&&point.y>=b.y&&point.y<=b.y+b.d?"building":ConceptCore.pointInRoad(point,canvasState,true)?"position":null;
+ if(!target)return;
+ drag={pointerId:event.pointerId,target,start:point,before:designSnapshot()};
+ canvas.setPointerCapture(event.pointerId);canvas.classList.add("dragging");event.preventDefault();
+});
+canvas.addEventListener("pointermove",event=>{
+ if(!drag||event.pointerId!==drag.pointerId)return;
+ const point=worldPoint(event),initial=drag.before[drag.target],road=drag.target==="position";
+ const round=(value,min,max)=>Math.round(Math.max(min,Math.min(max,value))*1000)/1000;
+ updateDimensions({[drag.target]:{...initial,x:round(initial.x+point.x-drag.start.x,road?-100:-150,road?100:150),y:round(initial.y+point.y-drag.start.y,road?-80:-120,road?80:300)}},false);
+});
+function finishDrag(event,cancel=false){
+ if(!drag||event.pointerId!==drag.pointerId)return;
+ const before=drag.before;drag=null;canvas.classList.remove("dragging");
+ if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);
+ if(cancel)updateDimensions(before,false);
+ else if(ConceptCore.serializeLayout(before)!==ConceptCore.serializeLayout(canvasState))pushHistory(before);
+ renderSite();
+}
+canvas.addEventListener("pointerup",event=>finishDrag(event));
+canvas.addEventListener("pointercancel",event=>finishDrag(event,true));
+canvas.addEventListener("lostpointercapture",event=>finishDrag(event,true));
+function storageMessage(message){document.getElementById("storageStatus").textContent=message;}
+document.getElementById("save").addEventListener("click",()=>{
+ try{localStorage.setItem(storageKey,ConceptCore.serializeLayout(canvasState));storageMessage("Saved on this device. Refresh restores this layout; it is not saved to your Civora account.");}
+ catch{storageMessage("Device storage unavailable. Export JSON instead; your drawing is unchanged.");}
+});
+document.getElementById("export").addEventListener("click",()=>{
+ const url=URL.createObjectURL(new Blob([ConceptCore.serializeLayout(canvasState)],{type:"application/json"}));
+ const anchor=document.createElement("a");anchor.href=url;anchor.download="civora-cul-de-sac-study.json";anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ storageMessage("JSON exported. Includes dimensions and positions, not cached engineering results.");
+});
+document.getElementById("import").addEventListener("click",()=>document.getElementById("fileInput").click());
+document.getElementById("fileInput").addEventListener("change",async event=>{
+ const file=event.target.files[0];if(!file)return;
+ const revision=canvasState.revision;
+ try{
+  if(file.size>8192)throw new Error("JSON file exceeds 8 KB.");
+  const layout=ConceptCore.parseLayout(JSON.parse(await file.text()));
+  if(canvasState.revision!==revision)throw new Error("Layout changed while reading the import.");
+  updateDimensions(layout);
+  storageMessage("JSON imported. Save on this device to keep it after refresh. Engineering results are recalculated.");
+ }catch{storageMessage("Import rejected: invalid schema or dimensions. Your current layout is unchanged.");}
+ finally{event.target.value="";}
+});
+try{
+ const saved=localStorage.getItem(storageKey);
+ if(saved){if(saved.length>8192)throw new Error("Saved layout too large");Object.assign(canvasState,ConceptCore.parseLayout(JSON.parse(saved)));storageMessage("Restored device-saved study. Engineering checks are recalculated; no Civora project was changed.");}
+}catch{storageMessage("Saved study could not be restored. Defaults shown; your saved data was not overwritten.");}
+new ResizeObserver(()=>{if(drag)finishDrag({pointerId:drag.pointerId},true);renderSite(canvasState);}).observe(canvas);renderSite(canvasState);
+if(location.protocol==="file:"){const link=document.querySelector(".brand");link.removeAttribute("href");link.textContent="Civora / Standalone study";}
 triggerCivoraCalculations(canvasState);
 </script>
 </body>

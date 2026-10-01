@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { checkConcept, defaultLayout, geometry, parseLayout, pointInRoad, serializeLayout } from "../../app/utils/culDeSacConcept";
 
 test("analytic checks distinguish actual curves, road width and island", () => {
@@ -73,7 +73,6 @@ test("point classification agrees with the actual Canvas path", async ({ page })
   expect(mismatches).toEqual([]);
 });
 
-test("generated embedded core is the current source", async () => {
-  const html = await readFile("public/concepts/cul-de-sac.html", "utf8");
-  expect(html).toContain("// BEGIN GENERATED CONCEPT CORE");
+test("generated embedded core is the current source", () => {
+  expect(execFileSync(process.execPath, ["scripts/build-cul-de-sac-core.mjs", "--check"], { encoding: "utf8" })).toContain("matches the server module");
 });

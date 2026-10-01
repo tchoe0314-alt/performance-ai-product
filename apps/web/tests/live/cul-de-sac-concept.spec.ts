@@ -38,19 +38,20 @@ test("Civora overlap adapter reports separation, contact and overlap", async ({ 
   const status = page.locator("#calculationStatus");
   await expect(status).toContainText("No pavement or island contact");
   const x = page.getByRole("slider", { name: /Building X/ });
-  await x.focus();
-  for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowLeft");
+  const setX = async (value: number) => x.evaluate((element, v) => {
+    (element as HTMLInputElement).value = String(v); element.dispatchEvent(new Event("input", { bubbles: true }));
+  }, value);
+  await setX(50);
   await expect(page.locator("#buildingX")).toHaveValue("50");
   await expect(status).toContainText("Building touches or overlaps the asphalt");
   await expect(page.locator("canvas")).toHaveAttribute("data-stale", "false");
-  await page.keyboard.press("ArrowLeft");
+  await setX(49);
   await expect(status).toContainText("Building touches or overlaps the asphalt");
   await x.press("End");
   await expect(status).toContainText("No pavement or island contact");
   await page.getByRole("slider", { name: /Bulb radius/ }).press("End");
-  // Building at x=100 remains clear; move to x=80 for exact contact.
-  await x.focus();
-  for (let i = 0; i < 20; i++) await page.keyboard.press("ArrowLeft");
+  // Move to x=80 for exact contact with the enlarged bulb.
+  await setX(80);
   await expect(status).toContainText("Building touches or overlaps the asphalt");
   const invalid = await request.post("/api/concepts/cul-de-sac/check", { data: { bulbRadius: -1 } });
   expect(invalid.status()).toBe(400);
