@@ -86,6 +86,22 @@ class ProjectStoreFastPathTests(unittest.TestCase):
         )
         self.assertIn("large-result-sentinel", latest)
 
+    def test_native_road_and_pipe_metadata_survive_database_reopen(self) -> None:
+        objects = [
+            {"id": "road", "type": "road", "x": 24.25, "y": 24.5, "w": 100, "d": 220.621778,
+             "placed": True, "geometry_type": "polygon", "geometry": [[24.25, 24.5], [124.25, 24.5], [74.25, 245.121778]],
+             "meta": {"cul_de_sac_v1": {"version": 1, "bulbRadiusFt": 50, "roadWidthFt": 40, "islandRadiusFt": 15, "transitionRadiusFt": 20, "coordinateUnits": "ft"}}},
+            {"id": "pipe", "type": "utility_corridor", "placed": True, "geometry_type": "polyline",
+             "geometry": [[10.125, 50], [140.75, 50]], "meta": {"asset_kind": "pipe", "pipe_diameter_ft": 1,
+             "vertical_extent_v1": {"version": 1, "minFt": -6, "maxFt": -5, "datum": "benchmark", "source": "reviewed test drawing", "reviewed": True, "requiredClearanceFt": 1}}},
+        ]
+        saved = self.store.save_project(user_id=self.user_id, project_id=None, name="Typed object study",
+                                        project_input={"manual_fields": {"site_objects": objects}}, latest_result={})
+        reopened = ProjectStore(Database(Path(self.tmp.name) / "civora-fast-path.db"))
+        restored = reopened.get_project(user_id=self.user_id, project_id=saved["project_id"])
+        self.assertEqual(restored["project_input"]["manual_fields"]["site_objects"], objects)
+        self.assertIsNone(reopened.get_project(user_id="different-user", project_id=saved["project_id"]))
+
     def test_candidate_decision_uses_shell_and_preserves_generated_result(self) -> None:
         saved = self._saved_project()
 

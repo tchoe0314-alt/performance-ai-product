@@ -1,4 +1,5 @@
 import type { BuildingPlacement } from "../types";
+import { assessSiteInterference } from "./siteInterference";
 import {
   validateTopology,
   type CadSegment2D,
@@ -100,7 +101,7 @@ export function buildSelectedCadMetrics({
 }
 
 export function buildPreviewTopologyIssues(visibleCadObjects: BuildingPlacement[]): ReturnType<typeof validateTopology> {
-  return validateTopology(visibleCadObjects.filter((item) => item.type !== "site").map((item) => ({
+  const geometryIssues = validateTopology(visibleCadObjects.filter((item) => item.type !== "site").map((item) => ({
     id: item.id,
     type: item.type,
     geometryType: item.geometryType,
@@ -109,5 +110,6 @@ export function buildPreviewTopologyIssues(visibleCadObjects: BuildingPlacement[
     y: item.y,
     w: item.w,
     d: item.d,
-  }))).slice(0, 8);
+  }))).filter(issue => issue.code !== "overlapping_site_objects");
+  return [...geometryIssues, ...assessSiteInterference(visibleCadObjects).filter(issue => issue.severity !== "clear")].slice(0, 8);
 }

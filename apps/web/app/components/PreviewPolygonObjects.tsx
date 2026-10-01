@@ -13,6 +13,7 @@ import {
   resolvePreviewVisualKind,
 } from "../utils/previewVisualStyles";
 import { semanticLayerForPlacement } from "../utils/previewSemanticLayers";
+import { culDeSacFrame } from "../utils/parametricRoad";
 
 type PreviewPolygonObjectsProps = {
   objects: BuildingPlacement[];
@@ -92,7 +93,7 @@ export function PreviewPolygonObjects({
               ? scalePolygonTowardCenter(geometry, 0.62)
               : [];
           const roadAxis =
-            visualKind === "road"
+            visualKind === "road" && !culDeSacFrame(item)
               ? (() => {
                   const shapeBounds = boundsForSiteGeometry(geometry);
                   const y = shapeBounds.minY + shapeBounds.height / 2;
@@ -128,6 +129,14 @@ export function PreviewPolygonObjects({
               >
                 <title>{sourceStateLabel(sourceState)}</title>
               </polygon>
+              {culDeSacFrame(item) ? (() => {
+                const frame = culDeSacFrame(item)!;
+                const island = Array.from({ length: 96 }, (_, n) => frame.toWorld([15 * Math.cos(n * Math.PI / 48), 15 * Math.sin(n * Math.PI / 48)]));
+                return <g data-testid="project-cul-de-sac-render" pointerEvents="none">
+                  <polygon points={island.map(sitePointToSvgPercent).join(" ")} fill="#b7d6bf" stroke="#e9f1e7" strokeWidth={.1} />
+                  {[-1/3, 1/3].map(x => <polyline key={x} points={[frame.toWorld([x, frame.g.R + 4]), frame.toWorld([x, frame.g.bottom])].map(sitePointToSvgPercent).join(" ")} stroke="#f9ca46" strokeWidth={.06} fill="none" />)}
+                </g>;
+              })() : null}
               {hatchFill ? (
                 <polygon data-testid="cad-hatch-fill" points={points.join(" ")} fill={hatchFill} stroke="none" opacity={0.72}>
                   <title>Draft hatch fill, review required.</title>

@@ -4,6 +4,7 @@ import type { BuildingPlacement, SiteObjectType } from "../types";
 import {
   buildDashboardObjectPlacement,
   buildDashboardSitePlacement,
+  type AddObjectOptions,
 } from "../utils/dashboardObjectPlacementBuilder";
 import { systemsImpactedByPlacement } from "../utils/dashboardGenerateLayoutContext";
 import type { DraftUndoAction, RecentChange } from "../utils/dashboardTypes";
@@ -12,16 +13,6 @@ import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 import type { EngineeringSystemKey } from "../utils/workflowConstants";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
-type AddObjectOptions = {
-  label?: string;
-  style?: Record<string, string>;
-  geometryType?: "polygon" | "polyline" | "rect";
-  placed?: boolean;
-  width?: number;
-  depth?: number;
-  stallCount?: number;
-  meta?: Record<string, unknown>;
-};
 type ParkingFootprint = {
   maxStalls: number;
   moduleCols: number;
@@ -43,6 +34,7 @@ type ParkingFootprintParams = {
 };
 
 type UseDashboardAddObjectActionInput = {
+  units: string;
   buildingPlacements: BuildingPlacement[];
   clearGeneratedPreview: () => void;
   computeParkingFootprint: (
@@ -83,6 +75,7 @@ type UseDashboardAddObjectActionInput = {
 };
 
 export function useDashboardAddObjectAction({
+  units,
   buildingPlacements,
   clearGeneratedPreview,
   computeParkingFootprint,
@@ -147,7 +140,8 @@ export function useDashboardAddObjectAction({
       const autoPlaced = Boolean(options?.placed);
       const nextPlacement = buildDashboardObjectPlacement({
         type,
-        options,
+        options: { ...options, meta: { ...options?.meta, coordinate_units: units === "m" ? "m" : "ft",
+          ...(options?.meta?.cul_de_sac_v1 ? { cul_de_sac_v1: { ...(options.meta.cul_de_sac_v1 as Record<string, unknown>), coordinateUnits: units === "m" ? "m" : "ft" } } : {}) } },
         lot,
         existingPlacements: buildingPlacements,
         existingCount,
@@ -189,6 +183,7 @@ export function useDashboardAddObjectAction({
       });
     },
     [
+      units,
       buildingPlacements,
       clearGeneratedPreview,
       computeParkingFootprint,

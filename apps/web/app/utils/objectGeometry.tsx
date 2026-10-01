@@ -673,6 +673,9 @@ export const buildCanonicalGeometryHandoffV1 = (
         ? "accepted_detected_candidate"
         : "canvas_object",
     engineering_attributes: {
+      ...(metadata.cul_de_sac_v1 ? { cul_de_sac_v1: metadata.cul_de_sac_v1 } : {}),
+      ...(metadata.vertical_extent_v1 ? { vertical_extent_v1: metadata.vertical_extent_v1 } : {}),
+      ...(typeof metadata.pipe_diameter_ft === "number" ? { pipe_diameter_ft: metadata.pipe_diameter_ft } : {}),
       ...(metadata.engineering_attributes && typeof metadata.engineering_attributes === "object"
         ? metadata.engineering_attributes as Record<string, unknown>
         : {}),

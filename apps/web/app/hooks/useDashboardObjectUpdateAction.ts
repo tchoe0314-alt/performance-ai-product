@@ -12,6 +12,7 @@ import {
 } from "../utils/objectGeometry";
 import type { ParkingParams } from "../utils/previewGeometryTruth";
 import type { EngineeringSystemKey } from "../utils/workflowConstants";
+import { reconcileCulDeSacUpdate } from "../utils/parametricRoad";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type SaveProject = (options?: {
@@ -228,6 +229,7 @@ export function useDashboardObjectUpdateAction({
         nextUpdates.d = footprint.d;
       }
     }
+    if (target) Object.assign(nextUpdates, reconcileCulDeSacUpdate(target, nextUpdates));
     const nextObject = target ? { ...target, ...nextUpdates } : null;
     let recentChange: Omit<RecentChange, "id" | "createdAt"> | null = null;
     let bulkUpdateUndo: DraftUndoAction | null = null;

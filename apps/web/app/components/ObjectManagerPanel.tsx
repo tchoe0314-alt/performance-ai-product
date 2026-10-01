@@ -9,6 +9,8 @@ import { ObjectManagerSelectedToolsPanel } from "./ObjectManagerSelectedToolsPan
 import { RecentChangesPanel } from "./RecentChangesPanel";
 import { SelectedObjectCard } from "./SelectedObjectCard";
 import { DisclosurePanel } from "./ui";
+import { ObjectEngineeringProperties } from "./ObjectEngineeringProperties";
+import { SiteInterferencePanel } from "./SiteInterferencePanel";
 
 export type ObjectManagerPanelProps = {
   cadTools: ComponentProps<typeof DrawCadToolsPanel>;
@@ -42,8 +44,10 @@ export function ObjectManagerPanel({
       {selectedObject.selectedObject ? (
         <div data-testid="preview-object-manager">
           <SelectedObjectCard {...selectedObject} />
+          {selectedObject.onEngineeringMeta && selectedObject.selectedObject.type !== "site" ? <ObjectEngineeringProperties key={`${selectedObject.selectedObject.id}:${JSON.stringify(selectedObject.selectedObject.meta?.vertical_extent_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.cul_de_sac_v1)}:${selectedObject.selectedObject.meta?.pipe_diameter_ft}`} item={selectedObject.selectedObject} onCommit={selectedObject.onEngineeringMeta} /> : null}
         </div>
       ) : null}
+      <SiteInterferencePanel objects={objectList.objects} />
       {statusMessage ? (
         <p className="rounded-[7px] border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600" data-testid="object-manager-status">
           {statusMessage}

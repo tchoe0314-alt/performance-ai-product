@@ -67,6 +67,9 @@ exports.serializeLayout = serializeLayout;
 exports.geometry = geometry;
 exports.pointInRoad = pointInRoad;
 exports.checkConcept = checkConcept;
+exports.polygonContains = polygonContains;
+exports.segmentsTouch = segmentsTouch;
+exports.checkFootprint = checkFootprint;
 const EPS = 1e-7; // feet, floating-point contact tolerance, not a design setback
 const TAU = Math.PI * 2;
 function defaultLayout() {
@@ -169,6 +172,63 @@ function checkConcept(layout) {
     if (islandContact)
         issues.push({ code: "island_contact", objectIds: ["concept-island", "test-building"], message: "Building touches or overlaps the landscaped island." });
     return issues;
+}
+function polygonContains(points, p) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+        const a = points[j], b = points[i];
+        const cross = (p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0]);
+        if (Math.abs(cross) <= EPS * Math.max(1, Math.hypot(b[0] - a[0], b[1] - a[1])) &&
+            p[0] >= Math.min(a[0], b[0]) - EPS && p[0] <= Math.max(a[0], b[0]) + EPS &&
+            p[1] >= Math.min(a[1], b[1]) - EPS && p[1] <= Math.max(a[1], b[1]) + EPS)
+            return true;
+        if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0])
+            inside = !inside;
+    }
+    return inside;
+}
+function segmentsTouch(a, b, c, d) {
+    const cross = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    const on = (p, q, r) => Math.abs(cross(p, q, r)) <= EPS && r[0] >= Math.min(p[0], q[0]) - EPS && r[0] <= Math.max(p[0], q[0]) + EPS && r[1] >= Math.min(p[1], q[1]) - EPS && r[1] <= Math.max(p[1], q[1]) + EPS;
+    const abC = cross(a, b, c), abD = cross(a, b, d), cdA = cross(c, d, a), cdB = cross(c, d, b);
+    return (abC * abD < 0 && cdA * cdB < 0) || on(a, b, c) || on(a, b, d) || on(c, d, a) || on(c, d, b);
+}
+/** General footprint against the actual road arcs, including rotated buildings. */
+function checkFootprint(layout, points) {
+    if (points.length < 3)
+        return { pavement: false, island: false };
+    const g = geometry(layout.bulbRadius, layout.roadWidth, layout.transitionRadius);
+    const local = points.map(([x, y]) => [x - layout.position.x, y - layout.position.y]);
+    const arcs = [
+        { x: -g.x, y: g.y, r: g.f, start: 0, sweep: -g.theta },
+        { x: 0, y: 0, r: g.R, start: Math.PI - g.theta, sweep: Math.PI + 2 * g.theta },
+        { x: g.x, y: g.y, r: g.f, start: -Math.PI + g.theta, sweep: -g.theta },
+    ];
+    const arcHit = (arc) => {
+        const start = [arc.x + arc.r * Math.cos(arc.start), arc.y + arc.r * Math.sin(arc.start)];
+        if (polygonContains(local, start))
+            return true;
+        return local.some((a, i) => {
+            const b = local[(i + 1) % local.length], dx = b[0] - a[0], dy = b[1] - a[1];
+            const ox = a[0] - arc.x, oy = a[1] - arc.y;
+            const A = dx * dx + dy * dy, B = 2 * (ox * dx + oy * dy), C = ox * ox + oy * oy - arc.r * arc.r;
+            if (A < EPS * EPS)
+                return false;
+            const discriminant = B * B - 4 * A * C;
+            if (discriminant < -EPS * A)
+                return false;
+            return [(-B - Math.sqrt(Math.max(0, discriminant))) / (2 * A), (-B + Math.sqrt(Math.max(0, discriminant))) / (2 * A)].some(t => t >= -EPS && t <= 1 + EPS && onArc(arc, { x: a[0] + t * dx, y: a[1] + t * dy }));
+        });
+    };
+    const islandArc = { x: 0, y: 0, r: layout.islandRadius, start: 0, sweep: TAU };
+    const localLayout = { ...layout, position: { x: 0, y: 0 } };
+    const roadLines = [
+        [[-g.a, g.y], [-g.a, g.bottom]], [[g.a, g.y], [g.a, g.bottom]], [[-g.a, g.bottom], [g.a, g.bottom]],
+    ];
+    const pavement = local.some(([x, y]) => pointInRoad({ x, y }, localLayout)) || arcs.some(arcHit) || arcHit(islandArc) ||
+        roadLines.some(([a, b]) => polygonContains(local, a) || local.some((c, i) => segmentsTouch(a, b, c, local[(i + 1) % local.length])));
+    const island = polygonContains(local, [0, 0]) || local.some(([x, y]) => Math.hypot(x, y) <= layout.islandRadius + EPS) || arcHit(islandArc);
+    return { pavement, island };
 }
 
 return exports;})();

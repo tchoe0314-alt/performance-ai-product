@@ -7,6 +7,7 @@ import type {
 } from "../types";
 import { isCustomGeometryMode, normalizeGeometryPoints } from "./objectGeometry";
 import { requestedProgramToPendingPlacements, SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
+import { regenerateCulDeSac } from "./parametricRoad";
 
 const numberFrom = (value: unknown) =>
   typeof value === "number" ? value : value !== undefined ? Number(value) : NaN;
@@ -408,7 +409,7 @@ const parseSiteObjectPlacements = (manualFields: ManualFields): BuildingPlacemen
       const placed = rec.placed === false ? false : Number.isFinite(x) && Number.isFinite(y);
       const geometryType = isCustomGeometryMode(rec.geometry_type) ? rec.geometry_type : undefined;
       const geometry = normalizeGeometryPoints(rec.geometry);
-      return {
+      return regenerateCulDeSac({
         id: typeof rec.id === "string" ? rec.id : `site-object-${Date.now()}-${idx}`,
         label:
           typeof rec.label === "string"
@@ -432,7 +433,7 @@ const parseSiteObjectPlacements = (manualFields: ManualFields): BuildingPlacemen
         meta: rec.meta && typeof rec.meta === "object" ? (rec.meta as Record<string, unknown>) : undefined,
         systemDependencies:
           readSystemDependencies(rec.systemDependencies) ?? ["roads", "parking", "grading", "drainage", "utilities"],
-      } as BuildingPlacement;
+      } as BuildingPlacement);
     })
     .filter(Boolean) as BuildingPlacement[];
 

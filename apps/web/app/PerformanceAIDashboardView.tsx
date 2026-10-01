@@ -1537,6 +1537,7 @@ function PerformanceAIDashboardView({
   );
 
   const handleAddObject = useDashboardAddObjectAction({
+    units,
     buildingPlacements,
     clearGeneratedPreview,
     computeParkingFootprint,
@@ -5512,6 +5513,7 @@ function PerformanceAIDashboardView({
     templatesPanelProps,
     utilityCatalogPanelProps,
   } = useDashboardSupportPanelProps({
+    units,
     token,
     uploadedImageApiUrl,
     uploadedImagePreviewUrl,

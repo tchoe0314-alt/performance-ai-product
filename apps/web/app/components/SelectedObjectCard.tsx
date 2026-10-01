@@ -22,6 +22,7 @@ type SelectedObjectCardProps = {
   onFlipHorizontal: (item: BuildingPlacement) => void;
   onDelete: (item: BuildingPlacement) => void;
   onClearSelection: () => void;
+  onEngineeringMeta?: (item: BuildingPlacement, meta: Record<string, unknown>) => void;
 };
 
 function BuildingHeightInput({

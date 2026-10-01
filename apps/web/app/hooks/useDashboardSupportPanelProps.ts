@@ -9,6 +9,7 @@ import { StandardsPanel } from "../components/StandardsPanel";
 import { TemplatesPanel, type TemplateSummary } from "../components/TemplatesPanel";
 import { UtilityCatalogPanel } from "../components/UtilityCatalogPanel";
 import type { SiteObjectType } from "../types";
+import type { AddObjectOptions } from "../utils/dashboardObjectPlacementBuilder";
 import type { CustomerTemplateRegistryResponse, UtilityCatalogResponse } from "../utils/dashboardDataTypes";
 import { panelErrorMessage } from "../utils/dashboardStatus";
 import type { SidePanelKey } from "../utils/workspaceShell";
@@ -23,6 +24,7 @@ type LibrariesPanelProps = ComponentProps<typeof LibrariesPanel>;
 type RefreshJobs = (token: string, options?: { force?: boolean }) => Promise<unknown>;
 
 type UseDashboardSupportPanelPropsInput = {
+  units: string;
   token: string | null;
   uploadedImageApiUrl: string;
   uploadedImagePreviewUrl: string;
@@ -72,10 +74,11 @@ type UseDashboardSupportPanelPropsInput = {
   standardsPanelCriteria: StandardsPanelProps["criteria"];
   standardsPanelRows: StandardsPanelProps["rows"];
   libraryPanelSections: LibrariesPanelProps["sections"];
-  onAddObject: (type: SiteObjectType) => void;
+  onAddObject: (type: SiteObjectType, options?: AddObjectOptions) => void;
 };
 
 export function useDashboardSupportPanelProps({
+  units,
   token,
   uploadedImageApiUrl,
   uploadedImagePreviewUrl,
@@ -285,9 +288,10 @@ export function useDashboardSupportPanelProps({
   }), [onOpenPanel, standardsPanelCriteria, standardsPanelRows]);
 
   const librariesPanelProps = useMemo<LibrariesPanelProps>(() => ({
+    units,
     sections: libraryPanelSections,
-    onAddObject: (type) => onAddObject(type as SiteObjectType),
-  }), [libraryPanelSections, onAddObject]);
+    onAddObject: (type, options) => onAddObject(type as SiteObjectType, options),
+  }), [libraryPanelSections, onAddObject, units]);
 
   return {
     filesPanelProps,

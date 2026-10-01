@@ -237,6 +237,11 @@ export function DashboardObjectManagerPanel({
         objectTypeOptions,
         objectOutlineColor,
         onClearSelection: handleObjectManagerClearSelection,
+        onEngineeringMeta: (item, meta) => {
+          const blocker = getObjectEditBlocker(item, "style");
+          if (blocker) { reportObjectActionBlocker(blocker); return; }
+          handleUpdateBuilding(item.id, { meta: { ...item.meta, ...meta } });
+        },
         onRename: (item, value) => {
           const blocker = getObjectEditBlocker(item, "rename");
           if (blocker) {

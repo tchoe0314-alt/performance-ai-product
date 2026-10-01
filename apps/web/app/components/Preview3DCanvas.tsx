@@ -4,6 +4,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { canonicalPreview3DFootprintSignature } from "../utils/canonicalGeometrySignature";
 import { normalizePreview3DLayer } from "../utils/preview3DLayer";
 import type { Preview3DItem } from "../types";
+import { culDeSacFrame } from "../utils/parametricRoad";
 
 type PickedObject = {
   id: string | null;
@@ -976,6 +977,9 @@ export default function Preview3DCanvas({
             });
           } else {
             const shape = shapeFromPlanPoints(planPoints, centerX, centerY);
+            const culDeSac = layer === "ROAD" ? culDeSacFrame({ id: item.id ?? "road", label: item.label, type: "road", x: item.x, y: item.y, w: item.w, d: item.h, rotation: item.rotation, meta: item.meta }) : null;
+            const islandPoints = culDeSac ? Array.from({ length: 96 }, (_, n) => culDeSac.toWorld([15 * Math.cos(n * Math.PI / 48), 15 * Math.sin(n * Math.PI / 48)])) : [];
+            if (islandPoints.length) shape.holes.push(shapeFromPlanPoints(islandPoints, centerX, centerY));
             const geometry = new THREE.ExtrudeGeometry(shape, {
               depth: displayDepth,
               bevelEnabled: layer === "BUILDING",
@@ -990,6 +994,19 @@ export default function Preview3DCanvas({
             mesh.castShadow = previewQuality === "high" && layer === "BUILDING";
             mesh.receiveShadow = layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK";
             object.add(mesh);
+            if (culDeSac) {
+              const islandGeometry = new THREE.ShapeGeometry(shapeFromPlanPoints(islandPoints, centerX, centerY));
+              islandGeometry.rotateX(-Math.PI / 2);
+              const island = new THREE.Mesh(islandGeometry, new THREE.MeshStandardMaterial({ color: "#b7d6bf", roughness: .95 }));
+              island.position.y = baseY + visualLift + displayDepth + .02;
+              island.userData = object.userData; object.add(island);
+              for (const x of [-1/3, 1/3]) {
+                const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+                  culDeSac.toWorld([x, culDeSac.g.R + 4]), culDeSac.toWorld([x, culDeSac.g.bottom]),
+                ].map(([px, py]) => toScene(px, py, baseY + visualLift + displayDepth + .025))), new THREE.LineBasicMaterial({ color: "#f9ca46" }));
+                line.userData = object.userData; object.add(line);
+              }
+            }
             if (layer === "LOT") {
               addExactEdges(mesh, palette.line, 0.24);
             } else if (layer !== "PARKING" && layer !== "ROAD" && layer !== "SIDEWALK" && layer !== "LANDSCAPE") {

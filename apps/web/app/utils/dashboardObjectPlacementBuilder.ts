@@ -1,8 +1,10 @@
 import type { BuildingPlacement, SiteObjectType } from "../types";
 import { parsePositiveNumber } from "./formatting";
 import { SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
+import { readCulDeSac, regenerateCulDeSac } from "./parametricRoad";
+import { geometry } from "./culDeSacConcept";
 
-type AddObjectOptions = {
+export type AddObjectOptions = {
   label?: string;
   style?: Record<string, string>;
   geometryType?: "polygon" | "polyline" | "rect";
@@ -11,6 +13,8 @@ type AddObjectOptions = {
   depth?: number;
   stallCount?: number;
   meta?: Record<string, unknown>;
+  x?: number;
+  y?: number;
 };
 
 type LotBounds = {
@@ -232,6 +236,11 @@ export function buildDashboardObjectPlacement({
     ...(options?.width ? { w: options.width } : {}),
     ...(options?.depth ? { d: options.depth } : {}),
   };
+  const road = readCulDeSac({ type, meta: options?.meta });
+  if (road) {
+    const g = geometry(road.bulbRadiusFt, road.roadWidthFt), scale = road.coordinateUnits === "m" ? .3048 : 1;
+    defaults.w = g.R * 2 * scale; defaults.d = (g.bottom + g.R) * scale;
+  }
   const network = String(options?.meta?.network || "").toLowerCase();
   const smartPlacement = resolveSmartPlacement({
     type,
@@ -279,8 +288,8 @@ export function buildDashboardObjectPlacement({
     w: defaults.w,
     d: defaults.d,
     h: catalog.defaultH ?? 0,
-    x: options?.placed ? smartPlacement.x : undefined,
-    y: options?.placed ? smartPlacement.y : undefined,
+    x: options?.placed ? options?.x ?? smartPlacement.x : undefined,
+    y: options?.placed ? options?.y ?? smartPlacement.y : undefined,
     rotation: 0,
     stallCount: parkingStalls,
     locked: false,
@@ -365,5 +374,5 @@ export function buildDashboardObjectPlacement({
       [originX + nextPlacement.w * 0.18, originY + nextPlacement.d],
     ];
   }
-  return nextPlacement;
+  return regenerateCulDeSac(nextPlacement);
 }
