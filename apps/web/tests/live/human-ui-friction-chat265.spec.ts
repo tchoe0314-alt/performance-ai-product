@@ -196,7 +196,9 @@ test.describe("Chat 265 human UI friction repair", () => {
     const siteSection = page.getByTestId("setup-site-box-controls");
     await expect(siteSection).not.toContainText(/No boundary locked|Needs lock/i);
     await expect(siteSection).toContainText(/No site boundary yet|Not set/i);
-    await siteSection.getByText("Site Boundary", { exact: true }).click();
+    if (!(await siteSection.evaluate((node) => node.hasAttribute("open")))) {
+      await siteSection.getByText("Site Boundary", { exact: true }).click();
+    }
 
     await expect(siteSection.getByRole("button", { name: "Enter a size" })).toBeDisabled();
     await siteSection.getByTestId("use-1000-site-size").click();
