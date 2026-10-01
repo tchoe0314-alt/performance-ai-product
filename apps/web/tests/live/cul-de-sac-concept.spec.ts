@@ -1,5 +1,37 @@
 import { expect, test } from "@playwright/test";
 
+test("design state drives rendering and preserves engineering staleness", async ({ page }) => {
+  await page.goto("/concepts/cul-de-sac.html");
+  const canvas = page.locator("canvas");
+  await expect(canvas).toHaveAttribute("data-stale", "false");
+  await page.getByRole("slider", { name: /Approach road width/ }).focus();
+  for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowRight");
+  await expect(canvas).toHaveAttribute("data-road-width", "40");
+  await expect(canvas).toHaveAttribute("data-revision", "10");
+  await expect(canvas).toHaveAttribute("data-stale", "true");
+  await expect(page.locator("#calculationStatus")).toContainText("recalculation required");
+  // A DOM-only change must not become a design change on repaint.
+  await page.evaluate(() => {
+    (document.getElementById("width") as HTMLInputElement).value = "20";
+    (window as unknown as { renderSite: () => void }).renderSite();
+  });
+  await expect(page.locator("#width")).toHaveValue("40");
+  await expect(canvas).toHaveAttribute("data-road-width", "40");
+  await page.setViewportSize({ width: 700, height: 800 });
+  await expect(canvas).toHaveAttribute("data-stale", "true");
+  await expect(canvas).toHaveAttribute("data-revision", "10");
+  await page.getByRole("slider", { name: /Bulb radius/ }).press("ArrowRight");
+  await expect(canvas).toHaveAttribute("data-radius", "51");
+  await expect(page.locator("#pavementValue")).toHaveText("36 ft");
+  await page.getByRole("button", { name: "Reset to 50 ft / 30 ft" }).click();
+  await expect(canvas).toHaveAttribute("data-radius", "50");
+  await expect(canvas).toHaveAttribute("data-road-width", "30");
+  await expect(canvas).toHaveAttribute("data-revision", "12");
+  await expect(canvas).toHaveAttribute("data-stale", "true");
+  await page.getByRole("button", { name: "Reset to 50 ft / 30 ft" }).click();
+  await expect(canvas).toHaveAttribute("data-revision", "12");
+});
+
 test("cul-de-sac sliders preserve tangent pavement joins over their full ranges", async ({ page }, testInfo) => {
   await page.goto("/concepts/cul-de-sac.html");
   const canvas = page.locator("canvas");

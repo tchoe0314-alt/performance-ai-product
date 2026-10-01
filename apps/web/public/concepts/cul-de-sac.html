@@ -25,7 +25,8 @@
 <input id="radius" type="range" min="35" max="80" step="1" value="50">
 <label for="width">Approach road width <output id="widthValue" for="width">30 ft</output></label>
 <input id="width" type="range" min="20" max="48" step="1" value="30">
-<dl><div><dt>Island radius</dt><dd>15 ft</dd></div><div><dt>Transition radius</dt><dd id="filletValue">20 ft</dd></div><div><dt>Radial pavement width</dt><dd id="pavementValue">35 ft</dd></div><div><dt>Approach</dt><dd>Bidirectional</dd></div></dl>
+<dl><div><dt>Island radius</dt><dd id="islandValue">15 ft</dd></div><div><dt>Transition radius</dt><dd id="filletValue">20 ft</dd></div><div><dt>Radial pavement width</dt><dd id="pavementValue">35 ft</dd></div><div><dt>Approach</dt><dd>Bidirectional</dd></div></dl>
+<p id="calculationStatus" class="note" role="status">Engineering checks not connected.</p>
 <button id="reset" type="button">Reset to 50 ft / 30 ft</button>
 <p class="note">Tangent circular transitions are recalculated for every dimension change. Road width measures asphalt edge to edge.</p>
 <p class="note">Concept only. Turning paths, fire access, drainage, curb design, and local standards need project-specific review. This study does not modify your saved project.</p>
@@ -35,16 +36,19 @@
 </main>
 <script>
 "use strict";
+// Authoritative design inputs only; geometry is derived on every render.
+const canvasState={roadWidth:30,bulbRadius:50,islandRadius:15,transitionRadius:20,isStale:false,revision:0};
 const canvas=document.getElementById("plan"),ctx=canvas.getContext("2d");
 const radius=document.getElementById("radius"),width=document.getElementById("width");
 // The outside transition circle is externally tangent to the bulb and tangent
 // to the straight pavement edge. Its center lies at (halfWidth + fillet, y).
-function geometry(R,W){
- const f=20,a=W/2,x=a+f,y=Math.sqrt((R+f)**2-x*x),theta=Math.atan2(y,x);
+function geometry(R,W,f=canvasState.transitionRadius){
+ const a=W/2,x=a+f,y=Math.sqrt((R+f)**2-x*x),theta=Math.atan2(y,x);
  return {R,W,f,a,x,y,theta,tx:R*x/(R+f),ty:R*y/(R+f),bottom:y+110};
 }
-function draw(){
- const g=geometry(Number(radius.value),Number(width.value));
+function renderSite(state=canvasState){
+ const g=geometry(state.bulbRadius,state.roadWidth,state.transitionRadius);
+ radius.value=String(state.bulbRadius);width.value=String(state.roadWidth);
  const rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
  canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);
  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,rect.width,rect.height);
@@ -64,11 +68,11 @@ function draw(){
  const stripe=Math.max(1/3,1.25/scale),gap=Math.max(1/3,1.5/scale),offset=(stripe+gap)/2;
  ctx.strokeStyle="#f9ca46";ctx.lineWidth=stripe;
  for(const x of [-offset,offset]){ctx.beginPath();ctx.moveTo(x,g.bottom);ctx.lineTo(x,g.R+4);ctx.stroke();}
- ctx.beginPath();ctx.arc(0,0,15,0,2*Math.PI);ctx.fillStyle="#b7d6bf";ctx.fill();ctx.strokeStyle="#edf3e9";ctx.lineWidth=1;ctx.stroke();
+ ctx.beginPath();ctx.arc(0,0,state.islandRadius,0,2*Math.PI);ctx.fillStyle="#b7d6bf";ctx.fill();ctx.strokeStyle="#edf3e9";ctx.lineWidth=1;ctx.stroke();
  ctx.strokeStyle="#dce9f8";ctx.fillStyle="#dce9f8";ctx.lineWidth=1/scale;ctx.font=`${12/scale}px system-ui`;ctx.textAlign="center";
  function dimension(x1,y1,x2,y2,label){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();for(const [x,y] of [[x1,y1],[x2,y2]]){ctx.beginPath();ctx.moveTo(x-2,y-2);ctx.lineTo(x+2,y+2);ctx.stroke();}ctx.fillText(label,(x1+x2)/2,(y1+y2)/2-5/scale);}
  dimension(0,0,g.R*Math.cos(-Math.PI/4),g.R*Math.sin(-Math.PI/4),`R ${g.R} ft`);
- ctx.fillStyle="#27496d";ctx.fillText("R 15 ft",0,4/scale);ctx.fillStyle="#dce9f8";
+ ctx.fillStyle="#27496d";ctx.fillText(`R ${state.islandRadius} ft`,0,4/scale);ctx.fillStyle="#dce9f8";
  dimension(-g.a,g.y+70,g.a,g.y+70,`${g.W} ft`);
  ctx.restore();
  // Sheet annotations stay readable at every viewport size.
@@ -78,13 +82,24 @@ function draw(){
  const sx=22,sy=rect.height-23;ctx.fillRect(sx,sy,20*scale,3);ctx.fillText("0",sx,sy-6);ctx.fillText("20 ft",sx+20*scale,sy-6);
  document.getElementById("radiusValue").value=`${g.R} ft`;
  document.getElementById("widthValue").value=`${g.W} ft`;
- document.getElementById("pavementValue").textContent=`${g.R-15} ft`;
- canvas.setAttribute("aria-label",`Concept plan: ${g.R}-foot bulb radius, ${g.W}-foot two-way road width, 15-foot island radius, 20-foot tangent transition radius.`);
+ document.getElementById("islandValue").textContent=`${state.islandRadius} ft`;
+ document.getElementById("filletValue").textContent=`${g.f} ft`;
+ document.getElementById("pavementValue").textContent=`${g.R-state.islandRadius} ft`;
+ document.getElementById("calculationStatus").textContent=state.isStale?"Dimensions changed — engineering recalculation required. Checks not connected.":"Engineering checks not connected.";
+ canvas.setAttribute("aria-label",`Concept plan: ${g.R}-foot bulb radius, ${g.W}-foot two-way road width, ${state.islandRadius}-foot island radius, ${g.f}-foot tangent transition radius.`);
  canvas.dataset.radius=String(g.R);canvas.dataset.roadWidth=String(g.W);
+ canvas.dataset.stale=String(state.isStale);canvas.dataset.revision=String(state.revision);
 }
-radius.addEventListener("input",draw);width.addEventListener("input",draw);
-document.getElementById("reset").addEventListener("click",()=>{radius.value="50";width.value="30";draw();});
-new ResizeObserver(draw).observe(canvas);draw();
+function updateDimensions(changes){
+ const changed=Object.entries(changes).some(([key,value])=>canvasState[key]!==value);
+ if(changed){Object.assign(canvasState,changes);canvasState.revision++;canvasState.isStale=true;}
+ // Rendering never clears engineering staleness or claims checks have run.
+ renderSite(canvasState);
+}
+radius.addEventListener("input",event=>updateDimensions({bulbRadius:Number(event.target.value)}));
+width.addEventListener("input",event=>updateDimensions({roadWidth:Number(event.target.value)}));
+document.getElementById("reset").addEventListener("click",()=>updateDimensions({bulbRadius:50,roadWidth:30}));
+new ResizeObserver(()=>renderSite(canvasState)).observe(canvas);renderSite(canvasState);
 </script>
 </body>
 </html>
