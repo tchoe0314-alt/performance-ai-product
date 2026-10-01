@@ -31,6 +31,10 @@ test.describe("standalone support route", () => {
     }, user.token);
     await page.goto("/support?category=bug", { waitUntil: "domcontentloaded" });
     await expect(page.getByText("Your signed-in session is ready.")).toBeVisible();
+    expect(await page.evaluate(() => ({
+      persistent: Boolean(localStorage.getItem("civora-ai-token")),
+      session: Boolean(sessionStorage.getItem("civora-ai-token")),
+    }))).toEqual({ persistent: false, session: true });
     await expect(page.getByLabel("Category")).toHaveValue("workflow");
     await page.getByLabel("What happened?").fill("Standalone support route proof");
     await page.getByLabel("Details").fill("A drawing action did not match the expected result. password=do-not-store");

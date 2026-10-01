@@ -8,18 +8,23 @@ export function getStoredToken() {
   if (typeof window === "undefined") {
     return "";
   }
-  return (
+  const token = window.sessionStorage.getItem(TOKEN_KEY) ??
     window.localStorage.getItem(TOKEN_KEY) ??
-    window.localStorage.getItem(LEGACY_TOKEN_KEY) ??
-    ""
-  );
+    window.localStorage.getItem(LEGACY_TOKEN_KEY) ?? "";
+  // One-time migration for existing tabs; persistent copies are never retained.
+  window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(LEGACY_TOKEN_KEY);
+  if (token) window.sessionStorage.setItem(TOKEN_KEY, token);
+  return token;
 }
 
 export function setStoredToken(token: string) {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(TOKEN_KEY, token);
+  window.localStorage.removeItem(TOKEN_KEY);
+  window.localStorage.removeItem(LEGACY_TOKEN_KEY);
+  window.sessionStorage.setItem(TOKEN_KEY, token);
   window.sessionStorage.setItem(SESSION_RESTORE_KEY, "1");
 }
 
@@ -29,6 +34,8 @@ export function clearStoredToken() {
   }
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(LEGACY_TOKEN_KEY);
+  window.sessionStorage.removeItem(TOKEN_KEY);
+  window.sessionStorage.removeItem(LEGACY_TOKEN_KEY);
   window.sessionStorage.removeItem(SESSION_RESTORE_KEY);
 }
 
