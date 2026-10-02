@@ -10,7 +10,7 @@ Authority: [master roadmap and approved governance](civora-master-product-roadma
 
 | Gate | Required evidence | Current status |
 | --- | --- | --- |
-| 0.1 Consolidation | Files/branches/worktrees/experiments inventoried; cross-chat changes evaluated; authoritative implementations documented; preserved prototypes; single integration branch; supported-capability and limitations register | All 26 distinct historical patches have recorded dispositions; relevant cross-chat slices inspected. Useful inactive prototypes and Vision V3 remain preserved, excluded from this runtime. Final inventory/version refresh remains open. |
+| 0.1 Consolidation | Files/branches/worktrees/experiments inventoried; cross-chat changes evaluated; authoritative implementations documented; preserved prototypes; single integration branch; supported-capability and limitations register | Complete for local baseline `33c23e34`: [closeout](phase-0-consolidation.md), full inventory, 26/26 historical patch dispositions, capability/limitations register and versioned notes. Not a deployed-release or overall Phase 0 completion claim. |
 | 0.2 Feature verification | Creation, selection, movement, resize, rotation, properties, chat, canonical synchronization, four dependency modes, parking reflow, cul-de-sac, constraints, alternatives/scoring, apply/cancel/undo, layers/bulk selection, commercial/2D/3D, exports, auth, save/reopen | Full local website/backend suites passed; real-local auth/persistence/PDF/data-lifecycle checks passed on clean runtime. Map/provider/hosted skips and complete cross-browser evidence remain open. |
 | 0.3 Test system | Candidate solver verified or excluded; stable selectors; complete suite; regression coverage; test-category map; release-critical suite; repeatable validation; credential requirements; failure/recovery cases | Candidate regressions/full suites and all eight repeatable gates passed at recorded checkpoints. Taxonomy/credential boundaries documented; final combined source/artifact validation remains open after subsequent repairs/extractions. |
 | 0.4 Maintainability | Focused modules; UI/math separation; centralized project operations, commands and constraints; parallel-state analysis; module ownership; architecture; safe upgrades and advisory register | Authority map, focused layout/review extraction, shared edit/constraint paths and audited upgrade verified. Oversized components and non-universal operation/state adapters remain open. |
@@ -46,6 +46,14 @@ Authority: [master roadmap and approved governance](civora-master-product-roadma
 6. Prepare exact-build staging approval request with rollback plan, then verify the approved deployment.
 
 ## Evidence log
+
+### October 2 — Phase 0.1 closeout at `33c23e34`
+
+- Fresh read-only inventory: 1,173 paths, 141 local branches, 26 distinct non-equivalent historical patches; automated comparison found zero undocumented patches. All 15 other existing worktrees are clean; 63 registered historical directories are missing. User-owned untracked work and historical metadata remain untouched.
+- Added the durable inventory, consolidation/capability/limitations register and exact-checkpoint notes. Current editable object, interference and review-sheet authorities are explicit; preserved prototypes and Vision V3 remain excluded. No abandoned implementation was proven safe and necessary to delete.
+- Final application checkpoint website run: **374 passed, 16 skipped, zero failures**, 10.1 minutes. Repeatable local selection: **eight gates passed**, including **107 browser tests passed, two skipped**, 3.9 minutes. Clean tracked revision before/after; served/deployed flags false. Full backend **1,837 passed** remains applicable to its unchanged backend/test inputs, not a hosted artifact.
+- Prior production code read 83 active projects from a disposable copied fixture with exact input/result and schema/table preservation and owner isolation; this does not prove hosted recovery or provider redeployment.
+- This closeout changes documentation only. 0.1 is complete within its local consolidation scope. Feature/platform verification, remaining maintainability and approved exact-build staging remain open; Phase 1 has not started. No push/deployment/spending.
 
 ### October 2 — complete protected-program checkpoint and remaining save writers
 

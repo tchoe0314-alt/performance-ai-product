@@ -1,6 +1,6 @@
 # Phase 0 historical branch disposition
 
-Review date: October 2, 2026. Baseline `c6626735` plus current integration changes. No historical branch has been deleted or automatically merged. The local inventory includes 141 heads; 105 are ancestry-contained and 36 are not. Patch identity is a triage aid, not feature/runtime proof.
+Review date: October 2, 2026. Refreshed against local application checkpoint `33c23e34`; [full snapshot](phase-0-inventory-33c23e34.json) and [closeout](phase-0-consolidation.md). No historical branch has been deleted or automatically merged. The local inventory includes 141 heads; 105 are ancestry-contained and 36 are not. Patch identity is a triage aid, not feature/runtime proof.
 
 ## Inspected unique historical work
 
@@ -18,7 +18,7 @@ Inventory patch comparison confirms no unique patches for several non-contained 
 
 These are preserved as history. Equivalence proves that Git can find matching patch IDs; it does not replace tests of the active implementation, account for later changes, or approve every historical artifact.
 
-## Still open
+## Follow-up overlap inspection
 
 Follow-up inspection found the historical CAD dimension test unchanged from `90000ec4`, grip tests unchanged from `4657166e`, and PDF-to-CAD tests unchanged from `6eb9f3d2`; layer/style tests differ only in review-language wording. Current model exposes annotation creation/traces and grip editing; current chat workflows implement PDF-to-CAD conversion and fail-closed hydrant catalog source/review requirements. These tests passed in the complete backend run. The overlapping entity-viewer/annotation/source branches therefore must not be merged wholesale merely because patch IDs differ.
 

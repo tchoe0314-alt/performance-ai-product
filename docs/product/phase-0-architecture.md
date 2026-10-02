@@ -2,6 +2,8 @@
 
 Inspected October 2, 2026 at `c6626735` plus the uncommitted integration tree. Integration branch: `codex/phase-0-integration`. This is an implementation map, not release sign-off. The full inventory reports local branches and file hashes separately; historical branches are preserved, not automatically merged or deleted.
 
+Consolidation authority rechecked at `33c23e34`: active interference engine and default canonical review-sheet delegation confirmed; [closeout and capability/limitations register](phase-0-consolidation.md) records the final local baseline. Older line counts and checkpoint-specific results below remain historical observations, not current completion claims. Large-component and operation-adapter cleanup stays under 0.4.
+
 ## Active path and responsibility boundaries
 
 | Concern | Active owner | Boundary / limitation |
