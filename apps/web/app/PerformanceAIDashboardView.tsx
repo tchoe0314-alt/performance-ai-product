@@ -339,6 +339,7 @@ import { type LayoutAlternativeSearch, type LayoutGoal } from "./utils/layoutAlt
 import { useDashboardLayoutComparison } from "./hooks/useDashboardLayoutComparison";
 import { planCanonicalBatchTransaction, type CanonicalBatchEdit } from "./utils/canonicalBatchTransaction";
 import { guardedTransactionSave } from "./utils/guardedTransactionSave";
+import { useDashboardPlacementState } from "./hooks/useDashboardPlacementState";
 
 function PerformanceAIDashboardView({
   forceDemoWorkspace = false,
@@ -438,8 +439,7 @@ function PerformanceAIDashboardView({
   const [drainageAllowSlopeAdjust, setDrainageAllowSlopeAdjust] = useState(false);
   const [drainageMaxSlopeAdjust, setDrainageMaxSlopeAdjust] = useState(0.001);
   const [utilities, setUtilities] = useState(true);
-  const [buildingPlacements, setBuildingPlacements] = useState<BuildingPlacement[]>([]);
-  const buildingPlacementsRef = useRef<BuildingPlacement[]>([]);
+  const { buildingPlacements, buildingPlacementsRef, setBuildingPlacements } = useDashboardPlacementState();
   const [dependencyProposal, setDependencyProposal] = useState<CanonicalDependencyProposal | null>(null);
   const [layoutSearch, setLayoutSearch] = useState<LayoutAlternativeSearch | null>(null);
   const layoutSearchSourceRef = useRef<{ projectId: string | null; placements: string } | null>(null);
@@ -467,10 +467,6 @@ function PerformanceAIDashboardView({
   const [bulkRotateAngle, setBulkRotateAngle] = useState("15");
   const [systemStatuses, setSystemStatuses] = useState(DEFAULT_SYSTEM_STATUS);
   const [reactiveValidation, setReactiveValidation] = useState<ReactiveValidationState>(EMPTY_REACTIVE_VALIDATION);
-
-  useEffect(() => {
-    buildingPlacementsRef.current = buildingPlacements;
-  }, [buildingPlacements]);
 
   const [assumptions, setAssumptions] =
     useState<Assumption[]>(defaultAssumptions);
@@ -1628,6 +1624,7 @@ function PerformanceAIDashboardView({
   const handleUpdateBuilding = useDashboardObjectUpdateAction({
     buildingPlacements,
     buildingPlacementsRef,
+    projectLoadRequestRef,
     clearGeneratedPreview,
     computeParkingFootprint,
     currentProject,

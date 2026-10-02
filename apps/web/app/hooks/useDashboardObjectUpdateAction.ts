@@ -22,6 +22,7 @@ import {
 import type { ParkingParams } from "../utils/previewGeometryTruth";
 import type { EngineeringSystemKey } from "../utils/workflowConstants";
 import { reconcileCulDeSacUpdate } from "../utils/parametricRoad";
+import { guardedTransactionSave } from "../utils/guardedTransactionSave";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type SaveProject = (options?: {
@@ -71,6 +72,7 @@ type ResolvedParkingParams = Required<Pick<
 type UseDashboardObjectUpdateActionInput = {
   buildingPlacements: BuildingPlacement[];
   buildingPlacementsRef: MutableRefObject<BuildingPlacement[]>;
+  projectLoadRequestRef: MutableRefObject<number>;
   clearGeneratedPreview: () => void;
   computeParkingFootprint: (
     target: BuildingPlacement,
@@ -99,6 +101,7 @@ type UseDashboardObjectUpdateActionInput = {
 
 export function useDashboardObjectUpdateAction({
   buildingPlacementsRef,
+  projectLoadRequestRef,
   clearGeneratedPreview,
   computeParkingFootprint,
   currentProject,
@@ -441,12 +444,19 @@ export function useDashboardObjectUpdateAction({
     } else {
       setStatusMessage("Canonical object updated. Affected systems are ready for live recalculation.");
     }
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object update...", track: true });
+    const generation = projectLoadRequestRef.current;
+    const snapshot = JSON.stringify(nextPlacements);
+    void guardedTransactionSave({
+      isCurrent: () => projectLoadRequestRef.current === generation && JSON.stringify(buildingPlacementsRef.current) === snapshot,
+      ensureDraft: () => ensureProjectDraftRef.current(),
+      save: () => saveProjectRef.current({ silent: true }),
+      refresh: () => { previewRefreshIntentRef.current = { reason: "Refreshing preview after object update...", track: true }; },
+      onFailure: () => pushRecoveryMessage("The edit remains in the working plan, but saving failed. Retry Save Project."),
+    });
     return "applied" as const;
   }, [
     buildingPlacementsRef,
+    projectLoadRequestRef,
     clearGeneratedPreview,
     computeParkingFootprint,
     currentProject,
