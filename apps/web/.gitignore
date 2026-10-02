@@ -20,6 +20,7 @@
 /.next/
 /.next-concept-check/
 /.next-concept-production/
+/.next-phase0-*/
 /out/
 
 # production
