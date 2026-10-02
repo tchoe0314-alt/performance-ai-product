@@ -338,6 +338,7 @@ import { resolveDependencyProposal, type CanonicalDependencyProposal } from "./u
 import { type LayoutAlternativeSearch, type LayoutGoal } from "./utils/layoutAlternatives";
 import { useDashboardLayoutComparison } from "./hooks/useDashboardLayoutComparison";
 import { planCanonicalBatchTransaction, type CanonicalBatchEdit } from "./utils/canonicalBatchTransaction";
+import { guardedTransactionSave } from "./utils/guardedTransactionSave";
 
 function PerformanceAIDashboardView({
   forceDemoWorkspace = false,
@@ -1679,9 +1680,15 @@ function PerformanceAIDashboardView({
     setStatusMessage("Complete dependency proposal accepted. Undo restores all previous object positions.");
     setObjectManagerStatusMessage("Complete dependency proposal accepted. Undo restores all previous object positions.");
     pushRecoveryMessage("Complete dependency proposal accepted. Undo restores all previous object positions.");
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after accepting linked parking...", track: true });
+    const generation = projectLoadRequestRef.current;
+    const snapshot = JSON.stringify(nextPlacements);
+    void guardedTransactionSave({
+      isCurrent: () => projectLoadRequestRef.current === generation && JSON.stringify(buildingPlacementsRef.current) === snapshot,
+      ensureDraft: () => ensureProjectDraftRef.current(),
+      save: () => saveProjectRef.current({ silent: true }),
+      refresh: () => { previewRefreshIntentRef.current = { reason: "Refreshing preview after accepting linked parking...", track: true }; },
+      onFailure: () => pushRecoveryMessage("The accepted revision remains in the working plan, but saving failed. Retry Save Project."),
+    });
   }, [
     clearGeneratedPreview,
     dependencyProposal,
@@ -1776,9 +1783,15 @@ function PerformanceAIDashboardView({
     setStatusMessage(`${selected.label} is now the working plan. Undo restores the previous layout.`);
     setObjectManagerStatusMessage(`${selected.label} is now the working plan. Undo restores the previous layout.`);
     pushRecoveryMessage(`${selected.label} is now the working plan. Undo restores the previous layout.`);
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after applying layout alternative...", track: true });
+    const generation = projectLoadRequestRef.current;
+    const snapshot = JSON.stringify(after);
+    void guardedTransactionSave({
+      isCurrent: () => projectLoadRequestRef.current === generation && JSON.stringify(buildingPlacementsRef.current) === snapshot,
+      ensureDraft: () => ensureProjectDraftRef.current(),
+      save: () => saveProjectRef.current({ silent: true }),
+      refresh: () => { previewRefreshIntentRef.current = { reason: "Refreshing preview after applying layout alternative...", track: true }; },
+      onFailure: () => pushRecoveryMessage("The selected layout remains in the working plan, but saving failed. Retry Save Project."),
+    });
   }, [layoutAlternatives, selectedLayoutAlternativeId]);
 
   const {
@@ -5111,12 +5124,13 @@ function PerformanceAIDashboardView({
     recordDraftUndoAction(undo);
     recordRecentChange({ type: "object_type_changed", label, detail: `${result.after.length} objects revised in one transaction.`, undo });
     const snapshot = JSON.stringify(result.placements);
-    const projectId = currentProjectRef.current?.project_id ?? null;
-    void ensureProjectDraftRef.current().then(() => {
-      if (JSON.stringify(buildingPlacementsRef.current) !== snapshot ||
-          (projectId !== null && currentProjectRef.current?.project_id !== projectId)) return null;
-      return saveProjectRef.current({ silent: true });
-    }).catch(() => pushRecoveryMessage("The revision remains in the working plan, but saving needs attention. Retry Save Project."));
+    const generation = projectLoadRequestRef.current;
+    void guardedTransactionSave({
+      isCurrent: () => projectLoadRequestRef.current === generation && JSON.stringify(buildingPlacementsRef.current) === snapshot,
+      ensureDraft: () => ensureProjectDraftRef.current(),
+      save: () => saveProjectRef.current({ silent: true }),
+      onFailure: () => pushRecoveryMessage("The revision remains in the working plan, but saving needs attention. Retry Save Project."),
+    });
     return "applied" as const;
   }, [clearGeneratedPreview, markSystemsStale, pushRecoveryMessage, recordDraftUndoAction, recordRecentChange]);
 
