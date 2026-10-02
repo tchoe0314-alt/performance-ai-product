@@ -1,4 +1,5 @@
-import { useCallback } from "react";
+import { useCallback, type MutableRefObject } from "react";
+import { canonicalConceptReplacementBlocker } from "../utils/canonicalEditCommands";
 
 import type { BuildingPlacement, ChatMessage } from "../types";
 import {
@@ -25,6 +26,7 @@ type RecordRecentChange = (change: Omit<RecentChange, "id" | "createdAt">) => vo
 
 type UseDashboardDenseConceptActionInput = {
   appendChatMessage: AppendChatMessage;
+  buildingPlacementsRef: MutableRefObject<BuildingPlacement[]>;
   clearGeneratedPreview: () => void;
   hasSiteBoundary: () => boolean;
   markSystemsStale: (systems: EngineeringSystemKey[]) => void;
@@ -53,6 +55,7 @@ type UseDashboardDenseConceptActionInput = {
 
 export function useDashboardDenseConceptAction({
   appendChatMessage,
+  buildingPlacementsRef,
   clearGeneratedPreview,
   hasSiteBoundary,
   markSystemsStale,
@@ -80,6 +83,11 @@ export function useDashboardDenseConceptAction({
 }: UseDashboardDenseConceptActionInput) {
   return useCallback((message: string) => {
     appendChatMessage("user", message);
+    const blocker = canonicalConceptReplacementBlocker(buildingPlacementsRef.current);
+    if (blocker) {
+      appendChatMessage("assistant", blocker, "status");
+      return true;
+    }
     const lower = message.toLowerCase();
     const wantsSubdivisionCadPlan =
       /\b(recreate|copy|like the image|like this image|subdivision|master plan|lots?|parcels?|contours?|cad screenshot|as many)\b/.test(lower) &&
@@ -195,6 +203,7 @@ export function useDashboardDenseConceptAction({
     );
     return true;
   }, [
+    buildingPlacementsRef,
     appendChatMessage,
     clearGeneratedPreview,
     hasSiteBoundary,

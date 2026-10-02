@@ -1,4 +1,5 @@
-import { useCallback } from "react";
+import { useCallback, type MutableRefObject } from "react";
+import { canonicalConceptReplacementBlocker } from "../utils/canonicalEditCommands";
 import type { CanonicalBatchEdit } from "../utils/canonicalBatchTransaction";
 import { buildDraftObjectResizeUpdates } from "../utils/objectGeometry";
 
@@ -98,6 +99,7 @@ type UseDashboardPowerCommandHandlerInput = {
   analysisIssues: DashboardAccessAnalysisIssue[];
   autoFitSite: AutoFitSite;
   buildingPlacements: BuildingPlacement[];
+  buildingPlacementsRef: MutableRefObject<BuildingPlacement[]>;
   canonicalWorkspaceBlockers: string[];
   clearGeneratedPreview: () => void;
   generateFlowSummary: GenerateFlowSummary | null;
@@ -154,6 +156,7 @@ type UseDashboardPowerCommandHandlerInput = {
 };
 
 export function useDashboardPowerCommandHandler({
+  buildingPlacementsRef,
   activePlacementId,
   appendChatMessage,
   analysisIssues,
@@ -612,7 +615,6 @@ export function useDashboardPowerCommandHandler({
     const directSiteSetup = parseDashboardDirectSiteSetupCommand(message, siteAddress.trim());
     if (directSiteSetup) {
       appendChatMessage("user", message);
-      clearGeneratedPreview();
       const wantsProgramAfterSiteSetup =
         /\b(office|building|parking|spaces|stalls|basin|detention|pond|storm|water|sanitary|sewer|sidewalk|ada|driveway|road|grading|drainage|utilities|utility)\b/i.test(message) &&
         /\b(add|include|create|make|generate|design|layout|put|place|with)\b/i.test(message);
@@ -624,6 +626,15 @@ export function useDashboardPowerCommandHandler({
       ).length;
       const reuseExistingProgram =
         wantsProgramAfterSiteSetup && explicitlyPreserveExistingProgram && existingProgramObjectCount > 0;
+      if (wantsProgramAfterSiteSetup && !reuseExistingProgram) {
+        const blocker = canonicalConceptReplacementBlocker(buildingPlacementsRef.current);
+        if (blocker) {
+          appendChatMessage("assistant", blocker, "status");
+          setStatusMessage(blocker);
+          return true;
+        }
+      }
+      clearGeneratedPreview();
       const requestedParkingCount = message.match(
         /\b(\d{1,4})\s*(?:parking\s+)?(?:spaces?|stalls?)\b/i,
       )?.[1];
@@ -985,6 +996,7 @@ export function useDashboardPowerCommandHandler({
     }
     return false;
   }, [
+    buildingPlacementsRef,
     activePlacementId,
     analysisIssues,
     appendChatMessage,

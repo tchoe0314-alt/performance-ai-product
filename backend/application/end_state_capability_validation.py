@@ -161,6 +161,7 @@ BROWSER_GATE: Dict[str, Any] = {
         "tests/live/phase0-batch-transaction.spec.ts",
         "tests/live/phase0-transaction-save.spec.ts",
         "tests/live/phase0-placement-state.spec.ts",
+        "tests/live/phase0-concept-replacement.spec.ts",
         "tests/live/dense-commercial-concept-chat240.spec.ts",
         "tests/live/project-object-integration.spec.ts",
         "tests/live/phase0-review-sheet-truth.spec.ts",

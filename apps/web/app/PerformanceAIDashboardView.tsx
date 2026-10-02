@@ -2788,6 +2788,7 @@ function PerformanceAIDashboardView({
   });
 
   const handleCreateDenseCommercialConcept = useDashboardDenseConceptAction({
+    buildingPlacementsRef,
     appendChatMessage,
     clearGeneratedPreview,
     hasSiteBoundary,
@@ -5059,6 +5060,7 @@ function PerformanceAIDashboardView({
     workflowActionHints,
   });
   const tryHandlePowerCommand = useDashboardPowerCommandHandler({
+    buildingPlacementsRef,
     handleCanonicalBatchEdit,
     activePlacementId,
     analysisIssues,

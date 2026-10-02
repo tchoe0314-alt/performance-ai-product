@@ -56,6 +56,12 @@ export function canonicalDeletionBlocker(objects: BuildingPlacement[]): string |
   return null;
 }
 
+/** Regeneration deletes the old generated program; it must honor the same protection. */
+export function canonicalConceptReplacementBlocker(objects: BuildingPlacement[]): string | null {
+  const reason = canonicalDeletionBlocker(objects.filter(object => object.type !== "site" && object.meta?.dense_concept_generated));
+  return reason ? `Concept replacement blocked. ${reason} The working plan is unchanged.` : null;
+}
+
 export function applyCanonicalUpdateCommand(
   current: BuildingPlacement,
   command: CanonicalUpdateCommand,
