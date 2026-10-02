@@ -334,10 +334,10 @@ import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
 import { mapSurveyPointsToSite } from "./utils/dashboardExistingConditionsUpload";
 import { AnalysisPanel } from "./components/AnalysisPanel";
 import { WorkspaceShortcutsOverlay } from "./components/WorkspaceShortcutsOverlay";
-import { resolveDependencyProposal, type CanonicalDependencyProposal } from "./utils/canonicalDependencyPolicies";
+import { type CanonicalDependencyProposal } from "./utils/canonicalDependencyPolicies";
 import { type LayoutAlternativeSearch, type LayoutGoal } from "./utils/layoutAlternatives";
 import { useDashboardLayoutComparison } from "./hooks/useDashboardLayoutComparison";
-import { planCanonicalBatchTransaction, type CanonicalBatchEdit } from "./utils/canonicalBatchTransaction";
+import { useDashboardPlacementTransactions } from "./hooks/useDashboardPlacementTransactions";
 import { guardedTransactionSave } from "./utils/guardedTransactionSave";
 import { useDashboardPlacementState } from "./hooks/useDashboardPlacementState";
 
@@ -1644,66 +1644,24 @@ function PerformanceAIDashboardView({
     units,
   });
 
-  const handleAcceptDependencyProposal = useCallback(() => {
-    if (!dependencyProposal) return;
-    const result = resolveDependencyProposal(dependencyProposal, buildingPlacementsRef.current, currentProjectRef.current?.project_id ?? null);
-    if (!result.accepted) {
-      setDependencyProposal(null);
-      setStatusMessage(result.reason);
-      setObjectManagerStatusMessage(result.reason);
-      pushRecoveryMessage(result.reason);
-      return;
-    }
-    const currentBefore = dependencyProposal.before;
-    const nextPlacements = result.placements;
-    const undo = {
-      action: "bulk_update" as const,
-      before: currentBefore,
-      after: dependencyProposal.after,
-      label: `accepted parking proposal for ${dependencyProposal.buildingLabel}`,
-    };
-    buildingPlacementsRef.current = nextPlacements;
-    setBuildingPlacements(nextPlacements);
-    setDependencyProposal(null);
-    clearGeneratedPreview();
-    markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
-    recordDraftUndoAction(undo);
-    recordRecentChange({
-      type: "object_style_changed",
-      label: "Linked parking proposal accepted",
-      detail: `Accepted the complete ${dependencyProposal.after.length}-object transaction for ${dependencyProposal.buildingLabel}.`,
-      undo,
-    });
-    setStatusMessage("Complete dependency proposal accepted. Undo restores all previous object positions.");
-    setObjectManagerStatusMessage("Complete dependency proposal accepted. Undo restores all previous object positions.");
-    pushRecoveryMessage("Complete dependency proposal accepted. Undo restores all previous object positions.");
-    const generation = projectLoadRequestRef.current;
-    const snapshot = JSON.stringify(nextPlacements);
-    void guardedTransactionSave({
-      isCurrent: () => projectLoadRequestRef.current === generation && JSON.stringify(buildingPlacementsRef.current) === snapshot,
-      ensureDraft: () => ensureProjectDraftRef.current(),
-      save: () => saveProjectRef.current({ silent: true }),
-      refresh: () => { previewRefreshIntentRef.current = { reason: "Refreshing preview after accepting linked parking...", track: true }; },
-      onFailure: () => pushRecoveryMessage("The accepted revision remains in the working plan, but saving failed. Retry Save Project."),
-    });
-  }, [
-    clearGeneratedPreview,
-    dependencyProposal,
-    ensureProjectDraftRef,
-    markSystemsStale,
-    previewRefreshIntentRef,
-    pushRecoveryMessage,
-    recordDraftUndoAction,
-    recordRecentChange,
-    saveProjectRef,
-  ]);
-
-  const handleRejectDependencyProposal = useCallback(() => {
-    if (!dependencyProposal) return;
-    setDependencyProposal(null);
-    setStatusMessage("Dependency proposal rejected. The entire working plan stayed unchanged.");
-    setObjectManagerStatusMessage("Dependency proposal rejected. The entire working plan stayed unchanged.");
-  }, [dependencyProposal]);
+  const { handleAcceptDependencyProposal, handleRejectDependencyProposal, handleCanonicalBatchEdit } = useDashboardPlacementTransactions({
+    proposal: dependencyProposal,
+    placementsRef: buildingPlacementsRef,
+    projectRef: currentProjectRef,
+    generationRef: projectLoadRequestRef,
+    ensureDraftRef: ensureProjectDraftRef,
+    saveRef: saveProjectRef,
+    refreshIntentRef: previewRefreshIntentRef,
+    setPlacements: setBuildingPlacements,
+    setProposal: setDependencyProposal,
+    clearPreview: clearGeneratedPreview,
+    markStale: markSystemsStale,
+    recordUndo: recordDraftUndoAction,
+    recordChange: recordRecentChange,
+    report: setStatusMessage,
+    reportObject: setObjectManagerStatusMessage,
+    recover: pushRecoveryMessage,
+  });
 
   const handleAdjustDependencyProposal = useCallback(() => {
     const parkingId = dependencyProposal?.before.find(item => item.type === "parking")?.id;
@@ -5100,37 +5058,6 @@ function PerformanceAIDashboardView({
     totalPipeLength,
     workflowActionHints,
   });
-  const handleCanonicalBatchEdit = useCallback((edits: CanonicalBatchEdit[], label: string) => {
-    const result = planCanonicalBatchTransaction(buildingPlacementsRef.current, edits,
-      currentProjectRef.current?.project_id ?? null, label, `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    if (result.status === "blocked") {
-      setStatusMessage(result.reason);
-      pushRecoveryMessage(result.reason);
-      return "blocked" as const;
-    }
-    if (result.proposal) {
-      setDependencyProposal(result.proposal);
-      setStatusMessage("Review the complete commercial revision before applying. The working plan is unchanged.");
-      return "proposed" as const;
-    }
-    const undo = { action: "bulk_update" as const, before: result.before, after: result.after, label };
-    buildingPlacementsRef.current = result.placements;
-    setBuildingPlacements(result.placements);
-    clearGeneratedPreview();
-    markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
-    recordDraftUndoAction(undo);
-    recordRecentChange({ type: "object_type_changed", label, detail: `${result.after.length} objects revised in one transaction.`, undo });
-    const snapshot = JSON.stringify(result.placements);
-    const generation = projectLoadRequestRef.current;
-    void guardedTransactionSave({
-      isCurrent: () => projectLoadRequestRef.current === generation && JSON.stringify(buildingPlacementsRef.current) === snapshot,
-      ensureDraft: () => ensureProjectDraftRef.current(),
-      save: () => saveProjectRef.current({ silent: true }),
-      onFailure: () => pushRecoveryMessage("The revision remains in the working plan, but saving needs attention. Retry Save Project."),
-    });
-    return "applied" as const;
-  }, [clearGeneratedPreview, markSystemsStale, pushRecoveryMessage, recordDraftUndoAction, recordRecentChange]);
-
   const tryHandlePowerCommand = useDashboardPowerCommandHandler({
     handleCanonicalBatchEdit,
     activePlacementId,

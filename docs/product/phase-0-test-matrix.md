@@ -4,7 +4,7 @@ Local results apply to the integration checkpoint, not any hosted deployment. Th
 
 | Category | Entry points / examples | What it proves; prerequisites |
 | --- | --- | --- |
-| Backend unit/domain | Repository-root `tests`; math, canonical entities, importers and candidate/review helpers | Deterministic contracts/reference calculations. Use installed backend/test requirements under Python 3.11, matching the container major/minor runtime. |
+| Backend unit/domain | Repository-root `tests`; math, canonical entities, importers and candidate/review helpers | Deterministic contracts/reference calculations. Use installed backend/test requirements under Python 3.11, matching the container major/minor runtime. The complete collection also needs Node.js on `PATH` for the hosted-gauntlet script contract tests; their simulated results are not hosted evidence. |
 | Backend integration | Application/API workflows, project store/access, queues, backup restore, legacy database migration | Local services and disposable fixtures. Fake Postgres connections do not prove a real hosted migration. |
 | Frontend unit/contracts | `canonical-edit-command-foundation`, `phase0-candidate-contract`, geometry cases in `phase0-review-sheet-truth` | Pure functions executed through Playwright's TypeScript harness; these files also contain browser cases, so file selection alone does not mean a unit-only run. |
 | Mocked browser workflow | Commercial, drawing, project-race, dependency, candidate and UI regression suites | Visible website behavior with controlled API responses. Does not prove live persistence/auth/provider responses. |
@@ -19,6 +19,9 @@ Local results apply to the integration checkpoint, not any hosted deployment. Th
 
 ## Recorded complete runs
 
+- Updated placement-state checkpoint `9e1accff`: full local Chromium **368 passed, 16 skipped**, zero failures, 384 tests, 8.7 minutes. Frontend served `.next-phase0-baseline` at localhost:3040; backend was localhost:18880. This run predates restarting the backend to load the health-identity repair. After restart, real local persistence/PDF/account-lifecycle checks passed **three tests** in 6.7 seconds. Hosted/provider skips remain open.
+- Full Python 3.11 collection at the same code checkpoint initially finished **1,835 passed, two failed**, 78 subtests, 42 warnings, 418.74 seconds. Both failures were `FileNotFoundError: node` from an overly restricted test-launch `PATH`. Reproduced both failures, then verified both pass with the existing Node runtime available. A corrected complete run is pending; do not call the initial run a pass.
+- Corrected complete backend collection: **1,837 passed, zero failed/skipped**, 78 passing subtests, 42 warnings, 370.33 seconds. Backend code unchanged; frontend extraction overlapped the end of the run. This does not certify that later frontend artifact.
 - Full local website: **357 passed, 16 skipped**, no failures, 8.8 minutes.
 - Clean Python 3.11 backend: **1,831 passed**, no skips, 78 subtests, 42 warnings, 402.52 seconds. Later inventory test passed separately.
 - Repeatable end-state command: **eight gates passed**; browser gate **90 passed, two skipped**, 2.7 minutes. No hosted gate was requested; external evidence remains incomplete and construction release disallowed.
