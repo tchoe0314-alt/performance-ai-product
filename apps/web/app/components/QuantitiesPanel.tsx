@@ -190,7 +190,11 @@ export function QuantitiesPanel({
           </tbody>
         </table>
         {!rows.length ? (
-          <p className="p-4 text-sm font-semibold text-slate-500">Run systems to populate quantities.</p>
+          <p className="p-4 text-sm font-semibold text-slate-500">
+            {staleSystemCount
+              ? "Run or refresh the stale systems to calculate traceable quantities."
+              : "No traceable quantity result was produced. Review generation inputs and run the required systems again."}
+          </p>
         ) : null}
       </div>
     </div>

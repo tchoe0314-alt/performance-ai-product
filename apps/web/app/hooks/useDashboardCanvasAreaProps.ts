@@ -47,6 +47,17 @@ type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectN
   buildingPlacements: BuildingPlacement[];
   cadEntityPreviewObjects: PreviewPanelProps["cadEntityPreviewObjects"];
   suggestedPlacements: BuildingPlacement[];
+  dependencyProposal: PreviewPanelProps["dependencyProposal"];
+  onAcceptDependencyProposal: NonNullable<PreviewPanelProps["onAcceptDependencyProposal"]>;
+  onAdjustDependencyProposal: NonNullable<PreviewPanelProps["onAdjustDependencyProposal"]>;
+  onRejectDependencyProposal: NonNullable<PreviewPanelProps["onRejectDependencyProposal"]>;
+  layoutAlternatives: NonNullable<PreviewPanelProps["layoutAlternatives"]>;
+  selectedLayoutAlternativeId: string;
+  onSelectLayoutAlternative: NonNullable<PreviewPanelProps["onSelectLayoutAlternative"]>;
+  onApplyLayoutAlternative: NonNullable<PreviewPanelProps["onApplyLayoutAlternative"]>;
+  onCancelLayoutAlternatives: NonNullable<PreviewPanelProps["onCancelLayoutAlternatives"]>;
+  layoutAlternativeGoals: NonNullable<PreviewPanelProps["layoutAlternativeGoals"]>;
+  onLayoutAlternativeGoalsChange: NonNullable<PreviewPanelProps["onLayoutAlternativeGoalsChange"]>;
   selectedObjectIds: string[];
   focusDetectedId: string | null;
   onFocusDetectedIdChange: Dispatch<SetStateAction<string | null>>;
@@ -147,6 +158,17 @@ export function useDashboardCanvasAreaProps({
   buildingPlacements,
   cadEntityPreviewObjects,
   suggestedPlacements,
+  dependencyProposal,
+  onAcceptDependencyProposal,
+  onAdjustDependencyProposal,
+  onRejectDependencyProposal,
+  layoutAlternatives,
+  selectedLayoutAlternativeId,
+  onSelectLayoutAlternative,
+  onApplyLayoutAlternative,
+  onCancelLayoutAlternatives,
+  layoutAlternativeGoals,
+  onLayoutAlternativeGoalsChange,
   selectedObjectIds,
   focusDetectedId,
   onFocusDetectedIdChange,
@@ -261,6 +283,17 @@ export function useDashboardCanvasAreaProps({
       buildingPlacements,
       cadEntityPreviewObjects,
       suggestedPlacements,
+      dependencyProposal,
+      onAcceptDependencyProposal,
+      onAdjustDependencyProposal,
+      onRejectDependencyProposal,
+      layoutAlternatives,
+      selectedLayoutAlternativeId,
+      onSelectLayoutAlternative,
+      onApplyLayoutAlternative,
+      onCancelLayoutAlternatives,
+      layoutAlternativeGoals,
+      onLayoutAlternativeGoalsChange,
       selectedBuildingId: activePlacementId,
       selectedObjectIds,
       focusDetectedId,

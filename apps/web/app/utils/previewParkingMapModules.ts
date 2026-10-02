@@ -34,20 +34,21 @@ export function buildPreviewParkingMapModules(
   const loading = params.loading === "single" ? "single" : "double";
   const useMixedAngles = Boolean(params.useMixedAngles);
   const compactZone = params.compactZone !== false;
-  const angleRad = (Math.max(Math.min(angleDeg, 89), 0) * Math.PI) / 180;
-  const depthAdj = stallDepth / Math.cos(angleRad || 0.0001);
-  const moduleDepth = depthAdj * (loading === "double" ? 2 : 1) + aisleWidth;
+  const angleRad = (Math.max(Math.min(angleDeg, 90), 30) * Math.PI) / 180;
+  const rowDepth = stallDepth * Math.sin(angleRad) + stallWidth * Math.cos(angleRad);
+  const moduleDepth = rowDepth * (loading === "double" ? 2 : 1) + aisleWidth;
   const scale = item.d < moduleDepth ? item.d / moduleDepth : 1;
-  const scaledStall = depthAdj * scale;
+  const scaledStall = stallDepth * scale;
   const scaledAisle = aisleWidth * scale;
   const rows = loading === "double" ? 2 : 1;
   const desiredStalls = Math.max(item.stallCount ?? 0, adaCount + compactCount);
-  const shift = Math.tan(angleRad || 0.0001) * scaledStall;
+  const shift = Math.cos(angleRad) * scaledStall;
+  const stallPitch = stallWidth / Math.max(Math.sin(angleRad), 0.5);
   let moduleCount = 1;
   if (desiredStalls > 0) {
     for (let candidate = 1; candidate <= 6; candidate += 1) {
       const moduleWidth = item.w / candidate;
-      const stallsPerRow = Math.max(1, Math.floor((moduleWidth - Math.abs(shift)) / stallWidth));
+      const stallsPerRow = Math.max(1, Math.floor((moduleWidth - Math.abs(shift)) / stallPitch));
       const capacity = stallsPerRow * rows * candidate;
       if (capacity >= desiredStalls) {
         moduleCount = candidate;
@@ -105,9 +106,10 @@ export function buildPreviewParkingMapModules(
     .sort((a, b) => a.dist - b.dist)
     .map((entry) => entry.idx);
   const moduleCapacities = moduleAngles.map((angle) => {
-    const angleRadModule = (Math.max(Math.min(angle, 89), 0) * Math.PI) / 180;
-    const shiftModule = Math.tan(angleRadModule || 0.0001) * scaledStall;
-    const stallsPerRow = Math.max(1, Math.floor((moduleWidth - Math.abs(shiftModule)) / stallWidth));
+    const angleRadModule = (Math.max(Math.min(angle, 90), 30) * Math.PI) / 180;
+    const shiftModule = Math.cos(angleRadModule) * scaledStall;
+    const pitchModule = stallWidth / Math.max(Math.sin(angleRadModule), 0.5);
+    const stallsPerRow = Math.max(1, Math.floor((moduleWidth - Math.abs(shiftModule)) / pitchModule));
     return stallsPerRow * rows;
   });
   const buildModuleSet = (count: number, order: number[], fromEnd = false) => {
@@ -126,23 +128,25 @@ export function buildPreviewParkingMapModules(
     compactCount > 0 && compactZone ? buildModuleSet(compactCount, sortedModuleIdxByAccess, true) : new Set<number>();
   let remainingAda = adaCount;
   let remainingCompact = compactCount;
+  let remainingRequested = desiredStalls;
   for (let m = 0; m < totalModules; m += 1) {
     const row = Math.floor(m / cols);
     const col = m % cols;
     const moduleX = offsetX + col * (moduleWidth + moduleGapX);
     const moduleY = offsetY + row * (moduleDepthLocal + moduleGapY);
     const angleForModule = moduleAngles[m] ?? angleDeg;
-    const angleRadModule = (Math.max(Math.min(angleForModule, 89), 0) * Math.PI) / 180;
+    const angleRadModule = (Math.max(Math.min(angleForModule, 90), 30) * Math.PI) / 180;
     const depthVecTop = {
-      x: Math.sin(angleRadModule) * scaledStall,
-      y: Math.cos(angleRadModule) * scaledStall,
+      x: Math.cos(angleRadModule) * scaledStall,
+      y: Math.sin(angleRadModule) * scaledStall,
     };
     const depthVecBottom = {
-      x: -Math.sin(angleRadModule) * scaledStall,
-      y: Math.cos(angleRadModule) * scaledStall,
+      x: -Math.cos(angleRadModule) * scaledStall,
+      y: -Math.sin(angleRadModule) * scaledStall,
     };
     const shiftModule = depthVecTop.x;
-    const stallsPerRow = Math.max(1, Math.floor((moduleWidth - Math.abs(shiftModule)) / stallWidth));
+    const pitchModule = stallWidth / Math.max(Math.sin(angleRadModule), 0.5);
+    const stallsPerRow = Math.max(1, Math.floor((moduleWidth - Math.abs(shiftModule)) / pitchModule));
     const stallW = (moduleWidth - Math.abs(shiftModule)) / stallsPerRow;
     const aisleY =
       loading === "double"
@@ -187,80 +191,54 @@ export function buildPreviewParkingMapModules(
       const p3: [number, number] = [p0[0] + d * depthUnit.x, p0[1] + d * depthUnit.y];
       return [p0, p1, p2, p3, p0];
     };
-    for (let i = 0; i < stallsPerRow; i += 1) {
-      let useAda = false;
-      let useCompact = false;
-      let includeAdaAisle = false;
-      if (remainingAda > 0 && isAdaModule) {
-        useAda = true;
-        includeAdaAisle = true;
+    const takeKind = (): "standard" | "ada" | "compact" => {
+      if (remainingAda > 0 && (isAdaModule || !adaPreferredModules.size)) {
         remainingAda -= 1;
-      } else if (remainingCompact > 0 && isCompactModule) {
-        useCompact = true;
-        remainingCompact -= 1;
-      } else if (remainingAda > 0 && !adaPreferredModules.size) {
-        useAda = true;
-        includeAdaAisle = true;
-        remainingAda -= 1;
-      } else if (remainingCompact > 0 && !compactZone) {
-        useCompact = true;
-        remainingCompact -= 1;
+        return "ada";
       }
+      if (remainingCompact > 0 && (isCompactModule || !compactZone)) {
+        remainingCompact -= 1;
+        return "compact";
+      }
+      return "standard";
+    };
+    const addStall = (
+      baseX: number,
+      baseY: number,
+      depthUnit: { x: number; y: number },
+      depthVector: { x: number; y: number },
+    ) => {
+      if (remainingRequested <= 0) return;
+      const kind = takeKind();
+      const useAda = kind === "ada";
+      const adaAisleReserve = useAda ? Math.max(Math.min(adaAisleWidth, stallW * 0.36), stallW * 0.18) : 0;
+      const adaStallWidth = useAda ? Math.max(stallW - adaAisleReserve, stallW * 0.56) : stallW;
+      const stallWidthUsed = useAda ? adaStallWidth : kind === "compact" ? clampWidth(compactWidth) : clampWidth(stallW);
+      stallPolygons.push({ points: buildStallPoly(baseX, baseY, stallWidthUsed, depthUnit, scaledStall), kind });
+      stripeLines.push([
+        [baseX + stallWidthUsed, baseY],
+        [baseX + stallWidthUsed + depthVector.x, baseY + depthVector.y],
+      ]);
+      if (useAda) {
+        const accessibleAisleWidth = Math.max(Math.min(adaAisleWidth, stallW - stallWidthUsed), stallW * 0.12);
+        if (accessibleAisleWidth > 0.1) {
+          stallPolygons.push({
+            points: buildStallPoly(baseX + stallWidthUsed, baseY, accessibleAisleWidth, depthUnit, scaledStall),
+            kind: "ada_aisle",
+          });
+        }
+      }
+      remainingRequested -= 1;
+    };
+    for (let i = 0; i < stallsPerRow && remainingRequested > 0; i += 1) {
       const rowOffsetTop = depthVecTop.x > 0 ? 0 : Math.abs(depthVecTop.x);
       const rowOffsetBottom = depthVecBottom.x > 0 ? 0 : Math.abs(depthVecBottom.x);
       const baseXTop = moduleX + rowOffsetTop + i * stallW;
       const baseXBottom = moduleX + rowOffsetBottom + i * stallW;
       const baseYTop = moduleY;
       const baseYBottom = moduleY + moduleDepthLocal - scaledStall;
-      const adaAisleReserve = useAda ? Math.max(Math.min(adaAisleWidth, stallW * 0.36), stallW * 0.18) : 0;
-      const adaStallWidth = useAda ? Math.max(stallW - adaAisleReserve, stallW * 0.56) : stallW;
-      const stallWidthUsed = useAda ? adaStallWidth : useCompact ? clampWidth(compactWidth) : clampWidth(stallW);
-      const topPoly = buildStallPoly(baseXTop, baseYTop, stallWidthUsed, depthUnitTop, scaledStall);
-      stallPolygons.push({
-        points: topPoly,
-        kind: useAda ? "ada" : useCompact ? "compact" : "standard",
-      });
-      stripeLines.push([
-        [baseXTop + stallWidthUsed, baseYTop],
-        [baseXTop + stallWidthUsed + depthVecTop.x, baseYTop + depthVecTop.y],
-      ]);
-      if (useAda && includeAdaAisle) {
-        const accessibleAisleWidth = Math.max(Math.min(adaAisleWidth, stallW - stallWidthUsed), stallW * 0.12);
-        if (accessibleAisleWidth > 0.1) {
-          const aislePoly = buildStallPoly(
-            baseXTop + stallWidthUsed,
-            baseYTop,
-            accessibleAisleWidth,
-            depthUnitTop,
-            scaledStall,
-          );
-          stallPolygons.push({ points: aislePoly, kind: "ada_aisle" });
-        }
-      }
-      if (loading === "double") {
-        const bottomPoly = buildStallPoly(baseXBottom, baseYBottom, stallWidthUsed, depthUnitBottom, scaledStall);
-        stallPolygons.push({
-          points: bottomPoly,
-          kind: useAda ? "ada" : useCompact ? "compact" : "standard",
-        });
-        stripeLines.push([
-          [baseXBottom + stallWidthUsed, baseYBottom],
-          [baseXBottom + stallWidthUsed + depthVecBottom.x, baseYBottom + depthVecBottom.y],
-        ]);
-        if (useAda && includeAdaAisle) {
-          const accessibleAisleWidth = Math.max(Math.min(adaAisleWidth, stallW - stallWidthUsed), stallW * 0.12);
-          if (accessibleAisleWidth > 0.1) {
-            const bottomAisle = buildStallPoly(
-              baseXBottom + stallWidthUsed,
-              baseYBottom,
-              accessibleAisleWidth,
-              depthUnitBottom,
-              scaledStall,
-            );
-            stallPolygons.push({ points: bottomAisle, kind: "ada_aisle" });
-          }
-        }
-      }
+      addStall(baseXTop, baseYTop, depthUnitTop, depthVecTop);
+      if (loading === "double") addStall(baseXBottom, baseYBottom, depthUnitBottom, depthVecBottom);
     }
     const moduleId = `${item.id}-module-${m}`;
     modules.push({

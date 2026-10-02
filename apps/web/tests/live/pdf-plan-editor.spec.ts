@@ -204,7 +204,9 @@ test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", a
     await expect(workflow.getByText(label, { exact: true }).first()).toBeVisible();
   }
   await expect(workflow).toContainText("FFE:");
-  await expect(workflow).toContainText("1\" = 20'");
+  // PDF encodings may preserve the source's typographic foot mark.
+  // Require the same numeric scale, not one specific apostrophe glyph.
+  await expect(workflow).toContainText(/1["″]\s*=\s*20['’′]/);
   await expect(workflow).toContainText("MATCHLINE");
   await expect(workflow).toContainText("raster preview blocked");
   await expect(workflow).toContainText("vector geometry extraction blocked");

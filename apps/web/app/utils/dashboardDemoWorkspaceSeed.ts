@@ -18,19 +18,19 @@ export function buildDashboardDemoWorkspaceSeed({
     ? []
     : debugEmptyLayout
       ? createDemoPlacements().filter((item) => item.type === "site")
-      : createDemoPlacements();
+      : createDemoPlacements().filter((item) => item.type !== "utility_corridor");
   const demoResult = createDemoPlanResponse();
   const demoProjectInput: ProjectInput = {
-    prompt_text: "Demo UI QA workspace for a 9-acre mixed-use civil site.",
+    prompt_text: "Demo workspace for a polished 16-acre commercial feasibility concept.",
     input_mode: "user",
     strict_mode: false,
     allow_ai_fill_for_blanks: false,
     manual_fields: {
-      project_name: "Pinecrest Mixed-Use",
-      file_name: "pinecrest-demo-ui",
+      project_name: "Pinecrest Commerce Center",
+      file_name: "pinecrest-commerce-demo",
       units: "ft",
-      project_type: "mixed_use",
-      lot: { x: 0, y: 0, w: 760, h: 520 },
+      project_type: "commercial",
+      lot: { x: 0, y: 0, w: 1000, h: 700 },
       disciplines: ["roads", "grading", "drainage", "utilities"],
       buildings: demoPlacements
         .filter((item) => item.type !== "site")
@@ -53,7 +53,7 @@ export function buildDashboardDemoWorkspaceSeed({
       auto_named: false,
       auto_file_named: false,
       site_inputs: {
-        address: "Pinecrest Mixed-Use Demo Site",
+        address: "Pinecrest Commerce Center — Concept Site",
         // Fictional local-coordinate geometry has no real-world map anchor.
         geocode: undefined,
         site_rotation_deg: 0,
@@ -90,8 +90,8 @@ export function buildDashboardDemoWorkspaceSeed({
   };
   const demoProject: ProjectRecord = {
     project_id: DEMO_PROJECT_ID,
-    name: "Pinecrest Mixed-Use",
-    description: "Seeded demo workspace for UI QA.",
+    name: "Pinecrest Commerce Center",
+    description: "Seeded commercial feasibility workspace for product demonstrations.",
     updated_at: Date.now() / 1000,
     project_input: demoProjectInput,
     latest_result: demoResult,

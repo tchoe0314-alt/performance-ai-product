@@ -361,8 +361,8 @@ export function createDashboardPlanSheetActions(config: DashboardPlanSheetAction
     const blockers = getPlanSheetBlockers();
     const missing = customerFacingReviewNotes(uniqueStrings([
       ...blockers,
-      !backendResult ? "generated system result is missing" : "",
-      !planPreviewUrl ? "model preview is missing" : "",
+      !backendResult ? "calculated quantity/result data is not available for this review package" : "",
+      !planPreviewUrl ? "saved model preview is not available for this review package" : "",
       ...autoSiteContextFlowSummary.missingLabels.map((item) => `Auto Site Context source missing: ${item}`),
     ]));
     const outputsCreated = uniqueStrings([

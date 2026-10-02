@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, CheckCircle2, LifeBuoy, LogIn } from "lucide-react";
+import { ArrowLeft, CheckCircle2, LogIn } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { SupportRequestForm, type SupportRequestRecord } from "../components/SupportRequestForm";
+import CivoraLogo from "../components/CivoraLogo";
 import { apiErrorMessage, classifyApiError, getJson } from "../../lib/api";
 import { clearStoredToken, getStoredToken } from "../utils/auth";
 
@@ -88,9 +89,7 @@ export function SupportPageClient() {
         </Link>
 
         <header className="mt-8 border-b border-slate-200 pb-7">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white">
-            <LifeBuoy className="h-5 w-5 text-slate-700" />
-          </div>
+          <CivoraLogo markClassName="h-11 w-11" wordmarkClassName="text-xl font-semibold text-slate-950" />
           <h1 className="mt-4 text-3xl font-semibold">{reportTitle}</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
             Tell us what happened, where it happened, and what you expected. Civora stores the report with a reference ID and removes authentication secrets from diagnostic context.

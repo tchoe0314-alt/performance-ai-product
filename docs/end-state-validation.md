@@ -8,6 +8,8 @@ python3 backend/scripts/run_end_state_capability_validation.py
 
 The command checks source and terrain truth, semantic project lifecycle, civil calculation reference projects, reactive changes, deliverable interoperability, heavy-use reliability, frontend build quality, and human-style browser workflows. It writes a structured report to `reports/validation/end_state_capability_validation.json` by default.
 
+The browser gate also includes Phase 0 regressions for canonical commands, candidate rejection/reranking, whole-transaction dependency approval and undo, native project objects, truthful review sheets, mobile clearance and website recovery. These checks include mocked browser responses; they do not replace real authenticated persistence or exact deployed-build verification. The release regression shell script remains a smoke subset, not a complete Phase 0 sign-off.
+
 The report also runs separate in-process reference equations for Rational Method flow, Manning full-pipe capacity, Hazen-Williams pressure loss, and canonical semantic area. `internal_software_assurance_complete` becomes true only when all eight required internal gates and all four cross-checks pass.
 
 Useful options:

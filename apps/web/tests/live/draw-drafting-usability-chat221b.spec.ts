@@ -510,9 +510,10 @@ test.describe("Chat 221B draw drafting usability", () => {
     await firstVertex.getByTestId("selected-object-vertex-delete").click();
     await expect(page.getByTestId("selected-object-status")).toContainText(/Delete vertex (blocked|needs input): polygon geometry needs at least 3 points./);
 
+    const beforeSnap = [await firstVertex.getByTestId("selected-object-vertex-x").inputValue(), await firstVertex.getByTestId("selected-object-vertex-y").inputValue()];
     await firstVertex.getByTestId("selected-object-vertex-snap").click();
     await expect(page.getByTestId("selected-object-status")).toContainText(/Snapped Custom Area .*vertex 1 to .*/);
-    await expect(firstVertex.getByTestId("selected-object-vertex-x")).not.toHaveValue("125");
+    await expect.poll(async () => [await firstVertex.getByTestId("selected-object-vertex-x").inputValue(), await firstVertex.getByTestId("selected-object-vertex-y").inputValue()]).not.toEqual(beforeSnap);
   });
 
   test("visible HATCH applies and removes draft fill on closed areas", async ({ page }) => {

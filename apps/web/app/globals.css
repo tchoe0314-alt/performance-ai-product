@@ -166,7 +166,7 @@ body,
   position: absolute;
   left: 0.75rem;
   right: auto;
-  bottom: 4.75rem;
+  bottom: 10.75rem;
   width: min(30rem, calc(100% - 1.5rem));
   max-height: min(42svh, 28rem);
   margin-bottom: 0;
@@ -235,7 +235,7 @@ body,
   .civora-cad-dock {
     left: 0.5rem;
     right: 0.5rem;
-    bottom: 4.75rem;
+    bottom: 12.5rem;
     width: auto;
     max-height: min(34svh, 230px);
     grid-template-columns: 1fr !important;
@@ -516,8 +516,8 @@ body,
 }
 
 .civora-workspace-drawer[data-command-bar-visible="true"] {
-  bottom: calc(env(safe-area-inset-bottom) + 5.25rem);
-  max-height: calc(100svh - 9.75rem);
+  bottom: calc(env(safe-area-inset-bottom) + 1.75rem + var(--civora-command-dock-height, 10rem));
+  max-height: calc(100svh - 6.25rem - var(--civora-command-dock-height, 10rem));
 }
 
 .civora-workspace-drawer[data-command-bar-visible="false"][data-mobile-navigation-visible="true"] {
@@ -530,6 +530,27 @@ body,
   --civora-command-right-inset: 0px;
 }
 
+.civora-command-context-chip {
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.2rem 0.5rem;
+  color: #64748b;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.civora-command-context-chip-active {
+  border-color: rgba(37, 99, 235, 0.2);
+  background: rgba(239, 246, 255, 0.95);
+  color: #1d4ed8;
+}
+
 @media (max-width: 1023px) {
   .civora-command-dock {
     bottom: calc(env(safe-area-inset-bottom) + 6.25rem) !important;
@@ -537,8 +558,8 @@ body,
   }
 
   .civora-workspace-drawer[data-command-bar-visible="true"][data-mobile-navigation-visible="true"] {
-    bottom: calc(env(safe-area-inset-bottom) + 11.5rem);
-    max-height: calc(100svh - 15.5rem);
+    bottom: calc(env(safe-area-inset-bottom) + 7rem + var(--civora-command-dock-height, 10rem));
+    max-height: calc(100svh - 11.5rem - var(--civora-command-dock-height, 10rem));
   }
 
   .civora-preview-mobile-draw-toolbar {

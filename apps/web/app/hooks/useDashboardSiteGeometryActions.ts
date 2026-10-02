@@ -4,6 +4,7 @@ import type { BuildingPlacement, ProjectRecord } from "../types";
 import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 import { parsePositiveNumber } from "../utils/formatting";
 import type { ParkingParams } from "../utils/previewGeometryTruth";
+import { calculateParkingLayout } from "../utils/parkingLayoutEngine";
 
 type UseDashboardSiteGeometryActionsInput = {
   buildingDepth: string;
@@ -178,45 +179,13 @@ export function useDashboardSiteGeometryActions({
   );
 
   const computeParkingFootprint = useCallback(
-    (target: BuildingPlacement, params: DashboardParkingFootprintParams, stallCount: number) => {
-      const rows = params.loading === "double" ? 2 : 1;
-      const angleRad = (Math.max(Math.min(params.angleDeg, 89), 0) * Math.PI) / 180;
-      const depthAdj = params.stallDepth / Math.cos(angleRad || 0.0001);
-      const shift = Math.tan(angleRad || 0.0001) * depthAdj;
-      const moduleDepth = depthAdj * rows + params.aisleWidth;
-      const perModuleWidth = (stallsPerRow: number) =>
-        stallsPerRow * params.stallWidth + Math.abs(shift);
-      const totalStalls = Math.max(stallCount, params.adaCount + params.compactCount);
-      const stallsPerRow = Math.max(1, Math.ceil(totalStalls / rows));
-      const moduleWidth = perModuleWidth(stallsPerRow);
-      const modulesNeeded = Math.max(1, Math.ceil(totalStalls / (stallsPerRow * rows)));
-      let cols = Math.max(1, Math.ceil(Math.sqrt(modulesNeeded)));
-      let rowsOfModules = Math.max(1, Math.ceil(modulesNeeded / cols));
-      if (totalStalls === 0) {
-        cols = 1;
-        rowsOfModules = 1;
-      }
-      if (target.w > 0) {
-        const maxCols = Math.max(1, Math.floor(target.w / moduleWidth));
-        cols = Math.max(1, Math.min(cols, maxCols || 1));
-      }
-      if (target.d > 0) {
-        const maxRows = Math.max(1, Math.floor(target.d / moduleDepth));
-        rowsOfModules = Math.max(1, Math.min(rowsOfModules, maxRows || 1));
-      }
-      const totalCapacity = stallsPerRow * rows * cols * rowsOfModules;
-      const totalWidth = moduleWidth * cols;
-      const totalDepth = moduleDepth * rowsOfModules;
-      return {
-        w: totalWidth,
-        d: totalDepth,
-        maxStalls: totalCapacity,
-        moduleCount: cols * rowsOfModules,
-        stallsPerRow,
-        moduleCols: cols,
-        moduleRows: rowsOfModules,
-      };
-    },
+    (target: BuildingPlacement, params: DashboardParkingFootprintParams, stallCount: number) =>
+      calculateParkingLayout(target, {
+        ...params,
+        autoResizeToFitCount: false,
+        useMixedAngles: false,
+        compactZone: false,
+      }, stallCount),
     [],
   );
 

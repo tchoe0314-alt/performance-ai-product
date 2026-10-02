@@ -4,6 +4,16 @@ set -u
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/apps/web"
 RELEASE_DIST_DIR="${NEXT_RELEASE_DIST_DIR:-.next-release-regression-$$}"
+# Cleanup must only ever target a newly owned, narrowly named build directory.
+# Validate before any trap/build command can touch a caller-supplied path.
+if [[ ! "$RELEASE_DIST_DIR" =~ ^\.next-release-regression-[A-Za-z0-9_-]+$ ]]; then
+  printf 'Invalid release output directory; use .next-release-regression- followed by a safe unique name.\n' >&2
+  exit 2
+fi
+if [[ -e "$WEB_DIR/$RELEASE_DIST_DIR" || -L "$WEB_DIR/$RELEASE_DIST_DIR" ]]; then
+  printf 'Release output directory already exists; refusing to overwrite or clean up existing work.\n' >&2
+  exit 2
+fi
 PLAYWRIGHT_CASES=(
   "tests/live/ui-functionality-chat32.spec.ts"
   "tests/live/civil-3d-viewer.spec.ts"

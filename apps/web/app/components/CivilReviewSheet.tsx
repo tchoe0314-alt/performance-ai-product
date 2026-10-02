@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import type { BuildingPlacement } from "../types";
 
-type CivilReviewSheetProps = {
+export type CivilReviewSheetProps = {
   projectName: string;
   addressLabel: string;
   lotWidth: number;
@@ -296,7 +296,8 @@ function DenseCivilPlanContent() {
   );
 }
 
-export default function CivilReviewSheet({
+// Preserved illustration prototype; never the active project sheet.
+export function IllustrativeCivilReviewSheetPrototype({
   projectName,
   addressLabel,
   lotWidth,
@@ -559,3 +560,5 @@ export default function CivilReviewSheet({
     </section>
   );
 }
+
+export { default } from "./CanonicalCivilReviewSheet";

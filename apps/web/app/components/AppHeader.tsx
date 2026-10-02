@@ -6,6 +6,7 @@ import {
   Redo2,
   Undo2,
 } from "lucide-react";
+import CivoraLogo from "./CivoraLogo";
 
 type AppHeaderProps = {
   userEmail: string;
@@ -44,12 +45,12 @@ export default function AppHeader({
     <header className="civora-app-header sticky top-0 z-[1000] w-full border-b border-slate-200/80 bg-white/97 backdrop-blur-xl">
       <div className="flex h-[52px] w-full items-center justify-between gap-3 px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex shrink-0 items-center gap-2.5" aria-label="Civora">
-            <div className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-blue-600 text-sm font-bold text-white">
-              C
-            </div>
-            <span className="hidden text-[17px] font-semibold text-slate-950 sm:inline">Civora</span>
-          </div>
+          <CivoraLogo
+            priority
+            className="shrink-0"
+            markClassName="h-8 w-8"
+            wordmarkClassName="hidden text-[17px] font-semibold tracking-[-0.02em] text-slate-950 sm:inline"
+          />
           <span className="hidden h-6 w-px bg-slate-200 sm:block" aria-hidden="true" />
           <button
             type="button"

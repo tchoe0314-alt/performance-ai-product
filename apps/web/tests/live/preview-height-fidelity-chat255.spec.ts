@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { setPreviewQuality } from "./testUiHelpers";
+import { createDemoPlacements } from "../../app/utils/demoWorkspaceData";
+const building = createDemoPlacements().find(item => item.id === "demo-building-a")!;
 
 async function openDemoWorkspace(page: Page) {
   await page.route("**/api/**", async (route) => {
@@ -37,12 +39,12 @@ test.describe("Preview height and geometry fidelity", () => {
     const initialObjectCount = await page.getByTestId("object-manager-row").count();
     const buildingRow = page
       .getByTestId("object-manager-row")
-      .filter({ hasText: "Multifamily Building A" })
+      .and(page.locator('[data-object-id="demo-building-a"]'))
       .first();
     await buildingRow.getByTestId("object-manager-select").click();
 
     const height = page.getByTestId("selected-object-height-input");
-    await expect(height).toHaveValue("36");
+    await expect(height).toHaveValue(String(building.h));
     await height.fill("");
     await expect(height).toHaveValue("");
     await height.type("72");
@@ -56,13 +58,13 @@ test.describe("Preview height and geometry fidelity", () => {
     const viewer = page.getByTestId("civil-3d-viewer");
     await expect(viewer).toBeVisible({ timeout: 20_000 });
     const objectStrip = page.getByTestId("civil-3d-object-strip");
-    await expect(objectStrip).toContainText("BUILDING | 72 ft");
-    await objectStrip.getByRole("button", { name: /Multifamily Building A/i }).click();
+    await expect(objectStrip.getByRole("button", { name: new RegExp(building.label) })).toContainText("72 ft");
+    await objectStrip.getByRole("button", { name: new RegExp(building.label) }).click();
     await expect(page.getByTestId("civil-3d-selected-height")).toContainText("72 ft");
 
-    await runCommand(page, "make Multifamily Building A 84 feet tall");
+    await runCommand(page, `make ${building.label} 84 feet tall`);
     await expect(viewer).toBeVisible({ timeout: 20_000 });
-    await expect(objectStrip).toContainText("BUILDING | 84 ft");
+    await expect(objectStrip.getByRole("button", { name: new RegExp(building.label) })).toContainText("84 ft");
 
     const pixelSignal = await page
       .getByTestId("civil-3d-canvas-mount")
@@ -93,7 +95,7 @@ test.describe("Preview height and geometry fidelity", () => {
     const mapCanvas = page.locator(".mapboxgl-canvas").filter({ visible: true });
     if ((await mapCanvas.count()) > 0) {
       await expect(mapCanvas.first()).toBeVisible();
-      await expect(page.locator('[data-object-overlay][aria-label*="Multifamily Building A"]').first()).toBeVisible();
+      await expect(page.locator(`[data-object-overlay][aria-label*="${building.label}"]`).first()).toBeVisible();
     } else {
       await expect(page.getByTestId("professional-building-footprint").first()).toHaveJSProperty("tagName", "polygon");
     }

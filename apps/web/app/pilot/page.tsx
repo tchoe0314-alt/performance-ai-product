@@ -1,4 +1,5 @@
 import Link from "next/link";
+import CivoraLogo from "../components/CivoraLogo";
 
 const sections = [
   {
@@ -41,9 +42,10 @@ export default function PilotPage() {
       <div className="mx-auto max-w-4xl">
         <Link
           href="/"
-          className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 hover:text-slate-900"
+          className="inline-flex text-slate-500 hover:text-slate-900"
         >
-          Back to Civora
+          <CivoraLogo markClassName="h-9 w-9" wordmarkClassName="text-base font-semibold text-slate-800" />
+          <span className="sr-only">Back to Civora</span>
         </Link>
         <header className="mt-8 border-b border-slate-200 pb-8">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">

@@ -269,7 +269,9 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
   }
   expect(savedProjectInput).toContain("\"w\":1000");
   expect(savedProjectInput).toContain("\"h\":1000");
-  expect(savedProjectInput).toContain("\"site_alignment_locked\":true");
+  // The canvas becomes ready before the asynchronous address/save pipeline
+  // completes. Verify the persisted lock, not an intermediate save payload.
+  await expect.poll(() => savedProjectInput, { timeout: 30_000 }).toContain("\"site_alignment_locked\":true");
   expect(savedProjectInput).toContain("20525 Margo St");
 
   const settledSaveCount = projectSaveCount;
@@ -277,6 +279,7 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
   // A hosted map may settle its live scale once after the explicit site save,
   // alongside the coalesced control autosave. Both must remain bounded.
   expect(projectSaveCount - settledSaveCount).toBeLessThanOrEqual(2);
+  expect(savedProjectInput).toContain("\"site_alignment_locked\":true");
 });
 
 test("chat can create the same centered site from natural language", async ({ page }) => {

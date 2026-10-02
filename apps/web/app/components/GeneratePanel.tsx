@@ -143,17 +143,17 @@ export function GeneratePanel({
             <span className="min-w-0">
               <span className="block font-semibold text-slate-900">{row.label}</span>
               <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">
-                {row.status === "fresh" ? "Current in this workspace" : row.blockers[0] || "Ready to run"}
+                {row.blockers[0] || (row.status === "fresh" ? "Current in this workspace" : "Ready to run")}
               </span>
             </span>
             <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-              row.status === "fresh"
-                ? "bg-emerald-50 text-emerald-700"
-                : row.blockers.length
+              row.blockers.length
                   ? "bg-amber-50 text-amber-700"
+                : row.status === "fresh"
+                  ? "bg-emerald-50 text-emerald-700"
                   : "bg-slate-100 text-slate-500"
             }`}>
-              {row.status === "fresh" ? "Current" : row.blockers.length ? "Needs input" : "Ready"}
+              {row.blockers.length ? "Needs input" : row.status === "fresh" ? "Current" : "Ready"}
             </span>
           </button>
         ))}

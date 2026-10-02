@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createDemoPlacements } from "../../app/utils/demoWorkspaceData";
 
 async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1&aiRealismProvider=mock", {
@@ -44,11 +45,10 @@ test.describe("Civil review sheet deliverable", () => {
     await expect(page.getByTestId("civil-review-sheet-title-block")).toBeVisible();
     await expect(page.getByTestId("civil-review-sheet-legend")).toBeVisible();
     await expect(page.getByTestId("civil-review-sheet-plan")).toBeVisible();
-    await expect(page.getByTestId("civil-review-sheet-dense-plan")).toBeVisible();
-    await expect(page.getByTestId("civil-review-sheet-dense-building")).toHaveCount(9);
-    await expect(page.getByTestId("civil-review-sheet-dense-parking")).toHaveCount(12);
-    await expect(page.getByTestId("civil-review-sheet-dense-utilities")).toBeVisible();
-    await expect(page.getByTestId("civil-review-sheet-dense-callouts")).toBeVisible();
+    const expected = createDemoPlacements().filter(item => item.type !== "site" && item.type !== "utility_corridor" && item.placed !== false && !item.meta?.ui_hidden);
+    const actual = await page.getByTestId("civil-review-sheet-plan-object").evaluateAll(elements => elements.map(element => element.getAttribute("data-object-id")).sort());
+    expect(actual).toEqual(expected.map(item => item.id).sort());
+    await expect(page.getByTestId("civil-review-sheet-dense-plan")).toHaveCount(0);
     await expect(page.getByTestId("civil-review-sheet-profile")).toBeVisible();
     await expect(page.getByTestId("civil-review-sheet-source-summary")).toContainText(/Source candidates/i);
     await page.getByTestId("civil-review-sheet-expand").click();

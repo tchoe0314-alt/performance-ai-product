@@ -155,6 +155,7 @@ export function useDashboardReviewUtilityPanelProps({
     selectedInspector: (
       <SelectedObjectInspectorPanel
         selectedBuilding={selectedBuilding}
+        availableObjects={buildingPlacements}
         confidenceEntry={selectedBuilding ? sourceConfidenceByObjectId.get(selectedBuilding.id) : null}
         objectManagerStatusMessage={objectManagerStatusMessage}
         objectClipboardCount={objectClipboardCount}

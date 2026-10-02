@@ -28,7 +28,7 @@ type UseDashboardActionIntentHandlerInput = {
   handleOpenSidePanel: (panel: SidePanelKey) => void;
   handleRemoveBuilding: (id: string) => void;
   handleSelectPlacementTarget: (id: string) => void;
-  handleUpdateBuilding: (id: string, updates: Partial<BuildingPlacement>) => void;
+  handleUpdateBuilding: (id: string, updates: Partial<BuildingPlacement>) => void | "applied" | "proposed" | "blocked";
   setActivePlacementId: (id: string | null) => void;
   setStatusMessage: (message: string) => void;
   workflowActionHints: string[];
@@ -147,6 +147,7 @@ export function useDashboardActionIntentHandler({
           ...(target.meta ?? {}),
           category: SITE_OBJECT_CATALOG[requestedType].category,
           classification_status: "draft_review_required",
+          canonical_edit_source: "chat",
         },
       });
       appendChatMessage(
@@ -154,6 +155,49 @@ export function useDashboardActionIntentHandler({
         `Reclassified ${target.label} as ${SITE_OBJECT_CATALOG[requestedType].label}. This is draft geometry and still requires engineer review.`,
         "status",
       );
+      return true;
+    }
+
+    const moveByDistanceMatch = normalized.match(
+      /\bmove\b.*?\b(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(north|south|east|west|up|down|left|right)\b/,
+    );
+    if (moveByDistanceMatch) {
+      const target = resolveTarget();
+      if (!target) {
+        appendChatMessage("assistant", "Select an object first, then tell me how far and which direction to move it.", "status");
+        return true;
+      }
+      const distance = Number(moveByDistanceMatch[1]);
+      const direction = moveByDistanceMatch[2];
+      const dx = direction === "east" || direction === "right" ? distance : direction === "west" || direction === "left" ? -distance : 0;
+      const dy = direction === "south" || direction === "down" ? distance : direction === "north" || direction === "up" ? -distance : 0;
+      const outcome = handleUpdateBuilding(target.id, {
+        x: (target.x ?? 0) + dx,
+        y: (target.y ?? 0) + dy,
+        placed: true,
+        meta: { ...(target.meta ?? {}), canonical_edit_source: "chat" },
+      });
+      appendChatMessage("assistant", outcome === "proposed" ? `Move proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The move to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Moved ${target.label} ${distance} ft ${direction}. The canonical edit uses the same command path as a CAD move.`, "status");
+      return true;
+    }
+
+    const exactResizeMatch = normalized.match(
+      /\b(?:set|make|resize|change)\b.*?\b(?:to\s+)?(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?/,
+    );
+    if (exactResizeMatch) {
+      const target = resolveTarget();
+      if (!target) {
+        appendChatMessage("assistant", "Select an object first, then give me its width and depth.", "status");
+        return true;
+      }
+      const width = Number(exactResizeMatch[1]);
+      const depth = Number(exactResizeMatch[2]);
+      const outcome = handleUpdateBuilding(target.id, {
+        w: width,
+        d: depth,
+        meta: { ...(target.meta ?? {}), canonical_edit_source: "chat" },
+      });
+      appendChatMessage("assistant", outcome === "proposed" ? `Resize proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The resize to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Resized ${target.label} to ${width} ft by ${depth} ft through the canonical edit system.`, "status");
       return true;
     }
 

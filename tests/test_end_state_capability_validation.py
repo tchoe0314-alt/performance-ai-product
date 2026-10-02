@@ -39,6 +39,22 @@ def test_manifest_covers_every_end_state_proof_layer() -> None:
     }
 
 
+def test_browser_gate_includes_phase0_integrity_regressions_and_existing_files() -> None:
+    gate = next(item for item in build_end_state_validation_gates() if item["gate_id"] == "human_style_browser_workflow")
+    paths = {arg for command in gate["commands"] for arg in command if arg.endswith(".spec.ts")}
+    assert {
+        "tests/live/canonical-edit-command-foundation.spec.ts",
+        "tests/live/phase0-candidate-contract.spec.ts",
+        "tests/live/dense-commercial-concept-chat240.spec.ts",
+        "tests/live/project-object-integration.spec.ts",
+        "tests/live/phase0-review-sheet-truth.spec.ts",
+        "tests/live/canvas-first-workspace-redesign.spec.ts",
+        "tests/live/video-website-regression.spec.ts",
+    } <= paths
+    root = Path(__file__).resolve().parents[1]
+    assert all((root / gate["cwd"] / path).is_file() for path in paths)
+
+
 def test_runner_stops_each_failed_gate_and_keeps_external_truth_separate(tmp_path: Path) -> None:
     seen = []
 

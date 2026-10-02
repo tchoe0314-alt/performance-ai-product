@@ -10,6 +10,8 @@ import { Preview2DOverlayStack } from "./Preview2DOverlayStack";
 import { PreviewCanvasHud } from "./PreviewCanvasHud";
 import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
 import { PreviewPlanAnnotationOverlay } from "./PreviewPlanAnnotationOverlay";
+import { PreviewDependencyProposalCard } from "./PreviewDependencyProposal";
+import { LayoutAlternativesCard } from "./LayoutAlternativesCard";
 
 type CadWindowSelect = {
   startX: number;
@@ -46,6 +48,8 @@ type Preview2DSurfaceProps = {
   canvasHudProps: ComponentProps<typeof PreviewCanvasHud>;
   overlayStackProps: ComponentProps<typeof Preview2DOverlayStack>;
   planAnnotationOverlayProps?: ComponentProps<typeof PreviewPlanAnnotationOverlay>;
+  dependencyProposalCardProps?: ComponentProps<typeof PreviewDependencyProposalCard>;
+  layoutAlternativesCardProps?: ComponentProps<typeof LayoutAlternativesCard>;
 };
 
 export function Preview2DSurface({
@@ -68,6 +72,8 @@ export function Preview2DSurface({
   canvasHudProps,
   overlayStackProps,
   planAnnotationOverlayProps,
+  dependencyProposalCardProps,
+  layoutAlternativesCardProps,
 }: Preview2DSurfaceProps) {
   return (
     <div
@@ -121,6 +127,8 @@ export function Preview2DSurface({
         />
       ) : null}
       {planAnnotationOverlayProps ? <PreviewPlanAnnotationOverlay {...planAnnotationOverlayProps} /> : null}
+      {dependencyProposalCardProps ? <PreviewDependencyProposalCard {...dependencyProposalCardProps} /> : null}
+      {layoutAlternativesCardProps ? <LayoutAlternativesCard {...layoutAlternativesCardProps} /> : null}
     </div>
   );
 }

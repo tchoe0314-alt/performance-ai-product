@@ -41,10 +41,10 @@ export function isSeededDemoWorkspaceQuery() {
 export const createDemoPlacements = (): BuildingPlacement[] => [
   {
     id: "demo-site",
-    label: "Pinecrest Site",
+    label: "Pinecrest Commerce Center",
     type: "site",
-    w: 760,
-    d: 520,
+    w: 1000,
+    d: 700,
     x: 0,
     y: 0,
     rotation: 0,
@@ -57,214 +57,345 @@ export const createDemoPlacements = (): BuildingPlacement[] => [
   },
   {
     id: "demo-building-a",
-    label: "Multifamily Building A",
-    type: "multifamily_building",
-    w: 110,
-    d: 58,
-    h: 36,
-    x: 120,
-    y: 95,
+    label: "Office Headquarters",
+    type: "office_building",
+    w: 300,
+    d: 108,
+    h: 42,
+    x: 350,
+    y: 105,
     rotation: 0,
     placed: true,
     source: "user_confirmed",
     geometryType: "polygon",
     geometry: [
-      [120, 95],
-      [230, 95],
-      [230, 153],
-      [196, 153],
-      [196, 138],
-      [154, 138],
-      [154, 153],
-      [120, 153],
-      [120, 95],
+      [350, 105],
+      [650, 105],
+      [650, 213],
+      [555, 213],
+      [555, 190],
+      [445, 190],
+      [445, 213],
+      [350, 213],
+      [350, 105],
     ],
+    meta: {
+      requested_area_sf: 29200,
+      roof_profile: "flat",
+      entrance_side: "south",
+      canonical_relationships: {
+        parking: {
+          policy: "ask",
+          object_ids: ["demo-parking-north", "demo-parking-retail"],
+        },
+      },
+    },
   },
   {
     id: "demo-building-b",
-    label: "Multifamily Building B",
-    type: "multifamily_building",
-    w: 110,
-    d: 58,
-    h: 36,
-    x: 330,
-    y: 82,
+    label: "Future Flex Building",
+    type: "building",
+    w: 145,
+    d: 76,
+    h: 28,
+    x: 735,
+    y: 128,
     rotation: 0,
     placed: true,
     source: "user_confirmed",
     geometryType: "polygon",
     geometry: [
-      [330, 82],
-      [440, 82],
-      [440, 140],
-      [406, 140],
-      [406, 126],
-      [365, 126],
-      [365, 140],
-      [330, 140],
-      [330, 82],
+      [735, 128],
+      [880, 128],
+      [880, 204],
+      [830, 204],
+      [830, 188],
+      [785, 188],
+      [785, 204],
+      [735, 204],
+      [735, 128],
     ],
+    meta: { requested_area_sf: 9800, roof_profile: "flat", future_phase: true },
   },
   {
     id: "demo-retail",
-    label: "Retail Building",
+    label: "Amenity Pavilion",
     type: "retail_building",
-    w: 70,
-    d: 45,
-    h: 24,
-    x: 96,
-    y: 350,
+    w: 115,
+    d: 64,
+    h: 22,
+    x: 120,
+    y: 130,
     rotation: 0,
     placed: true,
     source: "user_confirmed",
     geometryType: "polygon",
     geometry: [
-      [96, 350],
-      [154, 350],
-      [166, 362],
-      [166, 395],
-      [126, 395],
-      [126, 382],
-      [96, 382],
-      [96, 350],
+      [120, 130],
+      [220, 130],
+      [235, 145],
+      [235, 194],
+      [120, 194],
+      [120, 130],
     ],
   },
   {
     id: "demo-loop-road",
-    label: "Internal Loop Road",
+    label: "Internal Loop Road R-03",
     type: "road",
-    w: 590,
-    d: 28,
-    x: 70,
-    y: 275,
+    w: 760,
+    d: 300,
+    x: 120,
+    y: 245,
     rotation: 0,
     placed: true,
     source: "user_confirmed",
     geometryType: "polyline",
     geometry: [
-      [82, 294],
-      [210, 320],
-      [500, 320],
-      [668, 330],
-      [704, 498],
-      [126, 498],
-      [82, 294],
+      [150, 270],
+      [850, 270],
+      [875, 315],
+      [875, 500],
+      [835, 540],
+      [165, 540],
+      [125, 500],
+      [125, 315],
+      [150, 270],
     ],
+    meta: { corridor_width_ft: 28, road_class: "private commercial drive" },
+  },
+  {
+    id: "demo-entry-drive",
+    label: "Main Entry Drive",
+    type: "driveway",
+    w: 30,
+    d: 135,
+    x: 485,
+    y: 535,
+    rotation: 0,
+    placed: true,
+    source: "user_confirmed",
+    geometryType: "polyline",
+    geometry: [[500, 660], [500, 585], [500, 540]],
+    meta: { corridor_width_ft: 30, access_kind: "primary" },
+  },
+  {
+    id: "demo-frontage-road",
+    label: "Pinecrest Parkway",
+    type: "road",
+    w: 900,
+    d: 42,
+    x: 50,
+    y: 640,
+    rotation: 0,
+    locked: true,
+    placed: true,
+    source: "user_confirmed",
+    geometryType: "polyline",
+    geometry: [[50, 660], [360, 654], [650, 654], [950, 660]],
+    meta: { corridor_width_ft: 42, public_row_edge: true },
   },
   {
     id: "demo-parking-north",
-    label: "Residential Parking Court",
+    label: "West Parking Field — 88 stalls",
     type: "parking",
-    w: 210,
-    d: 104,
-    x: 255,
-    y: 190,
+    w: 320,
+    d: 185,
+    x: 165,
+    y: 320,
     rotation: 0,
-    stallCount: 72,
+    stallCount: 88,
     placed: true,
     source: "user_confirmed",
-    geometryType: "polygon",
-    geometry: [
-      [255, 198],
-      [449, 190],
-      [465, 202],
-      [459, 286],
-      [268, 294],
-      [255, 276],
-      [255, 198],
-    ],
+    meta: { parkingModuleCols: 4, parkingModuleRows: 2, parkingCapacity: 88, adaCount: 5, canonical_parent_id: "demo-building-a" },
   },
   {
     id: "demo-parking-retail",
-    label: "Retail Parking Field",
+    label: "East Parking Field — 82 stalls",
     type: "parking",
-    w: 165,
-    d: 92,
-    x: 185,
-    y: 345,
+    w: 320,
+    d: 185,
+    x: 515,
+    y: 320,
     rotation: 0,
-    stallCount: 44,
+    stallCount: 82,
     placed: true,
     source: "user_confirmed",
-    geometryType: "polygon",
-    geometry: [
-      [185, 353],
-      [334, 345],
-      [350, 358],
-      [343, 426],
-      [202, 437],
-      [185, 421],
-      [185, 353],
-    ],
+    meta: { parkingModuleCols: 4, parkingModuleRows: 2, parkingCapacity: 82, adaCount: 4, canonical_parent_id: "demo-building-a" },
   },
   {
     id: "demo-basin-a",
-    label: "Detention Basin A",
+    label: "Detention Basin A — Preliminary",
     type: "basin",
     w: 150,
-    d: 86,
-    x: 540,
-    y: 380,
+    d: 78,
+    x: 770,
+    y: 555,
     rotation: 0,
     placed: true,
     source: "user_confirmed",
     geometryType: "polygon",
     geometry: [
-      [553, 380],
-      [625, 374],
-      [676, 397],
-      [690, 430],
-      [670, 456],
-      [616, 466],
-      [566, 450],
-      [540, 418],
-      [553, 380],
+      [785, 555],
+      [855, 548],
+      [910, 572],
+      [920, 605],
+      [895, 628],
+      [830, 632],
+      [780, 610],
+      [770, 578],
+      [785, 555],
     ],
   },
   {
     id: "demo-sidewalk",
-    label: "ADA Pedestrian Route",
+    label: "Accessible Pedestrian Route",
     type: "sidewalk",
-    w: 410,
+    w: 550,
     d: 8,
-    x: 120,
-    y: 305,
+    x: 225,
+    y: 220,
     placed: true,
     source: "user_confirmed",
     geometryType: "polyline",
     geometry: [
-      [122, 314],
-      [255, 314],
-      [365, 246],
-      [500, 246],
-      [592, 388],
+      [225, 225],
+      [350, 225],
+      [500, 245],
+      [650, 225],
+      [775, 225],
     ],
+    meta: { corridor_width_ft: 6, routeKind: "ada_review_route" },
+  },
+  {
+    id: "demo-storm-main",
+    label: "Storm Collector",
+    type: "utility_corridor",
+    w: 380,
+    d: 190,
+    x: 500,
+    y: 390,
+    placed: true,
+    source: "generated",
+    geometryType: "polyline",
+    geometry: [[500, 410], [650, 455], [790, 520], [850, 575]],
+    meta: { network: "storm", ui_color: "#0284c7" },
+  },
+  {
+    id: "demo-water-main",
+    label: "Water Line W-12",
+    type: "utility_corridor",
+    w: 800,
+    d: 250,
+    x: 90,
+    y: 400,
+    placed: true,
+    source: "generated",
+    geometryType: "polyline",
+    geometry: [[90, 620], [500, 620], [500, 370]],
+    meta: { network: "water", ui_color: "#2563eb" },
+  },
+  {
+    id: "demo-sanitary-main",
+    label: "Sanitary Main SS-01",
+    type: "utility_corridor",
+    w: 780,
+    d: 175,
+    x: 110,
+    y: 470,
+    placed: true,
+    source: "generated",
+    geometryType: "polyline",
+    geometry: [[110, 635], [500, 605], [890, 570]],
+    meta: { network: "sanitary", ui_color: "#c026d3" },
   },
   {
     id: "demo-inlet-1",
-    label: "Storm Inlet S-15",
+    label: "Storm Inlet S-01",
     type: "inlet",
     w: 12,
     d: 12,
-    x: 472,
-    y: 312,
+    x: 494,
+    y: 404,
     placed: true,
     source: "generated",
   },
   {
     id: "demo-hydrant-1",
-    label: "Hydrant W-12",
+    label: "Hydrant W-01",
     type: "hydrant",
     w: 10,
     d: 10,
-    x: 238,
-    y: 270,
+    x: 470,
+    y: 590,
     placed: true,
     source: "generated",
   },
+  ...Array.from({ length: 10 }).map((_, index) => ({
+    id: `demo-tree-${index + 1}`,
+    label: `Landscape Tree ${index + 1}`,
+    type: "landscape" as const,
+    w: 12,
+    d: 12,
+    x: 210 + index * 62,
+    y: index % 2 === 0 ? 292 : 525,
+    rotation: 0,
+    placed: true,
+    source: "user_confirmed" as const,
+    meta: { landscape_symbol: "tree", ui_color: "#365314" },
+  })),
 ];
 
-export const createDenseCommercialConceptPlacements = (lot: { w: number; h: number }): BuildingPlacement[] => {
+export type CommercialConceptSpec = {
+  buildingAreaSf?: number;
+  buildingUse?: "office" | "retail" | "industrial" | "commercial";
+  parkingStalls?: number;
+  aisleWidthFt?: number;
+  includeLoadingArea?: boolean;
+};
+
+export const parseCommercialConceptSpec = (message: string): CommercialConceptSpec & { siteWidth?: number; siteHeight?: number } => {
+  const lower = message.toLowerCase();
+  const areaMatch = lower.match(/(\d{1,3}(?:,\d{3})+|\d{3,8})\s*(?:sf|sq\s*ft|sqft|square\s*feet)\s+(?:retail|office|industrial|commercial|building)/) ??
+    lower.match(/(?:retail|office|industrial|commercial|building)[^\d]{0,24}(\d{1,3}(?:,\d{3})+|\d{3,8})\s*(?:sf|sq\s*ft|sqft|square\s*feet)/);
+  const parkingMatch = lower.match(/(\d{1,5})\s+(?:parking\s+)?(?:spaces|stalls|spots?)/);
+  const aisleMatch = lower.match(/(\d{1,3}(?:\.\d+)?)\s*(?:ft|foot|feet|-foot)\s+(?:drive\s+)?aisles?/);
+  const dimensionsMatch = lower.match(/(\d{2,5}(?:\.\d+)?)\s*(?:ft|feet|')?\s*(?:x|by|×)\s*(\d{2,5}(?:\.\d+)?)\s*(?:ft|feet|')?/);
+  const acresMatch = lower.match(/(?:approximately\s+|approx\.?\s+|about\s+|near\s+)?(\d+(?:\.\d+)?)\s*(?:-|\s)?acres?\b/);
+  let siteWidth: number | undefined;
+  let siteHeight: number | undefined;
+  if (dimensionsMatch) {
+    siteWidth = Number(dimensionsMatch[1]);
+    siteHeight = Number(dimensionsMatch[2]);
+  } else if (acresMatch) {
+    const squareFeet = Number(acresMatch[1]) * 43_560;
+    siteWidth = Math.round(Math.sqrt(squareFeet * 1.25));
+    siteHeight = Math.round(squareFeet / siteWidth);
+  }
+  const buildingUse = /\bretail\b/.test(lower)
+    ? "retail"
+    : /\bindustrial\b/.test(lower)
+      ? "industrial"
+      : /\boffice\b/.test(lower)
+        ? "office"
+        : /\bcommercial\b/.test(lower)
+          ? "commercial"
+          : undefined;
+  return {
+    buildingAreaSf: areaMatch ? Number(areaMatch[1].replace(/,/g, "")) : undefined,
+    buildingUse,
+    parkingStalls: parkingMatch ? Number(parkingMatch[1]) : undefined,
+    aisleWidthFt: aisleMatch ? Number(aisleMatch[1]) : undefined,
+    includeLoadingArea: /\b(load(?:ing)?|service area|service yard|delivery)\b/.test(lower) || undefined,
+    siteWidth,
+    siteHeight,
+  };
+};
+
+export const createDenseCommercialConceptPlacements = (
+  lot: { w: number; h: number },
+  spec: CommercialConceptSpec = {},
+): BuildingPlacement[] => {
   const now = Date.now();
   const siteW = Math.max(lot.w || 1000, 200);
   const siteH = Math.max(lot.h || 1000, 200);
@@ -410,8 +541,16 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
       [x, y + d * 0.46],
     ];
   };
-  const buildingW = Math.min(205, siteW * 0.22);
-  const buildingD = Math.min(86, siteH * 0.09);
+  const buildingAreaSf = Math.max(2_000, spec.buildingAreaSf ?? 28_000);
+  const buildingUse = spec.buildingUse ?? "office";
+  const buildingDepth = Math.sqrt(buildingAreaSf / 1.8);
+  const buildingW = Math.min(Math.max(buildingDepth * 1.8, 80), siteW * 0.42);
+  const buildingD = Math.min(Math.max(buildingAreaSf / buildingW, 45), siteH * 0.24);
+  const totalParkingStalls = Math.max(1, Math.round(spec.parkingStalls ?? 140));
+  const northParkingStalls = Math.ceil(totalParkingStalls * 0.6);
+  const southParkingStalls = totalParkingStalls - northParkingStalls;
+  const aisleWidthFt = spec.aisleWidthFt ?? 24;
+  const buildingUseLabel = `${buildingUse.charAt(0).toUpperCase()}${buildingUse.slice(1)}`;
   const parkingW = Math.min(300, siteW * 0.30);
   const parkingD = Math.min(126, siteH * 0.13);
   const contours = Array.from({ length: 7 }).map((_, idx) => {
@@ -439,25 +578,25 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
       [siteW * 0.72, siteH * 0.11],
       [siteW * 0.98, siteH * 0.13],
     ], { corridor_width_ft: 42, dense_concept_generated: true, public_row_edge: true }),
-    polygon("office-main", "Office Building - 28,000 sf", "office_building", notchedBuilding(siteW * 0.43, siteH * 0.39, buildingW, buildingD), {
+    polygon("office-main", `${buildingUseLabel} Building - ${Math.round(buildingAreaSf).toLocaleString()} sf`, buildingUse === "office" ? "office_building" : "building", notchedBuilding(siteW * 0.43, siteH * 0.39, buildingW, buildingD), {
       h: 34,
-      meta: { requested_area_sf: 28000, dense_concept_generated: true, roof_profile: "flat", entrance_side: "south" },
+      meta: { requested_area_sf: Math.round(buildingAreaSf), building_use: buildingUse, dense_concept_generated: true, roof_profile: "flat", entrance_side: "south" },
     }),
-    polygon("office-flex", "Future Flex / Service Pad", "building", notchedBuilding(siteW * 0.66, siteH * 0.29, buildingW * 0.64, buildingD * 0.64, "north"), {
+    polygon("office-flex", spec.includeLoadingArea ? "Rear Loading / Service Area" : "Future Flex / Service Pad", "building", notchedBuilding(siteW * 0.66, siteH * 0.29, buildingW * 0.64, buildingD * 0.64, "north"), {
       h: 24,
-      meta: { dense_concept_generated: true, roof_profile: "flat", service_pad: true },
+      meta: { dense_concept_generated: true, roof_profile: "flat", service_pad: true, loading_area: Boolean(spec.includeLoadingArea) },
     }),
-    place("parking-north", "Parking Field - 84 stalls", "parking", siteW * 0.30, siteH * 0.23, parkingW, parkingD, {
-      stallCount: 84,
+    place("parking-north", `Parking Field - ${northParkingStalls} stalls`, "parking", siteW * 0.30, siteH * 0.23, parkingW, parkingD, {
+      stallCount: northParkingStalls,
       meta: {
-        requested_stalls: 84,
-        parkingCapacity: 96,
+        requested_stalls: northParkingStalls,
+        parkingCapacity: northParkingStalls,
         parkingModuleCols: 4,
         parkingModuleRows: 2,
         parkingParams: {
           stallWidth: 9,
           stallDepth: 18,
-          aisleWidth: 24,
+          aisleWidth: aisleWidthFt,
           loading: "double",
           adaCount: 5,
           adaAisleWidth: 8,
@@ -469,17 +608,17 @@ export const createDenseCommercialConceptPlacements = (lot: { w: number; h: numb
         dense_concept_generated: true,
       },
     }),
-    place("parking-south", "Parking Field - 56 stalls", "parking", siteW * 0.30, siteH * 0.58, parkingW * 0.88, parkingD * 0.92, {
-      stallCount: 56,
+    place("parking-south", `Parking Field - ${southParkingStalls} stalls`, "parking", siteW * 0.30, siteH * 0.58, parkingW * 0.88, parkingD * 0.92, {
+      stallCount: southParkingStalls,
       meta: {
-        requested_stalls: 56,
-        parkingCapacity: 64,
+        requested_stalls: southParkingStalls,
+        parkingCapacity: southParkingStalls,
         parkingModuleCols: 3,
         parkingModuleRows: 2,
         parkingParams: {
           stallWidth: 9,
           stallDepth: 18,
-          aisleWidth: 24,
+          aisleWidth: aisleWidthFt,
           loading: "double",
           adaCount: 3,
           adaAisleWidth: 8,
@@ -1093,23 +1232,20 @@ export const createDemoPlanResponse = (): PlanResponse => ({
   issues: [
     {
       severity: "warning",
-      code: "DEMO_WATER_CLEARANCE",
-      message: "Water line W-12 conflicts with proposed building clearance envelope.",
+      code: "DEMO_ENTRY_GEOMETRY",
+      message: "Main entry curb returns need vehicle-turning review before the concept advances.",
     },
     {
       severity: "warning",
-      code: "DEMO_ROAD_GRADE",
-      message: "Roadway R-03 exceeds target max grade in one localized segment.",
+      code: "DEMO_BASIN_OUTLET",
+      message: "Detention outlet elevation needs confirmation against controlled terrain.",
     },
   ],
   final_plan: {
-    actions: [
-      { label: "Multifamily Building A", layer: "BUILDING", task: "rectangle", origin: [120, 95], width: 110, height: 58, meta: { preview_role: "final", site_object_id: "demo-building-a" } } as Record<string, unknown>,
-      { label: "Multifamily Building B", layer: "BUILDING", task: "rectangle", origin: [330, 82], width: 110, height: 58, meta: { preview_role: "final", site_object_id: "demo-building-b" } } as Record<string, unknown>,
-      { label: "Retail Building", layer: "BUILDING", task: "rectangle", origin: [96, 350], width: 70, height: 45, meta: { preview_role: "final", site_object_id: "demo-retail" } } as Record<string, unknown>,
-      { label: "Residential Parking", layer: "PARKING", task: "rectangle", origin: [255, 190], width: 210, height: 104, meta: { preview_role: "final", system: "parking", site_object_id: "demo-parking-north" } } as Record<string, unknown>,
-      { label: "Detention Basin A", layer: "POND", task: "rectangle", origin: [540, 380], width: 150, height: 86, meta: { preview_role: "final", system: "drainage", site_object_id: "demo-basin-a" } } as Record<string, unknown>,
-    ] as unknown as NonNullable<NonNullable<PlanResponse["final_plan"]>["actions"]>,
+    // The editable site-object model is the visual source of truth for this
+    // demonstration. Keeping stale generated actions out prevents duplicate
+    // geometry after a live object is edited.
+    actions: [] as unknown as NonNullable<NonNullable<PlanResponse["final_plan"]>["actions"]>,
     meta: {
       engineering_status: { success: true, status: "demo_ready", trust_score: 82 },
       manager_export: {
@@ -1254,13 +1390,13 @@ export const createDemoPlanResponse = (): PlanResponse => ({
           spot_elevations: Array.from({ length: 64 }, (_, index) => {
             const xRatio = (index % 8) / 7;
             const yRatio = Math.floor(index / 8) / 7;
-            return { x: xRatio * 760, y: yRatio * 520, z: 648 - 6.8 * (xRatio + yRatio) / 2 };
+            return { x: xRatio * 1000, y: yRatio * 700, z: 648 - 6.8 * (xRatio + yRatio) / 2 };
           }),
         },
         existing_surface: {
           range_z: 6.8,
           high_points: [{ x: 60, y: 60, z: 648.0 }],
-          low_points: [{ x: 690, y: 460, z: 641.2 }],
+          low_points: [{ x: 920, y: 630, z: 641.2 }],
           terrain_profile: {
             source_quality: "demo_surface",
             source_detail: "Synthetic surface for visual QA only.",

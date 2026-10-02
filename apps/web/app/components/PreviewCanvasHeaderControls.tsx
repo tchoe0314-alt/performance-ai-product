@@ -67,6 +67,7 @@ type PreviewCanvasHeaderControlsProps = {
   onRefreshPreview: () => void;
   onClearHighlights?: () => void;
   onToggleSemanticLayer: (layer: PreviewSemanticLayer) => void;
+  onSelectSemanticLayer: (layer: PreviewSemanticLayer) => void;
   onShowAllSemanticLayers: () => void;
   onToggleSourceLayer: (layer: keyof PreviewSourceLayerVisibility) => void;
   onTogglePrecisionTools: () => void;
@@ -115,6 +116,7 @@ export function PreviewCanvasHeaderControls({
   onRefreshPreview,
   onClearHighlights,
   onToggleSemanticLayer,
+  onSelectSemanticLayer,
   onShowAllSemanticLayers,
   onToggleSourceLayer,
   onTogglePrecisionTools,
@@ -283,22 +285,31 @@ export function PreviewCanvasHeaderControls({
               {sourceLayerVisibility.proposedDesign && !aiRealismEnabled ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4 text-slate-400" />}
             </button>
           </div>
-          <div className="flex flex-wrap gap-1 border-t border-slate-100 pt-2">
+          <div className="grid grid-cols-2 gap-1.5 border-t border-slate-100 pt-2">
             {PRIMARY_PREVIEW_SEMANTIC_LAYERS.map((layer) => {
               const visible = semanticLayerVisibility[layer] !== false;
               return (
-                <button
-                  key={layer}
-                  type="button"
-                  data-testid={`preview-layer-toggle-${layer}`}
-                  aria-pressed={visible}
-                  onClick={() => onToggleSemanticLayer(layer)}
-                  className={`h-7 rounded-[5px] border px-2 text-[10px] font-semibold ${
-                    visible ? "border-slate-300 bg-white text-slate-700" : "border-slate-200 bg-slate-50 text-slate-400"
-                  }`}
-                >
-                  {PREVIEW_SEMANTIC_LAYER_LABELS[layer]}
-                </button>
+                <div key={layer} className="flex min-w-0 overflow-hidden rounded-[5px] border border-slate-200 bg-white">
+                  <button
+                    type="button"
+                    data-testid={`preview-layer-toggle-${layer}`}
+                    aria-pressed={visible}
+                    onClick={() => onToggleSemanticLayer(layer)}
+                    className={`flex h-8 min-w-0 flex-1 items-center gap-1.5 px-2 text-left text-[10px] font-semibold ${visible ? "text-slate-700" : "bg-slate-50 text-slate-400"}`}
+                  >
+                    {visible ? <Eye className="h-3 w-3 shrink-0" /> : <EyeOff className="h-3 w-3 shrink-0" />}
+                    <span className="truncate">{PREVIEW_SEMANTIC_LAYER_LABELS[layer]}</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`preview-layer-select-${layer}`}
+                    aria-label={`Select all ${PREVIEW_SEMANTIC_LAYER_LABELS[layer]}`}
+                    onClick={() => onSelectSemanticLayer(layer)}
+                    className="border-l border-slate-200 px-2 text-[9px] font-bold uppercase tracking-wide text-blue-600 hover:bg-blue-50"
+                  >
+                    All
+                  </button>
+                </div>
               );
             })}
           </div>

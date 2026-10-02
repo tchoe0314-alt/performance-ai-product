@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Check, Database, ExternalLink, ShieldCheck, TriangleAlert } from "lucide-react";
+import CivoraLogo from "../../components/CivoraLogo";
 import TerrainBenchmarkMap from "./TerrainBenchmarkMap";
 
 const passedChecks = [
@@ -26,8 +27,8 @@ export default function TerrainValidationPage() {
       <div className="mx-auto max-w-6xl">
         <nav className="flex items-center justify-between gap-4">
           <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 transition hover:text-slate-950">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">C</span>
-            Civora workspace
+            <CivoraLogo markClassName="h-8 w-8" wordmarkClassName="text-sm font-semibold text-slate-700" />
+            <span className="sr-only">workspace</span>
           </Link>
           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
             Automated checks passed

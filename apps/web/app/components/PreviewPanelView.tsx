@@ -193,6 +193,17 @@ export default function PreviewPanel({
   buildingPlacements,
   cadEntityPreviewObjects = [],
   suggestedPlacements,
+  dependencyProposal,
+  onAcceptDependencyProposal,
+  onAdjustDependencyProposal,
+  onRejectDependencyProposal,
+  layoutAlternatives = [],
+  selectedLayoutAlternativeId = "",
+  onSelectLayoutAlternative,
+  onApplyLayoutAlternative,
+  onCancelLayoutAlternatives,
+  layoutAlternativeGoals = [],
+  onLayoutAlternativeGoalsChange,
   selectedBuildingId,
   selectedObjectIds = [],
   focusDetectedId,
@@ -968,6 +979,7 @@ export default function PreviewPanel({
     [visibleCadObjects],
   );
   const [semanticLayerVisibility, setSemanticLayerVisibility] = useState<Partial<Record<PreviewSemanticLayer, boolean>>>({});
+  const selectedLayoutAlternative = layoutAlternatives.find((item) => item.id === selectedLayoutAlternativeId) ?? null;
   const [sourceLayerVisibility, setSourceLayerVisibility] = useState<PreviewSourceLayerVisibility>(
     DEFAULT_PREVIEW_SOURCE_LAYER_VISIBILITY,
   );
@@ -1001,6 +1013,13 @@ export default function PreviewPanel({
     ],
     [detectedExistingObjects, proposedDesignObjects, sourceLayerVisibility, technicalProposedVisible],
   );
+  const selectSemanticLayer = useCallback((layer: PreviewSemanticLayer) => {
+    const ids = renderedCadObjects
+      .filter((item) => semanticLayerForPlacement(item) === layer)
+      .map((item) => item.id);
+    onSelectObjects?.(ids);
+    if (ids.length) onSetPreviewInteraction("edit");
+  }, [onSelectObjects, onSetPreviewInteraction, renderedCadObjects]);
   const renderedSuggestedPlacements = useMemo(
     () =>
       suggestedPlacements.filter((item) =>
@@ -2628,6 +2647,7 @@ export default function PreviewPanel({
               onRefreshPreview,
               onClearHighlights,
               onToggleSemanticLayer: toggleSemanticLayer,
+              onSelectSemanticLayer: selectSemanticLayer,
               onShowAllSemanticLayers: showAllSemanticLayers,
               onToggleSourceLayer: toggleSourceLayer,
               onTogglePrecisionTools: () => setCadPrecisionToolsVisible((value) => !value),
@@ -2927,6 +2947,8 @@ export default function PreviewPanel({
                     viewportTransformStyle,
                     buildingPlacements: renderedCadObjects,
                     suggestedPlacements: renderedSuggestedPlacements,
+                    dependencyProposal,
+                    layoutDifferences: selectedLayoutAlternative?.differences ?? [],
                     surveyPointCount: surveyPoints?.length ?? 0,
                     surveyPoints,
                     hasTerrainSurfaceEvidence: Boolean(hasSourceBackedSurfaceEvidence && hasGradingSurface),
@@ -3050,6 +3072,27 @@ export default function PreviewPanel({
                         showHover,
                         activeHighlightBounds,
                         issueHighlightBounds,
+                      }
+                  : undefined,
+                dependencyProposalCardProps:
+                  dependencyProposal && onAcceptDependencyProposal && onAdjustDependencyProposal && onRejectDependencyProposal
+                    ? {
+                        proposal: dependencyProposal,
+                        onAccept: onAcceptDependencyProposal,
+                        onAdjust: onAdjustDependencyProposal,
+                        onReject: onRejectDependencyProposal,
+                      }
+                    : undefined,
+                layoutAlternativesCardProps:
+                  layoutAlternatives.length && selectedLayoutAlternativeId && onSelectLayoutAlternative && onApplyLayoutAlternative && onCancelLayoutAlternatives && onLayoutAlternativeGoalsChange
+                    ? {
+                        alternatives: layoutAlternatives,
+                        selectedId: selectedLayoutAlternativeId,
+                        onSelect: onSelectLayoutAlternative,
+                        onApply: onApplyLayoutAlternative,
+                        onCancel: onCancelLayoutAlternatives,
+                        goals: layoutAlternativeGoals,
+                        onGoalsChange: onLayoutAlternativeGoalsChange,
                       }
                     : undefined,
               }}

@@ -1,7 +1,8 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { Loader2, MessageSquareText, SendHorizonal } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Bot, ChevronRight, Loader2, MessageSquareText, SendHorizonal, Sparkles } from "lucide-react";
 
 import type { PlanToolMode } from "../types";
 
@@ -49,9 +50,26 @@ export default function PinnedCommandBar({
   activePlanTool,
   thinkingState,
   statusText,
+  commandContext,
   leftRailVisible = true,
   rightPanelSize = "none",
 }: PinnedCommandBarProps) {
+  const dockRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (!dock) return;
+    const style = document.documentElement.style;
+    const previous = style.getPropertyValue("--civora-command-dock-height");
+    const measure = () => style.setProperty("--civora-command-dock-height", `${dock.getBoundingClientRect().height}px`);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    return () => {
+      observer.disconnect();
+      if (previous) style.setProperty("--civora-command-dock-height", previous);
+      else style.removeProperty("--civora-command-dock-height");
+    };
+  }, []);
   const isWorking = busy || hasVisibleActiveJob;
   const canSend = Boolean(prompt.trim() || imageName) && !isWorking;
   const dockStyle = {
@@ -61,9 +79,10 @@ export default function PinnedCommandBar({
 
   return (
     <div
+      ref={dockRef}
       data-testid="floating-command-bar"
       data-command-bar-id="pinned-civora-command-bar"
-      className="civora-motion-command-bar civora-command-dock fixed bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] left-1/2 z-[720] w-[min(44rem,calc(100vw-1rem))] -translate-x-1/2 rounded-[10px] border border-slate-200/90 bg-white/97 p-1.5 shadow-[0_18px_54px_-30px_rgba(15,23,42,0.46)] backdrop-blur-xl"
+      className="civora-motion-command-bar civora-command-dock fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-1/2 z-[720] w-[min(48rem,calc(100vw-1rem))] -translate-x-1/2 overflow-hidden rounded-[16px] border border-slate-300/80 bg-white/95 shadow-[0_24px_70px_-28px_rgba(15,23,42,0.52)] backdrop-blur-2xl"
       style={dockStyle}
     >
       {isWorking ? (
@@ -81,13 +100,35 @@ export default function PinnedCommandBar({
         </div>
       ) : null}
       {!isWorking && statusText ? <span className="sr-only" aria-live="polite">{statusText}</span> : null}
-      <div className="flex min-w-0 items-end gap-2">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 bg-slate-50/80 px-3.5 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
+            <Sparkles className="h-3.5 w-3.5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-900">Civora Copilot</p>
+            <p className="truncate text-[10px] font-medium text-slate-500">Edit the plan with plain language</p>
+          </div>
+        </div>
+        {commandContext ? (
+          <div className="hidden min-w-0 items-center gap-1.5 md:flex" aria-label="Current design context">
+            <span className="civora-command-context-chip">{commandContext.view}</span>
+            <span className="civora-command-context-chip">{commandContext.layer}</span>
+            {commandContext.selectedCount > 0 ? (
+              <span className="civora-command-context-chip civora-command-context-chip-active">
+                {commandContext.selectedCount} selected
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="flex min-w-0 items-center gap-2 px-2 py-2">
         <button
           type="button"
           onClick={onOpenHistory}
           aria-label="Open Civora chat history"
           title="Open chat history"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[7px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-950"
         >
           <MessageSquareText className="h-5 w-5" />
         </button>
@@ -97,9 +138,9 @@ export default function PinnedCommandBar({
           value={prompt}
           onChange={(event) => onPromptChange(event.target.value)}
           onKeyDown={onPromptKeyDown}
-          placeholder="Describe a change or enter a command..."
+          placeholder="Ask Civora to change the site plan…"
           rows={1}
-          className="max-h-24 min-h-10 flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-sm font-medium leading-5 text-slate-950 outline-none placeholder:text-slate-400"
+          className="max-h-24 min-h-10 flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-[15px] font-medium leading-5 text-slate-950 outline-none placeholder:text-slate-400"
         />
         <button
           type="button"
@@ -107,15 +148,31 @@ export default function PinnedCommandBar({
           disabled={!canSend}
           aria-label="Run Civora command"
           title={isWorking ? "Civora is working" : "Run command"}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[7px] bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
+          className="flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-[10px] bg-slate-950 px-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-35"
         >
           {isWorking && activePlanTool === "run" ? (
             <Loader2 className="h-5 w-5 animate-spin" />
           ) : (
-            <SendHorizonal className="h-5 w-5" />
+            <><span className="hidden sm:inline">Run</span><SendHorizonal className="h-4 w-4" /></>
           )}
         </button>
       </div>
+      {!isWorking && !prompt.trim() ? (
+        <div className="flex items-center gap-1.5 overflow-x-auto px-3 pb-2.5" aria-label="Example Civora commands">
+          <Bot className="mr-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
+          {["Add a 50 ft cul-de-sac", "Fit 12 more stalls", "Check the entry geometry"].map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => onPromptChange(suggestion)}
+              className="group flex h-7 shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 text-[11px] font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+            >
+              {suggestion}
+              <ChevronRight className="h-3 w-3 opacity-40 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

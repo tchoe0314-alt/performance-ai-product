@@ -45,5 +45,6 @@ yarn-error.log*
 .next-object-integration/
 .next-object-rulebook/
 .next-detailed-object-check/
+.next-phase0-baseline/
 *.tsbuildinfo
 next-env.d.ts

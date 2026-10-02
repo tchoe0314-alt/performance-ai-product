@@ -5,6 +5,7 @@ import {
   createDenseCommercialConceptPlacements,
   createDenseSubdivisionCadPlanPlacements,
   createUrbanizationCampusPlanPlacements,
+  parseCommercialConceptSpec,
 } from "../utils/demoWorkspaceData";
 import type { RecentChange } from "../utils/dashboardTypes";
 import type { ProjectStatusSummary, SidePanelKey, WorkspaceMode } from "../utils/workspaceShell";
@@ -86,10 +87,11 @@ export function useDashboardDenseConceptAction({
     const wantsUrbanizationCampusPlan =
       /\b(urbanization|campus|boulevard|plaza|municipal|park|parks|master plan|site model|3d massing|massing|community|civic)\b/.test(lower) &&
       /\b(plan|site|layout|model|3d|buildings?|roads?|paths?|parking|trees?|plaza|like this|image)\b/.test(lower);
+    const commercialSpec = parseCommercialConceptSpec(message);
     const createdConceptSite = !hasSiteBoundary();
     if (createdConceptSite) {
-      const conceptWidth = wantsUrbanizationCampusPlan ? 1120 : wantsSubdivisionCadPlan ? 1200 : 1000;
-      const conceptHeight = wantsUrbanizationCampusPlan ? 720 : wantsSubdivisionCadPlan ? 820 : 1000;
+      const conceptWidth = wantsUrbanizationCampusPlan ? 1120 : wantsSubdivisionCadPlan ? 1200 : commercialSpec.siteWidth ?? 1000;
+      const conceptHeight = wantsUrbanizationCampusPlan ? 720 : wantsSubdivisionCadPlan ? 820 : commercialSpec.siteHeight ?? 1000;
       setLotWidth(String(conceptWidth));
       setLotHeight(String(conceptHeight));
       setSiteScaleLocked(true);
@@ -102,7 +104,7 @@ export function useDashboardDenseConceptAction({
               ? "Concept Site Boundary - 1120 ft x 720 ft"
             : wantsSubdivisionCadPlan
               ? "Concept Site Boundary - 1200 ft x 820 ft"
-              : "Concept Site Boundary - 1000 ft x 1000 ft",
+              : `Concept Site Boundary - ${conceptWidth} ft x ${conceptHeight} ft`,
           type: "site",
           w: conceptWidth,
           d: conceptHeight,
@@ -134,13 +136,13 @@ export function useDashboardDenseConceptAction({
         ? { w: 1120, h: 720 }
         : wantsSubdivisionCadPlan
         ? { w: 1200, h: 820 }
-        : { w: 1000, h: 1000 }
+        : { w: commercialSpec.siteWidth ?? 1000, h: commercialSpec.siteHeight ?? 1000 }
       : resolveLotBounds();
     const conceptObjects = wantsUrbanizationCampusPlan
       ? createUrbanizationCampusPlanPlacements(lot)
       : wantsSubdivisionCadPlan
         ? createDenseSubdivisionCadPlanPlacements(lot)
-        : createDenseCommercialConceptPlacements(lot);
+        : createDenseCommercialConceptPlacements(lot, commercialSpec);
     setBuildingPlacements((prev) => {
       const keep = prev.filter((item) => item.type === "site" || !item.meta?.dense_concept_generated);
       return [...keep, ...conceptObjects];
@@ -165,7 +167,7 @@ export function useDashboardDenseConceptAction({
         ? "Urbanization parcels, boulevard roads, civic buildings, plaza, park, trees, parking, and service networks were placed."
         : wantsSubdivisionCadPlan
         ? "Subdivision lots, roads, contours, amenity core, ponds, utility spines, parking hatches, and feature courts were placed."
-        : "Office, parking, basin, driveway, sidewalks, water, sanitary, storm, inlet, outfall, hydrant, and manhole draft objects were placed.",
+        : `${commercialSpec.buildingUse ?? "office"} building, ${commercialSpec.parkingStalls ?? 140} parking stalls, basin, access, sidewalks, water, sanitary, storm, fire-protection, and service objects were placed.`,
     });
     updateProjectStatus({
       state: "needs review",
@@ -176,7 +178,7 @@ export function useDashboardDenseConceptAction({
         : wantsSubdivisionCadPlan
         ? "Created a dense editable CAD-style subdivision plan with lots, streets, contours, amenity/drainage space, hatching, and utilities. It is draft review geometry."
         : createdConceptSite
-        ? "Created a 1000 ft by 1000 ft concept site and placed coherent editable building, parking, drainage, utilities, access, and sidewalk objects."
+        ? `Created a ${lot.w} ft by ${lot.h} ft concept site and placed the requested editable building, parking, drainage, utilities, access, and sidewalk objects.`
         : "Placed a coherent editable concept with building, parking, drainage, utilities, access, and sidewalk objects.",
       nextAction: "Edit the objects directly, then run Generate when the layout looks right.",
     });
@@ -187,8 +189,8 @@ export function useDashboardDenseConceptAction({
         : wantsSubdivisionCadPlan
           ? "Created a dense editable CAD-style subdivision review plan with lot blocks, collector roads, internal loop roads, yellow contour linework, central amenity/drainage space, blue/red hatched plan areas, ponds, storm/water/sanitary corridors, and feature nodes. It is draft review geometry, not survey/control or construction evidence."
         : createdConceptSite
-        ? "Created a dense editable review concept on a 1000 ft by 1000 ft concept site: office building, two parking fields, detention basin, loop drive, driveway, sidewalk/ADA route, public water, public sanitary, storm sewer, inlets, outfall, hydrants, and sanitary manhole. Everything is draft review geometry and can be edited before Generate."
-        : "Created a dense editable review concept: office building, two parking fields, detention basin, loop drive, driveway, sidewalk/ADA route, public water, public sanitary, storm sewer, inlets, outfall, hydrants, and sanitary manhole. Everything is draft review geometry and can be edited before Generate.",
+        ? `Created a dense editable review concept on a ${lot.w} ft by ${lot.h} ft site with a ${Math.round(commercialSpec.buildingAreaSf ?? 28000).toLocaleString()} sf ${commercialSpec.buildingUse ?? "office"} building and ${commercialSpec.parkingStalls ?? 140} parking stalls, plus access, loading/service, pedestrian, drainage, water, sanitary, storm, and fire-protection elements. Everything is draft review geometry and can be edited before Generate.`
+        : `Created a dense editable review concept with a ${Math.round(commercialSpec.buildingAreaSf ?? 28000).toLocaleString()} sf ${commercialSpec.buildingUse ?? "office"} building and ${commercialSpec.parkingStalls ?? 140} parking stalls, plus access, loading/service, pedestrian, drainage, water, sanitary, storm, and fire-protection elements. Everything is draft review geometry and can be edited before Generate.`,
       "status",
     );
     return true;

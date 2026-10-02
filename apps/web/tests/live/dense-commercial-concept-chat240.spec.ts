@@ -3,8 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { setPreviewQuality } from "./testUiHelpers";
 
 async function runChatCommand(page: Page, command: string) {
-  await page.getByRole("button", { name: "Chat" }).first().click();
-  const input = page.getByPlaceholder("Describe a change or enter a command...");
+  const input = page.getByRole("textbox", { name: /Ask Civora to change the site plan/i });
   await input.fill(command);
   await input.press("Enter");
 }
@@ -18,7 +17,7 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   });
 
   await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("region", { name: "Drawing surface" })).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("button", { name: "Projects" }).first().click();
   await page.getByRole("button", { name: "New Project" }).first().click();
@@ -35,7 +34,7 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
     "create a dense professional civil site plan with a 28000 sf office building, 140 parking spaces, detention basin, driveway, sidewalks, public water, public sanitary, and storm drainage utilities",
   );
 
-  const canvas = page.getByTestId("workspace-canvas-shell");
+  const canvas = page.locator("main");
   await expect(canvas).toContainText(/site locked/i, { timeout: 10_000 });
   await expect(page.locator('[data-cad-object-id][aria-label*="Office Building - 28,000 sf"]').first()).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 84 stalls"]').first()).toBeVisible();
@@ -106,6 +105,31 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   expect(bodyText).not.toMatch(/construction-ready|\bstamp\b|\bseal\b|certify|certified|approved for construction|engineer of record/i);
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((message) => !message.includes("401") && !message.includes("ERR_CONNECTION_REFUSED"))).toEqual([]);
+});
+
+test("honors a commercial program and executes a follow-up revision locally", async ({ page }) => {
+  await page.goto("/demo/workspace?debugPreview=1&aiRealismProvider=mock", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("region", { name: "Drawing surface" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Projects" }).first().click();
+  await page.getByRole("button", { name: "New Project" }).first().click();
+
+  await runChatCommand(
+    page,
+    "Create a complete civil site plan on an approximately 8-acre rectangular site with a 42,000 sf retail building, 190 parking spaces, 24-foot aisles, two access points, sidewalks, a rear loading and service area, detention pond, storm, sanitary, water, and fire protection.",
+  );
+
+  const canvas = page.locator("main");
+  await expect(canvas).toContainText(/660 FT x 528 FT/i, { timeout: 10_000 });
+  await expect(page.locator('[data-cad-object-id][aria-label*="Retail Building - 42,000 sf"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 114 stalls"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 76 stalls"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Rear Loading / Service Area"]').first()).toBeVisible();
+
+  await runChatCommand(page, "Revise the retail building to 48,000 sf and increase parking to 210 spaces with a rear loading area.");
+  await expect(page.locator('[data-cad-object-id][aria-label*="Retail Building - 48,000 sf"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 126 stalls"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 84 stalls"]').first()).toBeVisible();
+  await expect(page.locator("body")).toContainText(/Revised the concept to 48,000 sf retail building, 210 parking stalls/i);
 });
 
 test("understands recreate-the-image wording without a prebuilt site", async ({ page }) => {

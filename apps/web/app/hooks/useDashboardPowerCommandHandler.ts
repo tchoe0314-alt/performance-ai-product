@@ -20,6 +20,7 @@ import {
   createDenseCommercialConceptPlacements,
   createDenseSubdivisionCadPlanPlacements,
   createUrbanizationCampusPlanPlacements,
+  parseCommercialConceptSpec,
 } from "../utils/demoWorkspaceData";
 import { parsePositiveNumber } from "../utils/formatting";
 import type {
@@ -100,12 +101,14 @@ type UseDashboardPowerCommandHandlerInput = {
   handleAddObject: HandleAddObject;
   handleCreateDenseCommercialConcept: (message: string) => boolean;
   handleGenerateSystem: (target: SystemGenerationTarget) => void | Promise<void>;
+  handleGenerateLayoutAlternatives: (count: number, goalPrompt?: string) => void;
   handleMakeReviewPackage: () => void | Promise<void>;
   handleOpenSidePanel: (panel: SidePanelKey) => void;
   handleSetPreviewMode: (mode: "2d" | "3d") => void;
   handleSetPreviewQuality: (quality: "standard" | "high") => void;
   handleStartBlankSite: () => void;
   handleStartSiteBoundaryDraw: () => void;
+  handleUpdateBuilding: (id: string, updates: Partial<BuildingPlacement>) => void | "applied" | "proposed" | "blocked";
   hasSiteBoundary: () => boolean;
   issues: Issue[];
   markSystemsStale: (systems: EngineeringSystemKey[]) => void;
@@ -159,12 +162,14 @@ export function useDashboardPowerCommandHandler({
   handleAddObject,
   handleCreateDenseCommercialConcept,
   handleGenerateSystem,
+  handleGenerateLayoutAlternatives,
   handleMakeReviewPackage,
   handleOpenSidePanel,
   handleSetPreviewMode,
   handleSetPreviewQuality,
   handleStartBlankSite,
   handleStartSiteBoundaryDraw,
+  handleUpdateBuilding,
   hasSiteBoundary,
   issues,
   markSystemsStale,
@@ -208,6 +213,61 @@ export function useDashboardPowerCommandHandler({
   const tryHandleSiteProgramCommand = useCallback((message: string): boolean => {
     const lower = normalizeDashboardChatIntent(message)
       .replace(/\bada\s+walks?\b/g, "ada route");
+    const revisionSpec = parseCommercialConceptSpec(message);
+    const isCommercialRevision =
+      /\b(revise|change|convert|increase|decrease|update|resize|make it)\b/.test(lower) &&
+      Boolean(revisionSpec.buildingAreaSf || revisionSpec.buildingUse || revisionSpec.parkingStalls || revisionSpec.aisleWidthFt || revisionSpec.includeLoadingArea) &&
+      buildingPlacements.some((item) => item.meta?.dense_concept_generated);
+    if (isCommercialRevision) {
+      appendChatMessage("user", message);
+      const parkingObjects = buildingPlacements.filter((item) => item.type === "parking" && item.meta?.dense_concept_generated);
+      const parkingTotal = revisionSpec.parkingStalls;
+      setBuildingPlacements((current) => current.map((item) => {
+        if (!item.meta?.dense_concept_generated) return item;
+        if ((item.type === "building" || item.type === "office_building") && item.meta?.requested_area_sf) {
+          const area = revisionSpec.buildingAreaSf ?? Number(item.meta.requested_area_sf);
+          const use = revisionSpec.buildingUse ?? String(item.meta.building_use || "office");
+          const depth = Math.sqrt(area / 1.8);
+          const width = depth * 1.8;
+          return {
+            ...item,
+            type: use === "office" ? "office_building" : "building",
+            label: `${use.charAt(0).toUpperCase()}${use.slice(1)} Building - ${Math.round(area).toLocaleString()} sf`,
+            w: width,
+            d: area / width,
+            meta: { ...item.meta, requested_area_sf: Math.round(area), building_use: use },
+          };
+        }
+        if (item.type === "parking" && parkingTotal && parkingObjects.length) {
+          const index = parkingObjects.findIndex((parking) => parking.id === item.id);
+          const stalls = index === parkingObjects.length - 1
+            ? parkingTotal - Math.ceil(parkingTotal * 0.6) * Math.max(0, parkingObjects.length - 1)
+            : Math.ceil(parkingTotal * 0.6);
+          const safeStalls = Math.max(0, stalls);
+          const parkingParams = typeof item.meta?.parkingParams === "object" && item.meta.parkingParams
+            ? { ...(item.meta.parkingParams as Record<string, unknown>), ...(revisionSpec.aisleWidthFt ? { aisleWidth: revisionSpec.aisleWidthFt } : {}) }
+            : item.meta?.parkingParams;
+          return { ...item, label: `Parking Field - ${safeStalls} stalls`, stallCount: safeStalls, meta: { ...item.meta, requested_stalls: safeStalls, parkingCapacity: safeStalls, parkingParams } };
+        }
+        if (revisionSpec.includeLoadingArea && item.meta?.service_pad) {
+          return { ...item, label: "Rear Loading / Service Area", meta: { ...item.meta, loading_area: true } };
+        }
+        return item;
+      }));
+      if (parkingTotal) setParkingCount(String(parkingTotal));
+      clearGeneratedPreview();
+      markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
+      const changes = [
+        revisionSpec.buildingAreaSf ? `${revisionSpec.buildingAreaSf.toLocaleString()} sf ${revisionSpec.buildingUse ?? "commercial"} building` : revisionSpec.buildingUse ? `${revisionSpec.buildingUse} use` : "",
+        parkingTotal ? `${parkingTotal} parking stalls` : "",
+        revisionSpec.aisleWidthFt ? `${revisionSpec.aisleWidthFt}-ft aisles` : "",
+        revisionSpec.includeLoadingArea ? "rear loading/service area" : "",
+      ].filter(Boolean);
+      appendChatMessage("assistant", `Revised the concept to ${changes.join(", ")}. The affected systems are now stale; run Generate again to refresh them.`, "status");
+      updateProjectStatus({ state: "needs review", area: "setup", title: "Commercial concept revised", detail: `Updated ${changes.join(", ")}.`, nextAction: "Review the revised layout, then run Generate." });
+      recordRecentChange({ type: "object_type_changed", label: "Commercial program revised", detail: changes.join(", ") });
+      return true;
+    }
     if (!/\b(add|create|place|make|include|put|recreate|copy|draft|draw|layout|produce)\b/.test(lower)) return false;
     const wantsDensePlan =
       /\b(dense|full|complete|professional|civil|utility design|site plan|plan sheet|like the image|like this image|recreate|copy this|as many|detailed|realistic)\b/.test(
@@ -378,29 +438,104 @@ export function useDashboardPowerCommandHandler({
   }, [
     appendChatMessage,
     buildingPlacements,
+    clearGeneratedPreview,
     handleAddObject,
     handleCreateDenseCommercialConcept,
     handleOpenSidePanel,
     hasSiteBoundary,
+    markSystemsStale,
     parkingCount,
+    recordRecentChange,
     resolveLotBounds,
     setActivePlacementId,
     setActiveSidePanel,
     setActiveWorkspaceMode,
+    setBuildingPlacements,
     setCommandBarExpanded,
     setParkingCount,
     setPreviewInteraction,
     setRenderedSidePanel,
     setRightRailCollapsed,
     setSidePanelVisible,
+    updateProjectStatus,
   ]);
 
   return useCallback((message: string): boolean | "panel" => {
     const normalized = message.trim().toLowerCase().replace(/\s+/g, " ");
     const intentText = normalizeDashboardChatIntent(message);
     if (!normalized) return false;
+    const alternativesRequest = normalized.match(/(?:show|create|generate|give|make)(?: me)?\s+(?:(\d+|two|three|four|five)\s+)?(?:different\s+)?(?:layout|design|site plan)?\s*(?:options|alternatives|variations|ways)/);
+    const profileAlternativesRequest = /(?:show|create|generate|give|make)(?: me)?\s+.+\b(?:conservative|aggressive)\s+(?:options?|alternatives?|variations?)/.test(normalized);
+    if (alternativesRequest || profileAlternativesRequest || /(?:layout|design)\s+(?:options|alternatives)$/.test(normalized)) {
+      const numberWords: Record<string, number> = { two: 2, three: 3, four: 4, five: 5 };
+      const countToken = alternativesRequest?.[1] ?? "3";
+      const splitProfileCounts = [...normalized.matchAll(/\b(\d+|one|two|three|four|five)\s+(?:conservative|aggressive)\b/g)]
+        .map((match) => Number(match[1]) || ({ one: 1, ...numberWords }[match[1]] ?? 0));
+      const requestedTotal = splitProfileCounts.length > 1
+        ? splitProfileCounts.reduce((sum, value) => sum + value, 0)
+        : Number(countToken) || numberWords[countToken] || 3;
+      const requested = Math.max(2, Math.min(5, requestedTotal));
+      appendChatMessage("user", message);
+      handleGenerateLayoutAlternatives(requested, message);
+      appendChatMessage("assistant", `Created and ranked ${requested} editable layout alternatives against your stated priorities. Preview the score and reasons on the canvas; the working plan stays unchanged until you apply one.`, "status");
+      setCommandBarExpanded(false);
+      return true;
+    }
     if (/\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/.test(normalized)) {
       return refuseUnsafeConstructionCommand(message);
+    }
+    const resolveEditableTarget = (targetText: string) => {
+      const selectedTarget = activePlacementId
+        ? buildingPlacements.find((item) => item.id === activePlacementId)
+        : null;
+      if (selectedTarget) return selectedTarget;
+      const cleaned = targetText.replace(/\b(?:the|selected|object|move|resize|set|make|change)\b/g, " ").replace(/\s+/g, " ").trim();
+      if (!cleaned) return null;
+      const matches = buildingPlacements.filter((item) => `${item.label} ${item.type ?? ""}`.toLowerCase().replaceAll("_", " ").includes(cleaned));
+      return matches.length === 1 ? matches[0] : null;
+    };
+    const moveByDistance = normalized.match(
+      /^move\s+(.+?)\s+(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(north|south|east|west|up|down|left|right)$/,
+    );
+    if (moveByDistance) {
+      const target = resolveEditableTarget(moveByDistance[1]);
+      appendChatMessage("user", message);
+      if (!target) {
+        appendChatMessage("assistant", "Select one object first, then tell me how far and which direction to move it.", "status");
+        return true;
+      }
+      const distance = Number(moveByDistance[2]);
+      const direction = moveByDistance[3];
+      const dx = direction === "east" || direction === "right" ? distance : direction === "west" || direction === "left" ? -distance : 0;
+      const dy = direction === "south" || direction === "down" ? distance : direction === "north" || direction === "up" ? -distance : 0;
+      const outcome = handleUpdateBuilding(target.id, {
+        x: (target.x ?? 0) + dx,
+        y: (target.y ?? 0) + dy,
+        placed: true,
+        meta: { ...(target.meta ?? {}), canonical_edit_source: "chat" },
+      });
+      appendChatMessage("assistant", outcome === "proposed" ? `Move proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The move to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Moved ${target.label} ${distance} ft ${direction}. The CAD canvas and chat now use the same canonical edit command.`, "status");
+      return true;
+    }
+    const resizeExact = normalized.match(
+      /^(?:set|make|resize|change)\s+(.+?)\s+(?:to\s+)?(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?$/,
+    );
+    if (resizeExact) {
+      const target = resolveEditableTarget(resizeExact[1]);
+      appendChatMessage("user", message);
+      if (!target) {
+        appendChatMessage("assistant", "Select one object first, then provide its width and depth.", "status");
+        return true;
+      }
+      const width = Number(resizeExact[2]);
+      const depth = Number(resizeExact[3]);
+      const outcome = handleUpdateBuilding(target.id, {
+        w: width,
+        d: depth,
+        meta: { ...(target.meta ?? {}), canonical_edit_source: "chat" },
+      });
+      appendChatMessage("assistant", outcome === "proposed" ? `Resize proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The resize to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Resized ${target.label} to ${width} ft by ${depth} ft through the canonical edit system.`, "status");
+      return true;
     }
     const heightCommand = normalized.match(
       /^(?:set|make|change|update)\s+(?:the\s+)?(.+?)\s+(?:(?:height\s+)?to\s+)?(\d+(?:\.\d+)?)\s*(?:ft|feet|foot)\s*(?:tall|high)?$/,
@@ -435,28 +570,16 @@ export function useDashboardPowerCommandHandler({
         appendChatMessage("assistant", "Building height must be between 1 ft and 500 ft.", "status");
         return true;
       }
-      setBuildingPlacements((previous) =>
-        previous.map((item) =>
-          item.id === target.id
-            ? {
-                ...item,
-                h: requestedHeight,
-                meta: {
-                  ...(item.meta ?? {}),
-                  height_ft: requestedHeight,
-                  height_source: "user_command",
-                },
-              }
-            : item,
-        ),
-      );
-      setActivePlacementId(target.id);
-      markSystemsStale(["grading", "drainage", "utilities"]);
-      recordRecentChange({
-        type: "object_style_changed",
-        label: `${target.label} height changed`,
-        detail: `Height set to ${requestedHeight} ft. Grading, drainage, and utilities need review for possible impacts.`,
+      handleUpdateBuilding(target.id, {
+        h: requestedHeight,
+        meta: {
+          ...(target.meta ?? {}),
+          height_ft: requestedHeight,
+          height_source: "user_command",
+          canonical_edit_source: "chat",
+        },
       });
+      setActivePlacementId(target.id);
       setPreviewInteraction("static");
       setPreviewMode("3d");
       setActiveWorkspaceMode("canvas");
@@ -858,12 +981,14 @@ export function useDashboardPowerCommandHandler({
     generateFlowSummary,
     handleAddObject,
     handleGenerateSystem,
+    handleGenerateLayoutAlternatives,
     handleMakeReviewPackage,
     handleOpenSidePanel,
     handleSetPreviewMode,
     handleSetPreviewQuality,
     handleStartBlankSite,
     handleStartSiteBoundaryDraw,
+    handleUpdateBuilding,
     issues,
     markSystemsStale,
     pendingPlacementObjects,

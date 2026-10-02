@@ -17,7 +17,7 @@ export const PREVIEW_SEMANTIC_LAYER_LABELS: Record<PreviewSemanticLayer, string>
   parking: "Parking",
   landscape: "Landscape",
   utilities: "Utilities",
-  water: "Water",
+  water: "Drainage / Water",
   other: "Other",
 };
 
@@ -28,6 +28,8 @@ export const PRIMARY_PREVIEW_SEMANTIC_LAYERS: PreviewSemanticLayer[] = [
   "parking",
   "landscape",
   "utilities",
+  "water",
+  "other",
 ];
 
 export function semanticLayerForPlacement(item: BuildingPlacement): PreviewSemanticLayer {

@@ -352,7 +352,8 @@ test.describe("drawn site boundary Finish workflow", () => {
     await selectObjectByName(page, "Command Line");
     await expect(cadTools).toContainText("Length");
     await expect(cadTools).toContainText("Angle");
-    await expect(page.getByTestId("cad-topology-status")).toContainText("Drawing checks");
+    await expect(page.getByTestId("cad-topology-status")).toContainText("Topology review needs");
+    await expect(page.getByTestId("cad-topology-status")).toContainText("outside site boundary");
     await cadTools.getByLabel("Draft transform value").fill("15");
     await cadTools.getByRole("button", { name: "Move selected draft objects" }).click();
     await expect(cadTools).toContainText("Move");

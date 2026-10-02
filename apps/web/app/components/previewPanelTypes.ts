@@ -6,6 +6,8 @@ import type {
   PreviewReview,
 } from "../types";
 import type { CadToolRequest, DrawMode } from "../utils/cadToolTypes";
+import type { CanonicalDependencyProposal } from "../utils/canonicalDependencyPolicies";
+import type { LayoutAlternative, LayoutGoal } from "../utils/layoutAlternatives";
 
 export type EngineeringSystemStatus = "fresh" | "stale" | "not_generated";
 
@@ -254,6 +256,17 @@ export type PreviewPanelProps = {
   buildingPlacements: BuildingPlacement[];
   cadEntityPreviewObjects?: BuildingPlacement[];
   suggestedPlacements: BuildingPlacement[];
+  dependencyProposal?: CanonicalDependencyProposal | null;
+  onAcceptDependencyProposal?: () => void;
+  onAdjustDependencyProposal?: () => void;
+  onRejectDependencyProposal?: () => void;
+  layoutAlternatives?: LayoutAlternative[];
+  selectedLayoutAlternativeId?: string;
+  onSelectLayoutAlternative?: (id: string) => void;
+  onApplyLayoutAlternative?: () => void;
+  onCancelLayoutAlternatives?: () => void;
+  layoutAlternativeGoals?: LayoutGoal[];
+  onLayoutAlternativeGoalsChange?: (goals: LayoutGoal[]) => void;
   selectedBuildingId: string | null;
   selectedObjectIds?: string[];
   focusDetectedId?: string | null;

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { AlertCircle, Clock3, Eye, EyeOff, FolderOpen, LifeBuoy, Map, Sparkles } from "lucide-react";
 
 import type { AuthStatus } from "../types";
+import CivoraLogo from "./CivoraLogo";
 import {
   Card,
   CardContent,
@@ -61,6 +62,11 @@ export default function AuthScreen({
           className="space-y-6"
         >
           <div className="space-y-4">
+            <CivoraLogo
+              priority
+              markClassName="h-14 w-14"
+              wordmarkClassName="text-2xl font-semibold tracking-[-0.035em] text-slate-950"
+            />
             <Pill>Beta Control Room</Pill>
             <h1 className="max-w-2xl text-5xl font-semibold tracking-tight text-slate-950">
               Civora AI — Civil Site Planning Review

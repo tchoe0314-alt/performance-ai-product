@@ -1,4 +1,10 @@
 import type { BuildingPlacement } from "../types";
+import {
+  parkingDependencyRelationship,
+  setParkingDependencyPolicy,
+  setParkingDependencyObjectLinked,
+  type CanonicalDependencyPolicy,
+} from "../utils/canonicalDependencyPolicies";
 import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 
 type ObjectConfidenceSummary = {
@@ -12,6 +18,7 @@ type ObjectConfidenceSummary = {
 
 type SelectedObjectInspectorPanelProps = {
   selectedBuilding: BuildingPlacement | null;
+  availableObjects?: BuildingPlacement[];
   confidenceEntry?: ObjectConfidenceSummary;
   objectManagerStatusMessage?: string;
   objectClipboardCount: number;
@@ -46,6 +53,7 @@ const parsePositiveNumber = (value: string) => {
 
 export function SelectedObjectInspectorPanel({
   selectedBuilding,
+  availableObjects = [],
   confidenceEntry,
   objectManagerStatusMessage,
   objectClipboardCount,
@@ -76,6 +84,44 @@ export function SelectedObjectInspectorPanel({
     selectedBuilding &&
       ((SITE_OBJECT_CATALOG[selectedBuilding.type ?? "custom"]?.defaultH ?? 0) > 0 || (selectedBuilding.h ?? 0) > 0),
   );
+  const supportsParkingRelationship = Boolean(
+    selectedBuilding && ["building", "office_building", "retail_building", "multifamily_building", "industrial_building", "pad"].includes(selectedBuilding.type ?? ""),
+  );
+  const availableParking = availableObjects.filter((item) => item.type === "parking" && item.id !== selectedBuilding?.id);
+  const linkedParkingIds = selectedBuilding ? new Set(parkingDependencyRelationship(selectedBuilding).object_ids) : new Set<string>();
+  const parkingReflow = selectedBuilding?.type === "parking"
+    ? selectedBuilding.meta?.parking_reflow_v1 as {
+        status?: "clear" | "review";
+        strategy?: string;
+        inside_site?: boolean;
+        collision_object_ids?: string[];
+        stall_count_preserved?: boolean;
+      } | undefined
+    : undefined;
+  const parkingParams = selectedBuilding?.type === "parking"
+    ? (selectedBuilding.meta?.parkingParams as Record<string, unknown> | undefined) ?? {}
+    : {};
+  const parkingLayout = selectedBuilding?.type === "parking"
+    ? selectedBuilding.meta?.parking_layout_v1 as {
+        status?: "fits" | "shortfall" | "invalid";
+        requested_stalls?: number;
+        generated_stalls?: number;
+        capacity?: number;
+        shortfall?: number;
+        excess_capacity?: number;
+        required_width_ft?: number;
+        required_depth_ft?: number;
+      } | undefined
+    : undefined;
+  const updateParkingParams = (updates: Record<string, unknown>) => {
+    if (!selectedBuilding) return;
+    onUpdateObject(selectedBuilding, {
+      meta: {
+        ...(selectedBuilding.meta ?? {}),
+        parkingParams: { ...parkingParams, ...updates },
+      },
+    });
+  };
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="selected-object-inspector">
       <div className="flex items-start justify-between gap-3">
@@ -171,6 +217,49 @@ export function SelectedObjectInspectorPanel({
               {objectManagerStatusMessage}
             </p>
           ) : null}
+          {parkingReflow ? (
+            <div
+              data-testid="parking-reflow-status"
+              className={`rounded-xl border px-3 py-2 text-xs ${parkingReflow.status === "clear" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}
+            >
+              <p className="font-bold uppercase tracking-[0.12em]">Parking reflow · {parkingReflow.status === "clear" ? "checks clear" : "review needed"}</p>
+              <p className="mt-1 font-medium">
+                {parkingReflow.stall_count_preserved ? "Stall count preserved. " : "Stall count needs review. "}
+                Strategy: {(parkingReflow.strategy ?? "best available").replaceAll("_", " ")}.
+                {parkingReflow.collision_object_ids?.length ? ` Possible contact with ${parkingReflow.collision_object_ids.length} object(s).` : " No basic footprint collision found."}
+              </p>
+            </div>
+          ) : null}
+          {selectedBuilding.type === "parking" ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3" data-testid="parking-layout-editor">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Parking capacity</p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">
+                    {parkingLayout?.generated_stalls ?? selectedBuilding.stallCount ?? 0} generated / {parkingLayout?.capacity ?? (Number.isFinite(Number(selectedBuilding.meta?.parkingCapacity)) ? Number(selectedBuilding.meta?.parkingCapacity) : "—")} capacity
+                  </p>
+                </div>
+                <span data-testid="parking-layout-status" className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${parkingLayout?.status === "shortfall" || parkingLayout?.status === "invalid" ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                  {parkingLayout?.status === "shortfall" ? `${parkingLayout.shortfall} short` : parkingLayout?.status === "invalid" ? "Needs input" : "Fits"}
+                </span>
+              </div>
+              {parkingLayout?.status === "shortfall" ? (
+                <p className="mt-2 rounded-lg bg-red-50 px-2 py-1.5 text-[11px] font-semibold text-red-700">
+                  Increase the field toward {Math.ceil(parkingLayout.required_width_ft ?? selectedBuilding.w)} ft × {Math.ceil(parkingLayout.required_depth_ft ?? selectedBuilding.d)} ft, reduce stalls, or change the parking angle.
+                </p>
+              ) : null}
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
+                <label className="font-semibold text-slate-600">Requested stalls<input data-testid="parking-requested-stalls" type="number" min="0" value={selectedBuilding.stallCount ?? 0} onChange={(event) => onUpdateObject(selectedBuilding, { stallCount: Math.max(0, Number(event.target.value) || 0) })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5" /></label>
+                <label className="font-semibold text-slate-600">ADA stalls<input data-testid="parking-ada-count" type="number" min="0" value={Number(parkingParams.adaCount ?? selectedBuilding.meta?.adaCount ?? 0)} onChange={(event) => updateParkingParams({ adaCount: Math.max(0, Number(event.target.value) || 0) })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5" /></label>
+                <label className="font-semibold text-slate-600">Stall width<input type="number" min="6" step="0.5" value={Number(parkingParams.stallWidth ?? 9)} onChange={(event) => updateParkingParams({ stallWidth: Number(event.target.value) || 9 })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5" /></label>
+                <label className="font-semibold text-slate-600">Stall depth<input type="number" min="12" step="0.5" value={Number(parkingParams.stallDepth ?? 18)} onChange={(event) => updateParkingParams({ stallDepth: Number(event.target.value) || 18 })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5" /></label>
+                <label className="font-semibold text-slate-600">Drive aisle<input type="number" min="10" step="1" value={Number(parkingParams.aisleWidth ?? 24)} onChange={(event) => updateParkingParams({ aisleWidth: Number(event.target.value) || 24 })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5" /></label>
+                <label className="font-semibold text-slate-600">Compact stalls<input type="number" min="0" value={Number(parkingParams.compactCount ?? 0)} onChange={(event) => updateParkingParams({ compactCount: Math.max(0, Number(event.target.value) || 0) })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5" /></label>
+                <label className="font-semibold text-slate-600">Angle<select data-testid="parking-angle" value={String(parkingParams.angleDeg ?? 90)} onChange={(event) => updateParkingParams({ angleDeg: Number(event.target.value) })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5"><option value="90">90°</option><option value="60">60°</option><option value="45">45°</option></select></label>
+                <label className="font-semibold text-slate-600">Loading<select value={String(parkingParams.loading ?? "double")} onChange={(event) => updateParkingParams({ loading: event.target.value })} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5"><option value="double">Double</option><option value="single">Single</option></select></label>
+              </div>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => onToggleLock(selectedBuilding)} disabled={selectedBuilding.type === "site"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
               {selectedBuilding.locked ? "Unlock object" : "Lock object"}
@@ -185,6 +274,62 @@ export function SelectedObjectInspectorPanel({
               {selectedBuilding.meta?.ui_hidden ? "Show object" : "Hide object"}
             </button>
           </div>
+          {supportsParkingRelationship ? (
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-3 py-3" data-testid="parking-dependency-policy-control">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-600">When this building changes</p>
+                  <p className="mt-1 text-xs font-medium text-slate-600">Choose whether linked parking responds automatically.</p>
+                </div>
+                <select
+                  aria-label="Linked parking behavior"
+                  data-testid="parking-dependency-policy"
+                  value={parkingDependencyRelationship(selectedBuilding).policy}
+                  onChange={(event) => onUpdateObject(
+                    selectedBuilding,
+                    setParkingDependencyPolicy(selectedBuilding, event.target.value as CanonicalDependencyPolicy),
+                  )}
+                  className="h-9 rounded-lg border border-blue-200 bg-white px-2 text-xs font-bold text-slate-800"
+                >
+                  <option value="follow">Follow</option>
+                  <option value="ask">Ask</option>
+                  <option value="fixed">Fixed</option>
+                </select>
+              </div>
+              <div className="mt-3 border-t border-blue-100 pt-3" data-testid="parking-relationship-editor">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-blue-600">Linked parking</p>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold text-slate-600">{linkedParkingIds.size} linked</span>
+                </div>
+                {availableParking.length ? (
+                  <div className="mt-2 space-y-1.5">
+                    {availableParking.map((parking) => {
+                      const linked = linkedParkingIds.has(parking.id);
+                      return (
+                        <label key={parking.id} className="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-blue-100 bg-white px-2.5 py-2 text-xs font-semibold text-slate-700">
+                          <span className="min-w-0 truncate">{parking.label}</span>
+                          <input
+                            type="checkbox"
+                            checked={linked}
+                            data-testid={`parking-relationship-${parking.id}`}
+                            aria-label={`${linked ? "Unlink" : "Link"} ${parking.label}`}
+                            onChange={(event) => onUpdateObject(
+                              selectedBuilding,
+                              setParkingDependencyObjectLinked(selectedBuilding, parking.id, event.target.checked),
+                            )}
+                            className="h-4 w-4 rounded border-blue-300 text-blue-600"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">Add a parking field to create a relationship.</p>
+                )}
+                <p className="mt-2 text-[11px] leading-4 text-slate-500">Only checked parking fields respond to Follow or Ask.</p>
+              </div>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-2 text-[11px]" data-testid="selected-object-exact-geometry">
             <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
               X

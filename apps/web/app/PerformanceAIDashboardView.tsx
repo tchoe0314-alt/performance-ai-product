@@ -276,6 +276,7 @@ import {
 
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
+import CivoraLogo from "./components/CivoraLogo";
 import ChatPanel from "./components/ChatPanel";
 import {
   type Civil3DWorkflowTab,
@@ -333,6 +334,9 @@ import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
 import { mapSurveyPointsToSite } from "./utils/dashboardExistingConditionsUpload";
 import { AnalysisPanel } from "./components/AnalysisPanel";
 import { WorkspaceShortcutsOverlay } from "./components/WorkspaceShortcutsOverlay";
+import { resolveDependencyProposal, type CanonicalDependencyProposal } from "./utils/canonicalDependencyPolicies";
+import { type LayoutAlternativeSearch, type LayoutGoal } from "./utils/layoutAlternatives";
+import { useDashboardLayoutComparison } from "./hooks/useDashboardLayoutComparison";
 
 function PerformanceAIDashboardView({
   forceDemoWorkspace = false,
@@ -434,6 +438,12 @@ function PerformanceAIDashboardView({
   const [utilities, setUtilities] = useState(true);
   const [buildingPlacements, setBuildingPlacements] = useState<BuildingPlacement[]>([]);
   const buildingPlacementsRef = useRef<BuildingPlacement[]>([]);
+  const [dependencyProposal, setDependencyProposal] = useState<CanonicalDependencyProposal | null>(null);
+  const [layoutSearch, setLayoutSearch] = useState<LayoutAlternativeSearch | null>(null);
+  const layoutSearchSourceRef = useRef<{ projectId: string | null; placements: string } | null>(null);
+  const layoutAlternatives = layoutSearch?.alternatives ?? [];
+  const [selectedLayoutAlternativeId, setSelectedLayoutAlternativeId] = useState("");
+  const [layoutAlternativeGoals, setLayoutAlternativeGoals] = useState<LayoutGoal[]>([]);
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
@@ -1260,18 +1270,18 @@ function PerformanceAIDashboardView({
     setProjects([demoProject]);
     setCurrentProject(demoProject);
     setProjectId(demoProject.project_id);
-    setSiteName("Pinecrest Mixed-Use");
-    setFileName("pinecrest-demo-ui");
+    setSiteName("Pinecrest Commerce Center");
+    setFileName("pinecrest-commerce-demo");
     setSiteNameAuto(false);
     setFileNameAuto(false);
-    setLotWidth("760");
-    setLotHeight("520");
-    setParkingCount("116");
-    setBuildingWidth("110");
-    setBuildingDepth("58");
+    setLotWidth("1000");
+    setLotHeight("700");
+    setParkingCount("170");
+    setBuildingWidth("300");
+    setBuildingDepth("108");
     setBuildingCount("3");
-    setProjectType("mixed_use");
-    setSiteAddress("Pinecrest Mixed-Use Demo Site");
+    setProjectType("commercial");
+    setSiteAddress("Pinecrest Commerce Center — Concept Site");
     setSiteScaleLocked(true);
     setUseSurveyForGrading(true);
     setBuildingPlacements(demoPlacements);
@@ -1629,10 +1639,146 @@ function PerformanceAIDashboardView({
     resolveParkingParams,
     saveProjectRef,
     setBuildingPlacements,
+    setDependencyProposal,
     setFitToSiteRequest,
     setStatusMessage,
     units,
   });
+
+  const handleAcceptDependencyProposal = useCallback(() => {
+    if (!dependencyProposal) return;
+    const result = resolveDependencyProposal(dependencyProposal, buildingPlacementsRef.current, currentProjectRef.current?.project_id ?? null);
+    if (!result.accepted) {
+      setDependencyProposal(null);
+      setStatusMessage(result.reason);
+      setObjectManagerStatusMessage(result.reason);
+      pushRecoveryMessage(result.reason);
+      return;
+    }
+    const currentBefore = dependencyProposal.before;
+    const nextPlacements = result.placements;
+    const undo = {
+      action: "bulk_update" as const,
+      before: currentBefore,
+      after: dependencyProposal.after,
+      label: `accepted parking proposal for ${dependencyProposal.buildingLabel}`,
+    };
+    buildingPlacementsRef.current = nextPlacements;
+    setBuildingPlacements(nextPlacements);
+    setDependencyProposal(null);
+    clearGeneratedPreview();
+    markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
+    recordDraftUndoAction(undo);
+    recordRecentChange({
+      type: "object_style_changed",
+      label: "Linked parking proposal accepted",
+      detail: `Accepted the complete ${dependencyProposal.after.length}-object transaction for ${dependencyProposal.buildingLabel}.`,
+      undo,
+    });
+    setStatusMessage("Complete dependency proposal accepted. Undo restores all previous object positions.");
+    setObjectManagerStatusMessage("Complete dependency proposal accepted. Undo restores all previous object positions.");
+    pushRecoveryMessage("Complete dependency proposal accepted. Undo restores all previous object positions.");
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after accepting linked parking...", track: true });
+  }, [
+    clearGeneratedPreview,
+    dependencyProposal,
+    ensureProjectDraftRef,
+    markSystemsStale,
+    previewRefreshIntentRef,
+    pushRecoveryMessage,
+    recordDraftUndoAction,
+    recordRecentChange,
+    saveProjectRef,
+  ]);
+
+  const handleRejectDependencyProposal = useCallback(() => {
+    if (!dependencyProposal) return;
+    setDependencyProposal(null);
+    setStatusMessage("Dependency proposal rejected. The entire working plan stayed unchanged.");
+    setObjectManagerStatusMessage("Dependency proposal rejected. The entire working plan stayed unchanged.");
+  }, [dependencyProposal]);
+
+  const handleAdjustDependencyProposal = useCallback(() => {
+    const parkingId = dependencyProposal?.before.find(item => item.type === "parking")?.id;
+    if (!parkingId) return;
+    setDependencyProposal(null);
+    setActivePlacementId(parkingId);
+    setSelectedObjectIds([parkingId]);
+    setPreviewInteraction("edit");
+    setActiveSidePanel("objects");
+    setRenderedSidePanel("objects");
+    setSidePanelVisible(true);
+    setRightRailCollapsed(false);
+    setStatusMessage("Parking selected for manual adjustment. The proposed move was not applied.");
+    setObjectManagerStatusMessage("Parking selected for manual adjustment. The proposed move was not applied.");
+  }, [dependencyProposal]);
+
+  const showLayoutComparison = useCallback(() => {
+    setActivePlacementId(null);
+    setSelectedObjectIds([]);
+    setPreviewMode("2d");
+    setPreviewInteraction("static");
+    setActiveWorkspaceMode("canvas");
+    setSidePanelVisible(false);
+    setRightRailCollapsed(true);
+  }, []);
+  const reportLayoutComparison = useCallback((message: string) => {
+    setStatusMessage(message);
+    setObjectManagerStatusMessage(message);
+  }, []);
+  const { handleGenerateLayoutAlternatives, handleCancelLayoutAlternatives, handleLayoutAlternativeGoalsChange } = useDashboardLayoutComparison({
+    placementsRef: buildingPlacementsRef,
+    projectRef: currentProjectRef,
+    sourceRef: layoutSearchSourceRef,
+    setSearch: setLayoutSearch,
+    setGoals: setLayoutAlternativeGoals,
+    setSelectedId: setSelectedLayoutAlternativeId,
+    showComparison: showLayoutComparison,
+    report: reportLayoutComparison,
+  });
+
+  const handleApplyLayoutAlternative = useCallback(() => {
+    const selected = layoutAlternatives.find((item) => item.id === selectedLayoutAlternativeId);
+    if (!selected) return;
+    const before = buildingPlacementsRef.current;
+    const source = layoutSearchSourceRef.current;
+    if (!source || source.projectId !== (currentProjectRef.current?.project_id ?? null) || source.placements !== JSON.stringify(before)) {
+      setLayoutSearch(null);
+      setSelectedLayoutAlternativeId("");
+      setLayoutAlternativeGoals([]);
+      const message = "The project changed after these alternatives were generated. Generate fresh alternatives before applying. Your working plan was not changed.";
+      setStatusMessage(message);
+      setObjectManagerStatusMessage(message);
+      return;
+    }
+    const after = selected.placements.map((item) => ({
+      ...item,
+      meta: { ...(item.meta ?? {}), alternative_preview: false, selected_alternative: selected.label },
+    }));
+    const undo = { action: "bulk_update" as const, before, after, label: `apply ${selected.label} layout alternative` };
+    buildingPlacementsRef.current = after;
+    setBuildingPlacements(after);
+    setLayoutSearch(null);
+    setSelectedLayoutAlternativeId("");
+    setLayoutAlternativeGoals([]);
+    clearGeneratedPreview();
+    markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
+    recordDraftUndoAction(undo);
+    recordRecentChange({
+      type: "object_style_changed",
+      label: `${selected.label} layout applied`,
+      detail: `Applied the selected alternative with capacity ${selected.metrics.capacity}, shortfall ${selected.metrics.shortfall}, and ${selected.metrics.conflicts} flagged conflicts.`,
+      undo,
+    });
+    setStatusMessage(`${selected.label} is now the working plan. Undo restores the previous layout.`);
+    setObjectManagerStatusMessage(`${selected.label} is now the working plan. Undo restores the previous layout.`);
+    pushRecoveryMessage(`${selected.label} is now the working plan. Undo restores the previous layout.`);
+    void ensureProjectDraftRef.current()
+      .then(() => saveProjectRef.current({ silent: true }))
+      .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after applying layout alternative...", track: true });
+  }, [layoutAlternatives, selectedLayoutAlternativeId]);
 
   const {
     persistDetectedPlacements,
@@ -4954,6 +5100,7 @@ function PerformanceAIDashboardView({
     generateFlowSummary,
     handleAddObject,
     handleCreateDenseCommercialConcept,
+    handleGenerateLayoutAlternatives,
     handleGenerateSystem,
     handleMakeReviewPackage,
     handleOpenSidePanel,
@@ -4961,6 +5108,7 @@ function PerformanceAIDashboardView({
     handleSetPreviewQuality,
     handleStartBlankSite,
     handleStartSiteBoundaryDraw,
+    handleUpdateBuilding,
     hasSiteBoundary,
     issues,
     markSystemsStale,
@@ -5622,6 +5770,8 @@ function PerformanceAIDashboardView({
     onOpenStandards: () => handleOpenSidePanel("standards"),
     onOpenDeliverables: () => handleOpenSidePanel("deliverables"),
   });
+  const selectedLayoutAlternative = layoutAlternatives.find((item) => item.id === selectedLayoutAlternativeId) ?? null;
+  const canvasBuildingPlacements = selectedLayoutAlternative?.placements ?? buildingPlacements;
   const workspaceCanvasAreaProps = useDashboardCanvasAreaProps({
     authToken: token,
     siteScaleLocked,
@@ -5664,9 +5814,20 @@ function PerformanceAIDashboardView({
     onCreateCustomGeometry: handleCreateCustomGeometry,
     onCreateSiteBoundary: handleCreateSiteBoundary,
     onUnlockSite: handleUnlockSite,
-    buildingPlacements,
+    buildingPlacements: canvasBuildingPlacements,
     cadEntityPreviewObjects: cadEntityPreview.objects,
     suggestedPlacements: filteredDetectedPlacements,
+    dependencyProposal,
+    onAcceptDependencyProposal: handleAcceptDependencyProposal,
+    onAdjustDependencyProposal: handleAdjustDependencyProposal,
+    onRejectDependencyProposal: handleRejectDependencyProposal,
+    layoutAlternatives,
+    selectedLayoutAlternativeId,
+    onSelectLayoutAlternative: setSelectedLayoutAlternativeId,
+    onApplyLayoutAlternative: handleApplyLayoutAlternative,
+    onCancelLayoutAlternatives: handleCancelLayoutAlternatives,
+    layoutAlternativeGoals,
+    onLayoutAlternativeGoalsChange: handleLayoutAlternativeGoalsChange,
     selectedObjectIds,
     focusDetectedId,
     onFocusDetectedIdChange: setFocusDetectedId,
@@ -5801,9 +5962,12 @@ function PerformanceAIDashboardView({
       <div className="civora-app-bg min-h-screen text-[var(--civora-text)]">
         <div className="flex min-h-screen items-center justify-center px-6">
           <div className="text-center">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-              Civora AI
-            </p>
+            <CivoraLogo
+              priority
+              className="justify-center"
+              markClassName="h-12 w-12"
+              wordmarkClassName="text-xl font-semibold tracking-[-0.03em] text-slate-950"
+            />
             <p className="mt-3 text-sm font-medium text-slate-600">
               Loading workspace...
             </p>

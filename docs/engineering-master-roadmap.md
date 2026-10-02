@@ -1,5 +1,7 @@
 # Engineering Implementation Plan
 
+> Historical engineering plan: the [Civora Master Product and Execution Roadmap](product/civora-master-product-roadmap.md), including its founder-approved product-governance rules adopted October 2, 2026, supersedes this plan wherever they conflict. Advanced utility and grading expansion is deferred unless needed to stabilize an existing workflow. Retain this document as technical background, not the governing execution order.
+
 ## Intent
 
 This plan replaces feature sprawl with a strict phased build order.

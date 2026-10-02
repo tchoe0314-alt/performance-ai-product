@@ -18,7 +18,8 @@ test("Quantities panel remains reachable and keeps review export state", async (
   await expect(panel).toContainText("Untraced");
   await expect(panel).toContainText("Deltas");
   await expect(panel.getByRole("button", { name: "Export report" })).toBeDisabled();
-  await expect(panel).toContainText("Run systems to populate quantities.");
+  await expect(panel).toContainText("No traceable quantity result was produced.");
+  await expect(panel).toContainText("Review generation inputs and run the required systems again.");
 });
 
 test("Informational quantity totals remain references instead of false cost or trace gaps", () => {

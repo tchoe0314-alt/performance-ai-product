@@ -1,0 +1,115 @@
+# Phase 0 — Execution and evidence register
+
+Started: October 2, 2026. Status: active; not release-ready.
+
+Founder sequencing instruction: start Phase 1 only after the complete Phase 0 exit criteria are proven. This does not authorize deployments or spending and does not waive outstanding gates.
+
+Authority: [master roadmap and approved governance](civora-master-product-roadmap.md). This register records evidence, not aspirational completion. Earlier quality and engineering plans are reference material where compatible with that authority.
+
+## Completion gates
+
+| Gate | Required evidence | Current status |
+| --- | --- | --- |
+| 0.1 Consolidation | Files/branches/worktrees/experiments inventoried; cross-chat changes evaluated; authoritative implementations documented; preserved prototypes; single integration branch; supported-capability and limitations register | Inventory started; no discard or merge authorized by inference |
+| 0.2 Feature verification | Creation, selection, movement, resize, rotation, properties, chat, canonical synchronization, four dependency modes, parking reflow, cul-de-sac, constraints, alternatives/scoring, apply/cancel/undo, layers/bulk selection, commercial/2D/3D, exports, auth, save/reopen | Previous scoped test results are background; current combined working tree remains unverified |
+| 0.3 Test system | Candidate solver verified or excluded; stable selectors; complete suite; regression coverage; test-category map; release-critical suite; repeatable validation; credential requirements; failure/recovery cases | Existing validation and regression runners found; coverage and behavior not yet audited |
+| 0.4 Maintainability | Focused modules; UI/math separation; centralized project operations, commands and constraints; parallel-state analysis; module ownership; architecture; safe upgrades and advisory register | Pending assessment; refactoring must preserve supported behavior and legacy data |
+| 0.5 Release engineering | Environment/secret procedures; migrations and backup/restore; rollback; versioned notes; approved staging deployment; exact-build and authenticated verification; separately approved production promotion where applicable | Local work allowed; deployments require explicit separate approvals |
+| Exit: dependable version | Clean, reproducible integration baseline; all release-critical tests; core end-to-end workflows; exact deployed artifact verification; no known critical data-loss/geometry-corruption defect; candidate-search disposition | Not satisfied |
+
+## Working rules
+
+- Preserve all existing user/cross-chat edits and legacy project data. No silent migration, deletion or branch reset.
+- Record the exact revision and working-tree inputs for each validation run. A result from an earlier tree does not certify the current tree.
+- Fix stabilization defects before starting new product areas. Retain potentially useful experiments disabled or separately preserved where justified.
+- Run affected tests after each change and the combined suites before declaring the baseline dependable.
+- Maintain distinct unit, integration, browser, local authenticated and hosted evidence. Mocked browser responses do not prove persistence, auth or external CAD interoperability.
+- Do not spend money or deploy to staging/production without explicit approval. Before approval, provide change summary, tests, limitations, migrations, target, rollback and post-deployment checks.
+- Missing external or approval-dependent evidence stays open; never convert it to a passing gate.
+
+## Initial observations
+
+- Initial HEAD: `c6626735`, branch `codex/cul-de-sac-concept`.
+- Local comparison against the cached `origin/main`: 0 commits behind, 13 ahead. Remote freshness has not yet been checked.
+- Many tracked/untracked frontend changes exist, including dependency proposals, alternatives, live constraints, command execution and parking layout work. Attribution and integration status require inspection.
+- Existing entry points: `scripts/release_regression.sh`, `backend/scripts/run_end_state_capability_validation.py`, `backend/scripts/run_backup_restore_drill.py` and `docs/end-state-validation.md`.
+- The backend test suite resides under repository-root `tests`, not `backend/tests`. An initial discovery attempt used the wrong path and ran no tests; it is not product-failure evidence.
+- Previous commits contain scoped object-coordination and website-rendering fixes. Their earlier passing tests do not certify later uncommitted additions.
+
+## Immediate sequence
+
+1. Inventory and classify all active work without deleting it; reconcile old roadmap instructions.
+2. Collect tests and record baseline type, lint, build, backend and browser results for the actual tree.
+3. Prioritize critical integrity/recovery failures, candidate-solver regressions and commercial workflow blockers.
+4. Verify and consolidate the minimum complete, supported baseline; document exclusions.
+5. Execute full release-critical and end-to-end validation and recovery drills.
+6. Prepare exact-build staging approval request with rollback plan, then verify the approved deployment.
+
+## Evidence log
+
+### October 2 — full browser audit and truthful review sheets
+
+- Created `codex/phase-0-integration`, preserving the existing dirty tree; added a responsibility map in `phase-0-architecture.md`. Neither the branch name nor documentation establishes a finished release.
+- Full local Chromium run: **346 passed, seven failed, 16 skipped** (369 tests, 11.7 minutes). Classified failures: mobile command/drawer overlap, inaccessible logo labeling, illustrative review-sheet output, and four outdated fixture/assertion assumptions. Hosted/provider-dependent skips remain unverified.
+- Fixed measured mobile command clearance and logo accessibility. Review sheets now derive visible objects from canonical geometry, preserve rotation/routes/out-of-site coordinates, disclose invalid geometry, and do not substitute decorative buildings, utilities or elevations. The old illustrative component is preserved as an explicitly named inactive prototype, not the default renderer.
+- All seven original failures passed in the targeted follow-up run (**26 passed**, plus two failures in newly introduced tests). Corrected those new tests' import label and floating-point expectations; the final review-sheet truth subset passed **four tests**, including empty/small plans, geometry preservation and invalid-geometry disclosure.
+- Frontend dependency audit reported no known advisories. Backend pinned dependency audit identified eight advisories in pypdf 6.16.1; updated the pin to 6.19.0. **120 affected backend tests passed** using the new version installed in an isolated directory. Repeated pinned-dependency audit reported no known advisories. This is not exhaustive transitive/runtime security certification.
+- A final rebuilt combined browser run is still pending. No deployment occurred; Phase 0 remains active, and Phase 1 has not started.
+- Extended the existing repeatable browser gate with canonical command, candidate, commercial dependency, native object, review-sheet truth, mobile layout and website regression suites. Added manifest coverage/file-existence tests; **14 validation/assurance tests passed**, with the previously known third-party runtime/deprecation warnings. These runner tests verify configuration and evidence boundaries, not browser execution itself.
+- Started a fresh **373-test** Chromium run against the rebuilt production frontend and a full backend run using isolated pypdf 6.19.0. Both remain in progress; do not count them as final passes until terminal results are recorded.
+- Removed the unused helper in the inactive geometry prototype; frontend lint now passes with **zero warnings/errors**.
+- Installed the pinned static security scanner in an isolated temporary directory. Medium/high severity and confidence scan of `backend` and `scripts` completed with **zero matching findings**, covering 85,285 lines. The scanner emitted stale suppression-comment warnings; this is a scoped static scan, not proof of runtime security.
+- Audited the other five pinned Python requirement manifests (renderer, test, audit, imagery gateway and vision training): **no known advisories reported**. Together with the backend manifest audit this covers the six declared direct pinned sets; transitive/environment dependencies and clean-install reproducibility remain separate open checks.
+- The new full browser run exposed a PDF fixture assertion tied to an ASCII apostrophe: pypdf 6.19.0 preserves the source's curved foot mark. Updated the assertion to require the unchanged numeric scale while accepting ordinary/typographic unit marks. The complete real local PDF import/edit/review/export/chat browser workflow then **passed** (7.3 seconds). The original full run still records this failure; the targeted pass is separate evidence, not a rewritten full-run result.
+- Full 373-test browser run completed: **355 passed, two failed, 16 skipped**, 9.3 minutes. Besides the PDF mark mismatch, the centered-site test read an intermediate save before the asynchronous locked-site save completed. The unchanged centered-site subset passed three tests independently; strengthened the assertion to await persisted lock state and recheck it after save settling. A combined rerun is still required.
+- Extracted preview-only layout generation/cancellation/reranking into `useDashboardLayoutComparison`, leaving candidate application at its explicit guarded transaction boundary. Typecheck and lint passed; rebuilding and affected website regressions remain necessary before accepting this extraction as verified.
+- Rebuilt production frontend after extraction; build/typecheck passed. Combined affected run: **35 passed**, 40.0 seconds, covering canonical editing/dependencies, stale alternative application, candidate contracts, commercial generation, centered-site persistence, real PDF editing/export and recorded website/3D regressions. This verifies the scoped extraction and repaired assertions, not a fresh all-suite pass. Full backend rerun remains in progress.
+- Full backend rerun using isolated pypdf 6.19.0 completed: **1,829 passed, one skipped, 22 warnings**, 716.48 seconds. The warnings remain the recorded third-party SSL/deprecation warnings; skip disposition is still open. This run preceded the newly added migration test.
+- Added direct legacy SQLite startup coverage: **one test passed**, proving byte-preservation of serialized project geometry/results, owner and job preservation, summary backfill, added-column defaults, integrity and idempotent second startup. No hosted Postgres migration claim is made.
+- Added `phase-0-release-procedure.md` to document environment separation, current additive startup migration behavior/limitations, isolated restore validation, code-versus-data rollback, separate deployment approvals and exact-build evidence. Procedures are documented; staging/production execution remains unproven and unauthorized.
+- Reproduced the sole backend skip in an affected subset: **37 passed, one skipped**; GeoPackage import was skipped because `geopandas` is absent from the older Python 3.9 environment. It is pinned in backend requirements. Started an isolated Python 3.11 clean installation of backend/test requirements to verify the intended runtime and that format path without altering the existing environment.
+- Clean Python 3.11 install of backend/test pins succeeded; dependency consistency check found no broken requirements. Import/migration subset: **25 passed, no skips**, seven third-party parser deprecation warnings. The previously skipped GeoPackage check passed. A complete clean-runtime backend run is now in progress.
+- Audited all 68 installed distributions, including resolved transitive packages and environment tooling. Initially found seven advisories in bundled pip/setuptools; followed the existing container bootstrap upgrade in the isolated environment (pip 26.2.1, setuptools 84.0.0), then repeated the installed-distribution audit: **no known advisories reported**. This does not prove container/base-image or hosted runtime security.
+- Refreshed read-only inventory: 1,160 files, 190 changed paths, 141 branches; source fingerprint `563239cb5d4a4b7e9912d0819074bc714a805d28ad18a2ba8d618ab755f18b42` before this evidence-log update. Full website rerun and clean-runtime backend run remain live; no completed-release claim.
+- Executed isolated code rollback retrieval/rehearsal: **passed**, previous revision `f18aa71c724d44193d7fe822fb5534d065c5e792` retrieved cleanly and focused safety/readiness tests exited zero. Report `/tmp/civora-phase0-code-rollback-20261002.json`. Temporary checkout was cleaned up by the existing rehearsal. This proves neither hosted rollback nor compatibility of new writes with the prior version; integration is still uncommitted at `c6626735`.
+- Branch audit identifies **105** heads contained in current HEAD and **36** not contained. Their changes require patch-equivalence/feature disposition review before claiming consolidation; they are preserved. Ancestry alone cannot distinguish missing features from independently integrated/cherry-picked equivalents.
+- Fresh full website run on the rebuilt production frontend completed: **357 passed, 16 skipped, zero failures**, 8.8 minutes (373 total). Includes local authenticated persistence, PDF workflow, project lifecycle, candidate/dependency regressions and local realistic-user scenarios. Hosted credentials/provider/map-dependent skips remain unverified; test names containing “hosted” do not make localhost execution hosted evidence.
+- Extended inventory with read-only patch-equivalence comparisons; **four inventory tests passed**. Non-contained branches include both equivalent patches and unique historical patches; unique patches still require feature disposition, not automatic merging. Clean-runtime backend suite remains live.
+- Added `phase-0-branch-disposition.md` with inspected historical drawing/layer/drafting/service branches, evidence and unresolved comparisons. Identified substantial Vision V3 training/evidence work absent from active HEAD; asked the founder whether to preserve it as an experiment or review for integration. No scope decision has been assumed; active-product verification continues independently.
+- Complete clean Python 3.11 runtime backend run finished: **1,831 passed, zero skipped, 78 subtests passed, 42 warnings**, 402.52 seconds. This includes legacy migration and the previously skipped GeoPackage format. Warnings include parser deprecations, Starlette's future test-client transport change and Pillow image-data deprecations; these remain maintainability items, not suppressed passes. The additional inventory branch-comparison test was added after collection and passed separately in its four-test suite.
+
+- October 2, 2026: active Phase 0 goal created; governing documents preserved; initial read-only repository and test-runner discovery completed. No deployment, production data change or project conversion performed.
+
+### October 2 — stabilization pass (uncommitted integration tree)
+
+- Read-only inventory tool and three isolated tests added. Initial inventory recorded 1,150 files, 167 changed paths and 140 local branches at `c6626735`; no branches were merged or deleted. Inventory excludes ignored files, does not record contents, and excludes sensitive/generated files from hashing. Domain source roots are explicitly included. Branch ancestry alone does not establish implementation authority.
+- Full repository-root `tests` backend run: **1,822 passed, one skipped, 22 warnings**, 633.59 seconds. This run preceded the new inventory tests and later frontend fixes; it is not certification of the final release artifact. Skip reason and warning disposition remain to be recorded.
+- Initial type check passed. Lint: zero errors, one unused-variable warning in the experimental `CivoraGeometryEngine.ts`. Production build passed. No dependency-advisory conclusion has been drawn.
+- Candidate contract tests exposed three failures before repair: conflicting locked buildings were accepted, requests for ten alternatives were capped at five, and changed priorities ranked only the previously selected subset.
+- Repairs reject modeled hard collisions, required-parking shortages, invalid identities/dimensions/geometry and candidates requiring boundary clamping. Successful search retains its complete valid pool for serializable reranking; the request range is two through ten, default five. Bounded-search failures explain reasons and do not imply global infeasibility. These are modeled checks, not engineering compliance certification.
+- Combined affected production-browser/module run: **29 passed** across canonical commands, candidate contracts, website regression and dense commercial workflows. Browser API responses were mocked; this does not prove authentication or saved-project persistence.
+- Subsequent stale-alternative repair binds preview application to its original project identity and exact placement snapshot. Applying after newer manual edits now rejects the outdated preview without modifying the working plan. Rebuilt production frontend and reran the affected canonical/candidate suites: **24 passed**, including a website regression that proves newer manual edits are preserved. Production build also passed its TypeScript checks.
+- Inventory tests: **three passed** after extending fingerprint coverage to engines, geometry, parsers, review and vision. Local frontend is served on port 3040 with a local-only API target for the mocked tests; no deployment occurred.
+
+### Open work; no completion claim
+
+- Consolidate and identify the authority of existing cross-chat implementations without discarding work. Current tree is dirty and not a reproducible release baseline.
+- Audit complete transactional behavior of dependency Ask mode; current passing parking-only acceptance/rejection tests do not establish whole-transaction approval before mutation.
+- Exercise real isolated authentication, save/reopen, export and failure/recovery workflows rather than mocked browser responses. Verify backup/restore and migrations on disposable fixtures, then separately obtain real hosted recovery evidence.
+- Audit the full browser suite and release-critical runner, module ownership, parallel state and dependency advisories. Recheck the complete combined artifact after integration changes.
+- Prepare a rollback-capable staging approval request only after local gates pass. Exact approved deployed-build verification is still required; production promotion requires its own approval.
+
+### October 2 — whole-transaction approval and real local recovery
+
+- Confirmed a governance defect: Ask mode committed the initiating building edit before asking about parking. Updated the object-update path to defer the entire initiating/linked/combined-source transaction until acceptance, without saving or invalidating the current plan while only previewing. Combined-source updates no longer overwrite the parking transaction's undo entries.
+- Approval compares the original full placement snapshot and project identity against current state; stale or cross-project previews are rejected unchanged. Reject preserves all objects; Adjust discards the proposal and selects a parking object for manual editing. Acceptance applies all objects as one undo record and invalidates affected calculations.
+- Chat move/resize responses distinguish proposed, blocked and applied outcomes instead of reporting a pending change as already applied.
+- Strengthened website checks prove rejection preserves both building and parking, acceptance moves both, and one undo restores both. Initial tests failed on outdated count/approval assumptions and inspector navigation; after correcting those checks the combined affected run passed **31 tests** in 25.1 seconds. The candidate-contract suite additionally verifies serialized proposal acceptance and stale/cross-project rejection. These browser checks use mocked API responses.
+- Production build and TypeScript passed after the transaction repair. Final lint had zero errors and the single previously recorded unused experimental geometry helper warning; no new warning remains.
+- A backend was started with an isolated empty environment and disposable storage `/private/tmp/civora-phase0-local.CagxOu`; AI/image providers are disabled, no hosted database or paid provider credentials are available, and the API is local port 18880.
+- **Real local website test passed** for authentication, persisted support request, downloaded account ZIP and token revocation after deletion of its temporary fixture account. No real user account was altered.
+- Added an explicitly local-only persistence browser test. **It passed**, proving authenticated project open, manual geometry edit, backend persistence of the changed coordinate, restoration after page reload, rejection of anonymous access, and rejection of a different owner's access. No API mocking is used in this test. This is local evidence, not hosted validation or exhaustive cross-tenant proof.
+- Backup/snapshot test subset: **17 passed**, 22 third-party Python runtime/deprecation warnings. Executed the real backup/restore command on the disposable database populated by the browser fixtures: **passed**, local restore performed, schema/content/integrity evidence recorded in its `recovery-evidence/report.json`. No production backup/restore readiness claim is made.
+- Whole-transaction approval is now verified for the existing building/parking relationship implementation; broader object dependency coverage, concurrency under load, complete-suite integration and hosted release gates still require evidence. Phase 0 remains active.
+- Broader project/object browser suite: **14 passed, two skipped**, 25.1 seconds. Covers native cul-de-sac/pipe editing, JSON import preserving objects, setback evidence, undo/redo, saved-project restoration, late-save/result/discovery races, out-of-order autosaves, project lifecycle and backend blockers. The skipped cases require a configured map provider; map-backed coordinate accuracy and delayed-scale-save behavior remain unverified in this environment.
+- Release regression cleanup was unsafe for caller-supplied broad/traversal output paths. Added a fail-fast safe-name check and refusal to overwrite existing directories or symlinks before cleanup is registered. Three new guard tests prove traversal/absolute targets fail without running steps and existing directory contents/symlink targets are preserved. Combined guard/inventory tests: **six passed**; shell syntax check passed. The release runner remains a smoke subset, not the full Phase 0 release gate.

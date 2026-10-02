@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, FileImage } from "lucide-react";
+import { ChevronDown, FileImage, SendHorizonal, Sparkles } from "lucide-react";
 import { useEffect } from "react";
 import type { RefObject } from "react";
 
@@ -102,7 +102,7 @@ export default function ChatPanel({
   }, [blocksChatInput, historyOnly, promptInputRef]);
 
   return (
-    <div className="min-w-0 bg-white">
+    <div className="min-w-0 bg-white" data-testid="civora-copilot-panel">
       {!historyOnly ? <button
         type="button"
         onClick={onToggleCollapsed}
@@ -122,20 +122,31 @@ export default function ChatPanel({
       {historyOnly || !collapsed ? (
         <div
           ref={chatScrollRef}
-          className={`${historyOnly ? "h-[calc(100svh-8.5rem)]" : "max-h-[min(320px,36svh)]"} space-y-4 overflow-y-auto p-3 sm:p-4`}
+          className={`${historyOnly ? "h-[calc(100svh-14rem)]" : "max-h-[min(320px,36svh)]"} space-y-3 overflow-y-auto bg-slate-50/45 p-3 sm:p-4`}
         >
+          {historyOnly ? (
+            <div className="mb-4 rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50 to-white p-3.5">
+              <div className="flex items-center gap-2 text-slate-950">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-950 text-white"><Sparkles className="h-4 w-4" /></span>
+                <div>
+                  <p className="text-sm font-bold">Civora Copilot</p>
+                  <p className="text-xs text-slate-500">Understands the active plan, objects, and review state.</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {chatMessages.map((message) => (
             <div
               key={message.id}
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[92%] overflow-hidden rounded-xl px-3 py-3 sm:max-w-[85%] sm:px-4 ${
+                className={`max-w-[94%] overflow-hidden rounded-2xl px-3 py-2.5 sm:max-w-[88%] sm:px-3.5 ${
                   message.role === "user"
-                    ? "bg-slate-950 text-white"
+                    ? "bg-slate-950 text-white shadow-sm"
                     : message.role === "system"
                       ? "border border-amber-200 bg-amber-50 text-amber-900"
-                      : "border border-slate-200 bg-white text-slate-900"
+                      : "border border-slate-200 bg-white text-slate-900 shadow-sm"
                 }`}
               >
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -256,15 +267,15 @@ export default function ChatPanel({
           </div>
         )}
 
-        <div className={`min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:rounded-3xl ${collapsed ? "" : "mb-4"}`}>
+        <div className={`min-w-0 rounded-2xl border border-slate-300 bg-white p-2 shadow-[0_14px_38px_-28px_rgba(15,23,42,.45)] ${collapsed ? "" : "mb-4"}`}>
           <TextArea
             ref={promptInputRef}
             data-testid="civora-chat-input"
             value={prompt}
             onChange={(e) => onPromptChange(e.target.value)}
             onKeyDown={onPromptKeyDown}
-            placeholder="Message Civora AI with what you want to create or change..."
-            className={`border-0 bg-transparent px-1 py-1 shadow-none focus:ring-0 ${
+            placeholder="Ask Civora to create or change the plan…"
+            className={`border-0 bg-transparent px-2 py-2 shadow-none focus:ring-0 ${
               collapsed ? "h-[72px] min-h-[72px] max-h-[96px]" : "h-[150px] min-h-[150px] max-h-[240px]"
             }`}
           />
@@ -332,13 +343,13 @@ export default function ChatPanel({
                 type="button"
                 onClick={onSendMessage}
                 disabled={blocksChatInput || (!prompt.trim() && !imageName)}
-                className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {busy && activePlanTool === "run"
                   ? "Working..."
                   : hasVisibleActiveJob && !isAwaitingApproval
                     ? "Working..."
-                    : "Send"}
+                    : <><span>Run</span><SendHorizonal className="h-4 w-4" /></>}
               </button>
             </div>
           </div>

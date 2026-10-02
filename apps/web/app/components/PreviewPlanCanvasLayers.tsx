@@ -14,6 +14,13 @@ import type { buildWaterFireFlowViewModel } from "../utils/previewWaterFireFlow"
 import { PreviewBasePlanGrid } from "./PreviewBasePlanGrid";
 import { PreviewCadMarkers } from "./PreviewCadMarkers";
 import { PreviewDraftGeometryOverlay } from "./PreviewDraftGeometryOverlay";
+import { PreviewDependencyProposalGeometry } from "./PreviewDependencyProposal";
+import { PreviewDependencyRelationships } from "./PreviewDependencyRelationships";
+import { PreviewLiveConstraintCard, PreviewLiveConstraintGeometry } from "./PreviewLiveConstraintFeedback";
+import { PreviewLayoutDifferenceOverlay } from "./PreviewLayoutDifferenceOverlay";
+import { buildLiveConstraintFeedback } from "../utils/liveConstraintFeedback";
+import type { CanonicalDependencyProposal } from "../utils/canonicalDependencyPolicies";
+import type { LayoutDifference } from "../utils/layoutAlternatives";
 import { PreviewGradingEarthworkDock } from "./PreviewGradingEarthworkDock";
 import { PreviewParkingModules } from "./PreviewParkingModules";
 import { PreviewPolygonObjects } from "./PreviewPolygonObjects";
@@ -43,6 +50,8 @@ type PreviewPlanCanvasLayersProps = {
   viewportTransformStyle: { transform: string; transformOrigin: string };
   buildingPlacements: BuildingPlacement[];
   suggestedPlacements: BuildingPlacement[];
+  dependencyProposal?: CanonicalDependencyProposal | null;
+  layoutDifferences?: LayoutDifference[];
   surveyPointCount: number;
   surveyPoints?: PreviewSurveyPoint[];
   hasTerrainSurfaceEvidence: boolean;
@@ -90,6 +99,8 @@ export function PreviewPlanCanvasLayers({
   viewportTransformStyle,
   buildingPlacements,
   suggestedPlacements,
+  dependencyProposal,
+  layoutDifferences = [],
   surveyPointCount,
   surveyPoints,
   hasTerrainSurfaceEvidence,
@@ -129,6 +140,10 @@ export function PreviewPlanCanvasLayers({
     isPreviewSemanticLayerVisible(semanticLayerForPlacement(item), semanticLayerVisibility),
   );
   const showSvgObjectGeometry = !showMap;
+  const liveConstraintFeedback = buildLiveConstraintFeedback(buildingPlacements, selectedBuildingId);
+  const visibleLayoutDifferences = layoutDifferences.filter((difference) =>
+    isPreviewSemanticLayerVisible(semanticLayerForPlacement(difference.after), semanticLayerVisibility),
+  );
 
   return (
     <div
@@ -171,6 +186,15 @@ export function PreviewPlanCanvasLayers({
           ) : null}
           {showSvgObjectGeometry ? (
             <>
+              <PreviewDependencyRelationships
+                objects={layerVisibleObjects}
+                selectedBuildingId={selectedBuildingId}
+                mapAnchoredRectPercent={mapAnchoredRectPercent}
+              />
+              <PreviewLayoutDifferenceOverlay
+                differences={visibleLayoutDifferences}
+                mapAnchoredRectPercent={mapAnchoredRectPercent}
+              />
               <PreviewPolylineObjects
                 objects={layerVisibleObjects}
                 selectedBuildingId={selectedBuildingId}
@@ -216,6 +240,17 @@ export function PreviewPlanCanvasLayers({
                 detectedFill={legendPalette.detectedFill}
                 sitePointToSvgPercent={sitePointToSvgPercent}
               />
+              <PreviewDependencyProposalGeometry
+                proposal={dependencyProposal ?? null}
+                mapAnchoredRectPercent={mapAnchoredRectPercent}
+                sitePointToSvgPercent={sitePointToSvgPercent}
+              />
+              <PreviewLiveConstraintGeometry
+                feedback={liveConstraintFeedback}
+                objects={layerVisibleObjects}
+                mapAnchoredRectPercent={mapAnchoredRectPercent}
+                sitePointToSvgPercent={sitePointToSvgPercent}
+              />
             </>
           ) : null}
           {!presentationActive && !showMap ? (
@@ -242,6 +277,7 @@ export function PreviewPlanCanvasLayers({
           ) : null}
         </svg>
       ) : null}
+      {!presentationActive && !showMap ? <PreviewLiveConstraintCard feedback={liveConstraintFeedback} /> : null}
       {!presentationActive && showEarthworkUx && gradingEarthworkUx ? (
         <PreviewGradingEarthworkDock
           gradingEarthworkUx={gradingEarthworkUx}
