@@ -74,12 +74,12 @@ function planParkingReflow(
   const site = placements.find((item) => item.type === "site" && item.placed);
   const siteRect = site ? rectFor(site) : null;
   const ignoredSurfaceTypes = new Set(["site", "road", "sidewalk", "drive_aisle", "access_drive"]);
-  const obstacles = placements.filter((item) =>
+  const obstacles = [afterBuilding, ...placements.filter((item) =>
     item.placed &&
     item.id !== beforeBuilding.id &&
     !linkedIds.has(item.id) &&
     !ignoredSurfaceTypes.has(item.type ?? ""),
-  );
+  )];
   const accepted: BuildingPlacement[] = [];
   const reports: ParkingReflowReport[] = [];
   const gap = 24;

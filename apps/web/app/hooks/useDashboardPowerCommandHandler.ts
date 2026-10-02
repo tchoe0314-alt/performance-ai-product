@@ -1,4 +1,6 @@
 import { useCallback } from "react";
+import type { CanonicalBatchEdit } from "../utils/canonicalBatchTransaction";
+import { buildDraftObjectResizeUpdates } from "../utils/objectGeometry";
 
 import type {
   BuildingPlacement,
@@ -90,6 +92,7 @@ type WorkflowReviewDashboard = {
 type RecordRecentChange = (change: Omit<RecentChange, "id" | "createdAt">) => void;
 
 type UseDashboardPowerCommandHandlerInput = {
+  handleCanonicalBatchEdit: (edits: CanonicalBatchEdit[], label: string) => "applied" | "proposed" | "blocked";
   activePlacementId: string | null;
   appendChatMessage: AppendChatMessage;
   analysisIssues: DashboardAccessAnalysisIssue[];
@@ -161,6 +164,7 @@ export function useDashboardPowerCommandHandler({
   generateFlowSummary,
   handleAddObject,
   handleCreateDenseCommercialConcept,
+  handleCanonicalBatchEdit,
   handleGenerateSystem,
   handleGenerateLayoutAlternatives,
   handleMakeReviewPackage,
@@ -222,7 +226,7 @@ export function useDashboardPowerCommandHandler({
       appendChatMessage("user", message);
       const parkingObjects = buildingPlacements.filter((item) => item.type === "parking" && item.meta?.dense_concept_generated);
       const parkingTotal = revisionSpec.parkingStalls;
-      setBuildingPlacements((current) => current.map((item) => {
+      const revisedPlacements = buildingPlacements.map<BuildingPlacement>((item) => {
         if (!item.meta?.dense_concept_generated) return item;
         if ((item.type === "building" || item.type === "office_building") && item.meta?.requested_area_sf) {
           const area = revisionSpec.buildingAreaSf ?? Number(item.meta.requested_area_sf);
@@ -233,8 +237,7 @@ export function useDashboardPowerCommandHandler({
             ...item,
             type: use === "office" ? "office_building" : "building",
             label: `${use.charAt(0).toUpperCase()}${use.slice(1)} Building - ${Math.round(area).toLocaleString()} sf`,
-            w: width,
-            d: area / width,
+            ...buildDraftObjectResizeUpdates(item, width, area / width),
             meta: { ...item.meta, requested_area_sf: Math.round(area), building_use: use },
           };
         }
@@ -253,7 +256,20 @@ export function useDashboardPowerCommandHandler({
           return { ...item, label: "Rear Loading / Service Area", meta: { ...item.meta, loading_area: true } };
         }
         return item;
-      }));
+      });
+      const edits = revisedPlacements.flatMap((item, index) => {
+        const original = buildingPlacements[index];
+        const updates = Object.fromEntries(Object.entries(item).filter(([key, value]) =>
+          JSON.stringify(value) !== JSON.stringify(original[key as keyof BuildingPlacement]))) as Partial<BuildingPlacement>;
+        return Object.keys(updates).length ? [{ objectId: item.id, updates }] : [];
+      });
+      const outcome = handleCanonicalBatchEdit(edits, "Commercial program revised");
+      if (outcome !== "applied") {
+        appendChatMessage("assistant", outcome === "proposed"
+          ? "The complete commercial revision is awaiting approval. The working plan is unchanged."
+          : "The commercial revision was blocked by object protection or invalid geometry. The working plan is unchanged; review the status message.", "status");
+        return true;
+      }
       if (parkingTotal) setParkingCount(String(parkingTotal));
       clearGeneratedPreview();
       markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
@@ -265,7 +281,6 @@ export function useDashboardPowerCommandHandler({
       ].filter(Boolean);
       appendChatMessage("assistant", `Revised the concept to ${changes.join(", ")}. The affected systems are now stale; run Generate again to refresh them.`, "status");
       updateProjectStatus({ state: "needs review", area: "setup", title: "Commercial concept revised", detail: `Updated ${changes.join(", ")}.`, nextAction: "Review the revised layout, then run Generate." });
-      recordRecentChange({ type: "object_type_changed", label: "Commercial program revised", detail: changes.join(", ") });
       return true;
     }
     if (!/\b(add|create|place|make|include|put|recreate|copy|draft|draw|layout|produce)\b/.test(lower)) return false;
@@ -441,16 +456,15 @@ export function useDashboardPowerCommandHandler({
     clearGeneratedPreview,
     handleAddObject,
     handleCreateDenseCommercialConcept,
+    handleCanonicalBatchEdit,
     handleOpenSidePanel,
     hasSiteBoundary,
     markSystemsStale,
     parkingCount,
-    recordRecentChange,
     resolveLotBounds,
     setActivePlacementId,
     setActiveSidePanel,
     setActiveWorkspaceMode,
-    setBuildingPlacements,
     setCommandBarExpanded,
     setParkingCount,
     setPreviewInteraction,

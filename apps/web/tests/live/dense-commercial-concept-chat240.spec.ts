@@ -130,6 +130,20 @@ test("honors a commercial program and executes a follow-up revision locally", as
   await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 126 stalls"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 84 stalls"]').first()).toBeVisible();
   await expect(page.locator("body")).toContainText(/Revised the concept to 48,000 sf retail building, 210 parking stalls/i);
+  await page.getByRole("button", { name: "Undo last draft change", exact: true }).click();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Retail Building - 42,000 sf"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 114 stalls"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 76 stalls"]').first()).toBeVisible();
+  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  const objectList = page.getByTestId("object-manager-panel");
+  if (!(await objectList.evaluate(element => element.hasAttribute("open")))) await objectList.locator("summary").click();
+  await page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 76 stalls" }).first().getByTestId("object-manager-inspect").click();
+  await page.getByRole("button", { name: "Lock object", exact: true }).click();
+  await runChatCommand(page, "Revise the retail building to 48,000 sf and increase parking to 210 spaces with a rear loading area.");
+  await expect(page.locator("body")).toContainText(/protected.*flexible/i);
+  await expect(page.locator('[data-cad-object-id][aria-label*="Retail Building - 42,000 sf"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 114 stalls"]').first()).toBeVisible();
+  await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 76 stalls"]').first()).toBeVisible();
 });
 
 test("understands recreate-the-image wording without a prebuilt site", async ({ page }) => {

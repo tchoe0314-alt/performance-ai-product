@@ -337,6 +337,7 @@ import { WorkspaceShortcutsOverlay } from "./components/WorkspaceShortcutsOverla
 import { resolveDependencyProposal, type CanonicalDependencyProposal } from "./utils/canonicalDependencyPolicies";
 import { type LayoutAlternativeSearch, type LayoutGoal } from "./utils/layoutAlternatives";
 import { useDashboardLayoutComparison } from "./hooks/useDashboardLayoutComparison";
+import { planCanonicalBatchTransaction, type CanonicalBatchEdit } from "./utils/canonicalBatchTransaction";
 
 function PerformanceAIDashboardView({
   forceDemoWorkspace = false,
@@ -5089,7 +5090,38 @@ function PerformanceAIDashboardView({
     totalPipeLength,
     workflowActionHints,
   });
+  const handleCanonicalBatchEdit = useCallback((edits: CanonicalBatchEdit[], label: string) => {
+    const result = planCanonicalBatchTransaction(buildingPlacementsRef.current, edits,
+      currentProjectRef.current?.project_id ?? null, label, `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    if (result.status === "blocked") {
+      setStatusMessage(result.reason);
+      pushRecoveryMessage(result.reason);
+      return "blocked" as const;
+    }
+    if (result.proposal) {
+      setDependencyProposal(result.proposal);
+      setStatusMessage("Review the complete commercial revision before applying. The working plan is unchanged.");
+      return "proposed" as const;
+    }
+    const undo = { action: "bulk_update" as const, before: result.before, after: result.after, label };
+    buildingPlacementsRef.current = result.placements;
+    setBuildingPlacements(result.placements);
+    clearGeneratedPreview();
+    markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
+    recordDraftUndoAction(undo);
+    recordRecentChange({ type: "object_type_changed", label, detail: `${result.after.length} objects revised in one transaction.`, undo });
+    const snapshot = JSON.stringify(result.placements);
+    const projectId = currentProjectRef.current?.project_id ?? null;
+    void ensureProjectDraftRef.current().then(() => {
+      if (JSON.stringify(buildingPlacementsRef.current) !== snapshot ||
+          (projectId !== null && currentProjectRef.current?.project_id !== projectId)) return null;
+      return saveProjectRef.current({ silent: true });
+    }).catch(() => pushRecoveryMessage("The revision remains in the working plan, but saving needs attention. Retry Save Project."));
+    return "applied" as const;
+  }, [clearGeneratedPreview, markSystemsStale, pushRecoveryMessage, recordDraftUndoAction, recordRecentChange]);
+
   const tryHandlePowerCommand = useDashboardPowerCommandHandler({
+    handleCanonicalBatchEdit,
     activePlacementId,
     analysisIssues,
     appendChatMessage,
