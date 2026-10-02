@@ -1,5 +1,7 @@
 # Civora End-State Validation
 
+Reports record the calling Python executable/version, Git HEAD and a hash of tracked changes before/after execution. Local Python gates use that same interpreter. Changing tracked source during a run fails validation. This provenance excludes untracked inputs and does not attest the separately served browser artifact or a deployed artifact; both artifact-verification flags remain false until an independent exact-build process establishes them. No environment credentials or source diff contents are included in this provenance record.
+
 Run the repeatable local validation from the repository root:
 
 ```bash

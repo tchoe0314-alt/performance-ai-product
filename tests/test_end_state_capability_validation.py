@@ -1,4 +1,7 @@
 from pathlib import Path
+import sys
+
+import backend.application.end_state_capability_validation as validation
 
 from backend.application.end_state_capability_validation import (
     END_STATE_VALIDATION_VERSION,
@@ -8,17 +11,27 @@ from backend.application.end_state_capability_validation import (
 )
 
 
-def test_manifest_covers_every_end_state_proof_layer() -> None:
-    gate_ids = {
-        item["gate_id"]
-        for item in build_end_state_validation_gates(
-            include_frontend=True,
-            include_browser=True,
-            hosted_url="https://example.test",
-            include_hosted_auth=True,
-        )
-    }
+def test_local_python_gates_use_the_calling_runtime() -> None:
+    gates = build_end_state_validation_gates(include_frontend=False, include_browser=False)
+    assert all(command[0] == sys.executable for gate in gates for command in gate["commands"])
 
+
+def test_source_changes_during_validation_cannot_produce_assurance(monkeypatch) -> None:
+    revisions = iter([{"head": "before", "tracked_diff_sha256": "one"}, {"head": "after", "tracked_diff_sha256": "two"}])
+    monkeypatch.setattr(validation, "_revision_evidence", lambda: next(revisions))
+    report = run_end_state_capability_validation(include_frontend=False, include_browser=False,
+        selected_gate_ids=["source_terrain_truth"],
+        executor=lambda *args: {"exit_code": 0, "elapsed_seconds": 0.0})
+    assert report["success"] is False
+    assert report["failed_gate_ids"] == ["source_revision_changed"]
+    assert report["internal_software_assurance_complete"] is False
+    assert report["execution_provenance"]["python_executable"] == sys.executable
+    assert report["execution_provenance"]["served_artifact_verified"] is False
+    assert report["execution_provenance"]["deployed_artifact_verified"] is False
+
+def test_manifest_covers_every_end_state_proof_layer() -> None:
+    gate_ids = {item["gate_id"] for item in build_end_state_validation_gates(
+        include_frontend=True, include_browser=True, hosted_url="https://example.test", include_hosted_auth=True)}
     assert gate_ids == {
         "source_terrain_truth",
         "semantic_project_lifecycle",

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
@@ -210,6 +212,16 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _revision_evidence() -> Dict[str, Any]:
+    try:
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, check=True, text=True).stdout.strip()
+        diff = subprocess.run(["git", "diff", "HEAD", "--binary"], cwd=ROOT, capture_output=True, check=True).stdout
+        return {"head": head, "tracked_changes": bool(diff), "tracked_diff_sha256": hashlib.sha256(diff).hexdigest(),
+                "scope": "Tracked repository inputs only; untracked files and the served/deployed artifact are not attested."}
+    except (OSError, subprocess.SubprocessError):
+        return {"head": None, "scope": "Repository provenance unavailable; exact revision is not verified."}
+
+
 def _default_executor(command: Sequence[str], cwd: Path, env: Dict[str, str]) -> Dict[str, Any]:
     started = perf_counter()
     completed = subprocess.run(
@@ -236,6 +248,10 @@ def build_end_state_validation_gates(
     include_hosted_auth: bool = False,
 ) -> List[Dict[str, Any]]:
     gates = deepcopy(LOCAL_GATES)
+    for gate in gates:
+        for command in gate["commands"]:
+            if command[0] == "python3":
+                command[0] = sys.executable
     if include_frontend:
         gates.append(deepcopy(FRONTEND_GATE))
     if include_browser:
@@ -267,6 +283,7 @@ def run_end_state_capability_validation(
     output_path: Optional[Path] = None,
     executor: CommandExecutor = _default_executor,
 ) -> Dict[str, Any]:
+    revision_before = _revision_evidence()
     selected = {str(item) for item in (selected_gate_ids or []) if str(item)}
     gates = build_end_state_validation_gates(
         include_frontend=include_frontend,
@@ -315,6 +332,11 @@ def run_end_state_capability_validation(
             }
         )
 
+    revision_after = _revision_evidence()
+    if revision_before != revision_after:
+        results.append({"gate_id": "source_revision_changed", "label": "Stable validation source revision",
+                        "evidence_level": "configuration", "status": "failed", "command_results": [],
+                        "elapsed_seconds": 0.0, "errors": ["Tracked source changed during validation; rerun on a stable revision."]})
     failed_gate_ids = [result["gate_id"] for result in results if result["status"] != "passed"]
     passed_gate_ids = {result["gate_id"] for result in results if result["status"] == "passed"}
     calculation_crosschecks = build_internal_calculation_crosschecks()
@@ -327,6 +349,14 @@ def run_end_state_capability_validation(
     report = {
         "version": END_STATE_VALIDATION_VERSION,
         "generated_at": _now_iso(),
+        "execution_provenance": {
+            "revision_before": revision_before,
+            "revision_after": revision_after,
+            "python_executable": sys.executable,
+            "python_version": sys.version.split()[0],
+            "served_artifact_verified": False,
+            "deployed_artifact_verified": False,
+        },
         "status": "local_and_requested_hosted_gates_passed" if not failed_gate_ids else "validation_failed",
         "success": not failed_gate_ids,
         "gate_count": len(results),
