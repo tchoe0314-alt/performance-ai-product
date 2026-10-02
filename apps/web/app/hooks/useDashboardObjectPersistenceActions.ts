@@ -8,6 +8,8 @@ import type {
   ProjectRecord,
 } from "../types";
 import { formatCalmActionMessage } from "../utils/objectGeometry";
+import { captureWorkspaceSaveGuard } from "../utils/workspaceSaveGuard";
+import { guardedTransactionSave } from "../utils/guardedTransactionSave";
 
 type AppendChatMessage = (
   role: ChatMessage["role"],
@@ -23,9 +25,11 @@ type SaveProject = (options: {
 
 type UseDashboardObjectPersistenceActionsInput = {
   appendChatMessage: AppendChatMessage;
-  currentProject: ProjectRecord | null;
+  currentProjectRef: MutableRefObject<ProjectRecord | null>;
+  buildingPlacementsRef: MutableRefObject<BuildingPlacement[]>;
+  projectLoadRequestRef: MutableRefObject<number>;
   ensureProjectDraftRef: MutableRefObject<() => Promise<string | null>>;
-  payloadPreview: PlanRequestPayload;
+  payloadPreviewRef: MutableRefObject<PlanRequestPayload>;
   previewRefreshIntentRef: MutableRefObject<{ reason: string; track?: boolean } | null>;
   saveProjectRef: MutableRefObject<SaveProject>;
   setObjectManagerStatusMessage: (message: string) => void;
@@ -34,40 +38,47 @@ type UseDashboardObjectPersistenceActionsInput = {
 
 export function useDashboardObjectPersistenceActions({
   appendChatMessage,
-  currentProject,
+  currentProjectRef,
+  buildingPlacementsRef,
+  projectLoadRequestRef,
   ensureProjectDraftRef,
-  payloadPreview,
+  payloadPreviewRef,
   previewRefreshIntentRef,
   saveProjectRef,
   setObjectManagerStatusMessage,
   setStatusMessage,
 }: UseDashboardObjectPersistenceActionsInput) {
-  const latestDraftRefreshRef = useRef<{ reason: string } | null>(null);
+  const latestDraftRefreshRef = useRef<{ reason: string; isCurrent: () => boolean } | null>(null);
   const draftRefreshWorkerRef = useRef<Promise<void> | null>(null);
+  const detectedSaveSequenceRef = useRef(0);
 
   const persistDetectedPlacements = useCallback(
     (nextDetected: BuildingPlacement[]) => {
-      const currentInput = currentProject?.project_input ?? payloadPreview;
-      const nextSiteInputs = {
-        ...(currentInput?.meta?.site_inputs ?? {}),
-        detected_objects: nextDetected,
-      };
-      void ensureProjectDraftRef.current()
-        .then(() => saveProjectRef.current({
-          silent: true,
-          projectInputOverride: {
-            ...currentInput,
-            input_mode: "user",
-            strict_mode: false,
-            allow_ai_fill_for_blanks: false,
-            meta: {
-              ...(currentInput?.meta ?? {}),
-              site_inputs: nextSiteInputs,
+      const sequence = ++detectedSaveSequenceRef.current;
+      void guardedTransactionSave({
+        isCurrent: captureWorkspaceSaveGuard(projectLoadRequestRef, buildingPlacementsRef,
+          () => detectedSaveSequenceRef.current === sequence),
+        ensureDraft: () => ensureProjectDraftRef.current(),
+        save: () => {
+          const currentInput = currentProjectRef.current?.project_input ?? payloadPreviewRef.current;
+          return saveProjectRef.current({
+            silent: true,
+            projectInputOverride: {
+              ...currentInput,
+              input_mode: "user",
+              strict_mode: false,
+              allow_ai_fill_for_blanks: false,
+              meta: {
+                ...(currentInput?.meta ?? {}),
+                site_inputs: { ...(currentInput?.meta?.site_inputs ?? {}), detected_objects: nextDetected },
+              },
             },
-          },
-        }));
+          });
+        },
+        onFailure: () => setStatusMessage("Detected-object changes remain in the working plan, but saving failed. Retry Save Project."),
+      });
     },
-    [currentProject, ensureProjectDraftRef, payloadPreview, saveProjectRef],
+    [currentProjectRef, buildingPlacementsRef, projectLoadRequestRef, ensureProjectDraftRef, payloadPreviewRef, saveProjectRef, setStatusMessage],
   );
 
   const reportObjectActionBlocker = useCallback((message: string) => {
@@ -78,7 +89,10 @@ export function useDashboardObjectPersistenceActions({
   }, [appendChatMessage, setObjectManagerStatusMessage, setStatusMessage]);
 
   const persistDraftRefresh = useCallback((reason: string) => {
-    latestDraftRefreshRef.current = { reason };
+    latestDraftRefreshRef.current = {
+      reason,
+      isCurrent: captureWorkspaceSaveGuard(projectLoadRequestRef, buildingPlacementsRef),
+    };
     if (draftRefreshWorkerRef.current) return;
 
     draftRefreshWorkerRef.current = (async () => {
@@ -94,25 +108,20 @@ export function useDashboardObjectPersistenceActions({
 
           const request = latestDraftRefreshRef.current;
           latestDraftRefreshRef.current = null;
-          await ensureProjectDraftRef.current();
-
-          // A newer object edit landed while the project was being prepared. Skip
-          // the stale payload and let the next loop persist the latest workspace.
-          if (latestDraftRefreshRef.current) continue;
-
-          await saveProjectRef.current({ silent: true });
-          if (!latestDraftRefreshRef.current && request) {
-            previewRefreshIntentRef.current = {
-              reason: request.reason,
-              track: true,
-            };
-          }
+          if (!request) continue;
+          await guardedTransactionSave({
+            isCurrent: () => request.isCurrent() && !latestDraftRefreshRef.current,
+            ensureDraft: () => ensureProjectDraftRef.current(),
+            save: () => saveProjectRef.current({ silent: true }),
+            refresh: () => { previewRefreshIntentRef.current = { reason: request.reason, track: true }; },
+            onFailure: () => reportObjectActionBlocker("The draft remains in the working plan, but saving failed. Retry Save Project."),
+          });
         }
       } finally {
         draftRefreshWorkerRef.current = null;
       }
     })();
-  }, [ensureProjectDraftRef, previewRefreshIntentRef, saveProjectRef]);
+  }, [projectLoadRequestRef, buildingPlacementsRef, ensureProjectDraftRef, previewRefreshIntentRef, saveProjectRef, reportObjectActionBlocker]);
 
   return {
     persistDetectedPlacements,

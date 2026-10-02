@@ -1755,9 +1755,11 @@ function PerformanceAIDashboardView({
     reportObjectActionBlocker,
   } = useDashboardObjectPersistenceActions({
     appendChatMessage,
-    currentProject,
+    currentProjectRef,
+    buildingPlacementsRef,
+    projectLoadRequestRef,
     ensureProjectDraftRef,
-    payloadPreview,
+    payloadPreviewRef,
     previewRefreshIntentRef,
     saveProjectRef,
     setObjectManagerStatusMessage,
@@ -1768,6 +1770,8 @@ function PerformanceAIDashboardView({
     handleRemoveBuilding,
     handleRestoreBuilding,
   } = useDashboardObjectRemoveRestoreActions({
+    buildingPlacementsRef,
+    projectLoadRequestRef,
     activePlacementId,
     buildingPlacements,
     clearGeneratedPreview,
@@ -1907,6 +1911,8 @@ function PerformanceAIDashboardView({
   });
 
   const handleCreateSiteBoundary = useDashboardSiteBoundaryDrawAction({
+    buildingPlacementsRef,
+    projectLoadRequestRef,
     buildManualFields,
     buildingCount,
     buildingDepth,

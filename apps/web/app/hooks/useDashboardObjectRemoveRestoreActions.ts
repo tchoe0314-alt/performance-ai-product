@@ -4,6 +4,8 @@ import type { MutableRefObject } from "react";
 import type { BuildingPlacement, PlanResponse, ProjectInput, ProjectRecord } from "../types";
 import { systemsImpactedByPlacement } from "../utils/dashboardGenerateLayoutContext";
 import { canonicalDeletionBlocker } from "../utils/canonicalEditCommands";
+import { captureWorkspaceSaveGuard } from "../utils/workspaceSaveGuard";
+import { guardedTransactionSave } from "../utils/guardedTransactionSave";
 import type { DraftUndoAction, RecentChange } from "../utils/dashboardTypes";
 import type { EngineeringSystemKey } from "../utils/workflowConstants";
 
@@ -22,6 +24,8 @@ type SaveProject = (options?: {
 type UseDashboardObjectRemoveRestoreActionsInput = {
   activePlacementId: string | null;
   buildingPlacements: BuildingPlacement[];
+  buildingPlacementsRef: MutableRefObject<BuildingPlacement[]>;
+  projectLoadRequestRef: MutableRefObject<number>;
   clearGeneratedPreview: () => void;
   debugLog: (label: string, payload?: Record<string, unknown>) => void;
   ensureProjectDraftRef: MutableRefObject<() => Promise<string | null>>;
@@ -41,7 +45,8 @@ type UseDashboardObjectRemoveRestoreActionsInput = {
 
 export function useDashboardObjectRemoveRestoreActions({
   activePlacementId,
-  buildingPlacements,
+  buildingPlacementsRef,
+  projectLoadRequestRef,
   clearGeneratedPreview,
   debugLog,
   ensureProjectDraftRef,
@@ -59,13 +64,13 @@ export function useDashboardObjectRemoveRestoreActions({
   setStatusMessage,
 }: UseDashboardObjectRemoveRestoreActionsInput) {
   const handleRemoveBuilding = useCallback((id: string) => {
-    const target = buildingPlacements.find((item) => item.id === id);
+    const target = buildingPlacementsRef.current.find((item) => item.id === id);
     if (!target) return;
     const combinedSourceIds = target && Array.isArray(target.meta?.combined_from_object_ids)
       ? target.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
       : [];
     const relatedSourceObjects = combinedSourceIds.length
-      ? buildingPlacements.filter((item) => combinedSourceIds.includes(item.id))
+      ? buildingPlacementsRef.current.filter((item) => combinedSourceIds.includes(item.id))
       : [];
     const blocker = canonicalDeletionBlocker([target, ...relatedSourceObjects]);
     if (blocker) {
@@ -107,12 +112,17 @@ export function useDashboardObjectRemoveRestoreActions({
     } else {
       setStatusMessage("Object removed. Regenerate systems to reflect the new layout.");
     }
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true });
+    void guardedTransactionSave({
+      isCurrent: captureWorkspaceSaveGuard(projectLoadRequestRef, buildingPlacementsRef),
+      ensureDraft: () => ensureProjectDraftRef.current(),
+      save: () => saveProjectRef.current({ silent: true }),
+      refresh: () => { previewRefreshIntentRef.current = { reason: "Refreshing preview after object removal...", track: true }; },
+      onFailure: () => pushRecoveryMessage("The object was removed from the working plan, but saving failed. Retry Save Project."),
+    });
   }, [
     activePlacementId,
-    buildingPlacements,
+    buildingPlacementsRef,
+    projectLoadRequestRef,
     clearGeneratedPreview,
     debugLog,
     ensureProjectDraftRef,
@@ -144,15 +154,21 @@ export function useDashboardObjectRemoveRestoreActions({
       undoBlockedReason: "Restore is already an undo result; use object delete if you need to remove it again.",
     });
     pushRecoveryMessage(`Undo: restored ${snapshot.label}. Generated systems may be stale.`);
-    void ensureProjectDraftRef.current()
-      .then(() => saveProjectRef.current({ silent: true }))
-      .then(() => {
+    void guardedTransactionSave({
+      isCurrent: captureWorkspaceSaveGuard(projectLoadRequestRef, buildingPlacementsRef),
+      ensureDraft: () => ensureProjectDraftRef.current(),
+      save: () => saveProjectRef.current({ silent: true }),
+      refresh: () => {
         previewRefreshIntentRef.current = {
           reason: "Refreshing preview after undo restore...",
           track: true,
         };
-      });
+      },
+      onFailure: () => pushRecoveryMessage("The object was restored in the working plan, but saving failed. Retry Save Project."),
+    });
   }, [
+    buildingPlacementsRef,
+    projectLoadRequestRef,
     clearGeneratedPreview,
     ensureProjectDraftRef,
     markSystemsStale,

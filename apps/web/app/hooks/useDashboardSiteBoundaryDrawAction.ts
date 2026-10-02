@@ -5,6 +5,8 @@ import type { BuildingPlacement, ProjectInput, ProjectRecord, SiteInputs } from 
 import { buildDashboardManualFields } from "../utils/dashboardManualFields";
 import type { EngineeringSystemKey } from "../utils/workflowConstants";
 import { SQFT_PER_ACRE } from "../utils/workflowConstants";
+import { captureWorkspaceSaveGuard } from "../utils/workspaceSaveGuard";
+import { guardedTransactionSave } from "../utils/guardedTransactionSave";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type SaveProject = (options?: {
@@ -28,6 +30,8 @@ type UseDashboardSiteBoundaryDrawActionInput = {
   buildingCount: string;
   buildingDepth: string;
   buildingPlacements: BuildingPlacement[];
+  buildingPlacementsRef: MutableRefObject<BuildingPlacement[]>;
+  projectLoadRequestRef: MutableRefObject<number>;
   buildingWidth: string;
   clearGeneratedPreview: () => void;
   currentProject: ProjectRecord | null;
@@ -67,7 +71,8 @@ export function useDashboardSiteBoundaryDrawAction({
   buildManualFields,
   buildingCount,
   buildingDepth,
-  buildingPlacements,
+  buildingPlacementsRef,
+  projectLoadRequestRef,
   buildingWidth,
   clearGeneratedPreview,
   currentProject,
@@ -167,7 +172,7 @@ export function useDashboardSiteBoundaryDrawAction({
       };
       const nextPlacements = [
         nextSite,
-        ...buildingPlacements.filter((item) => item.type !== "site"),
+        ...buildingPlacementsRef.current.filter((item) => item.type !== "site"),
       ];
       const nextLotWidth = String(nextSite.w);
       const nextLotHeight = String(nextSite.d);
@@ -248,25 +253,28 @@ export function useDashboardSiteBoundaryDrawAction({
             }
           : project,
       );
-      void ensureProjectDraftRef.current()
-        .then(() =>
-          saveProjectRef.current({
+      void guardedTransactionSave({
+        isCurrent: captureWorkspaceSaveGuard(projectLoadRequestRef, buildingPlacementsRef),
+        ensureDraft: () => ensureProjectDraftRef.current(),
+        save: () => saveProjectRef.current({
             silent: true,
             projectInputOverride: nextProjectInput,
           }),
-        )
-        .then(() => {
+        refresh: () => {
           previewRefreshIntentRef.current = {
             reason: "Refreshing preview after site boundary draw...",
             track: true,
           };
-        });
+        },
+        onFailure: () => setStatusMessage("The drawn boundary remains in the working plan, but saving failed. Retry Save Project."),
+      });
     },
     [
       buildManualFields,
       buildingCount,
       buildingDepth,
-      buildingPlacements,
+      buildingPlacementsRef,
+      projectLoadRequestRef,
       buildingWidth,
       clearGeneratedPreview,
       currentProject,
