@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import type { DrawMode } from "../utils/cadToolTypes";
 
 type DrawModeButton = {
@@ -47,8 +47,13 @@ export function PreviewMobileDrawToolbar({
   onResetView: () => void;
   onDeleteSelected: () => void;
 }) {
+  const [minimized, setMinimized] = useState(false);
   return (
-    <div className="civora-preview-mobile-draw-toolbar absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 md:hidden">
+    <div data-no-window-select onMouseDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()} className="civora-preview-mobile-draw-toolbar absolute inset-x-1 bottom-1 z-[70] max-h-[52%] overflow-y-auto rounded-xl border border-slate-200 bg-white/95 p-2 shadow-[0_20px_50px_-28px_rgba(15,23,42,0.55)] backdrop-blur sm:inset-x-2 md:hidden">
+      <button type="button" data-testid="mobile-draw-controls-toggle" aria-expanded={!minimized} onClick={() => setMinimized(value => !value)} className="mb-1 min-h-10 w-full rounded-lg border border-slate-200 px-2 text-xs font-semibold text-slate-700">
+        {minimized ? `Show drawing controls · ${mobileDrawLabel(drawMode, drawMode)}` : "Minimize drawing controls"}
+      </button>
+      {!minimized ? <>
       <div className="grid grid-cols-4 gap-1.5 pb-1 min-[420px]:grid-cols-7">
         {drawModeButtons.map((item) => {
           const Icon = item.icon;
@@ -133,6 +138,7 @@ export function PreviewMobileDrawToolbar({
           {finishDraftBlockedReason}
         </p>
       ) : null}
+      </> : null}
     </div>
   );
 }

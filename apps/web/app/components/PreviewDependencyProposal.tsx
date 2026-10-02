@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+import { useCompactViewport } from "../hooks/useCompactViewport";
 import type { BuildingPlacement } from "../types";
 import type { CanonicalDependencyProposal } from "../utils/canonicalDependencyPolicies";
 
@@ -56,11 +58,15 @@ type ProposalCardProps = {
 };
 
 export function PreviewDependencyProposalCard({ proposal, onAccept, onAdjust, onReject }: ProposalCardProps) {
+  const compactViewport = useCompactViewport();
   const reviewCount = proposal.reflowReports.filter((report) => report.status === "review").length;
-  return (
+  const card = (
     <section
       data-testid="dependency-proposal-card"
-      className="absolute left-1/2 top-4 z-[70] w-[min(92%,34rem)] -translate-x-1/2 rounded-2xl border border-sky-200 bg-white/95 p-3 shadow-xl backdrop-blur"
+      data-presentation={compactViewport ? "viewport" : "canvas"}
+      className={`${compactViewport
+        ? "fixed left-1/2 top-[calc(env(safe-area-inset-top)+5rem)] z-[850] max-h-[calc(100svh-12rem)] overflow-y-auto"
+        : "absolute left-1/2 top-4 z-[70]"} w-[min(92%,34rem)] -translate-x-1/2 rounded-2xl border border-sky-200 bg-white/95 p-3 shadow-xl backdrop-blur`}
       aria-label="Linked parking proposal"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -92,4 +98,7 @@ export function PreviewDependencyProposalCard({ proposal, onAccept, onAdjust, on
       </div>
     </section>
   );
+  // The mobile drawer is a separate stacking layer over the canvas. Portal
+  // review controls out of that layer without moving or applying geometry.
+  return compactViewport ? createPortal(card, document.body) : card;
 }

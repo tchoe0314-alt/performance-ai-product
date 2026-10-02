@@ -20,6 +20,12 @@ const outputDir =
   process.env.PLAYWRIGHT_OUTPUT_DIR ||
   path.join("test-results", `run-${process.pid}`);
 
+// Keep the default device smoke scope; explicitly opt into existing workflow
+// suites when verifying Phase 0 across browser engines and touch viewports.
+const deviceTestMatch = process.env.CIVORA_PHASE0_CROSS_BROWSER === "1"
+  ? /(?:rc1-accessibility-cross-browser|project-object-integration|canonical-edit-command-foundation|dense-commercial-concept-chat240|preview-realism-truth-chat234|phase0-concept-replacement|phase0-local-persistence|drawn-boundary-finish|undo-recovery-history-chat231b|video-website-regression)\.spec\.ts/
+  : /rc1-accessibility-cross-browser\.spec\.ts/;
+
 export default defineConfig({
   testDir: "./tests/live",
   timeout: 120_000,
@@ -80,28 +86,28 @@ export default defineConfig({
     },
     {
       name: "firefox",
-      testMatch: /rc1-accessibility-cross-browser\.spec\.ts/,
+      testMatch: deviceTestMatch,
       use: {
         ...devices["Desktop Firefox"],
       },
     },
     {
       name: "webkit",
-      testMatch: /rc1-accessibility-cross-browser\.spec\.ts/,
+      testMatch: deviceTestMatch,
       use: {
         ...devices["Desktop Safari"],
       },
     },
     {
       name: "mobile-chromium",
-      testMatch: /rc1-accessibility-cross-browser\.spec\.ts/,
+      testMatch: deviceTestMatch,
       use: {
         ...devices["Pixel 7"],
       },
     },
     {
       name: "mobile-webkit",
-      testMatch: /rc1-accessibility-cross-browser\.spec\.ts/,
+      testMatch: deviceTestMatch,
       use: {
         ...devices["iPhone 15"],
       },

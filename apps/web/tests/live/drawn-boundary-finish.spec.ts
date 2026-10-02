@@ -1,8 +1,21 @@
 import { expect, type Page, type Locator, test } from "@playwright/test";
 
-import { openCadPrecisionTools } from "./testUiHelpers";
+import { openCadPrecisionTools, revealPreviewCanvas } from "./testUiHelpers";
 
 async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number, holdMs = 0) {
+  await revealPreviewCanvas(surface.page());
+  if ((surface.page().viewportSize()?.width ?? 1440) < 1024) {
+    const precision = surface.page().getByTestId("cad-precision-tools").filter({ visible: true }).first();
+    if (await precision.isVisible() && await precision.evaluate(element => element.hasAttribute("open"))) await precision.locator(":scope > summary").click();
+  }
+  const drawingControls = surface.page().getByTestId("mobile-draw-controls-toggle").filter({ visible: true });
+  if (await drawingControls.isVisible() && await drawingControls.getAttribute("aria-expanded") === "true") {
+    const mode = await surface.getAttribute("data-draw-mode");
+    const count = await surface.getAttribute("data-draft-point-count");
+    await drawingControls.click();
+    await expect(surface).toHaveAttribute("data-draw-mode", mode!);
+    await expect(surface).toHaveAttribute("data-draft-point-count", count!);
+  }
   await surface.scrollIntoViewIfNeeded();
   const point = await surface.evaluate(
     (element, ratios) => {
@@ -32,12 +45,9 @@ async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number, 
       }
       if (candidates.length) {
         candidates.sort((a, b) => a.distance - b.distance);
-        return { x: candidates[0].x, y: candidates[0].y };
+        return { x: candidates[0].x, y: candidates[0].y, relativeX: candidates[0].x - rect.left, relativeY: candidates[0].y - rect.top };
       }
-      return {
-        x: rect.left + rect.width * clamp(ratios.xRatio),
-        y: rect.top + rect.height * clamp(ratios.yRatio),
-      };
+      throw new Error(`No unobstructed drawing target: ${JSON.stringify(rect.toJSON())}`);
     },
     { xRatio, yRatio },
   );
@@ -47,7 +57,7 @@ async function clickSurfaceAt(surface: Locator, xRatio: number, yRatio: number, 
     await surface.page().waitForTimeout(holdMs);
     await surface.page().mouse.up();
   } else {
-    await surface.page().mouse.click(point.x, point.y);
+    await surface.click({ position: { x: point.relativeX, y: point.relativeY } });
   }
 }
 
@@ -124,6 +134,8 @@ async function startBoundaryDraw(page: Page) {
 }
 
 async function finishDraft(page: Page, canvas: Locator) {
+  const drawingControls = page.getByTestId("mobile-draw-controls-toggle").filter({ visible: true });
+  if (await drawingControls.isVisible() && await drawingControls.getAttribute("aria-expanded") === "false") await drawingControls.click();
   await expect(page.getByRole("button", { name: "Finish", exact: true })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Cancel", exact: true })).toHaveCount(1);
   const quickFinish = canvas.getByTestId("canvas-quick-finish").filter({ visible: true }).first();
@@ -181,6 +193,7 @@ async function clickVisibleControl(control: Locator) {
 }
 
 async function selectObjectByName(page: Page, name: string) {
+  await openCadPrecisionTools(page);
   const precisionDock = page.getByTestId("cad-precision-tools");
   const precisionText = await precisionDock.textContent().catch(() => "");
   if ((await precisionDock.isVisible().catch(() => false)) && precisionText?.includes(name)) {
@@ -249,8 +262,17 @@ test.describe("drawn site boundary Finish workflow", () => {
 
     const beforeObjects = await page.locator("[data-object-overlay]").count();
     await clickCanvasTool(canvas, "Add Box");
+    await expect(surface).toHaveAttribute("data-draw-mode", "rect");
     await clickSurfaceAt(surface, 0.28, 0.5);
+    await expect(surface).toHaveAttribute("data-draft-point-count", "1");
     await clickSurfaceAt(surface, 0.44, 0.66);
+    await expect(surface).toHaveAttribute("data-draw-mode", "select");
+    if ((page.viewportSize()?.width ?? 1440) < 1024) {
+      await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+      const list = page.getByTestId("object-manager-panel");
+      await expect(list).toBeVisible();
+      if (!(await list.evaluate(element => element.hasAttribute("open")))) await list.locator("summary").click();
+    }
     await expect(page.getByText("Custom Rectangle 1").filter({ visible: true }).first()).toBeVisible();
     const rectangleHandoff = page
       .locator('[data-canonical-geometry-handoff="canonical_geometry_handoff_v1"]')
@@ -493,10 +515,17 @@ test.describe("drawn site boundary Finish workflow", () => {
       { message: "The visible classification button must own its mouse hit target." },
     ).toBe(true);
     await applyClassification.click();
+    if ((page.viewportSize()?.width ?? 1440) < 1024) {
+      await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+      const objects = page.getByTestId("object-manager-panel");
+      if (!(await objects.evaluate(element => element.hasAttribute("open")))) await objects.locator("summary").click();
+    }
     const classifiedRow = page.getByTestId("object-manager-row").filter({ hasText: "Existing Building A" }).first();
     await expect(classifiedRow).toBeVisible();
     await expect(classifiedRow.getByTestId("object-manager-type")).toHaveValue("building");
     await expect(page.locator('[data-object-overlay][aria-label="Select Existing Building A"]').first()).toBeVisible();
+
+    await openCadPrecisionTools(page);
 
     const buildingLayerToggle = cadTools.locator("button").filter({ hasText: /^C-BLDG$/ }).first();
     await buildingLayerToggle.click();
@@ -511,7 +540,6 @@ test.describe("drawn site boundary Finish workflow", () => {
 
 async function openDrawControls(page: Page) {
   if (await page.getByTestId("draw-cad-tools-section").isVisible().catch(() => false)) return;
-  if (await page.getByTestId("draw-site-boundary-toolbar-mobile").filter({ visible: true }).first().isVisible().catch(() => false)) return;
   const objectManager = page.getByRole("button", { name: /^Object Manager$/ }).filter({ visible: true }).first();
   const drawStep = page.getByRole("button", { name: "Go to workflow step 2" }).filter({ visible: true }).first();
   const drawButton = page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first();

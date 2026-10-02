@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { revealPreviewCanvas } from "./testUiHelpers";
 
 import type { BuildingPlacement } from "../../app/types";
 import {
@@ -383,6 +384,15 @@ test("ask mode previews the whole transaction and rejection preserves building a
   await expect(page.getByTestId("dependency-proposal-card")).toBeVisible();
   await expect(page.getByTestId("dependency-proposal-geometry")).toBeVisible();
   await expect(page.getByTestId("dependency-proposal-card")).toContainText("3-object change");
+  // The open chat drawer must not cover these real pointer targets on mobile.
+  const originalViewport = page.viewportSize()!;
+  await page.setViewportSize({ width: 360, height: 640 });
+  await expect(page.getByTestId("dependency-proposal-card")).toHaveAttribute("data-presentation", "viewport");
+  await page.getByTestId("dependency-proposal-reject").click({ trial: true });
+  await page.getByTestId("dependency-proposal-accept").click({ trial: true });
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await expect(page.getByTestId("dependency-proposal-card")).toHaveAttribute("data-presentation", "canvas");
+  await page.setViewportSize(originalViewport);
   await page.getByTestId("dependency-proposal-reject").click();
   await expect(page.getByTestId("dependency-proposal-card")).toHaveCount(0);
 
@@ -523,11 +533,14 @@ test("outdated layout alternatives cannot overwrite newer manual edits", async (
   await page.getByTestId("civora-command-input").fill("show me 5 layout options");
   await page.getByTestId("civora-command-input").press("Enter");
   await expect(page.getByTestId("layout-alternatives-card")).toBeVisible();
+  const compactComparison = (page.viewportSize()?.width ?? 1440) < 1024;
+  if (compactComparison) await page.getByTestId("layout-alternatives-minimize").click();
   await page.getByRole("button", { name: "Draw", exact: true }).first().click();
   if (!(await list.evaluate(element => element.hasAttribute("open")))) await list.locator("summary").click();
   await row.getByTestId("object-manager-inspect").click();
   await page.getByTestId("selected-object-x-input").fill(String(initialX + 7));
   await page.getByTestId("selected-object-x-input").blur();
+  if (compactComparison) await page.getByTestId("layout-alternatives-expand").click();
   await page.getByTestId("layout-alternatives-apply").click();
   await expect(page.getByTestId("layout-alternatives-card")).toHaveCount(0);
   await expect(page.getByTestId("selected-object-status")).toContainText("Generate fresh alternatives");
@@ -592,11 +605,13 @@ test("chat creates five preview-only alternatives and applies only the chosen op
   await expect(page.getByTestId("selected-object-status")).toContainText(/working plan.*Undo restores/i);
 
   const layerMenu = page.getByTestId("preview-layer-menu");
+  await revealPreviewCanvas(page);
   await layerMenu.locator("summary").click();
   await page.getByTestId("preview-layer-select-roads").click();
   await layerMenu.locator("summary").click();
   await page.getByRole("button", { name: "Draw", exact: true }).first().click();
   await expect(page.getByTestId("object-manager-selected-count")).toContainText(/Selected [2-9]/);
+  await revealPreviewCanvas(page);
   await layerMenu.locator("summary").click();
   await page.getByTestId("preview-layer-toggle-roads").click();
   await expect(page.getByTestId("preview-layer-toggle-roads")).toHaveAttribute("aria-pressed", "false");

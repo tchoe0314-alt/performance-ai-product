@@ -12,6 +12,7 @@ __pycache__/
 
 node_modules/
 .next/
+.next-phase0*/
 .next-release-regression/
 dist/
 build/

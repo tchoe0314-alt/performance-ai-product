@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { createPortal } from "react-dom";
+import { useCompactViewport } from "../hooks/useCompactViewport";
 import type { LayoutAlternative, LayoutGoal, LayoutGoalKey } from "../utils/layoutAlternatives";
 
 type LayoutAlternativesCardProps = {
@@ -19,8 +22,18 @@ const PRIORITIES: Array<{ key: LayoutGoalKey; label: string; goalLabel: string; 
 ];
 
 export function LayoutAlternativesCard({ alternatives, selectedId, onSelect, onApply, onCancel, goals, onGoalsChange }: LayoutAlternativesCardProps) {
+  const compactViewport = useCompactViewport();
+  const [minimized, setMinimized] = useState(false);
   const selected = alternatives.find((item) => item.id === selectedId) ?? alternatives[0];
   if (!selected) return null;
+  if (compactViewport && minimized) {
+    return createPortal(
+      <section data-testid="layout-alternatives-card" data-presentation="viewport" aria-label="Minimized layout comparison" className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+6.5rem)] z-[850] flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+        <span className="text-xs font-semibold text-slate-700">Options · not applied</span>
+        <button type="button" data-testid="layout-alternatives-expand" onClick={() => setMinimized(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">Show comparison</button>
+      </section>, document.body,
+    );
+  }
   const toggleGoal = (priority: (typeof PRIORITIES)[number]) => {
     const isActive = goals.some((goal) => goal.key === priority.key);
     if (isActive && goals.length === 1) return;
@@ -29,8 +42,8 @@ export function LayoutAlternativesCard({ alternatives, selectedId, onSelect, onA
       : [...goals, { key: priority.key, label: priority.goalLabel, weight: priority.weight }];
     onGoalsChange(next);
   };
-  return (
-    <section data-testid="layout-alternatives-card" className="fixed inset-x-3 top-16 z-[760] max-h-[calc(100svh-5rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white/96 p-3 shadow-2xl backdrop-blur lg:left-[4.5rem] lg:right-[21rem]">
+  const card = (
+    <section data-testid="layout-alternatives-card" data-presentation={compactViewport ? "viewport" : "canvas"} className={`fixed inset-x-3 top-16 ${compactViewport ? "z-[850] max-h-[calc(100svh-12rem)]" : "z-[760] max-h-[calc(100svh-5rem)]"} overflow-y-auto rounded-2xl border border-slate-200 bg-white/96 p-3 shadow-2xl backdrop-blur lg:left-[4.5rem] lg:right-[21rem]`}>
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Layout alternatives · preview only</p>
@@ -41,7 +54,10 @@ export function LayoutAlternativesCard({ alternatives, selectedId, onSelect, onA
             {selected.searchReport.rejectionReasons.length ? ` (${selected.searchReport.rejectionReasons.join(", ")})` : ""}
           </p>
         </div>
-        <button type="button" onClick={onCancel} data-testid="layout-alternatives-cancel" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600">Cancel</button>
+        <div className="flex shrink-0 items-center gap-2">
+          {compactViewport ? <button type="button" onClick={() => setMinimized(true)} data-testid="layout-alternatives-minimize" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600">Minimize</button> : null}
+          <button type="button" onClick={onCancel} data-testid="layout-alternatives-cancel" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600">Cancel</button>
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3" aria-label="Layout ranking priorities">
         <span className="mr-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Prioritize</span>
@@ -109,4 +125,5 @@ export function LayoutAlternativesCard({ alternatives, selectedId, onSelect, onA
       </div>
     </section>
   );
+  return compactViewport ? createPortal(card, document.body) : card;
 }
