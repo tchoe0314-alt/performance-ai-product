@@ -42,6 +42,20 @@ export function createCanonicalUpdateCommand(
   return { kind: "update_object", objectId, updates, source, transactionId, createdAt };
 }
 
+/** Check the whole deletion group before changing state or invalidating results. */
+export function canonicalDeletionBlocker(objects: BuildingPlacement[]): string | null {
+  for (const object of objects) {
+    const state = canonicalControlState(object);
+    if (object.type === "site" || object.capabilities?.deletable === false || object.meta?.ai_realism_artifact) {
+      return `${object.label} is required or source-only evidence and cannot be deleted here.`;
+    }
+    if (object.locked || ["fixed", "existing", "reference"].includes(state)) {
+      return `${object.label} is protected (${state}). Explicitly unlock it and set it to flexible before deleting.`;
+    }
+  }
+  return null;
+}
+
 export function applyCanonicalUpdateCommand(
   current: BuildingPlacement,
   command: CanonicalUpdateCommand,

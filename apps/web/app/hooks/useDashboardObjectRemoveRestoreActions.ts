@@ -3,6 +3,7 @@ import type { MutableRefObject } from "react";
 
 import type { BuildingPlacement, PlanResponse, ProjectInput, ProjectRecord } from "../types";
 import { systemsImpactedByPlacement } from "../utils/dashboardGenerateLayoutContext";
+import { canonicalDeletionBlocker } from "../utils/canonicalEditCommands";
 import type { DraftUndoAction, RecentChange } from "../utils/dashboardTypes";
 import type { EngineeringSystemKey } from "../utils/workflowConstants";
 
@@ -58,14 +59,21 @@ export function useDashboardObjectRemoveRestoreActions({
   setStatusMessage,
 }: UseDashboardObjectRemoveRestoreActionsInput) {
   const handleRemoveBuilding = useCallback((id: string) => {
-    clearGeneratedPreview();
     const target = buildingPlacements.find((item) => item.id === id);
+    if (!target) return;
     const combinedSourceIds = target && Array.isArray(target.meta?.combined_from_object_ids)
       ? target.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
       : [];
     const relatedSourceObjects = combinedSourceIds.length
       ? buildingPlacements.filter((item) => combinedSourceIds.includes(item.id))
       : [];
+    const blocker = canonicalDeletionBlocker([target, ...relatedSourceObjects]);
+    if (blocker) {
+      setStatusMessage(blocker);
+      pushRecoveryMessage(blocker);
+      return;
+    }
+    clearGeneratedPreview();
     debugLog("remove-object", { id });
     const removedIds = new Set([id, ...relatedSourceObjects.map((item) => item.id)]);
     setBuildingPlacements((prev) => prev.filter((item) => !removedIds.has(item.id)));

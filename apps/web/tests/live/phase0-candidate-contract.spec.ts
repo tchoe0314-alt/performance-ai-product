@@ -1,4 +1,22 @@
 import { expect, test } from "@playwright/test";
+import { canonicalDeletionBlocker } from "../../app/utils/canonicalEditCommands";
+
+test("canonical deletion protects the whole group before any mutation", () => {
+  const flexible: BuildingPlacement = { id: "a", label: "Draft", type: "building", x: 0, y: 0, w: 20, d: 20 };
+  expect(canonicalDeletionBlocker([flexible])).toBeNull();
+  const protectedObjects: BuildingPlacement[] = [
+    { ...flexible, locked: true },
+    { ...flexible, meta: { canonical_control_state: "fixed" } },
+    { ...flexible, source: "detected_from_gis" },
+    { ...flexible, meta: { canonical_control_state: "reference" } },
+    { ...flexible, capabilities: { deletable: false } },
+    { ...flexible, type: "site" },
+  ];
+  for (const protectedObject of protectedObjects) {
+    expect(canonicalDeletionBlocker([flexible, protectedObject])).not.toBeNull();
+  }
+  expect(canonicalDeletionBlocker([{ ...flexible, locked: false, meta: { canonical_control_state: "flexible" } }])).toBeNull();
+});
 import type { BuildingPlacement } from "../../app/types";
 import { generateLayoutAlternatives, parseLayoutGoals, searchLayoutAlternatives, rerankLayoutSearch } from "../../app/utils/layoutAlternatives";
 import { resolveDependencyProposal, type CanonicalDependencyProposal } from "../../app/utils/canonicalDependencyPolicies";
