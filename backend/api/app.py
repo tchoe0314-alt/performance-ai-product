@@ -1082,6 +1082,7 @@ def _deployment_metadata() -> Dict[str, str]:
     return {
         "frontend_status": "unknown",
         "api_base_url": _public_api_base_url(),
+        "build_status": "known" if commit_sha or _first_env_value("CIVORA_BUILD_VERSION") else "unknown",
         "build_version": _first_env_value("CIVORA_BUILD_VERSION", "VERCEL_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA")[:12] or APP_VERSION,
         "commit_sha": commit_sha[:12] if commit_sha else "",
         "commit_ref": _first_env_value("VERCEL_GIT_COMMIT_REF", "RAILWAY_GIT_BRANCH", "RENDER_GIT_BRANCH", "GIT_BRANCH"),
@@ -1257,7 +1258,7 @@ async def root() -> Dict[str, str]:
 
 @app.get("/api/health")
 async def health() -> Dict[str, Any]:
-    commit_sha = _first_env_value("CIVORA_BUILD_VERSION", "VERCEL_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA")[:12] or APP_VERSION
+    deployment_identity = _deployment_metadata()
     api_base_url = _public_api_base_url()
     return {
         "success": True,
@@ -1277,9 +1278,9 @@ async def health() -> Dict[str, Any]:
             "api_base_url": api_base_url,
             "auth_status": "enabled",
             "queue_status": "not_checked_on_liveness",
-            "build_status": "known" if commit_sha else "unknown",
-            "build_version": commit_sha,
-            "commit_sha": commit_sha,
+            "build_status": deployment_identity["build_status"],
+            "build_version": deployment_identity["build_version"],
+            "commit_sha": deployment_identity["commit_sha"],
             "commit_ref": _first_env_value("VERCEL_GIT_COMMIT_REF", "RAILWAY_GIT_BRANCH", "RENDER_GIT_BRANCH", "GIT_BRANCH"),
             "environment": _first_env_value("VERCEL_ENV", "RAILWAY_ENVIRONMENT_NAME", "RENDER_SERVICE_TYPE", "CIVORA_ENVIRONMENT", "NODE_ENV"),
             "provider": "vercel" if os.getenv("VERCEL") else "railway" if os.getenv("RAILWAY_ENVIRONMENT") else "render" if os.getenv("RENDER") else "",
