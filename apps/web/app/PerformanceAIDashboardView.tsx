@@ -222,6 +222,7 @@ import { useDashboardProjectLoad } from "./hooks/useDashboardProjectLoad";
 import { useDashboardPlanPdfActions } from "./hooks/useDashboardPlanPdfActions";
 import { useDashboardMapAnalysisActions } from "./hooks/useDashboardMapAnalysisActions";
 import { useDashboardProjectSave } from "./hooks/useDashboardProjectSave";
+import { ensureDashboardProjectDraft } from "./utils/dashboardProjectDraft";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
 import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
 import { useDashboardWorkspaceReset } from "./hooks/useDashboardWorkspaceReset";
@@ -2983,31 +2984,17 @@ function PerformanceAIDashboardView({
     updateProjectStatus,
   });
 
-  const ensureProjectDraft = async (): Promise<string | null> => {
-    if (!token) return null;
-    if (effectiveDemoWorkspaceEnabled) return null;
-    if (resolvedProjectIdRef.current) return resolvedProjectIdRef.current;
-    if (projectId) return projectId;
-    if (currentProject?.project_id) return currentProject.project_id;
-    if (draftProjectPromiseRef.current) {
-      const inFlightProject = await draftProjectPromiseRef.current;
-      return inFlightProject?.project_id ?? null;
-    }
-    draftProjectPromiseRef.current = saveProject({
-      silent: true,
-      projectIdOverride: null,
-      nameOverride: siteName.trim(),
-      fileNameOverride: fileName.trim(),
-      autoNamedOverride: false,
-      autoFileNamedOverride: false,
-    });
-    try {
-      const savedProject = await draftProjectPromiseRef.current;
-      return savedProject?.project_id ?? null;
-    } finally {
-      draftProjectPromiseRef.current = null;
-    }
-  };
+  const ensureProjectDraft = () => ensureDashboardProjectDraft({
+    token,
+    demo: effectiveDemoWorkspaceEnabled,
+    resolvedProjectId: resolvedProjectIdRef.current,
+    projectId,
+    currentProjectId: currentProject?.project_id,
+    pending: draftProjectPromiseRef,
+    saveProject,
+    siteName,
+    fileName,
+  });
 
   useEffect(() => {
     ensureProjectDraftRef.current = ensureProjectDraft;

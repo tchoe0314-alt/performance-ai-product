@@ -1,4 +1,5 @@
 import { useCallback, type MutableRefObject } from "react";
+import { parseDashboardGeometryCommand, buildDashboardGeometryCommandUpdates } from "../utils/dashboardGeometryCommands";
 import { canonicalConceptReplacementBlocker } from "../utils/canonicalEditCommands";
 import type { CanonicalBatchEdit } from "../utils/canonicalBatchTransaction";
 import { buildDraftObjectResizeUpdates } from "../utils/objectGeometry";
@@ -511,46 +512,28 @@ export function useDashboardPowerCommandHandler({
       const matches = buildingPlacements.filter((item) => `${item.label} ${item.type ?? ""}`.toLowerCase().replaceAll("_", " ").includes(cleaned));
       return matches.length === 1 ? matches[0] : null;
     };
-    const moveByDistance = normalized.match(
-      /^move\s+(.+?)\s+(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(north|south|east|west|up|down|left|right)$/,
-    );
-    if (moveByDistance) {
-      const target = resolveEditableTarget(moveByDistance[1]);
+    const geometryCommand = parseDashboardGeometryCommand(message, "strict");
+    if (geometryCommand?.kind === "move") {
+      const target = resolveEditableTarget(geometryCommand.targetText);
       appendChatMessage("user", message);
       if (!target) {
         appendChatMessage("assistant", "Select one object first, then tell me how far and which direction to move it.", "status");
         return true;
       }
-      const distance = Number(moveByDistance[2]);
-      const direction = moveByDistance[3];
-      const dx = direction === "east" || direction === "right" ? distance : direction === "west" || direction === "left" ? -distance : 0;
-      const dy = direction === "south" || direction === "down" ? distance : direction === "north" || direction === "up" ? -distance : 0;
-      const outcome = handleUpdateBuilding(target.id, {
-        x: (target.x ?? 0) + dx,
-        y: (target.y ?? 0) + dy,
-        placed: true,
-        meta: { ...(target.meta ?? {}), canonical_edit_source: "chat" },
-      });
+      const { distance, direction } = geometryCommand;
+      const outcome = handleUpdateBuilding(target.id, buildDashboardGeometryCommandUpdates(target, geometryCommand));
       appendChatMessage("assistant", outcome === "proposed" ? `Move proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The move to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Moved ${target.label} ${distance} ft ${direction}. The CAD canvas and chat now use the same canonical edit command.`, "status");
       return true;
     }
-    const resizeExact = normalized.match(
-      /^(?:set|make|resize|change)\s+(.+?)\s+(?:to\s+)?(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?$/,
-    );
-    if (resizeExact) {
-      const target = resolveEditableTarget(resizeExact[1]);
+    if (geometryCommand?.kind === "resize") {
+      const target = resolveEditableTarget(geometryCommand.targetText);
       appendChatMessage("user", message);
       if (!target) {
         appendChatMessage("assistant", "Select one object first, then provide its width and depth.", "status");
         return true;
       }
-      const width = Number(resizeExact[2]);
-      const depth = Number(resizeExact[3]);
-      const outcome = handleUpdateBuilding(target.id, {
-        w: width,
-        d: depth,
-        meta: { ...(target.meta ?? {}), canonical_edit_source: "chat" },
-      });
+      const { width, depth } = geometryCommand;
+      const outcome = handleUpdateBuilding(target.id, buildDashboardGeometryCommandUpdates(target, geometryCommand));
       appendChatMessage("assistant", outcome === "proposed" ? `Resize proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The resize to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Resized ${target.label} to ${width} ft by ${depth} ft through the canonical edit system.`, "status");
       return true;
     }

@@ -1,5 +1,17 @@
 # Phase 0 implementation authority and responsibility map
 
+## October 3 follow-up: command and draft-save ownership
+
+`dashboardGeometryCommands.ts` now owns shared move/resize recognition and patch construction for the two chat adapters. Their strict/conversational grammar, target selection, feedback and canonical validation remain separate, preserving existing behavior. This is not universal intent-execution consolidation.
+
+`dashboardProjectDraft.ts` owns draft-save single-flight handling. Concurrent callers share one request; an old request's completion only clears its own pending slot, preserving a newer request started after project reset/switch. Existing save options and IDs retain their priority, and anonymous/demo workspaces do not create saved drafts. Caller generation guards still own rejection of stale results; returning an ID alone does not bypass those guards.
+
+The dashboard is 6,159 lines. The direct live-ref assignments in object update, custom geometry and object combination are immediately followed by the same synchronous shared placement setter; they are compatibility duplication, not independent state authorities. They remain explicit consolidation targets. Large state/props wiring and direct planning orchestration remain open; this checkpoint does not close 0.4.
+
+Command cleanup: 101 affected checks passed on `.next-phase04-command-review` across the configured desktop/mobile Chromium/WebKit selection. Pure command contracts separately verify aliases, dimensions, metadata and source immutability. Draft contracts: three passed, covering concurrent creation, old/new pending requests, failure cleanup and auth/demo/existing-ID guards. Scoped lint and TypeScript checks passed; both fresh production builds passed after clearing three obsolete generated build caches to recover disk space. Final website draft verification is recorded in the execution register separately.
+
+See [dependency advisory review](phase-0-dependency-review.md): production frontend, declared backend pins, installed local backend and declared optional profiles report no known vulnerabilities; one unpatched development-tool advisory remains open. This is local, scope-specific evidence, not hosted or overall security certification.
+
 Inspected October 2, 2026 at `c6626735` plus the uncommitted integration tree. Integration branch: `codex/phase-0-integration`. This is an implementation map, not release sign-off. The full inventory reports local branches and file hashes separately; historical branches are preserved, not automatically merged or deleted.
 
 Consolidation authority rechecked at `33c23e34`: active interference engine and default canonical review-sheet delegation confirmed; [closeout and capability/limitations register](phase-0-consolidation.md) records the final local baseline. Older line counts and checkpoint-specific results below remain historical observations, not current completion claims. Large-component and operation-adapter cleanup stays under 0.4.

@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { parseDashboardGeometryCommand, buildDashboardGeometryCommandUpdates } from "../utils/dashboardGeometryCommands";
 
 import type {
   BuildingPlacement,
@@ -158,45 +159,27 @@ export function useDashboardActionIntentHandler({
       return true;
     }
 
-    const moveByDistanceMatch = normalized.match(
-      /\bmove\b.*?\b(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(north|south|east|west|up|down|left|right)\b/,
-    );
-    if (moveByDistanceMatch) {
+    const geometryCommand = parseDashboardGeometryCommand(message, "conversational");
+    if (geometryCommand?.kind === "move") {
       const target = resolveTarget();
       if (!target) {
         appendChatMessage("assistant", "Select an object first, then tell me how far and which direction to move it.", "status");
         return true;
       }
-      const distance = Number(moveByDistanceMatch[1]);
-      const direction = moveByDistanceMatch[2];
-      const dx = direction === "east" || direction === "right" ? distance : direction === "west" || direction === "left" ? -distance : 0;
-      const dy = direction === "south" || direction === "down" ? distance : direction === "north" || direction === "up" ? -distance : 0;
-      const outcome = handleUpdateBuilding(target.id, {
-        x: (target.x ?? 0) + dx,
-        y: (target.y ?? 0) + dy,
-        placed: true,
-        meta: { ...(target.meta ?? {}), canonical_edit_source: "chat" },
-      });
+      const { distance, direction } = geometryCommand;
+      const outcome = handleUpdateBuilding(target.id, buildDashboardGeometryCommandUpdates(target, geometryCommand));
       appendChatMessage("assistant", outcome === "proposed" ? `Move proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The move to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Moved ${target.label} ${distance} ft ${direction}. The canonical edit uses the same command path as a CAD move.`, "status");
       return true;
     }
 
-    const exactResizeMatch = normalized.match(
-      /\b(?:set|make|resize|change)\b.*?\b(?:to\s+)?(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?\s*(?:x|by|×)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|')?/,
-    );
-    if (exactResizeMatch) {
+    if (geometryCommand?.kind === "resize") {
       const target = resolveTarget();
       if (!target) {
         appendChatMessage("assistant", "Select an object first, then give me its width and depth.", "status");
         return true;
       }
-      const width = Number(exactResizeMatch[1]);
-      const depth = Number(exactResizeMatch[2]);
-      const outcome = handleUpdateBuilding(target.id, {
-        w: width,
-        d: depth,
-        meta: { ...(target.meta ?? {}), canonical_edit_source: "chat" },
-      });
+      const { width, depth } = geometryCommand;
+      const outcome = handleUpdateBuilding(target.id, buildDashboardGeometryCommandUpdates(target, geometryCommand));
       appendChatMessage("assistant", outcome === "proposed" ? `Resize proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The resize to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Resized ${target.label} to ${width} ft by ${depth} ft through the canonical edit system.`, "status");
       return true;
     }
