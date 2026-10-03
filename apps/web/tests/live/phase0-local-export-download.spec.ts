@@ -66,11 +66,13 @@ test("signed-in local website exports and downloads preliminary PDF and DXF with
     await page.getByRole("button", { name: "Export progress and downloads", exact: true }).click();
     const row = page.getByTestId("async-jobs-panel").locator("div.flex.items-center.justify-between").filter({ hasText: artifact!.filename });
     const downloadEvent = page.waitForEvent("download");
+    const workspaceUrl = page.url();
     await row.getByRole("button", { name: "Download", exact: true }).first().click();
     const download = await downloadEvent;
     const file = testInfo.outputPath(`downloaded.${extension}`);
     await download.saveAs(file);
     expect(await download.failure()).toBeNull();
+    expect(page.url(), "Downloading must not replace the workspace URL").toBe(workspaceUrl);
     const bytes = await readFile(file);
     if (extension === "pdf") expect(bytes.subarray(0, 4).toString()).toBe("%PDF");
     else {
@@ -79,9 +81,17 @@ test("signed-in local website exports and downloads preliminary PDF and DXF with
       expect(bytes.toString()).toContain("local-export-revision-1");
       expect(bytes.toString()).toContain("grading");
     }
-    // Reopen the workspace URL explicitly: mobile WebKit can retain the
-    // download navigation as its reload target while a file is completing.
-    await page.goto("/", { waitUntil: "domcontentloaded" });
+    // Refresh the existing document, not a new navigation home. Keep the
+    // automation-protocol reload available to diagnose its WebKit discrepancy.
+    if (process.env.CIVORA_QA_REFRESH_MODE !== "protocol") {
+      await Promise.all([
+        page.waitForEvent("framenavigated", { predicate: frame => frame === page.mainFrame() && frame.url() === workspaceUrl }),
+        page.evaluate(() => window.location.reload()),
+      ]);
+      await page.waitForLoadState("domcontentloaded");
+    } else {
+      await page.reload({ waitUntil: "domcontentloaded" });
+    }
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
     await page.getByRole("button", { name: "Deliver", exact: true }).first().click();
     await page.getByRole("button", { name: "Export progress and downloads", exact: true }).click();

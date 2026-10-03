@@ -261,6 +261,21 @@ export function useDashboardImageDetectionActions({
         { image_path: sourcePath, source_type: "map" },
         { token },
       );
+      if (result.success !== true) {
+        const reason = typeof result.message === "string" && result.message.trim()
+          ? result.message.trim()
+          : "Feature detection did not complete.";
+        setImageUploadState("failed");
+        setImageUploadNote(`Detection failed: ${reason}`);
+        updateProjectStatus({
+          state: "blocked",
+          area: "setup",
+          title: "Site context needs attention",
+          detail: reason,
+          nextAction: "Check the map/image source and retry detection. Previous detections were preserved.",
+        });
+        return;
+      }
       const detections = Array.isArray(result.detections) ? result.detections : [];
       const mapped = detections
         .map((det) => mapDetectionToPlacement(det, result.image_width ?? 0, result.image_height ?? 0))

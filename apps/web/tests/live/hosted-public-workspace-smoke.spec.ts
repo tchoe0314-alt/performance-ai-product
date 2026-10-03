@@ -63,6 +63,7 @@ test.describe("hosted/public workspace smoke", () => {
 
     await expect(page.getByTestId("preview-mode-2d").first()).toBeVisible();
     await setPreviewQuality(page, "high");
+    await page.getByLabel("Preview view options").click();
     await expect(page.getByTestId("ai-realism-on").first()).toBeVisible();
     await page.getByTestId("ai-realism-on").first().click();
     await expect(page.getByTestId("ai-realism-watermark").first()).toContainText(/visual concept only/i);

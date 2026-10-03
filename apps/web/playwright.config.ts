@@ -25,7 +25,7 @@ const outputDir =
 const deviceTestMatch = process.env.CIVORA_PRODUCTION_SAFE_TESTS === "1"
   ? /hosted-current-backend-safe\.spec\.ts/
   : process.env.CIVORA_PHASE0_CROSS_BROWSER === "1"
-  ? /(?:rc1-accessibility-cross-browser|project-object-integration|canonical-edit-command-foundation|dense-commercial-concept-chat240|preview-realism-truth-chat234|phase0-concept-replacement|phase0-local-persistence|phase0-local-export-download|drawn-boundary-finish|undo-recovery-history-chat231b|video-website-regression)\.spec\.ts/
+  ? /(?:rc1-accessibility-cross-browser|project-object-integration|canonical-edit-command-foundation|dense-commercial-concept-chat240|preview-realism-truth-chat234|phase0-concept-replacement|phase0-local-persistence|phase0-local-export-download|drawn-boundary-finish|undo-recovery-history-chat231b|video-website-regression|error-states-chat223b)\.spec\.ts/
   : /rc1-accessibility-cross-browser\.spec\.ts/;
 
 export default defineConfig({

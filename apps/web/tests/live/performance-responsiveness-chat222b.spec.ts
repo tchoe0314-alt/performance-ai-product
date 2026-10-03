@@ -193,16 +193,26 @@ test.describe("Chat 222B performance and responsiveness", () => {
     await measureVisible(
       page,
       "quality high visible",
-      () => setPreviewQuality(page, "high"),
+      async () => {
+        await setPreviewQuality(page, "high");
+        await page.getByLabel("Preview view options").click();
+      },
       canvas.getByTestId("preview-quality-high"),
     );
     await expect(page.getByTestId("high-quality-preview-only-label")).toContainText("Visual preview only");
+    await expect(canvas.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
+    await page.getByLabel("Preview view options").click();
     await measureVisible(
       page,
       "quality standard visible",
-      () => setPreviewQuality(page, "standard"),
+      async () => {
+        await setPreviewQuality(page, "standard");
+        await page.getByLabel("Preview view options").click();
+      },
       canvas.getByTestId("preview-quality-standard"),
     );
+    await expect(canvas.getByTestId("preview-quality-standard")).toHaveAttribute("aria-pressed", "true");
+    await page.getByLabel("Preview view options").click();
     await expect.poll(async () => {
       const perf = await page.evaluate(() => {
         const store = (window as typeof window & { __civoraPerf?: { entries?: Array<{ label: string }> } }).__civoraPerf;

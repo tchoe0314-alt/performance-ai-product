@@ -188,6 +188,7 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
 
   await timed("preview mode and quality toggles", async () => {
     await setPreviewQuality(page, "high");
+    await humanClick(page.getByLabel("Preview view options"), "Preview view options");
     const high = page.getByTestId("preview-quality-high").filter({ visible: true }).first();
     await expect(high).toHaveAttribute("aria-pressed", "true");
     await shot(page, testInfo, "06-plan-sheet-preview");

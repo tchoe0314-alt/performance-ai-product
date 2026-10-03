@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 
-const appUrl = process.env.CIVORA_APP_FLOW_URL ?? "http://127.0.0.1:3015/concepts/cul-de-sac.html";
+const appUrl = process.env.CIVORA_APP_FLOW_URL ?? "/concepts/cul-de-sac.html";
 
 async function setSlider(page: Page, selector: string, value: number) {
   await page.locator(selector).evaluate((element, nextValue) => {

@@ -18,6 +18,7 @@ async function enableHighQuality(page: Page) {
   const canvas = page.getByTestId("workspace-canvas-shell");
   await setPreviewQuality(page, "high");
   await expect(canvas.getByTestId("preview-quality-high")).toHaveAttribute("aria-pressed", "true");
+  await openAiVisualizationControls(page);
   await expect(page.getByTestId("ai-realism-toggle")).toBeVisible();
 }
 

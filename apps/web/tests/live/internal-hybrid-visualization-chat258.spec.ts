@@ -147,6 +147,7 @@ test("private hybrid visualization is distinct, source-traced, and visual-only",
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
   await setPreviewQuality(page, "high");
+  await page.getByLabel("Preview view options").click();
   await page.getByTestId("ai-realism-on").click();
 
   await expect(page.getByTestId("ai-realism-image")).toBeVisible({ timeout: 20_000 });

@@ -177,6 +177,7 @@ async function openSeededWorkspace(page: Page) {
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
   await setPreviewQuality(page, "high");
+  await page.getByLabel("Preview view options").click();
   await expect(page.getByTestId("ai-realism-on")).toBeVisible();
 }
 

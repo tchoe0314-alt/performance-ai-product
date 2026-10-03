@@ -136,6 +136,9 @@ test("keeps available map context and preserves complex building and parking pol
   const liveMapAvailable = await mapToggle.isEnabled();
   if (liveMapAvailable && (await mapToggle.textContent())?.includes("Off")) await mapToggle.click();
   if (liveMapAvailable) await expect(page.getByRole("region", { name: "Map" })).toBeVisible();
+  if (!(await page.getByTestId("ai-realism-toggle").isVisible())) {
+    await page.getByLabel("Preview view options").click();
+  }
   await page.getByTestId("ai-realism-on").click();
 
   await expect(page.getByTestId("ai-realism-image")).toBeVisible();

@@ -94,6 +94,33 @@ async function mockGeocode(page: Page) {
 }
 
 test.describe("Chat 223B empty/error/loading/recovery states", () => {
+  for (const success of [false, undefined, true]) {
+  test(`image detection ${String(success)} reports its actual outcome and guards replacement writes`, async ({ page }) => {
+    await mockSignedInShell(page);
+    let failedDetectionReturned = false;
+    let emptyReplacementWrites = 0;
+    page.on("request", request => {
+      if (!failedDetectionReturned || request.method() !== "POST" || new URL(request.url()).pathname !== "/api/projects") return;
+      const objects = request.postDataJSON()?.project_input?.meta?.site_inputs?.detected_objects;
+      if (Array.isArray(objects) && objects.length === 0) emptyReplacementWrites += 1;
+    });
+    await page.route("**/api/upload-image", route => route.fulfill({ json: { success: true, image_path: "failed-detection-fixture.png" } }));
+    await page.route("**/api/image/detect-features", route => {
+      failedDetectionReturned = true;
+      return route.fulfill({ json: { success, message: "Detection provider unavailable", detections: [], image_width: 100, image_height: 100 } });
+    });
+    await page.goto("/?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+    await openWorkspacePanel(page, /^Setup$/, /Setup|Site Boundary/);
+    const survey = page.getByTestId("setup-survey-terrain-card");
+    if (!(await survey.evaluate(node => node.hasAttribute("open")))) await survey.locator(":scope > summary").click();
+    await survey.locator('input[accept="image/*"]').setInputFiles({ name: "fixture.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64") });
+    await expect(page.getByTestId("image-upload-status")).toContainText(success === true ? "No detections found." : "Detection failed: Detection provider unavailable");
+    if (success === true) await expect.poll(() => emptyReplacementWrites).toBeGreaterThan(0);
+    else expect(emptyReplacementWrites).toBe(0);
+  });
+  }
+
   test("login reports invalid credentials instead of an expired session", async ({ page }) => {
     await page.route("**/api/auth/status", async (route) => {
       await route.fulfill({

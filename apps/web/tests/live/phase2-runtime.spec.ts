@@ -66,6 +66,10 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
   await expect(refreshedSiteSection).toContainText("1000 ft x 1000 ft");
   await expect(refreshedAddressSection).toContainText(/Applied|Local/i);
 
+  if (!(await refreshedSiteSection.evaluate(node => node.hasAttribute("open")))) {
+    await refreshedSiteSection.locator(":scope > summary").click();
+  }
+
   await refreshedSiteSection.getByRole("button", { name: "Edit site" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Editable");
   await refreshedSiteSection.getByRole("button", { name: "Use this site" }).click();
@@ -77,6 +81,7 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
   if (!(await surveySection.evaluate((node) => node.hasAttribute("open")))) {
     await surveySection.locator("summary").first().click();
   }
+  const uploaded = page.waitForResponse(response => new URL(response.url()).pathname === "/api/upload-image" && response.request().method() === "POST");
   await surveySection.locator('input[accept="image/*"]').setInputFiles({
     name: "phase2-site.png",
     mimeType: "image/png",
@@ -85,10 +90,15 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
       "base64",
     ),
   });
+  const uploadResponse = await uploaded;
+  expect(uploadResponse.status()).toBe(200);
+  expect((await uploadResponse.json()).image_path).toBeTruthy();
   await expect(page.getByTestId("image-upload-status")).toContainText(
-    /Uploading image|Detecting site features|Detection complete|No detections found|Image uploaded|Detection failed/i,
+    /Detection complete|No detections found|Image uploaded|Detection failed/i,
     { timeout: 60_000 },
   );
+  await expect(page.getByTestId("image-upload-status")).not.toContainText(/Uploading image|Detecting site features/i);
+  test.info().annotations.push({ type: "image-detection-outcome", description: await page.getByTestId("image-upload-status").innerText() });
 
   await page.getByRole("button", { name: /^Generate$/ }).filter({ visible: true }).first().click();
   await expect(page.getByTestId("generate-main-action")).toBeVisible();

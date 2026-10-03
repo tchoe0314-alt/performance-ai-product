@@ -211,7 +211,9 @@ test("project lifecycle is reversible and independent", async ({ page }) => {
   await page.getByRole("button", { name: "Recently deleted" }).click();
   await expect(page.getByRole("button", { name: "Restore project Alpha Site Copy" })).toBeVisible();
   await page.getByRole("button", { name: "Restore project Alpha Site Copy" }).click();
+  await expect(page.getByText('Restored and opened "Alpha Site Copy".', { exact: true })).toBeVisible();
   await openProjects(page);
+  await page.getByRole("button", { name: "Active", exact: true }).click();
   await expect(page.getByRole("button", { name: "Open project Alpha Site Copy" })).toBeVisible();
 });
 
