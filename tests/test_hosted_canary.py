@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
+import json
 
 from backend.application.hosted_canary import build_hosted_canary_report
-from backend.scripts.run_hosted_canary import _safe_origin
+from backend.scripts.run_hosted_canary import _safe_origin, _capture
 
 
 def _health() -> dict:
@@ -60,7 +62,7 @@ def _report(**overrides):
         "api_base_url": "https://api.civora.example",
         "expected_revision": "abcdef1234567890",
         "expected_product_mode": "private_alpha",
-        "frontend": {"status": 200, "body_has_civora": True},
+        "frontend": {"status": 200, "body_has_civora": True, "revision": "abcdef1234567890"},
         "health": _health(),
         "auth_status": {"success": True, "auth_enabled": True},
         "cors": {"status": 200, "allow_origin": "https://civora.example"},
@@ -72,6 +74,27 @@ def _report(**overrides):
 
 
 class HostedCanaryTests(unittest.TestCase):
+    def test_missing_or_html_identity_preserves_other_public_checks(self) -> None:
+        for status, body in ((404, b"missing"), (200, b"<html>fallback</html>")):
+            captures = [
+                (200, {}, b"Civora", 1),
+                (status, {}, body, 1),
+                (200, {}, json.dumps(_health()).encode(), 1),
+                (200, {}, b'{"success":true,"auth_enabled":true}', 1),
+                (401, {}, b"{}", 1),
+                (401, {}, b"{}", 1),
+                (200, {"access-control-allow-origin": "https://civora.example"}, b"", 1),
+            ]
+            with patch.dict("os.environ", {"CIVORA_CANARY_EMAIL": "", "CIVORA_CANARY_PASSWORD": ""}), \
+                 patch("backend.scripts.run_hosted_canary._request", side_effect=captures):
+                report = _capture(frontend_url="https://civora.example", api_base_url="https://api.civora.example",
+                                  expected_revision="abcdef1234567890", expected_product_mode="private_alpha",
+                                  timeout=1, require_authenticated=False)
+            self.assertTrue(report["checks"]["health_success"])
+            self.assertFalse(report["success"])
+            self.assertEqual(report["frontend_revision"], "")
+            self.assertIn("frontend_revision_mismatch", {item["code"] for item in report["public_blockers"]})
+
     def test_remote_canary_origins_require_https_without_paths_or_credentials(self) -> None:
         self.assertEqual(_safe_origin("https://civora.example/", label="Frontend"), "https://civora.example")
         for invalid in (
@@ -108,6 +131,13 @@ class HostedCanaryTests(unittest.TestCase):
         self.assertFalse(report["success"])
         self.assertEqual(report["authenticated_checks_status"], "blocked")
         self.assertIn("authenticated_canary_missing", {item["code"] for item in report["authenticated_blockers"]})
+
+    def test_matching_backend_cannot_certify_an_old_or_unknown_website(self) -> None:
+        for revision in ("", "9999999999999999"):
+            report = _report(frontend={"status": 200, "body_has_civora": True, "revision": revision})
+            self.assertFalse(report["success"])
+            self.assertFalse(report["frontend_revision_matches"])
+            self.assertIn("frontend_revision_mismatch", {item["code"] for item in report["public_blockers"]})
 
     def test_authenticated_runtime_and_operational_evidence_can_pass(self) -> None:
         report = _report(authenticated_runtime=_runtime(), require_authenticated=True)
