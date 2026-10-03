@@ -622,6 +622,58 @@ test.describe("project drawer reliability", () => {
     expect(JSON.stringify(store.get("rapid-draw-project")?.project_input ?? {})).toContain("Parking Field A");
   });
 
+  for (const outcome of ["late-queue", "failed-system"] as const) {
+  test(`generation lifecycle preserves truthful workspace state for ${outcome}`, async ({ page }) => {
+    const store = new Map<string, SavedProject>([["generation-project", {
+      project_id: "generation-project", name: "Generation Fixture", updated_at: Math.floor(Date.now() / 1000),
+      project_input: {
+        meta: { site_inputs: { site_alignment_locked: true, assumed_terrain_slope_pct: 8 } },
+        manual_fields: { lot: { x: 0, y: 0, w: 900, h: 700 }, site_objects: [
+          { id: "office", label: "Generation Office", type: "office", x: 100, y: 120, width_ft: 120, depth_ft: 90, placed: true, source: "manual_drawn" },
+        ] },
+      }, latest_result: null,
+    }]]);
+    await mockShell(page, store);
+    let started = false;
+    let returned = false;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route(outcome === "late-queue" ? "**/api/jobs/orchestrate" : "**/api/orchestrate", async route => {
+      started = true;
+      if (outcome === "late-queue") await gate;
+      await route.fulfill(outcome === "late-queue"
+        ? { json: { job: { job_id: "old-project-job", project_id: "generation-project", status: "queued" } } }
+        : { status: 500, json: { detail: "Fixture solver rejected this run" } });
+      returned = true;
+    });
+    await openApp(page);
+    await openProjects(page);
+    await page.getByRole("button", { name: "Open project Generation Fixture" }).click();
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+    await openWorkspaceMode(page, /^Generate$/);
+    if (outcome === "late-queue") {
+      await page.getByTestId("generate-main-action").click();
+      await expect.poll(() => started).toBe(true);
+      await openProjects(page);
+      await page.getByRole("button", { name: "New Project" }).click();
+      release();
+      await expect.poll(() => returned).toBe(true);
+      await page.waitForTimeout(250);
+      await expect(page.getByTestId("project-status-summary")).toContainText("Ready: Clean workspace ready");
+      await openWorkspaceMode(page, /^Generate$/);
+      await expect(page.getByTestId("workspace-right-panel")).not.toContainText("old-project-job");
+    } else {
+      const details = page.getByTestId("generate-system-details");
+      if (!(await details.evaluate(node => node.hasAttribute("open")))) await details.locator("summary").click();
+      await page.getByTestId("generate-grading").click();
+      await expect.poll(() => returned).toBe(true);
+      await expect(page.getByTestId("project-status-summary")).toContainText("Generate needs attention");
+      await expect(page.getByTestId("generate-grading")).not.toContainText("Current in this workspace");
+      await expect(page.getByTestId("generate-grading")).toBeEnabled();
+    }
+  });
+  }
+
   test("ignores a saved result that finishes loading after New Project", async ({ page }) => {
     const store = new Map<string, SavedProject>();
     store.set("older-project", {

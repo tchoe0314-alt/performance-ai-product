@@ -12,6 +12,8 @@ This is local advisory evidence, not deployed-artifact or complete security cert
 
 ## Open finding
 
+Rechecked during the October 3 follow-up: braces is still published at 3.0.3 and the advisory still lists no patch. npm now proposes a semver-major downgrade of `eslint-config-next` to 14.2.35, rather than remediation of braces. That does not establish compatibility with Next 16.3.8 and was not applied. Production-only npm audit still reports zero vulnerabilities. The full development finding remains open; this is not a claim that npm has no suggested change at this later checkpoint.
+
 [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) affects braces through 3.0.3: deeply nested patterns can exhaust the JavaScript stack. The advisory lists no patched version; the currently published braces version is 3.0.3. npm reports no available fix.
 
 The installed dependency path is lint tooling, not a production package. Do not accept untrusted glob-pattern input into lint/build tooling. This scope reduces customer-runtime exposure but does not erase the finding or certify CI safety. Do not force an incompatible package override or claim remediation. Re-audit before release and adopt a published compatible fix when available, with lint/build regression verification. Phase 0.4 retains this finding explicitly pending remediation or a documented release-risk disposition.

@@ -5,7 +5,6 @@ import type {
   ChatMessage,
   ControlOverrides,
   PlanRequestPayload,
-  PlanToolMode,
   SurveySlopeResponse,
 } from "../types";
 import {
@@ -24,6 +23,7 @@ import {
 import type { GenerateLayoutContext } from "../utils/dashboardGenerateLayoutContext";
 import type { GenerateFlowSummary, AutoSiteContextFlowSummary } from "../utils/dashboardDataTypes";
 import type { RecentChange } from "../utils/dashboardTypes";
+import type { DashboardPlanExecutor } from "../utils/dashboardPlanExecution";
 import { parsePositiveNumber, toReadableLabel } from "../utils/formatting";
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import type { ProjectStatusSummary, SidePanelKey } from "../utils/workspaceShell";
@@ -35,14 +35,7 @@ type AppendChatMessage = (
   feedback?: ChatMessage["feedback"],
 ) => void;
 
-type ExecutePlanAction = (input: {
-  mode: PlanToolMode;
-  requestPayload: PlanRequestPayload;
-  assistantPrefix?: string | null;
-  timeoutMs?: number;
-  allowQueueFallback?: boolean;
-  forceQueue?: boolean;
-}) => Promise<void>;
+type ExecutePlanAction = DashboardPlanExecutor;
 
 type BuildPayloadFromOverrides = (
   overrides?: ControlOverrides,
@@ -440,7 +433,7 @@ export function useDashboardGenerateSystemAction({
         ].filter(Boolean).join(" "),
         "status",
       );
-      await executePlanAction({
+      const outcome = await executePlanAction({
         mode: "run",
         requestPayload: systemRequestPayload,
         assistantPrefix: `Generating a review draft for ${systemLabel} around the locked site...`,
@@ -448,7 +441,7 @@ export function useDashboardGenerateSystemAction({
         allowQueueFallback: true,
         forceQueue: queueLongRun,
       });
-      if (queueLongRun) {
+      if (outcome !== "completed" || target === "full") {
         return;
       }
       setSystemStatuses((prev) => {

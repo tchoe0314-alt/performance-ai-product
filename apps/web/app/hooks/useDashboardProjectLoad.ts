@@ -11,6 +11,7 @@ type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type UpdateProjectStatus = (updates: Omit<ProjectStatusSummary, "updatedAt">) => void;
 
 type UseDashboardProjectLoadOptions = {
+  cancelPendingRun: () => void;
   activeJob: JobSummary | null | undefined;
   activeJobId: string;
   applyProjectInput: (projectInput: ProjectInput) => void;
@@ -42,6 +43,7 @@ type UseDashboardProjectLoadOptions = {
 };
 
 export function useDashboardProjectLoad({
+  cancelPendingRun,
   activeJob,
   activeJobId,
   applyProjectInput,
@@ -86,6 +88,7 @@ export function useDashboardProjectLoad({
     }
     const requestId = projectLoadRequestRef.current + 1;
     projectLoadRequestRef.current = requestId;
+    cancelPendingRun();
     try {
       resetWorkspaceStateRef.current?.();
       updateProjectStatus({
@@ -182,6 +185,7 @@ export function useDashboardProjectLoad({
       autosaveSuspendRef.current = false;
     }
   }, [
+    cancelPendingRun,
     activeJob?.project_id,
     activeJobId,
     applyProjectInput,

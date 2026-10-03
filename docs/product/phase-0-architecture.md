@@ -1,5 +1,17 @@
 # Phase 0 implementation authority and responsibility map
 
+## October 3 follow-up: shared object writer and plan lifecycle
+
+The three direct `buildingPlacementsRef.current = ...` compatibility writes in object update, custom drawing and object combination were removed. These adapters now publish only through the synchronous placement owner. A source scan finds no remaining direct assignment to that named ref in the app. The custom-drawing contract uses a read adapter that throws on assignment, proves two consecutive creations use the latest shared state, and verifies persistence observes committed objects. This scan is specific evidence, not proof that every state variable has been consolidated.
+
+`dashboardPlanExecution.ts` owns direct run, staged queue, connectivity/timeout fallback, cancellation, feedback and lifecycle cleanup. It centralizes the repeated queue request/publish paths and returns explicit completed/queued/blocked/cancelled/stale outcomes. UI and geometry/calculation ownership did not move. Workspace generation guards reject late direct/queued responses and late preview completion; cleanup respects the run-controller owner. Project open/new-project actions cancel the current direct request and release its submission/busy state. The outer chat-decision adapter checks the same generation after async boundaries before applying controls, attaching jobs or saving.
+
+Single-system Generate and direct drainage autofix now mark systems fresh only after a completed run, not a failed, cancelled, stale or merely queued result. Connectivity fallback explains a connection interruption instead of falsely claiming timeout. Queue cancellation does not assert that a backend job already accepted by the server was cancelled; job cancellation remains its separate API/workflow.
+
+Dashboard: 5,906 lines, 253 fewer than `522d010f`. Large state/props orchestration, project-input restoration and remaining legacy command adapters are still maintainability work, so 0.4 is not closed. No schema migration, dependency downgrade, paid service, deployment or push.
+
+Evidence: initial shared-writer extraction passed 134 affected checks on `.next-phase04-command-review`; eight executor contracts passed; final `.next-phase04-draft-review` production build, scoped lint and type checks passed. Final lifecycle/Generate/project/save/recovery selection: 86 passed, zero failures/skips, report `/tmp/civora-phase04-execution-verified-report/index.html`. The two new mocked website regressions separately passed after correcting the test assumption that New Project leaves its drawer open. An intermediate type-narrowing error was repaired before the successful build; failed runs are not successful evidence. Final combined writer rerun is recorded separately in the execution register. Chromium-only files and opted-in four-browser/device files have distinct coverage; not every test ran on every browser, and no hosted/Firefox certification is implied.
+
 ## October 3 follow-up: command and draft-save ownership
 
 `dashboardGeometryCommands.ts` now owns shared move/resize recognition and patch construction for the two chat adapters. Their strict/conversational grammar, target selection, feedback and canonical validation remain separate, preserving existing behavior. This is not universal intent-execution consolidation.

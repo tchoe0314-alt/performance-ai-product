@@ -26,7 +26,6 @@ import type {
   ChatDecisionResponse,
   ChatMessage,
   DisciplineToggle,
-  PlanRequestPayload,
   PreviewRequestPayload,
   SiteInputs,
   CandidateReviewInbox,
@@ -88,7 +87,6 @@ import {
   toReadableLabel,
   parsePositiveNumber,
   formatMetric,
-  summarizePlanResponse,
 } from "./utils/formatting";
 
 import {
@@ -223,6 +221,7 @@ import { useDashboardPlanPdfActions } from "./hooks/useDashboardPlanPdfActions";
 import { useDashboardMapAnalysisActions } from "./hooks/useDashboardMapAnalysisActions";
 import { useDashboardProjectSave } from "./hooks/useDashboardProjectSave";
 import { ensureDashboardProjectDraft } from "./utils/dashboardProjectDraft";
+import { createDashboardPlanExecutor, isConnectivityFailureMessage } from "./utils/dashboardPlanExecution";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
 import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
 import { useDashboardWorkspaceReset } from "./hooks/useDashboardWorkspaceReset";
@@ -627,6 +626,13 @@ function PerformanceAIDashboardView({
   const surveyInputRef = useRef<HTMLInputElement | null>(null);
   const runSubmissionRef = useRef(false);
   const directRunAbortRef = useRef<AbortController | null>(null);
+  const cancelPendingRun = useCallback(() => {
+    directRunAbortRef.current?.abort();
+    directRunAbortRef.current = null;
+    runSubmissionRef.current = false;
+    setBusy(false);
+    setActivePlanTool("run");
+  }, []);
   const draftProjectPromiseRef = useRef<Promise<ProjectRecord | null> | null>(null);
   const ensureProjectDraftRef = useRef<() => Promise<string | null>>(() => Promise.resolve(null));
   const loadJobRef = useRef<((id: string) => Promise<void> | void) | null>(null);
@@ -2002,292 +2008,13 @@ function PerformanceAIDashboardView({
     utilities,
   });
 
-  const isConnectivityFailureMessage = (message: string) =>
-    message.toLowerCase().includes("backend unreachable") ||
-    message.includes("could not reach the backend") ||
-    message.includes("Failed to fetch") ||
-    message.includes("Load failed") ||
-    message.includes("NetworkError");
-
-  const executePlanAction = async ({
-    mode,
-    requestPayload,
-    resolvedProjectId,
-    assistantPrefix,
-    clearPromptOnSuccess = false,
-    signal,
-    timeoutMs,
-    allowQueueFallback = true,
-    forceQueue = false,
-  }: {
-    mode: PlanToolMode;
-    requestPayload: PlanRequestPayload;
-    resolvedProjectId?: string | null;
-    assistantPrefix?: string | null;
-    clearPromptOnSuccess?: boolean;
-    signal?: AbortSignal;
-    timeoutMs?: number;
-    allowQueueFallback?: boolean;
-    forceQueue?: boolean;
-  }) => {
-    setBusy(true);
-    setActivePlanTool(mode);
-    updateProjectStatus({
-      state: "working",
-      area: "generate",
-      title:
-        mode === "fix"
-          ? "Fix pass working"
-          : mode === "improve"
-            ? "Improvement pass working"
-            : "Generate working",
-      detail:
-      mode === "fix"
-        ? "Civora AI is starting the fix run."
-        : mode === "improve"
-          ? "Civora AI is starting the improvement run."
-          : "Civora AI is starting the review draft run.",
-      nextAction: "Keep this project open until the run finishes or shows what needs attention.",
-    });
-    const shouldQueueStagedRun = Boolean((forceQueue || requestPayload?.full_design_mode) && token);
-    if (shouldQueueStagedRun) {
-      try {
-        const queued = await postJson<{ job: JobSummary }>(
-          "/api/jobs/orchestrate",
-          {
-            project_id:
-              resolvedProjectId !== undefined
-                ? resolvedProjectId
-                : ((requestPayload?.project_id ?? projectId) || null),
-            request: requestPayload,
-          },
-          { token },
-        );
-        setActiveJobId(queued.job.job_id);
-        const queuedDetail = forceQueue
-          ? `I queued this long-running engineering workflow as ${queued.job.job_id} so progress stays visible while the backend works.`
-          : `I queued the full staged design workflow as ${queued.job.job_id} so each phase can save, pause for review, and continue on the same project.`;
-        appendChatMessage(
-          "assistant",
-          [
-            assistantPrefix,
-            queuedDetail,
-          ]
-            .filter(Boolean)
-            .join(" "),
-          "status",
-        );
-        updateProjectStatus({
-          state: "working",
-          area: "generate",
-          title: "Generate queued",
-          detail: `Queued staged run ${queued.job.job_id}.`,
-          nextAction: "Open Jobs or watch the visible job status until the backend finishes.",
-        });
-        if (clearPromptOnSuccess) {
-          setPrompt("");
-        }
-        return;
-      } catch (queueError) {
-	          const queueMessage = `Generate could not complete: ${panelErrorMessage(queueError, "Job queue could not complete.")} Next action: check the backend connection, then press Generate again.`;
-        appendChatMessage("assistant", queueMessage, "status");
-        updateProjectStatus({
-          state: "blocked",
-          area: "generate",
-          title: "Generate needs sign-in",
-          detail: panelErrorMessage(queueError, "Job queue failed."),
-          nextAction: "Check the backend connection, then press Generate again.",
-        });
-        return;
-      } finally {
-        setBusy(false);
-      }
-    }
-    const liveRunController = new AbortController();
-    const liveRunTimeoutMs = typeof timeoutMs === "number" ? timeoutMs : 12_000;
-    let timedOut = false;
-    const handleAbort = () => liveRunController.abort();
-    signal?.addEventListener("abort", handleAbort, { once: true });
-    const timeoutId = window.setTimeout(() => {
-      timedOut = true;
-      liveRunController.abort();
-    }, liveRunTimeoutMs);
-    try {
-      const data = await postJson<PlanResponse>("/api/orchestrate", requestPayload, {
-        token,
-        signal: liveRunController.signal,
-      });
-      applyBackendResult(data);
-      appendChatMessage(
-        "assistant",
-        [assistantPrefix, summarizePlanResponse(data, mode)].filter(Boolean).join(" "),
-      );
-      await requestPreview(
-        {
-          project_id: projectId || currentProject?.project_id || null,
-          result: data,
-          filename_stem: fileName || siteName || "civora-ai-plan",
-        },
-        { silent: true },
-      );
-      setStatusMessage(
-        mode === "fix"
-          ? "Civora AI ran a focused fix pass."
-          : mode === "improve"
-            ? "Civora AI generated an improved plan."
-            : "Plan run completed.",
-      );
-      updateProjectStatus({
-        state: "needs review",
-        area: "generate",
-        title:
-          mode === "fix"
-            ? "Fix pass needs review"
-            : mode === "improve"
-              ? "Improvement pass needs review"
-              : "Generate needs review",
-        detail:
-          mode === "fix"
-            ? "Civora AI ran a focused fix pass."
-            : mode === "improve"
-              ? "Civora AI generated an improved plan."
-              : "Plan run completed.",
-        nextAction: "Review the generated draft, needs, assumptions, and preview before deliverables.",
-      });
-      if (clearPromptOnSuccess) {
-        setPrompt("");
-      }
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "";
-      if (timedOut && token && allowQueueFallback) {
-        try {
-          const queued = await postJson<{ job: JobSummary }>(
-            "/api/jobs/orchestrate",
-            {
-              project_id:
-                resolvedProjectId !== undefined
-                  ? resolvedProjectId
-                  : ((requestPayload?.project_id ?? projectId) || null),
-              request: requestPayload,
-            },
-            { token },
-          );
-          setActiveJobId(queued.job.job_id);
-          appendChatMessage(
-            "assistant",
-            [
-              assistantPrefix,
-              "The live run took too long to stay on the direct connection, so I queued it in the background instead.",
-              `Job ${queued.job.job_id} is now running and I’ll pick it up when it finishes.`,
-            ]
-              .filter(Boolean)
-              .join(" "),
-            "status",
-          );
-          updateProjectStatus({
-            state: "working",
-            area: "generate",
-            title: "Generate queued",
-            detail: `The live run was queued as ${queued.job.job_id} because the direct request took too long.`,
-            nextAction: "Open Jobs or watch the visible job status until the backend finishes.",
-          });
-          return;
-        } catch (queueError) {
-          const queueMessage = `Generate failed: ${panelErrorMessage(queueError, "Job queue failed.")} Next action: check the backend connection, then press Generate again.`;
-          appendChatMessage("assistant", queueMessage, "status");
-          updateProjectStatus({
-            state: "blocked",
-            area: "generate",
-	            title: "Generate needs attention",
-            detail: panelErrorMessage(queueError, "Job queue failed."),
-            nextAction: "Check the backend connection, then press Generate again.",
-          });
-          return;
-        }
-      }
-      if (error instanceof Error && error.name === "AbortError") {
-        appendChatMessage(
-          "assistant",
-          "I stopped the live request before it finished.",
-          "status",
-        );
-        setStatusMessage("Cancelled the live request.");
-        return;
-      }
-      const looksLikeConnectivityFailure = isConnectivityFailureMessage(errorMessage);
-      if (looksLikeConnectivityFailure && token && allowQueueFallback) {
-        try {
-          const queued = await postJson<{ job: JobSummary }>(
-            "/api/jobs/orchestrate",
-            {
-              project_id:
-                resolvedProjectId !== undefined
-                  ? resolvedProjectId
-                  : ((requestPayload?.project_id ?? projectId) || null),
-              request: requestPayload,
-            },
-            { token },
-          );
-          setActiveJobId(queued.job.job_id);
-          appendChatMessage(
-            "assistant",
-            [
-              assistantPrefix,
-              "The live run took too long to stay on the direct connection, so I queued it in the background instead.",
-              `Job ${queued.job.job_id} is now running and I’ll pick it up when it finishes.`,
-            ]
-              .filter(Boolean)
-              .join(" "),
-            "status",
-          );
-          updateProjectStatus({
-            state: "working",
-            area: "generate",
-            title: "Generate queued",
-            detail: `The live run was queued as ${queued.job.job_id} because the direct request took too long.`,
-            nextAction: "Open Jobs or watch the visible job status until the backend finishes.",
-          });
-          return;
-        } catch (queueError) {
-	          const queueMessage = `Generate could not complete: ${panelErrorMessage(queueError, "Job queue could not complete.")} Next action: check the backend connection, then press Generate again.`;
-          appendChatMessage(
-            "assistant",
-            queueMessage,
-            "status",
-          );
-          updateProjectStatus({
-            state: "blocked",
-            area: "generate",
-	            title: "Generate needs attention",
-            detail: panelErrorMessage(queueError, "Job queue failed."),
-            nextAction: "Check the backend connection, then press Generate again.",
-          });
-          return;
-        }
-      }
-      const message =
-        mode === "fix"
-	          ? `Fix pass could not complete: ${panelErrorMessage(error, "Could not complete the fix pass.")} Next action: review inputs, then retry Fix.`
-          : mode === "improve"
-	            ? `Improve pass could not complete: ${panelErrorMessage(error, "Could not complete the improvement pass.")} Next action: review inputs, then retry Improve.`
-	            : `Generate could not complete: ${panelErrorMessage(error, "Could not update the design.")} Next action: check the status message, then press Generate again.`;
-      appendChatMessage("assistant", message, "status");
-      updateProjectStatus({
-        state: "blocked",
-        area: "generate",
-        title: mode === "run" ? "Generate needs attention" : `${mode} needs attention`,
-        detail: panelErrorMessage(error, mode === "run" ? "Could not update the design." : "Could not complete the run."),
-        nextAction: mode === "run" ? "Check the status message, then press Generate again." : "Review inputs, then retry.",
-      });
-    } finally {
-      window.clearTimeout(timeoutId);
-      signal?.removeEventListener("abort", handleAbort);
-      setBusy(false);
-      setActivePlanTool("run");
-      directRunAbortRef.current = null;
-    }
-  };
+  const executePlanAction = createDashboardPlanExecutor({
+    token, projectId, currentProjectId: currentProject?.project_id, fileName, siteName,
+    getWorkspaceGeneration: () => projectLoadRequestRef.current,
+    directRunAbortRef, setBusy, setActivePlanTool, setActiveJobId, setPrompt,
+    setStatusMessage, updateProjectStatus, appendChatMessage, applyBackendResult,
+    requestPreview: (payload, options) => requestPreview(payload, options),
+  });
 
   const runOrchestrator = async (mode: PlanToolMode = "run") => {
     if (!token) return;
@@ -2343,6 +2070,8 @@ function PerformanceAIDashboardView({
     }
 
     const runController = new AbortController();
+    const runGeneration = projectLoadRequestRef.current;
+    const isCurrentRun = () => projectLoadRequestRef.current === runGeneration && !runController.signal.aborted;
     directRunAbortRef.current = runController;
     runSubmissionRef.current = true;
     setBusy(true);
@@ -2353,6 +2082,7 @@ function PerformanceAIDashboardView({
     try {
       const resolvedProjectId =
         ((await ensureProjectDraft()) ?? projectId) || null;
+      if (!isCurrentRun()) return;
       const decision = await postJson<ChatDecisionResponse>(
         "/api/chat/decide",
         {
@@ -2361,6 +2091,7 @@ function PerformanceAIDashboardView({
         },
         { token, signal: runController.signal },
       );
+      if (!isCurrentRun()) return;
       const overrides = decision.control_overrides ?? {};
       applyControlOverrides(overrides);
       const shouldAutoName = false;
@@ -2451,6 +2182,7 @@ function PerformanceAIDashboardView({
             ? "Civora AI is asking for a little more detail before running a design."
             : "Civora AI responded in chat without rerunning the planner.",
         );
+        if (!isCurrentRun()) return;
         await saveProject({
           silent: true,
           projectIdOverride: resolvedProjectId,
@@ -2459,6 +2191,7 @@ function PerformanceAIDashboardView({
           autoNamedOverride: shouldAutoName,
           autoFileNamedOverride: shouldAutoFileName,
         });
+        if (!isCurrentRun()) return;
         setBusy(false);
         setActivePlanTool("run");
         return;
@@ -2494,6 +2227,7 @@ function PerformanceAIDashboardView({
           clearPromptOnSuccess: true,
           signal: runController.signal,
         });
+        if (!isCurrentRun()) return;
         await saveProject({
           silent: true,
           projectIdOverride: resolvedProjectId,
@@ -2513,6 +2247,7 @@ function PerformanceAIDashboardView({
         setStatusMessage(
           "Civora AI needs a little more direction before generating a design.",
         );
+        if (!isCurrentRun()) return;
         await saveProject({
           silent: true,
           projectIdOverride: resolvedProjectId,
@@ -2521,6 +2256,7 @@ function PerformanceAIDashboardView({
           autoNamedOverride: shouldAutoName,
           autoFileNamedOverride: shouldAutoFileName,
         });
+        if (!isCurrentRun()) return;
         setBusy(false);
         setActivePlanTool("run");
         return;
@@ -2547,6 +2283,7 @@ function PerformanceAIDashboardView({
         clearPromptOnSuccess: true,
         signal: runController.signal,
       });
+      if (!isCurrentRun()) return;
       await saveProject({
         silent: true,
         projectIdOverride: resolvedProjectId,
@@ -2556,9 +2293,10 @@ function PerformanceAIDashboardView({
         autoFileNamedOverride: shouldAutoFileName,
       });
     } catch (error) {
+      if (projectLoadRequestRef.current !== runGeneration) return;
       const errorMessage =
         error instanceof Error ? error.message : "";
-      if (error instanceof Error && error.name === "AbortError") {
+      if (runController.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
         appendChatMessage(
           "assistant",
           "I stopped the live request before it finished.",
@@ -2574,6 +2312,7 @@ function PerformanceAIDashboardView({
         try {
           const resolvedProjectId =
             projectId || (await ensureProjectDraft()) || null;
+          if (!isCurrentRun()) return;
           const fallbackPayload = buildPayloadFromOverrides(
             {},
             trimmedPrompt,
@@ -2585,8 +2324,9 @@ function PerformanceAIDashboardView({
               project_id: resolvedProjectId,
               request: fallbackPayload,
             },
-            { token },
+            { token, signal: runController.signal },
           );
+          if (!isCurrentRun()) return;
           setActiveJobId(queued.job.job_id);
           appendChatMessage(
             "assistant",
@@ -2598,6 +2338,7 @@ function PerformanceAIDashboardView({
           );
           return;
         } catch (queueError) {
+          if (!isCurrentRun()) return;
           const friendly = chatFailureMessage(queueError);
           const technical = panelErrorMessage(queueError, "I couldn’t queue the design request either.");
           appendChatMessage(
@@ -2620,8 +2361,12 @@ function PerformanceAIDashboardView({
       setBusy(false);
       setActivePlanTool("run");
     } finally {
-      runSubmissionRef.current = false;
-      directRunAbortRef.current = null;
+      if (directRunAbortRef.current === runController || (directRunAbortRef.current === null && projectLoadRequestRef.current === runGeneration)) {
+        runSubmissionRef.current = false;
+        directRunAbortRef.current = null;
+        setBusy(false);
+        setActivePlanTool("run");
+      }
     }
   };
 
@@ -2954,6 +2699,7 @@ function PerformanceAIDashboardView({
   }, [currentProject, lotHeight, lotWidth, token]);
 
   const { loadProject } = useDashboardProjectLoad({
+    cancelPendingRun,
     activeJob,
     activeJobId,
     applyProjectInput,
@@ -3949,6 +3695,7 @@ function PerformanceAIDashboardView({
     handleNewProject,
     handleRestoreProject,
   } = useDashboardProjectActions({
+    cancelPendingRun,
     autosaveSuspendRef,
     chatAutosaveTimeoutRef,
     chatMessagesRef,

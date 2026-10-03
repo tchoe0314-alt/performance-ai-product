@@ -7,9 +7,9 @@ import type {
   ControlOverrides,
   JobSummary,
   PlanRequestPayload,
-  PlanToolMode,
 } from "../types";
 import type { SystemStatus } from "../utils/workflowConstants";
+import type { DashboardPlanExecutor } from "../utils/dashboardPlanExecution";
 
 type AppendChatMessage = (
   role: ChatMessage["role"],
@@ -18,11 +18,7 @@ type AppendChatMessage = (
   feedback?: ChatMessage["feedback"],
 ) => void;
 
-type ExecutePlanAction = (input: {
-  mode: PlanToolMode;
-  requestPayload: PlanRequestPayload;
-  assistantPrefix?: string | null;
-}) => Promise<void>;
+type ExecutePlanAction = DashboardPlanExecutor;
 
 type BuildPayloadFromOverrides = (
   overrides?: ControlOverrides,
@@ -163,11 +159,12 @@ export function useDashboardDrainageAutofix({
           return false;
         }
       } else {
-        await executePlanAction({
+        const outcome = await executePlanAction({
           mode: "run",
           requestPayload: drainagePayload,
           assistantPrefix: "Applying drainage fix…",
         });
+        if (outcome !== "completed") return outcome === "queued";
       }
       setSystemStatuses((prev) => ({ ...prev, drainage: "fresh" }));
       return true;

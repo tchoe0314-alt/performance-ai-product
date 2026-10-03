@@ -147,7 +147,6 @@ export function runDashboardCreateCustomGeometry({
     };
   }
   const nextPlacements = [...currentPlacements, nextPlacement];
-  buildingPlacementsRef.current = nextPlacements;
   actions.setBuildingPlacements(nextPlacements);
   actions.setActivePlacementId(nextPlacement.id);
   actions.setSelectedObjectIds([nextPlacement.id]);

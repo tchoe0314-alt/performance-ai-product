@@ -22,6 +22,7 @@ import type { ProjectStatusSummary, SidePanelKey } from "../utils/workspaceShell
 type UpdateProjectStatus = (updates: Omit<ProjectStatusSummary, "updatedAt">) => void;
 
 type UseDashboardProjectActionsOptions = {
+  cancelPendingRun: () => void;
   autosaveSuspendRef: MutableRefObject<boolean>;
   chatAutosaveTimeoutRef: MutableRefObject<number | null>;
   chatMessagesRef: MutableRefObject<ChatMessage[]>;
@@ -118,6 +119,7 @@ type UseDashboardProjectActionsOptions = {
 };
 
 export function useDashboardProjectActions({
+  cancelPendingRun,
   autosaveSuspendRef,
   chatAutosaveTimeoutRef,
   chatMessagesRef,
@@ -206,6 +208,7 @@ export function useDashboardProjectActions({
     const newProjectStartedAt = markCivoraInteraction();
     debugLog("new-project-start");
     projectLoadRequestRef.current += 1;
+    cancelPendingRun();
     projectResultLoadRequestRef.current += 1;
     suppressProjectAutoLoadRef.current = true;
     restoredActiveProjectRef.current = true;
@@ -319,6 +322,7 @@ export function useDashboardProjectActions({
       autosaveSuspendRef.current = false;
     }, 0);
   }, [
+    cancelPendingRun,
     autosaveSuspendRef,
     chatAutosaveTimeoutRef,
     chatMessagesRef,

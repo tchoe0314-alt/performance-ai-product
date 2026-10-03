@@ -433,7 +433,6 @@ export function useDashboardObjectUpdateAction({
           );
         })()
       : buildingPlacementsRef.current.map((item) => (item.id === id && nextObject ? nextObject : item));
-    buildingPlacementsRef.current = nextPlacements;
     setBuildingPlacements(nextPlacements);
     markSystemsStale(systemsImpactedByPlacement(target));
     if (recentChange?.undo) {

@@ -177,7 +177,6 @@ export function runObjectManagerCombineSelected({
     ),
     combinedObject,
   ];
-  buildingPlacementsRef.current = nextPlacements;
   actions.setBuildingPlacements(nextPlacements);
   actions.setSelectedObjectIds([nextId]);
   actions.setActivePlacementId(nextId);
