@@ -208,7 +208,8 @@ async function waitForJobCompletion(request: APIRequestContext, token: string, j
       lastStatus = status;
       lastProgress = progress;
     }
-    if (status === "completed" || status === "awaiting_approval") return payload.job;
+    if (status === "completed") return payload.job;
+    if (status === "awaiting_approval") throw new Error(`Job ${jobId} requires approval; this is not a completed calculation.`);
     if (status === "failed" || status === "cancelled") {
       throw new Error(`Job ${jobId} ${status}: ${payload?.job?.error || "unknown error"}`);
     }
@@ -443,12 +444,12 @@ async function applyIssue(page: Page, actionLabel: string) {
   const finalApplyButton = applyButton;
   await expect(finalApplyButton).toBeVisible({ timeout: 20_000 });
   await expect(finalApplyButton).toBeEnabled({ timeout: 5_000 });
-  await finalApplyButton.evaluate((element: HTMLElement) => element.click());
+  await finalApplyButton.click();
   await page.waitForTimeout(5_000);
 }
 
 test.describe("Phase 5 drainage autofix matrix", () => {
-  test("Run autofix apply actions matrix", async ({ page, request }) => {
+  test("drainage job scenarios and explicit Apply outcomes with replay deduplication", async ({ page, request }) => {
     test.setTimeout(600_000);
     const token = await loginAndSeedToken(request, page);
     await preflightDrainageEndpoint(request, token);
@@ -590,6 +591,7 @@ test.describe("Phase 5 drainage autofix matrix", () => {
     const selectedCases = onlyCase
       ? cases.filter((entry) => entry.name.toLowerCase().includes(onlyCase.toLowerCase()))
       : cases;
+    expect(selectedCases.length, "PHASE5_ONLY must select at least one scenario").toBeGreaterThan(0);
     const caseResults: CaseResult[] = [];
 
     for (const entry of selectedCases) {
@@ -617,23 +619,22 @@ test.describe("Phase 5 drainage autofix matrix", () => {
           const jobResponsePromise = page.waitForResponse((response) => {
             return response.url().includes("/api/jobs/drainage") && response.request().method() === "POST";
           });
-          const jobRequestPromise =
-            actionLabel === "Adjust slope"
-              ? page.waitForRequest((request) => {
+          const jobRequestPromise = page.waitForRequest((request) => {
                   return (
                     request.url().includes("/api/jobs/drainage") && request.method() === "POST"
                   );
-                })
-              : null;
+                });
           console.info(`${entry.name} APPLY CLICK`);
           await withTimeout(applyIssue(page, actionLabel), 25_000, `${entry.name} applyIssue`);
           console.info(`${entry.name} APPLY CLICK FIRED`);
           let jobId: string | null = null;
           let jobIdError: string | null = null;
           let applyBlocked = false;
+          let appliedRequestPayload: Record<string, unknown> | null = null;
           try {
             if (jobRequestPromise) {
               const req = await withTimeout(jobRequestPromise, 25_000, `${entry.name} jobRequest`);
+              appliedRequestPayload = req.postDataJSON() as Record<string, unknown>;
               try {
                 const data = req.postDataJSON() as { request?: { drainage?: Record<string, unknown> } };
                 console.info(`${entry.name} JOB REQUEST DRAINAGE`, data.request?.drainage ?? null);
@@ -664,6 +665,7 @@ test.describe("Phase 5 drainage autofix matrix", () => {
           if (!jobId && !applyBlocked) {
             throw new Error(jobIdError || `${entry.name} did not return a drainage job id after Apply.`);
           }
+          expect(applyBlocked, "Apply coverage requires a successful job, not a rate-limit response").toBe(false);
           if (jobId) {
             console.info(`${entry.name} POLLING START`);
             await waitForJobCompletion(request, token, jobId);
@@ -686,6 +688,12 @@ test.describe("Phase 5 drainage autofix matrix", () => {
             });
           }
           console.info(`${entry.name} AFTER`, after);
+          if (entry.name === "Case 1 Basin uphill") {
+            // This fixture cannot establish a valid path by slope alone. It
+            // must retain the engineering failure instead of reporting clear.
+            expect(after.issues).toContain("SLOPE_ADJUSTMENT_FAILED");
+            expect(after.runs).toBe(0);
+          }
 
           if (entry.name === "Case 3 Flat site" && actionLabel === "Adjust slope") {
             await expect(
@@ -702,13 +710,30 @@ test.describe("Phase 5 drainage autofix matrix", () => {
             const reducedIssue = drainageIssues.find((issue: IssueLike) => String(issue?.code || "") === "UNDER_COLLECTION_REDUCED");
             console.info("UNDER_COLLECTION_REDUCED_CONTEXT", reducedIssue?.context ?? null);
 
-            // Apply a second time to verify deduplication/guardrails.
-            try {
-              await withTimeout(applyIssue(page, actionLabel), 25_000, `${entry.name} applyIssue second`);
-            } catch (err) {
-              console.info(`${entry.name} SECOND APPLY NOT AVAILABLE`, String(err));
-            }
-            const afterSecond = parseDrainageCounts(await fetchProjectResult(request, token, projectId));
+            expect(after.inlets).toBeGreaterThan(before.inlets);
+            expect(after.issues).not.toContain("UNDER_COLLECTION");
+            expect(after.issues).toContain("ORPHAN_INLETS");
+            expect(appliedRequestPayload).not.toBeNull();
+            // The resolved issue no longer exposes Add inlet. Replay the
+            // exact accepted request to test duplicate-delivery semantics;
+            // absence of a UI button is not a deduplication assertion.
+            await expect(page.getByRole("button", { name: /^Add inlet$/i }).filter({ visible: true })).toHaveCount(0);
+            const replay = await request.post(`${API_BASE_URL}/api/jobs/drainage`, {
+              headers: { Authorization: `Bearer ${token}` }, data: appliedRequestPayload,
+            });
+            expect(replay.ok()).toBeTruthy();
+            const replayPayload = await replay.json();
+            expect(replayPayload.job?.job_id).toBeTruthy();
+            await waitForJobCompletion(request, token, replayPayload.job.job_id);
+            const replayResult = await fetchProjectResult(request, token, projectId);
+            const replayPlan = (replayResult.final_plan ?? {}) as Record<string, unknown>;
+            const replayMeta = (replayPlan.meta ?? {}) as Record<string, unknown>;
+            const replayDrainage = (replayMeta.drainage_canonical ?? replayMeta.drainage ?? {}) as Record<string, unknown>;
+            expect(replayDrainage.inlets).toEqual(drainage.inlets);
+            expect(replayDrainage.basins).toEqual(drainage.basins);
+            expect(replayDrainage.pipe_runs ?? replayDrainage.runs).toEqual(drainage.pipe_runs ?? drainage.runs);
+            const afterSecond = parseDrainageCounts(replayResult);
+            expect(afterSecond).toEqual(after);
             console.info(`${entry.name} AFTER SECOND APPLY`, afterSecond);
           }
         }

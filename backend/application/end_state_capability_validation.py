@@ -168,6 +168,8 @@ BROWSER_GATE: Dict[str, Any] = {
         "tests/live/canvas-first-workspace-redesign.spec.ts",
                 "tests/live/video-website-regression.spec.ts",
                 "tests/live/error-states-chat223b.spec.ts",
+                "tests/live/human-ui-friction-chat265.spec.ts",
+                "tests/live/preview-fidelity-chat220.spec.ts",
         "--project=chromium",
         "--workers=1",
     ]],
@@ -175,12 +177,13 @@ BROWSER_GATE: Dict[str, Any] = {
 
 LOCAL_WEBSITE_GATE = {
     "gate_id": "real_local_persistence_and_exports",
-    "label": "Disposable local website authentication, persistence, and export downloads",
+    "label": "Disposable local website authentication, persistence, export downloads, and drainage outcomes",
     "evidence_level": "real_local_browser",
     "cwd": "apps/web",
     "commands": [["npx", "playwright", "test",
                   "tests/live/phase0-local-persistence.spec.ts",
                   "tests/live/phase0-local-export-download.spec.ts",
+                  "tests/live/phase5-autofix.spec.ts",
                   "--project=chromium", "--workers=1"]],
 }
 

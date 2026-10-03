@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openMapAnchoredFixture } from "./mapAnchoredFixture";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1&seedDemo=1") {
   const consoleErrors: string[] = [];
@@ -113,9 +114,10 @@ test.describe("Chat 265 human UI friction repair", () => {
   });
 
   test("Select never pans the real map and Pan moves map-aligned geometry", async ({ page }) => {
-    await openDemoWorkspace(page, "debugPreview=1&mapDebug=1&seedDemo=1");
+    test.skip(!process.env.NEXT_PUBLIC_MAPBOX_TOKEN, "Requires the existing Mapbox token in the build and test process.");
+    await openMapAnchoredFixture(page);
     const mapToggle = page.getByTestId("preview-inner-map-toggle");
-    test.skip(await mapToggle.isDisabled(), "This environment has no configured map token.");
+    await expect(mapToggle).toBeEnabled();
     if ((await mapToggle.textContent())?.includes("Off")) await mapToggle.click();
     await expect(page.locator("canvas.mapboxgl-canvas").first()).toBeVisible({ timeout: 30_000 });
     await openDrawPanel(page);

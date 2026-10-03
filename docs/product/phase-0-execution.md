@@ -49,6 +49,13 @@ Current next milestone: **0.3 test-system repair**. The October 3 founder-approv
 
 ## Evidence log
 
+### October 3 — Map fixtures and drainage outcome assertions
+
+- Replaced two fictional-demo map fixtures with a shared synthetic project at an explicit geographic anchor. Auth/project APIs are mocked; the Mapbox canvas is real. Missing UI controls now fail rather than masquerade as missing credentials. The fictional demo retains its intentional lack of a geographic anchor.
+- Affected project/preview/demo selection: **24 passed**, 41.2 seconds. Added map-lock viewport invariance checks; initial repeat found **two passed/one failed** because camera fit was still completing. Repaired fixture readiness to wait for the anchored camera, then both map interaction tests passed **five repeats each: ten passed**, 41.6 seconds. Original failure evidence retained at `/tmp/civora-phase03-map-lock-viewport`; final repeats at `/tmp/civora-phase03-map-stable-fit`.
+- Drainage test now uses ordinary user clicks, rejects approval/rate-limit responses as completed Apply proof, rejects empty scenario filters, verifies added inlet/outstanding warnings, and replays the accepted request rather than swallowing a missing second button. Full six-scenario matrix passed **one test**, 1.1 minutes; after adding full inlet/basin/pipe geometry equality, affected under-collection scenario passed **one test**, 44.4 seconds. Some scenarios remain explicitly job-only; this is not proof of universal engineering autofix success.
+- Updated repeatable manifests to retain the map regressions and real-local drainage checks. Runner tests **16 passed**; final scoped lint/typecheck passed including the geometry assertion extension. No application/backend production logic, credentials, deployment or purchases changed. Complete-suite results at `ed45da3c` remain the prior checkpoint, not a fresh complete test collection after these test repairs.
+
 ### October 3 — Phase 0.3 critical-runner refresh
 
 - Refreshed the complete suites after the runner and existing-Mapbox configuration repairs: **1,859 backend tests and 78 subtests passed**, 44 recorded warnings; **381 website tests passed, 15 skipped**, zero failures/flaky results. Global lint/typecheck passed. Stable tracked-source hash, runtime, local targets, build ID, archived report locations and limitations are recorded in the [October 3 test-system checkpoint](../release/phase-0-test-system-refresh-2026-10-03.md).

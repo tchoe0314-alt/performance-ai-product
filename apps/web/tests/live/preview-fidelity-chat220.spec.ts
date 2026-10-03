@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { setPreviewQuality } from "./testUiHelpers";
+import { openMapAnchoredFixture } from "./mapAnchoredFixture";
 
 async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&mapDebug=1&seedDemo=1", { waitUntil: "domcontentloaded" });
@@ -88,23 +89,29 @@ test.describe("Chat 220 preview fidelity", () => {
   });
 
   test("map lock is a real reversible control and does not leak clicks into the map", async ({ page }) => {
-    await openDemoWorkspace(page);
+    test.skip(!process.env.NEXT_PUBLIC_MAPBOX_TOKEN, "Requires the existing Mapbox token in the build and test process.");
+    await openMapAnchoredFixture(page);
     await page.getByLabel("Preview view options").filter({ visible: true }).first().click();
     const mapLock = page.getByTestId("preview-map-lock-toggle").filter({ visible: true }).first();
-    if ((await mapLock.count()) === 0) {
-      test.skip(true, "Map lock requires a configured map provider in this environment.");
-      return;
-    }
+    await expect(mapLock).toBeVisible();
     await expect(mapLock).toHaveAttribute("aria-pressed", "false");
     await expect(mapLock).toHaveText(/Lock Map/i);
+    const readViewport = () => page.evaluate(() => {
+      const viewport = (window as unknown as { __civoraMapViewport?: { lat: number; lng: number; zoom: number } }).__civoraMapViewport;
+      return viewport ? { lat: viewport.lat, lng: viewport.lng, zoom: viewport.zoom } : null;
+    });
+    const originalViewport = await readViewport();
+    expect(originalViewport).not.toBeNull();
 
     await mapLock.click();
     await expect(mapLock).toHaveAttribute("aria-pressed", "true");
     await expect(mapLock).toHaveText(/Unlock Map/i);
+    expect(await readViewport()).toEqual(originalViewport);
 
     await mapLock.click();
     await expect(mapLock).toHaveAttribute("aria-pressed", "false");
     await expect(mapLock).toHaveText(/Lock Map/i);
+    expect(await readViewport()).toEqual(originalViewport);
   });
 
   test("3D high quality canvas is nonblank and selectable", async ({ page }) => {
