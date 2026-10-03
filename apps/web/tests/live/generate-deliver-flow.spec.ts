@@ -57,6 +57,8 @@ test.describe("Generate and Deliver product flow", () => {
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/drainage/i);
 
     await openWorkspacePanel(page, /^Deliver$/, /Review package/i);
+    await expect(page.getByTestId("deliver-export-source-disclosure")).toContainText(/not newer unsaved canvas edits/i);
+    await expect(page.getByTestId("deliver-export-source-disclosure")).toContainText(/Not for construction/i);
     await page.getByRole("button", { name: /Make Review Package/i }).click();
     await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Needs input/i);
     await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Auto Site Context source missing|generated system result|model preview|none recorded/i);

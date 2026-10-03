@@ -451,7 +451,9 @@ class ArtifactServiceTest(unittest.TestCase):
 
             self.assertEqual(artifact_path.suffix, ".pdf")
             self.assertTrue(artifact_path.read_bytes().startswith(b"%PDF"))
-            self.assertEqual(len(reader.pages), 1)
+            self.assertEqual(len(reader.pages), 2)
+            self.assertEqual(sidecar["preliminary_export_v1"]["version"], 1)
+            self.assertFalse(sidecar["preliminary_export_v1"]["construction_release_allowed"])
             self.assertEqual(sidecar["export_type"], "pdf")
             self.assertEqual(sidecar["export_package_report_v1"]["source_project_id"], "review-pdf-project")
             self.assertTrue(sidecar["engineer_review_required"])

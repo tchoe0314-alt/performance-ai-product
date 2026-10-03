@@ -314,6 +314,7 @@ export function DeliverPanel({
             Quantities
           </button>
         </div>
+        <p data-testid="deliver-export-source-disclosure" className="mt-3 text-xs text-slate-600">DXF/PDF exports contain the preliminary generated/saved snapshot, not newer unsaved canvas edits. The file records its source revision, stale systems, assumptions and verification status. Not for construction.</p>
         {exportBlockReason ? (
           <p data-testid="deliver-export-blocker" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
             Export needs input: {exportBlockReason}

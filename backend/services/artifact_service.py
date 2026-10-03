@@ -10,6 +10,7 @@ import re
 import time
 import uuid
 import shutil
+from fastapi import HTTPException
 
 from backend.planning.dwg_compatibility import DWG_UNSUPPORTED_STATUS
 
@@ -323,6 +324,7 @@ class ArtifactService:
                 "generated_at": package_report.get("generated_at"),
             },
             "export_package_report_v1": deepcopy(package_report),
+            "preliminary_export_v1": deepcopy(dict(final_plan.get("meta") or {}).get("preliminary_export_v1")),
             "quantity_line_items": deepcopy(package_report.get("quantity_line_items") or []),
             "engineer_review_required": True,
             "civora_signoff_allowed": False,
@@ -485,6 +487,9 @@ class ArtifactService:
         from PIL import Image, ImageDraw
 
         final_plan = deepcopy(dict(result_data.get("final_plan") or {}))
+        from backend.planning.preliminary_export import prepare_preliminary_snapshot, preliminary_disclosure_lines
+        final_plan = prepare_preliminary_snapshot(final_plan, result_data, notes=list(sheet_set.get("blockers") or []) + list(dict(review_package_summary or {}).get("missing") or []))
+        disclosure = final_plan["meta"]["preliminary_export_v1"]
         self._ensure_export_package_report(final_plan, export_type="pdf")
         preview_bytes: Optional[bytes]
         try:
@@ -520,8 +525,10 @@ class ArtifactService:
                 include_layers=review_layers,
                 preview_mode="engineering",
             )
-        except Exception:
-            preview_bytes = None
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail="Review PDF blocked: drawing preview could not be rendered.") from exc
+        if not preview_bytes:
+            raise HTTPException(status_code=409, detail="Review PDF blocked: drawing preview is unavailable.")
 
         sheets = [item for item in list(sheet_set.get("sheets") or []) if isinstance(item, dict)]
         if not sheets:
@@ -587,12 +594,12 @@ class ArtifactService:
                     offset_x = preview_box[0] + (preview_box[2] - preview_box[0] - preview.width) // 2
                     offset_y = preview_box[1] + (preview_box[3] - preview_box[1] - preview.height) // 2
                     page.paste(preview, (offset_x, offset_y))
-                except Exception:
-                    draw.text((preview_box[0] + 36, preview_box[1] + 36), "Plan preview could not be rendered.", fill=muted, font=font_body)
+                except Exception as exc:
+                    raise HTTPException(status_code=409, detail="Review PDF blocked: drawing preview is invalid.") from exc
             else:
                 draw.text((preview_box[0] + 36, preview_box[1] + 36), "Plan preview is not available in this package.", fill=muted, font=font_body)
 
-            watermark = str(dict(sheet_set.get("plotStyles") or {}).get("reviewWatermark") or "REVIEW ONLY")
+            watermark = "PRELIMINARY - REVIEW ONLY"
             watermark_width = draw.textbbox((0, 0), watermark, font=font_watermark)[2]
             watermark_x = preview_box[0] + max(12, (preview_box[2] - preview_box[0] - watermark_width) // 2)
             draw.text((watermark_x, 575), watermark, fill=(214, 221, 227), font=font_watermark)
@@ -656,7 +663,7 @@ class ArtifactService:
             draw.line((1740, 1112, 1740, 1252), fill=ink, width=2)
             draw.text((92, 1132), project_name, fill=ink, font=font_heading)
             draw.text((92, 1170), sheet_title, fill=muted, font=font_body)
-            draw.text((92, 1204), "Generated from the current Civora project model for professional review.", fill=muted, font=font_small)
+            draw.text((92, 1204), "Generated/saved snapshot. Newer unsaved canvas edits are not included. See source disclosure pages.", fill=muted, font=font_small)
             draw.text((1518, 1132), "PREPARED BY", fill=muted, font=font_small)
             draw.text((1518, 1162), str(title_block.get("preparedBy") or "Civora"), fill=ink, font=font_body)
             draw.text((1518, 1200), "CHECKED BY", fill=muted, font=font_small)
@@ -667,6 +674,31 @@ class ArtifactService:
             for line_index, line in enumerate(review_lines):
                 draw.text((1765, 1210 + line_index * 18), line, fill=muted, font=font_tiny)
             page_images.append(page)
+
+        # Full disclosure is paginated, never reduced to the five-note sidebar.
+        disclosure_pages = []
+        font = _load_pdf_font(22)
+        measurement = ImageDraw.Draw(Image.new("RGB", (2040, 1320), "white"))
+        lines = []
+        for paragraph in preliminary_disclosure_lines(disclosure):
+            line = ""
+            for character in paragraph:
+                if line and measurement.textbbox((0, 0), line + character, font=font)[2] > 1840:
+                    lines.append(line)
+                    line = ""
+                line += character
+            lines.append(line)
+        for offset in range(0, len(lines), 36):
+            page = Image.new("RGB", (2040, 1320), "white")
+            draw = ImageDraw.Draw(page)
+            draw.rectangle((40, 40, 2000, 1280), outline=(28, 37, 48), width=3)
+            draw.text((80, 70), "PRELIMINARY SNAPSHOT DISCLOSURE", fill=(17, 105, 151), font=_load_pdf_font(34, bold=True))
+            draw.text((80, 120), "REVIEW ONLY - NOT FOR CONSTRUCTION", fill=(28, 37, 48), font=_load_pdf_font(26, bold=True))
+            for index, line in enumerate(lines[offset:offset + 36]):
+                draw.text((80, 188 + index * 28), line, fill=(28, 37, 48), font=font)
+            draw.text((80, 1220), f"Disclosure {offset // 36 + 1} of {(len(lines) + 35) // 36} - Independent professional review required", fill=(86, 101, 117), font=_load_pdf_font(18))
+            disclosure_pages.append(page)
+        page_images = disclosure_pages + page_images
 
         path = self._user_dir(user_id) / self._artifact_name(stem, "pdf")
         page_images[0].save(

@@ -14,6 +14,7 @@ from backend.application.design_workflows import (
 from backend.application.protocols import ArtifactServiceProtocol
 from backend.application.project_workflows import artifact_summary, save_project_workflow_update
 from backend.planning.common import blocker_explanations
+from backend.planning.preliminary_export import prepare_preliminary_snapshot
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
     final_plan_requires_construction_release,
@@ -1370,6 +1371,10 @@ def export_dxf_artifact(
         # to a DXF silently drops valid systems from the review model.
         final_meta["review_export_include_all_systems"] = True
     final_plan["meta"] = final_meta
+    if normalized_export_scope == "review":
+        if project_id:
+            final_plan["meta"]["project_id"] = project_id
+        final_plan = prepare_preliminary_snapshot(final_plan, result_data)
     if normalized_export_scope == "construction" and final_plan_requires_construction_release(final_plan):
         construction_blockers = construction_release_blockers_from_meta(
             final_meta,
@@ -1525,6 +1530,10 @@ def export_review_pdf_artifact(
     if project_id and isinstance(final_plan["meta"], dict):
         final_plan["meta"]["project_id"] = project_id
     enriched_result_data = dict(result_data)
+    final_plan = prepare_preliminary_snapshot(
+        final_plan, result_data,
+        notes=list(review_sheet_set.get("blockers") or []) + list(dict(review_package_summary or {}).get("missing") or []),
+    )
     enriched_result_data["final_plan"] = final_plan
     project_name = str(
         dict(result_data.get("request_metadata") or {}).get("project_name")

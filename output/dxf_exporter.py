@@ -6,12 +6,14 @@ import json
 import math
 import re
 import time
+import textwrap
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import ezdxf
 
 from backend.planning.common import blocker_explanations, construction_package_record
+from backend.planning.preliminary_export import preliminary_disclosure_lines, has_valid_preliminary_disclosure
 from backend.planning.production_depth import build_cad_interop_metadata
 from backend.planning.export_package_report import build_export_package_report_v1
 from backend.planning.release_gates import (
@@ -351,6 +353,7 @@ def _write_export_sidecar(plan: Dict[str, Any], filename: str) -> Path:
         "dwg_support_status": "unsupported_no_writer",
         "export_audit": deepcopy(safe_dict(meta.get("export_audit"))),
         "export_package_report_v1": deepcopy(report),
+        "preliminary_export_v1": deepcopy(meta.get("preliminary_export_v1")),
         "truth_label": (
             "DXF sidecar records traceability for a review package only; Civil3D is not verified "
             "and DWG is unsupported unless a real writer and verification record are attached."
@@ -4095,6 +4098,10 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
     release_review = safe_dict(meta.get("release_review"))
     export_scope = safe_text(meta.get("export_scope"), "construction").lower()
     review_export = export_scope == "review"
+    disclosed_stale_review = review_export and has_valid_preliminary_disclosure(plan)
+    if disclosed_stale_review:
+        stale_output_blocking = False
+        stale_blocking_reasons = []
     release_status = safe_text(release_review.get("release_status") or meta.get("release_status"), "").lower()
     release_ready_value = release_review.get("release_ready") if "release_ready" in release_review else meta.get("release_ready")
     release_blockers = _release_truth_blockers(plan, meta, release_review)
@@ -4154,6 +4161,8 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
         warnings.append("One or more engineering export entities are based on concept, fallback, assumed, synthetic, or proxy data and cannot be production-export-ready.")
     if stale_output_blocking:
         warnings.append("Export is blocked because one or more canonical outputs are dirty, stale, invalid, or cache-only.")
+    elif disclosed_stale_review and direct_stale_status.get("blocked"):
+        warnings.append("Preliminary review snapshot includes stale or incomplete calculations; they were not rerun.")
     if release_output_blocking:
         warnings.append("Export is blocked because the final plan release review is not production-ready.")
     elif review_export and release_blockers:
@@ -4163,6 +4172,7 @@ def _build_export_audit(doc, plan: Dict[str, Any], actions: List[Dict[str, Any]]
     review_findings = list(
         dict.fromkeys(
             release_blockers
+            + (safe_list(direct_stale_status.get("blocked_reasons")) if disclosed_stale_review else [])
             + (["concept_or_fallback_engineering_sources"] if concept_engineering_sources else [])
         )
     )
@@ -4426,6 +4436,14 @@ def save_dxf(
     if not layout_first_modelspace:
         _draw_plan_pipe_annotations(msp, plan)
         _draw_basin_annotations(msp, plan)
+    disclosure = safe_dict(safe_dict(plan.get("meta")).get("preliminary_export_v1"))
+    if disclosure:
+        lines = [chunk for line in preliminary_disclosure_lines(disclosure) for chunk in (textwrap.wrap(line, width=100) or [""])]
+        bbox = _plan_bbox(modelspace_actions) or (0, 0, 100, 100)
+        text_height = max(1.0, (bbox[2] - bbox[0]) / 100.0)
+        for index, line in enumerate(lines):
+            escaped = line.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}").replace("\n", "\\P")
+            msp.add_mtext(escaped, dxfattribs={"layer": "TEXT", "char_height": text_height, "width": text_height * 110, "insert": (bbox[2] + text_height * 10, bbox[3] - index * text_height * 2)})
     _record_export_stage(plan, "save.modelspace", stage_started, modelspace_action_count=len(modelspace_actions))
     check_timeout("save.modelspace")
 

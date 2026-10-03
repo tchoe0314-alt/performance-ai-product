@@ -94,6 +94,7 @@ export function FilesPanel({
       </div>
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Generated outputs</p>
+        <p className="mt-2 text-xs text-slate-600">DXF/PDF: preliminary generated/saved snapshot, not newer unsaved canvas edits. Source revision and warnings are included; not for construction.</p>
         <div className="mt-3 space-y-2">
           <StatusRow label="Preview" value={previewReady ? "Review ready" : "Not generated"} />
           <StatusRow label="Report" value={reportReady ? "Review package" : "Not generated"} />

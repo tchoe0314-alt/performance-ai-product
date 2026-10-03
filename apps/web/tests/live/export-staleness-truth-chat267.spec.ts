@@ -3,6 +3,10 @@ import { expect, test } from "@playwright/test";
 import { resolveDashboardExportBlockReason } from "../../app/utils/dashboardExportActions";
 
 test.describe("export staleness truth", () => {
+  test("permits explicitly scoped preliminary review snapshots with stale calculations", () => {
+    expect(resolveDashboardExportBlockReason({ token: "authenticated", backendResultPresent: true, projectId: "project-1", systemStatuses: { grading: "stale" }, staleOutputs: ["quantities"], exportScope: "review" })).toBe("");
+    expect(resolveDashboardExportBlockReason({ token: null, backendResultPresent: true, projectId: "project-1", systemStatuses: {}, staleOutputs: [], exportScope: "review" })).toContain("authenticate");
+  });
   test("blocks stale systems before an export job is queued", () => {
     const reason = resolveDashboardExportBlockReason({
       token: "authenticated",

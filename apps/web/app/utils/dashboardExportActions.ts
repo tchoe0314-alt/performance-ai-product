@@ -59,12 +59,14 @@ export function resolveDashboardExportBlockReason({
   projectId,
   systemStatuses,
   staleOutputs,
+  exportScope = "construction",
 }: {
   token: string | null;
   backendResultPresent: boolean;
   projectId: string;
   systemStatuses: Record<string, SystemStatus>;
   staleOutputs: unknown;
+  exportScope?: "review" | "construction";
 }) {
   if (!token) return "authenticate with a backend session before exporting review packages";
   if (!backendResultPresent) {
@@ -72,6 +74,7 @@ export function resolveDashboardExportBlockReason({
       ? "run systems or load a generated review package before exporting"
       : "run the planner or load a saved project before exporting";
   }
+  if (exportScope === "review") return "";
   const staleSystems = Object.entries(systemStatuses)
     .filter(([, status]) => status === "stale")
     .map(([system]) => system);
@@ -222,13 +225,14 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     setStatusMessage("Quantity takeoff review report exported.");
   };
 
-  const getExportBlockReason = () => {
+  const getExportBlockReason = (exportScope: "review" | "construction" = "review") => {
     return resolveDashboardExportBlockReason({
       token,
       backendResultPresent,
       projectId,
       systemStatuses,
       staleOutputs: currentPlanMeta.reactive_update_report?.stale_outputs,
+      exportScope,
     });
   };
 
@@ -247,7 +251,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     exportScope?: "review" | "construction";
     extraPayload?: Record<string, unknown>;
   }) => {
-    const blockReason = getExportBlockReason();
+    const blockReason = getExportBlockReason(exportScope ?? "construction");
     if (blockReason) {
       setExportActionMessage(`Export needs input: ${blockReason}`);
       setStatusMessage(`Export needs input: ${blockReason}`);
@@ -265,14 +269,24 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
         endpoint,
         {
           ...artifactPayload,
+          ...(exportScope === "review" ? {
+            result: {
+              ...((artifactPayload.result ?? {}) as Record<string, unknown>),
+              preliminary_export_context_v1: {
+                system_statuses: systemStatuses,
+                stale_outputs: currentPlanMeta.reactive_update_report?.stale_outputs ?? [],
+              },
+            },
+          } : {}),
           ...(extraPayload ?? {}),
           ...(exportScope ? { export_scope: exportScope } : {}),
         },
         { token },
       );
       setActiveJobId(queued.job.job_id);
-      setExportActionMessage(`${queuedLabel} queued as ${queued.job.job_id}.`);
-      setStatusMessage(`${queuedLabel} queued as ${queued.job.job_id}.`);
+      const disclosure = exportScope === "review" ? " Preliminary generated/saved snapshot; newer unsaved canvas edits are not included. Stale inputs are disclosed in the file." : "";
+      setExportActionMessage(`${queuedLabel} queued as ${queued.job.job_id}.${disclosure}`);
+      setStatusMessage(`${queuedLabel} queued as ${queued.job.job_id}.${disclosure}`);
       appendChatMessage(
         "assistant",
         `Queued ${chatLabel} as ${queued.job.job_id}. Progress will stay visible here for review tracking.`,
