@@ -48,6 +48,23 @@ Frontend paths in the table are relative to `apps/web` unless fully prefixed.
 Extract focused transaction/alternative UI orchestration from the dashboard while retaining math in utilities; audit all placement writers, project switching and asynchronous save boundaries; document serialization/migration compatibility; rerun affected tests and then combined release-critical checks. No broad rewrite, discarded legacy state or schema migration is justified by this responsibility map alone.
 # Phase 0.4 first extraction — October 3, 2026
 
+## Dashboard routing and layout transaction consolidation
+
+`components/DashboardPanelContent.tsx` owns presentation-only routing for all 37 `SidePanelKey` values. Props derive from the existing panel components; projects, trust, and object-manager content remain composition slots with their existing action bindings. The exhaustive switch makes an unhandled new panel a type-check failure. Discipline tabs remain outside the router. No project state, persistence authority, geometry, or engineering decisions moved into the presentation module.
+
+Applying a layout alternative now lives in `useDashboardPlacementTransactions.ts`, alongside supported batch edits and dependency proposals. It reuses the existing shared commit/persist helpers: synchronous placements, preview invalidation, system-stale flags, one before/after Undo record, and generation/snapshot-guarded saves. The existing project/source snapshot rejection and save-failure messages are preserved. `useDashboardLayoutComparison.ts` remains preview-only. This does not turn every legacy operation into a universal transaction.
+
+The dashboard is now 6,172 lines, down 138 from 6,310. Its large state/props orchestration and remaining command adapters still need decomposition. No new schema, dependency, deployment, purchase, or push.
+
+Evidence on fresh local production build `.next-phase04-dashboard-transactions`, served at port 3042:
+
+- Initial routing extraction: 52 affected Chromium checks passed, including panel actions and native object integration.
+- Transaction consolidation: 62 affected Chromium checks passed, including all panel routes, canonical edits, alternatives, dense commercial creation/revision, and one real disposable-backend authentication/save/reload/owner-isolation check. This preceded the stronger Undo/Redo assertions.
+- Dependency proposal and stale/apply alternatives: 12 checks passed across desktop WebKit, mobile Chromium, and mobile WebKit.
+- Final panel-route coverage: 148 passed, zero failures/skips (37 routes on each of four browser/device configurations). Body assertions exclude discipline navigation tabs. Report: `/tmp/civora-phase04-routing-verified-report/index.html`.
+- Strengthened layout Apply/Undo/Redo: 8 passed, zero failures/skips (twice on each of four configurations). It verifies building identity and restored/reapplied X coordinates after reopening Draw, because the existing bulk Undo selects the first visible object and opens recovery chat. Initial failed/interrupted test-assumption runs are retained; they are not successful proof. Final report: `/tmp/civora-phase04-layout-undo-verified-report/index.html`.
+- Affected-file lint, TypeScript checks, and production build passed. These are overlapping scoped runs, not one aggregate/full-suite result; no claim of Firefox, hosted artifact, physical Safari, all backend, or overall Phase 0 certification.
+
 ## Follow-up: command feedback, property actions, and observed UI gaps
 
 `usePreviewCadCommandFeedback.ts` owns the bounded command-feedback state and formatted display. Undo, Redo, and other command paths now share the same 12-entry feedback writer. `usePreviewCadPropertyCommands.ts` owns layer assignment, dimension annotations, classification/property updates, and draft symbol insertion; writes still use the existing edit/create adapters. No new geometry or persistence authority was introduced. Redundant status writes immediately overwritten by symbol feedback were removed.

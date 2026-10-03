@@ -1,4 +1,5 @@
 "use client";
+import { DashboardPanelContent } from "./components/DashboardPanelContent";
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -277,44 +278,18 @@ import {
 import AppHeader from "./components/AppHeader";
 import AuthScreen from "./components/AuthScreen";
 import CivoraLogo from "./components/CivoraLogo";
-import ChatPanel from "./components/ChatPanel";
 import {
   type Civil3DWorkflowTab,
   type RoadwayWorkbenchTab,
 } from "./components/CivilRoadwayWorkbench";
-import { DashboardHomePanel } from "./components/DashboardHomePanel";
-import { DashboardDetailsPanel } from "./components/DashboardDetailsPanel";
-import { DataSourcesPanel } from "./components/DataSourcesPanel";
-import { DeliverPanel } from "./components/DeliverPanel";
 import { DisciplinePanelTabs } from "./components/DisciplinePanelTabs";
-import { DrainageWorkbenchPanel } from "./components/DrainageWorkbenchPanel";
-import { FilesPanel } from "./components/FilesPanel";
 import type { PreviewLayerVisibility } from "./components/FloatingLayerManager";
-import { GeneratePanel } from "./components/GeneratePanel";
-import { GradingWorkbenchPanel } from "./components/GradingWorkbenchPanel";
-import { ImportSurveyPanel } from "./components/ImportSurveyPanel";
-import { JobsPanel } from "./components/JobsPanel";
-import { LandscapeWorkbenchPanel } from "./components/LandscapeWorkbenchPanel";
-import { LayersPanel } from "./components/LayersPanel";
-import { LibrariesPanel } from "./components/LibrariesPanel";
-import { ModelReviewPanel } from "./components/ModelReviewPanel";
 import { DashboardObjectManagerPanel } from "./components/DashboardObjectManagerPanel";
-import { DashboardReportsQuantitiesPanel } from "./components/DashboardReportsQuantitiesPanel";
 import PinnedCommandBar from "./components/PinnedCommandBar";
 import { ProjectsDrawer } from "./components/ProjectsDrawer";
-import { RoadwayWorkbenchPanel } from "./components/RoadwayWorkbenchPanel";
-import { SanitaryWorkbenchPanel } from "./components/SanitaryWorkbenchPanel";
-import { SiteSetupPanel } from "./components/SiteSetupPanel";
-import { StandardsPanel } from "./components/StandardsPanel";
-import { SystemReadinessPanel } from "./components/SystemReadinessPanel";
-import { TemplatesPanel } from "./components/TemplatesPanel";
 import { TrustPanel } from "./components/TrustPanel";
-import { UtilityCatalogPanel } from "./components/UtilityCatalogPanel";
-import { UtilitiesWorkbenchPanel } from "./components/UtilitiesWorkbenchPanel";
-import { WaterFireFlowWorkbenchPanel } from "./components/WaterFireFlowWorkbenchPanel";
 import { WorkspaceCanvasArea } from "./components/WorkspaceCanvasArea";
 import { WorkspaceLeftRail } from "./components/WorkspaceLeftRail";
-import { WorkspaceSettingsPanel } from "./components/WorkspaceSettingsPanel";
 import WorkspaceRightPanel from "./components/WorkspaceRightPanel";
 import WorkspaceToasts, { type WorkspaceToast } from "./components/WorkspaceToasts";
 import type {
@@ -332,13 +307,11 @@ import { useDashboardPreviewModeState } from "./hooks/useDashboardPreviewModeSta
 import { useDashboardSidePanelState } from "./hooks/useDashboardSidePanelState";
 import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
 import { mapSurveyPointsToSite } from "./utils/dashboardExistingConditionsUpload";
-import { AnalysisPanel } from "./components/AnalysisPanel";
 import { WorkspaceShortcutsOverlay } from "./components/WorkspaceShortcutsOverlay";
 import { type CanonicalDependencyProposal } from "./utils/canonicalDependencyPolicies";
 import { type LayoutAlternativeSearch, type LayoutGoal } from "./utils/layoutAlternatives";
 import { useDashboardLayoutComparison } from "./hooks/useDashboardLayoutComparison";
 import { useDashboardPlacementTransactions } from "./hooks/useDashboardPlacementTransactions";
-import { guardedTransactionSave } from "./utils/guardedTransactionSave";
 import { useDashboardPlacementState } from "./hooks/useDashboardPlacementState";
 
 function PerformanceAIDashboardView({
@@ -1644,7 +1617,7 @@ function PerformanceAIDashboardView({
     units,
   });
 
-  const { handleAcceptDependencyProposal, handleRejectDependencyProposal, handleCanonicalBatchEdit } = useDashboardPlacementTransactions({
+  const { handleAcceptDependencyProposal, handleRejectDependencyProposal, handleCanonicalBatchEdit, handleApplyLayoutAlternative: applyLayoutAlternativeTransaction } = useDashboardPlacementTransactions({
     proposal: dependencyProposal,
     placementsRef: buildingPlacementsRef,
     projectRef: currentProjectRef,
@@ -1703,51 +1676,16 @@ function PerformanceAIDashboardView({
   });
 
   const handleApplyLayoutAlternative = useCallback(() => {
-    const selected = layoutAlternatives.find((item) => item.id === selectedLayoutAlternativeId);
-    if (!selected) return;
-    const before = buildingPlacementsRef.current;
-    const source = layoutSearchSourceRef.current;
-    if (!source || source.projectId !== (currentProjectRef.current?.project_id ?? null) || source.placements !== JSON.stringify(before)) {
-      setLayoutSearch(null);
-      setSelectedLayoutAlternativeId("");
-      setLayoutAlternativeGoals([]);
-      const message = "The project changed after these alternatives were generated. Generate fresh alternatives before applying. Your working plan was not changed.";
-      setStatusMessage(message);
-      setObjectManagerStatusMessage(message);
-      return;
-    }
-    const after = selected.placements.map((item) => ({
-      ...item,
-      meta: { ...(item.meta ?? {}), alternative_preview: false, selected_alternative: selected.label },
-    }));
-    const undo = { action: "bulk_update" as const, before, after, label: `apply ${selected.label} layout alternative` };
-    buildingPlacementsRef.current = after;
-    setBuildingPlacements(after);
-    setLayoutSearch(null);
-    setSelectedLayoutAlternativeId("");
-    setLayoutAlternativeGoals([]);
-    clearGeneratedPreview();
-    markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
-    recordDraftUndoAction(undo);
-    recordRecentChange({
-      type: "object_style_changed",
-      label: `${selected.label} layout applied`,
-      detail: `Applied the selected alternative with capacity ${selected.metrics.capacity}, shortfall ${selected.metrics.shortfall}, and ${selected.metrics.conflicts} flagged conflicts.`,
-      undo,
-    });
-    setStatusMessage(`${selected.label} is now the working plan. Undo restores the previous layout.`);
-    setObjectManagerStatusMessage(`${selected.label} is now the working plan. Undo restores the previous layout.`);
-    pushRecoveryMessage(`${selected.label} is now the working plan. Undo restores the previous layout.`);
-    const generation = projectLoadRequestRef.current;
-    const snapshot = JSON.stringify(after);
-    void guardedTransactionSave({
-      isCurrent: () => projectLoadRequestRef.current === generation && JSON.stringify(buildingPlacementsRef.current) === snapshot,
-      ensureDraft: () => ensureProjectDraftRef.current(),
-      save: () => saveProjectRef.current({ silent: true }),
-      refresh: () => { previewRefreshIntentRef.current = { reason: "Refreshing preview after applying layout alternative...", track: true }; },
-      onFailure: () => pushRecoveryMessage("The selected layout remains in the working plan, but saving failed. Retry Save Project."),
-    });
-  }, [layoutAlternatives, selectedLayoutAlternativeId]);
+    applyLayoutAlternativeTransaction(
+      layoutAlternatives.find((item) => item.id === selectedLayoutAlternativeId),
+      layoutSearchSourceRef.current,
+      () => {
+        setLayoutSearch(null);
+        setSelectedLayoutAlternativeId("");
+        setLayoutAlternativeGoals([]);
+      },
+    );
+  }, [applyLayoutAlternativeTransaction, layoutAlternatives, selectedLayoutAlternativeId]);
 
   const {
     persistDetectedPlacements,
@@ -6037,14 +5975,6 @@ function PerformanceAIDashboardView({
               }}
               onClose={handleCloseSidePanel}
             >
-                {sidePanelForRender === "trust" ? (
-                  <TrustPanel
-                    token={token}
-                    projectId={projectId}
-                    userEmail={effectiveUser.email}
-                    onAccountDeleted={handleLogout}
-                  />
-                ) : null}
                 {isDisciplinePanel ? (
                   <DisciplinePanelTabs
                     items={disciplinePanelLinks}
@@ -6052,237 +5982,169 @@ function PerformanceAIDashboardView({
                     onOpenPanel={(panel) => handleOpenSidePanel(panel)}
                   />
                 ) : null}
-                {sidePanelForRender === "projects" ? (
-                  <ProjectsDrawer
-                    stateLabel={projectDrawerStateLabel}
-                    stateDetail={projectDrawerStateDetail}
-                    notice={projectDrawerNotice}
-                    projectTitle={siteName || currentProject?.name || "Untitled Project"}
-                    activeProjectId={projectId}
-                    projects={sortedProjects}
-                    deletedProjects={deletedProjects}
-                    token={token}
-                    onNewProject={handleNewProject}
-                    onSaveProject={() => void saveProject()}
-                    onOpenProject={(projectIdToOpen) => void loadProject(projectIdToOpen)}
-                    onDeleteProject={handleDeleteProject}
-                    onDuplicateProject={handleDuplicateProject}
-                    onArchiveProject={handleArchiveProject}
-                    onRestoreProject={handleRestoreProject}
-                  />
-                ) : null}
-
-                {sidePanelForRender === "dashboard" ? (
-                  <DashboardHomePanel {...dashboardHomePanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "site_existing" ? (
-                  <SiteSetupPanel {...siteSetupPanelProps} />
-                ) : null}
-
-
-                {sidePanelForRender === "import_survey" ? (
-                  <ImportSurveyPanel {...importSurveyPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "data" ? (
-                  <DataSourcesPanel {...dataSourcesPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "model" ? (
-                  <ModelReviewPanel {...modelReviewPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "generate" ? (
-                  <GeneratePanel {...generatePanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "grading" ? (
-                  <GradingWorkbenchPanel {...gradingWorkbenchPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "drainage" ? (
-                  <DrainageWorkbenchPanel {...drainageWorkbenchPanelProps} />
-                ) : null}
-                {sidePanelForRender === "utilities" ? (
-                  <UtilitiesWorkbenchPanel {...utilitiesWorkbenchPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "sanitary" ? (
-                  <SanitaryWorkbenchPanel {...sanitaryWorkbenchPanelProps} />
-                ) : null}
-                {sidePanelForRender === "water" ? (
-                  <WaterFireFlowWorkbenchPanel {...waterFireFlowWorkbenchPanelProps} />
-                ) : null}
-
-                {sidePanelForRender.startsWith("system_") ? (
-                  <SystemReadinessPanel {...systemReadinessPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "roadway" ? (
-                  <RoadwayWorkbenchPanel {...roadwayWorkbenchPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "landscape" ? (
-                  <LandscapeWorkbenchPanel {...landscapeWorkbenchPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "details" ? (
-                  <DashboardDetailsPanel {...detailsPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "layers" ? (
-                  <LayersPanel {...layersPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "analysis" ? (
-                  <AnalysisPanel {...analysisPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "files" ? (
-                  <FilesPanel {...filesPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "jobs" ? (
-                  <JobsPanel {...jobsPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "templates" ? (
-                  <TemplatesPanel {...templatesPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "catalogs" ? (
-                  <UtilityCatalogPanel {...utilityCatalogPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "standards" ? (
-                  <StandardsPanel {...standardsPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "libraries" ? (
-                  <LibrariesPanel {...librariesPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "settings" ? (
-                  <WorkspaceSettingsPanel {...workspaceSettingsPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "objects" ? (
-                  <DashboardObjectManagerPanel
-                    cadToolGroups={cadToolGroups}
-                    triggerCadTool={triggerCadTool}
-                    pendingPlacementObjects={pendingPlacementObjects}
-                    handleSelectPlacementTarget={handleSelectPlacementTarget}
-                    selectedBuilding={selectedBuilding}
-                    handleObjectManagerSelect={handleObjectManagerSelect}
-                    handleObjectManagerClearSelection={handleObjectManagerClearSelection}
-                    setFocusObjectId={setFocusObjectId}
-                    onCloseSidePanel={handleCloseSidePanel}
-                    handleObjectManagerCopy={handleObjectManagerCopy}
-                    handleObjectManagerTransform={handleObjectManagerTransform}
-                    handleObjectManagerDelete={handleObjectManagerDelete}
-                    buildingPlacements={buildingPlacements}
-                    placedObjects={placedObjects}
-                    pendingPlacementCount={pendingPlacementObjects.length}
-                    selectedObjectIds={selectedObjectIds}
-                    hiddenObjectCount={hiddenObjectCount}
-                    objectManagerTypes={objectManagerTypes}
-                    objectClipboard={objectClipboard}
-                    handleObjectManagerSelectVisibleDraft={handleObjectManagerSelectVisibleDraft}
-                    handleObjectManagerInvertSelection={handleObjectManagerInvertSelection}
-                    handleObjectManagerPaste={handleObjectManagerPaste}
-                    handleUpdateBuilding={handleUpdateBuilding}
-                    recordRecentChange={recordRecentChange}
-                    pushRecoveryMessage={pushRecoveryMessage}
-                    objectManagerLayerRows={objectManagerLayerRows}
-                    handleObjectManagerLayerSelect={handleObjectManagerLayerSelect}
-                    handleObjectManagerLayerIsolate={handleObjectManagerLayerIsolate}
-                    handleObjectManagerLayerVisibility={handleObjectManagerLayerVisibility}
-                    handleObjectManagerLayerLock={handleObjectManagerLayerLock}
-                    objectManagerStatusMessage={objectManagerStatusMessage}
-                    recentChanges={recentChanges}
-                    handleUndoRecentChange={handleUndoRecentChange}
-                    recentChangesOpen={recentChangesOpen}
-                    lastDraftAction={lastDraftAction}
-                    redoDraftAction={redoDraftAction}
-                    setRecentChangesOpen={setRecentChangesOpen}
-                    handleUndoDraftAction={handleUndoDraftAction}
-                    handleRedoDraftAction={handleRedoDraftAction}
-                    selectedObjectRows={selectedObjectRows}
-                    selectedObjectMeasurementSummary={selectedObjectMeasurementSummary}
-                    selectedObjectMeasurements={selectedObjectMeasurements}
-                    arrayRows={arrayRows}
-                    arrayColumns={arrayColumns}
-                    arraySpacingX={arraySpacingX}
-                    arraySpacingY={arraySpacingY}
-                    bulkMoveX={bulkMoveX}
-                    bulkMoveY={bulkMoveY}
-                    bulkMoveToX={bulkMoveToX}
-                    bulkMoveToY={bulkMoveToY}
-                    bulkScaleFactor={bulkScaleFactor}
-                    bulkRotateAngle={bulkRotateAngle}
-                    combineObjectName={combineObjectName}
-                    combineObjectType={combineObjectType}
-                    draftBlockName={draftBlockName}
-                    draftBlockLibrary={draftBlockLibrary}
-                    handleObjectManagerBulkVisibility={handleObjectManagerBulkVisibility}
-                    handleObjectManagerIsolateSelected={handleObjectManagerIsolateSelected}
-                    handleObjectManagerBulkLock={handleObjectManagerBulkLock}
-                    handleObjectManagerBulkColor={handleObjectManagerBulkColor}
-                    handleObjectManagerBulkType={handleObjectManagerBulkType}
-                    handleObjectManagerBulkDuplicate={handleObjectManagerBulkDuplicate}
-                    handleObjectManagerBulkLayout={handleObjectManagerBulkLayout}
-                    handleObjectManagerBulkDelete={handleObjectManagerBulkDelete}
-                    setArrayRows={setArrayRows}
-                    setArrayColumns={setArrayColumns}
-                    setArraySpacingX={setArraySpacingX}
-                    setArraySpacingY={setArraySpacingY}
-                    handleObjectManagerArraySelected={handleObjectManagerArraySelected}
-                    setBulkMoveX={setBulkMoveX}
-                    setBulkMoveY={setBulkMoveY}
-                    handleObjectManagerBulkMove={handleObjectManagerBulkMove}
-                    handleObjectManagerBulkCopyByOffset={handleObjectManagerBulkCopyByOffset}
-                    setBulkMoveToX={setBulkMoveToX}
-                    setBulkMoveToY={setBulkMoveToY}
-                    handleObjectManagerBulkMoveTo={handleObjectManagerBulkMoveTo}
-                    setBulkScaleFactor={setBulkScaleFactor}
-                    handleObjectManagerBulkScale={handleObjectManagerBulkScale}
-                    setBulkRotateAngle={setBulkRotateAngle}
-                    handleObjectManagerBulkRotate={handleObjectManagerBulkRotate}
-                    handleObjectManagerBulkMirror={handleObjectManagerBulkMirror}
-                    setCombineObjectName={setCombineObjectName}
-                    setCombineObjectType={setCombineObjectType}
-                    handleObjectManagerCombineSelected={handleObjectManagerCombineSelected}
-                    setDraftBlockName={setDraftBlockName}
-                    handleObjectManagerSaveBlock={handleObjectManagerSaveBlock}
-                    handleObjectManagerRenameBlock={handleObjectManagerRenameBlock}
-                    handleObjectManagerUpdateBlock={handleObjectManagerUpdateBlock}
-                    handleObjectManagerInsertBlock={handleObjectManagerInsertBlock}
-                    handleObjectManagerDeleteBlock={handleObjectManagerDeleteBlock}
-                    units={units}
-                    activePlacementId={activePlacementId}
-                    selectedObjectSet={selectedObjectSet}
-                    sourceConfidenceByObjectId={sourceConfidenceByObjectId}
-                    objectOutlineColor={objectOutlineColor || "#64748b"}
-                    handleObjectManagerToggleMultiSelect={handleObjectManagerToggleMultiSelect}
-                    reportObjectActionBlocker={reportObjectActionBlocker}
-                    handleToggleBuildingLock={handleToggleBuildingLock}
-                    handleOpenDetailsPanel={() => handleOpenPanelFromDrawer("details")}
-                    handleObjectManagerExplodeCombined={handleObjectManagerExplodeCombined}
-                  />
-                ) : null}
-
-                {sidePanelForRender === "deliverables" ? (
-                  <DeliverPanel {...deliverPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "reports" || sidePanelForRender === "quantities" ? (
-                  <DashboardReportsQuantitiesPanel {...reportsQuantitiesPanelProps} />
-                ) : null}
-
-                {sidePanelForRender === "chat" ? (
-                  <ChatPanel {...chatPanelProps} historyOnly />
-                ) : null}
+                <DashboardPanelContent
+                  activePanel={sidePanelForRender}
+                  panels={{
+                    trust: (
+                      <TrustPanel
+                      token={token}
+                      projectId={projectId}
+                      userEmail={effectiveUser.email}
+                      onAccountDeleted={handleLogout}
+                      />
+                    ),
+                    projects: (
+                      <ProjectsDrawer
+                      stateLabel={projectDrawerStateLabel}
+                      stateDetail={projectDrawerStateDetail}
+                      notice={projectDrawerNotice}
+                      projectTitle={siteName || currentProject?.name || "Untitled Project"}
+                      activeProjectId={projectId}
+                      projects={sortedProjects}
+                      deletedProjects={deletedProjects}
+                      token={token}
+                      onNewProject={handleNewProject}
+                      onSaveProject={() => void saveProject()}
+                      onOpenProject={(projectIdToOpen) => void loadProject(projectIdToOpen)}
+                      onDeleteProject={handleDeleteProject}
+                      onDuplicateProject={handleDuplicateProject}
+                      onArchiveProject={handleArchiveProject}
+                      onRestoreProject={handleRestoreProject}
+                      />
+                    ),
+                    dashboard: dashboardHomePanelProps,
+                    site_existing: siteSetupPanelProps,
+                    import_survey: importSurveyPanelProps,
+                    data: dataSourcesPanelProps,
+                    model: modelReviewPanelProps,
+                    generate: generatePanelProps,
+                    grading: gradingWorkbenchPanelProps,
+                    drainage: drainageWorkbenchPanelProps,
+                    utilities: utilitiesWorkbenchPanelProps,
+                    sanitary: sanitaryWorkbenchPanelProps,
+                    water: waterFireFlowWorkbenchPanelProps,
+                    system: systemReadinessPanelProps,
+                    roadway: roadwayWorkbenchPanelProps,
+                    landscape: landscapeWorkbenchPanelProps,
+                    details: detailsPanelProps,
+                    layers: layersPanelProps,
+                    analysis: analysisPanelProps,
+                    files: filesPanelProps,
+                    jobs: jobsPanelProps,
+                    templates: templatesPanelProps,
+                    catalogs: utilityCatalogPanelProps,
+                    standards: standardsPanelProps,
+                    libraries: librariesPanelProps,
+                    settings: workspaceSettingsPanelProps,
+                    objects: (
+                      <DashboardObjectManagerPanel
+                      cadToolGroups={cadToolGroups}
+                      triggerCadTool={triggerCadTool}
+                      pendingPlacementObjects={pendingPlacementObjects}
+                      handleSelectPlacementTarget={handleSelectPlacementTarget}
+                      selectedBuilding={selectedBuilding}
+                      handleObjectManagerSelect={handleObjectManagerSelect}
+                      handleObjectManagerClearSelection={handleObjectManagerClearSelection}
+                      setFocusObjectId={setFocusObjectId}
+                      onCloseSidePanel={handleCloseSidePanel}
+                      handleObjectManagerCopy={handleObjectManagerCopy}
+                      handleObjectManagerTransform={handleObjectManagerTransform}
+                      handleObjectManagerDelete={handleObjectManagerDelete}
+                      buildingPlacements={buildingPlacements}
+                      placedObjects={placedObjects}
+                      pendingPlacementCount={pendingPlacementObjects.length}
+                      selectedObjectIds={selectedObjectIds}
+                      hiddenObjectCount={hiddenObjectCount}
+                      objectManagerTypes={objectManagerTypes}
+                      objectClipboard={objectClipboard}
+                      handleObjectManagerSelectVisibleDraft={handleObjectManagerSelectVisibleDraft}
+                      handleObjectManagerInvertSelection={handleObjectManagerInvertSelection}
+                      handleObjectManagerPaste={handleObjectManagerPaste}
+                      handleUpdateBuilding={handleUpdateBuilding}
+                      recordRecentChange={recordRecentChange}
+                      pushRecoveryMessage={pushRecoveryMessage}
+                      objectManagerLayerRows={objectManagerLayerRows}
+                      handleObjectManagerLayerSelect={handleObjectManagerLayerSelect}
+                      handleObjectManagerLayerIsolate={handleObjectManagerLayerIsolate}
+                      handleObjectManagerLayerVisibility={handleObjectManagerLayerVisibility}
+                      handleObjectManagerLayerLock={handleObjectManagerLayerLock}
+                      objectManagerStatusMessage={objectManagerStatusMessage}
+                      recentChanges={recentChanges}
+                      handleUndoRecentChange={handleUndoRecentChange}
+                      recentChangesOpen={recentChangesOpen}
+                      lastDraftAction={lastDraftAction}
+                      redoDraftAction={redoDraftAction}
+                      setRecentChangesOpen={setRecentChangesOpen}
+                      handleUndoDraftAction={handleUndoDraftAction}
+                      handleRedoDraftAction={handleRedoDraftAction}
+                      selectedObjectRows={selectedObjectRows}
+                      selectedObjectMeasurementSummary={selectedObjectMeasurementSummary}
+                      selectedObjectMeasurements={selectedObjectMeasurements}
+                      arrayRows={arrayRows}
+                      arrayColumns={arrayColumns}
+                      arraySpacingX={arraySpacingX}
+                      arraySpacingY={arraySpacingY}
+                      bulkMoveX={bulkMoveX}
+                      bulkMoveY={bulkMoveY}
+                      bulkMoveToX={bulkMoveToX}
+                      bulkMoveToY={bulkMoveToY}
+                      bulkScaleFactor={bulkScaleFactor}
+                      bulkRotateAngle={bulkRotateAngle}
+                      combineObjectName={combineObjectName}
+                      combineObjectType={combineObjectType}
+                      draftBlockName={draftBlockName}
+                      draftBlockLibrary={draftBlockLibrary}
+                      handleObjectManagerBulkVisibility={handleObjectManagerBulkVisibility}
+                      handleObjectManagerIsolateSelected={handleObjectManagerIsolateSelected}
+                      handleObjectManagerBulkLock={handleObjectManagerBulkLock}
+                      handleObjectManagerBulkColor={handleObjectManagerBulkColor}
+                      handleObjectManagerBulkType={handleObjectManagerBulkType}
+                      handleObjectManagerBulkDuplicate={handleObjectManagerBulkDuplicate}
+                      handleObjectManagerBulkLayout={handleObjectManagerBulkLayout}
+                      handleObjectManagerBulkDelete={handleObjectManagerBulkDelete}
+                      setArrayRows={setArrayRows}
+                      setArrayColumns={setArrayColumns}
+                      setArraySpacingX={setArraySpacingX}
+                      setArraySpacingY={setArraySpacingY}
+                      handleObjectManagerArraySelected={handleObjectManagerArraySelected}
+                      setBulkMoveX={setBulkMoveX}
+                      setBulkMoveY={setBulkMoveY}
+                      handleObjectManagerBulkMove={handleObjectManagerBulkMove}
+                      handleObjectManagerBulkCopyByOffset={handleObjectManagerBulkCopyByOffset}
+                      setBulkMoveToX={setBulkMoveToX}
+                      setBulkMoveToY={setBulkMoveToY}
+                      handleObjectManagerBulkMoveTo={handleObjectManagerBulkMoveTo}
+                      setBulkScaleFactor={setBulkScaleFactor}
+                      handleObjectManagerBulkScale={handleObjectManagerBulkScale}
+                      setBulkRotateAngle={setBulkRotateAngle}
+                      handleObjectManagerBulkRotate={handleObjectManagerBulkRotate}
+                      handleObjectManagerBulkMirror={handleObjectManagerBulkMirror}
+                      setCombineObjectName={setCombineObjectName}
+                      setCombineObjectType={setCombineObjectType}
+                      handleObjectManagerCombineSelected={handleObjectManagerCombineSelected}
+                      setDraftBlockName={setDraftBlockName}
+                      handleObjectManagerSaveBlock={handleObjectManagerSaveBlock}
+                      handleObjectManagerRenameBlock={handleObjectManagerRenameBlock}
+                      handleObjectManagerUpdateBlock={handleObjectManagerUpdateBlock}
+                      handleObjectManagerInsertBlock={handleObjectManagerInsertBlock}
+                      handleObjectManagerDeleteBlock={handleObjectManagerDeleteBlock}
+                      units={units}
+                      activePlacementId={activePlacementId}
+                      selectedObjectSet={selectedObjectSet}
+                      sourceConfidenceByObjectId={sourceConfidenceByObjectId}
+                      objectOutlineColor={objectOutlineColor || "#64748b"}
+                      handleObjectManagerToggleMultiSelect={handleObjectManagerToggleMultiSelect}
+                      reportObjectActionBlocker={reportObjectActionBlocker}
+                      handleToggleBuildingLock={handleToggleBuildingLock}
+                      handleOpenDetailsPanel={() => handleOpenPanelFromDrawer("details")}
+                      handleObjectManagerExplodeCombined={handleObjectManagerExplodeCombined}
+                      />
+                    ),
+                    deliverables: deliverPanelProps,
+                    reports: reportsQuantitiesPanelProps,
+                    chat: chatPanelProps,
+                  }}
+                />
             </WorkspaceRightPanel>
           ) : null}
           <WorkspaceCanvasArea {...workspaceCanvasAreaProps} />

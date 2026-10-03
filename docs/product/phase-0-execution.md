@@ -2,6 +2,8 @@
 
 Started: October 2, 2026. Status: active; not release-ready.
 
+October 3 maintainability update: dashboard panel routing extracted into a typed presentation module; layout alternative application consolidated with supported batch/dependency transaction helpers. Dashboard reduced to 6,172 lines (138 fewer). Final scoped routing checks: 148 passed across four browser/device configurations; strengthened layout Apply/Undo/Redo: eight passed. Other affected functional checks and real local save/reload evidence are recorded separately in [architecture](phase-0-architecture.md). Large state/props wiring, remaining command adapters and dependency review remain open; 0.4 is not complete. No release/deployment approval is implied.
+
 Founder sequencing instruction: start Phase 1 only after the complete Phase 0 exit criteria are proven. This does not authorize deployments or spending and does not waive outstanding gates.
 
 Authority: [master roadmap and approved governance](civora-master-product-roadmap.md). This register records evidence, not aspirational completion. Earlier quality and engineering plans are reference material where compatible with that authority.

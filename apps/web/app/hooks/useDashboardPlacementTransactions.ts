@@ -5,6 +5,7 @@ import type { EngineeringSystemKey } from "../utils/workflowConstants";
 import { resolveDependencyProposal, type CanonicalDependencyProposal } from "../utils/canonicalDependencyPolicies";
 import { planCanonicalBatchTransaction, type CanonicalBatchEdit } from "../utils/canonicalBatchTransaction";
 import { guardedTransactionSave } from "../utils/guardedTransactionSave";
+import type { LayoutAlternative } from "../utils/layoutAlternatives";
 
 type Input = {
   proposal: CanonicalDependencyProposal | null;
@@ -104,5 +105,38 @@ export function useDashboardPlacementTransactions({
     return "applied" as const;
   }, [placementsRef, projectRef, report, recover, setProposal, commit, persist]);
 
-  return { handleAcceptDependencyProposal, handleRejectDependencyProposal, handleCanonicalBatchEdit };
+  const handleApplyLayoutAlternative = useCallback((
+    selected: LayoutAlternative | undefined,
+    source: { projectId: string | null; placements: string } | null,
+    clearComparison: () => void,
+  ) => {
+    if (!selected) return;
+    const before = placementsRef.current;
+    if (!source || source.projectId !== (projectRef.current?.project_id ?? null) || source.placements !== JSON.stringify(before)) {
+      clearComparison();
+      const message = "The project changed after these alternatives were generated. Generate fresh alternatives before applying. Your working plan was not changed.";
+      report(message);
+      reportObject(message);
+      return;
+    }
+    const after = selected.placements.map((item) => ({
+      ...item,
+      meta: { ...(item.meta ?? {}), alternative_preview: false, selected_alternative: selected.label },
+    }));
+    const undo = { action: "bulk_update" as const, before, after, label: `apply ${selected.label} layout alternative` };
+    commit(after, undo, {
+      type: "object_style_changed",
+      label: `${selected.label} layout applied`,
+      detail: `Applied the selected alternative with capacity ${selected.metrics.capacity}, shortfall ${selected.metrics.shortfall}, and ${selected.metrics.conflicts} flagged conflicts.`,
+    });
+    clearComparison();
+    const message = `${selected.label} is now the working plan. Undo restores the previous layout.`;
+    report(message);
+    reportObject(message);
+    recover(message);
+    persist(after, "The selected layout remains in the working plan, but saving failed. Retry Save Project.",
+      "Refreshing preview after applying layout alternative...");
+  }, [placementsRef, projectRef, commit, report, reportObject, recover, persist]);
+
+  return { handleAcceptDependencyProposal, handleRejectDependencyProposal, handleCanonicalBatchEdit, handleApplyLayoutAlternative };
 }

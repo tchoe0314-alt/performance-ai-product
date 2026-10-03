@@ -603,6 +603,19 @@ test("chat creates five preview-only alternatives and applies only the chosen op
   await buildingRow.getByTestId("object-manager-inspect").click();
   await expect.poll(async () => Number(await page.getByTestId("selected-object-x-input").inputValue())).not.toBe(initialX);
   await expect(page.getByTestId("selected-object-status")).toContainText(/working plan.*Undo restores/i);
+  const appliedX = await page.getByTestId("selected-object-x-input").inputValue();
+  await page.getByRole("button", { name: "Undo last draft change", exact: true }).click();
+  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
+  await buildingRow.getByTestId("object-manager-inspect").click();
+  await expect(page.getByTestId("selected-object-name-input")).toHaveValue("Office Headquarters");
+  await expect(page.getByTestId("selected-object-x-input")).toHaveValue(String(initialX));
+  await page.getByRole("button", { name: "Redo draft change", exact: true }).click();
+  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
+  await buildingRow.getByTestId("object-manager-inspect").click();
+  await expect(page.getByTestId("selected-object-name-input")).toHaveValue("Office Headquarters");
+  await expect(page.getByTestId("selected-object-x-input")).toHaveValue(appliedX);
 
   const layerMenu = page.getByTestId("preview-layer-menu");
   await revealPreviewCanvas(page);
