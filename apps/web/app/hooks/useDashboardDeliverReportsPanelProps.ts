@@ -192,6 +192,7 @@ export function useDashboardDeliverReportsPanelProps({
     onExportDxf,
     onExportReport,
     onOpenQuantities: () => onOpenPanel("quantities"),
+    onOpenExportHistory: () => onOpenPanel("jobs"),
     onPlanSheetTitleBlockUpdate,
     onPlanSheetScaleChange,
     onPlanSheetViewportUpdate,

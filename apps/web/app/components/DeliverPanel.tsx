@@ -62,6 +62,7 @@ type DeliverPanelProps = {
   onExportDxf: () => void;
   onExportReport: () => void;
   onOpenQuantities: () => void;
+  onOpenExportHistory: () => void;
   onPlanSheetTitleBlockUpdate: (updates: Partial<PlanSheetTitleBlock>) => void;
   onPlanSheetScaleChange: (viewportId: string, scale: PlanSheetScale) => void;
   onPlanSheetViewportUpdate: (viewportId: string, updates: Partial<PlanSheetViewport>) => void;
@@ -133,6 +134,7 @@ export function DeliverPanel({
   onExportDxf,
   onExportReport,
   onOpenQuantities,
+  onOpenExportHistory,
   onPlanSheetTitleBlockUpdate,
   onPlanSheetScaleChange,
   onPlanSheetViewportUpdate,
@@ -315,6 +317,9 @@ export function DeliverPanel({
           </button>
         </div>
         <p data-testid="deliver-export-source-disclosure" className="mt-3 text-xs text-slate-600">DXF/PDF exports contain the preliminary generated/saved snapshot, not newer unsaved canvas edits. The file records its source revision, stale systems, assumptions and verification status. Not for construction.</p>
+        <button type="button" onClick={onOpenExportHistory} className="mt-3 rounded-[7px] border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+          Export progress and downloads
+        </button>
         {exportBlockReason ? (
           <p data-testid="deliver-export-blocker" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
             Export needs input: {exportBlockReason}
