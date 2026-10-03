@@ -12,7 +12,7 @@ Authority: [master roadmap and approved governance](civora-master-product-roadma
 | --- | --- | --- |
 | 0.1 Consolidation | Files/branches/worktrees/experiments inventoried; cross-chat changes evaluated; authoritative implementations documented; preserved prototypes; single integration branch; supported-capability and limitations register | Complete for local baseline `33c23e34`: [closeout](phase-0-consolidation.md), full inventory, 26/26 historical patch dispositions, capability/limitations register and versioned notes. Not a deployed-release or overall Phase 0 completion claim. |
 | 0.2 Feature verification | Creation, selection, movement, resize, rotation, properties, chat, canonical synchronization, four dependency modes, parking reflow, cul-de-sac, constraints, alternatives/scoring, apply/cancel/undo, layers/bulk selection, commercial/2D/3D, exports, auth, save/reopen | Complete for the verified feature set by founder approval October 3. Full local browser: 376 passed/17 skipped; backend: 1,851 passed plus 78 subtests; later image-detection repair: 27 affected checks passed. These are separate checkpoints, not one combined run. Map/provider, Firefox and hosted checks remain unverified and are assigned to 0.3/0.5 and pilot gates in the feature-verification closeout. Not release approval. |
-| 0.3 Test system | Candidate solver verified or excluded; stable selectors; complete suite; regression coverage; test-category map; release-critical suite; repeatable validation; credential requirements; failure/recovery cases | Candidate regressions/full suites and all eight repeatable gates passed at recorded checkpoints. Taxonomy/credential boundaries documented; final combined source/artifact validation remains open after subsequent repairs/extractions. |
+| 0.3 Test system | Candidate solver verified or excluded; stable selectors; complete suite; regression coverage; test-category map; release-critical suite; repeatable validation; credential requirements; failure/recovery cases | Local deliverables verified: nine repeatable gates passed at `678556e4`; final website selection 383 passed/13 skipped after one test-readiness repair. Formal Firefox/platform disposition remains open. [Closeout review](phase-0-test-system-review.md) retains the original Safari failure, exact scopes, earlier backend baseline and external release holds. |
 | 0.4 Maintainability | Focused modules; UI/math separation; centralized project operations, commands and constraints; parallel-state analysis; module ownership; architecture; safe upgrades and advisory register | Authority map, focused layout/review extraction, shared edit/constraint paths and audited upgrade verified. Oversized components and non-universal operation/state adapters remain open. |
 | 0.5 Release engineering | Environment/secret procedures; migrations and backup/restore; rollback; versioned notes; approved staging deployment; exact-build and authenticated verification; separately approved production promotion where applicable | Procedures, versioned checkpoint notes, local migration/restore and code retrieval verified. Container/hosted recovery, approved staging/exact-build verification and separate promotion are not proven. |
 | Exit: dependable version | Clean, reproducible integration baseline; all release-critical tests; core end-to-end workflows; exact deployed artifact verification; no known critical data-loss/geometry-corruption defect; candidate-search disposition | Not satisfied |
@@ -20,6 +20,8 @@ Authority: [master roadmap and approved governance](civora-master-product-roadma
 ## Working rules
 
 Current next milestone: **0.3 test-system repair**. The October 3 founder-approved 0.2 scope adjustment closes local feature verification only; retained exclusions, complete Phase 0 exit criteria and separate deployment/spending approvals remain in force. See [0.2 closeout and deferred gate owners](phase-0-feature-verification.md#approved-closeout-scope--october-3).
+
+October 3 final review: local test-system deliverables are verified; remaining 0.3 work is platform disposition/verification, not another claim that the Mapbox subscription is missing. Independent 0.4 maintainability work may proceed while the platform/release holds remain open. No Phase 1 work or deployment is authorized by this review.
 
 - Preserve all existing user/cross-chat edits and legacy project data. No silent migration, deletion or branch reset.
 - Record the exact revision and working-tree inputs for each validation run. A result from an earlier tree does not certify the current tree.
@@ -48,6 +50,12 @@ Current next milestone: **0.3 test-system repair**. The October 3 founder-approv
 6. Prepare exact-build staging approval request with rollback plan, then verify the approved deployment.
 
 ## Evidence log
+
+### October 3 — Final Phase 0.3 local validation/review
+
+- All **nine repeatable gates passed** on clean tracked `678556e4`: **360 backend checks**, lint/typecheck/isolated build, **132 critical browser checks** and **three real-local checks**, no browser skips within those named selections. Stable before/after source; served/deployed artifact attestation false.
+- Full website initially **382 passed, one failed, 13 skipped**. Mobile WebKit reported an intermittent concept-request access-control error; five unchanged repeats passed. Corrected the completed-calculation reload scenario to await calculation completion, preserving all error assertions. **Ten repeats passed** and the fresh complete selection finished **383 passed, 13 skipped, zero failures**, 4.3 minutes.
+- Added the requirement-by-requirement [test-system review](phase-0-test-system-review.md), retained original failure evidence, and asked the founder specifically whether Firefox is required for the first pilot. Formal platform disposition remains open; no waiver, deployment, purchase or Phase 1 start is assumed.
 
 ### October 3 — Map fixtures and drainage outcome assertions
 

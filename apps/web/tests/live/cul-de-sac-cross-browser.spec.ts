@@ -26,6 +26,9 @@ for (const [name, engine, mobile] of [
       await expect(page.locator("canvas")).toHaveAttribute("data-stale", "false");
       await page.getByRole("slider", { name: /Approach road width/ }).press("ArrowRight");
       await expect(page.locator("canvas")).toHaveAttribute("data-road-width", "31");
+      // This scenario verifies a completed calculation and persisted layout.
+      // Width rendering is immediate; server calculation completion is not.
+      await expect(page.locator("canvas")).toHaveAttribute("data-stale", "false");
       await page.getByRole("button", { name: "Save on this device" }).click();
       await page.reload();
       await expect(page.locator("canvas")).toHaveAttribute("data-road-width", "31");
