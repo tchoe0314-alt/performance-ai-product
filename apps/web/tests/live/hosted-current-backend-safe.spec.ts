@@ -1,12 +1,26 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
-const api = "https://api.civoraai.com";
-const enabled = process.env.CIVORA_PRODUCTION_SAFE_TESTS === "1"
+function isLocalOrigin(value: string | undefined) {
+  try {
+    const url = new URL(value ?? "");
+    return url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname)
+      && Boolean(url.port) && url.origin === value;
+  } catch {
+    return false;
+  }
+}
+
+const liveEnabled = process.env.CIVORA_PRODUCTION_SAFE_TESTS === "1"
   && process.env.PLAYWRIGHT_BASE_URL === "https://civoraai.com";
+const localEnabled = process.env.CIVORA_LOCAL_SAFE_TESTS === "1"
+  && isLocalOrigin(process.env.PLAYWRIGHT_BASE_URL)
+  && isLocalOrigin(process.env.PLAYWRIGHT_API_BASE_URL);
+const api = localEnabled && !liveEnabled ? process.env.PLAYWRIGHT_API_BASE_URL! : "https://api.civoraai.com";
+const enabled = liveEnabled || localEnabled;
 
 test("current hosted website: isolated test-account editing, save/reopen and protected API", async ({ page, request }, testInfo) => {
-  test.skip(!enabled, "Explicit approval and exact current website target required.");
+  test.skip(!enabled, "Explicit live approval or disposable localhost website/API opt-in required.");
   const suffix = randomUUID();
   const password = `Synthetic-${randomUUID()}-123`;
   const email = `civora-safe-qa-${suffix}@example.test`;
@@ -102,7 +116,7 @@ test("current hosted website: isolated test-account editing, save/reopen and pro
   expect(pageErrors).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("current-hosted-test-project.png") });
   await testInfo.attach("safe-qa-scope", { body: JSON.stringify({
-    website: "https://civoraai.com", api, project_id: project.project_id, project_name: name,
+    website: process.env.PLAYWRIGHT_BASE_URL, api, project_id: project.project_id, project_name: name,
     synthetic: true, no_deletion: true, no_generation: true, no_deployment: true,
   }), contentType: "application/json" });
 });
