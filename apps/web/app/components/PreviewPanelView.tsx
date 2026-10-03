@@ -1,4 +1,7 @@
 "use client";
+import { usePreviewCadPropertyCommands } from "./usePreviewCadPropertyCommands";
+import { usePreviewCadCommandFeedback } from "../hooks/usePreviewCadCommandFeedback";
+import { usePreviewPointerScheduling } from "../hooks/usePreviewPointerScheduling";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
@@ -144,8 +147,6 @@ import {
   AI_REALISM_WATERMARK,
   BALANCED_CANVAS_SCALE,
   type CadActiveCommand,
-  formatCalmCadStatus,
-  type CadCommandHistoryEntry,
   type CadHistoryEntry,
   type CadPoint,
   type PreviewPanelProps,
@@ -156,7 +157,6 @@ import { usePreviewCadLineworkCommands } from "./usePreviewCadLineworkCommands";
 import { usePreviewCadTransformCommands } from "./usePreviewCadTransformCommands";
 import { usePreviewCadWindowSelection } from "./usePreviewCadWindowSelection";
 import { usePreviewDraftGeometry } from "./usePreviewDraftGeometry";
-import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 
 export default function PreviewPanel({
   authToken,
@@ -307,8 +307,7 @@ export default function PreviewPanel({
   const [hiddenCadLayers, setHiddenCadLayers] = useState<string[]>([]);
   const [cadCommandDraft, setCadCommandDraft] = useState("");
   const [cadPrecisionToolsVisible, setCadPrecisionToolsVisible] = useState(false);
-  const [cadCommandStatus, setCadCommandStatus] = useState("Commands: LINE, PLINE, RECTANGLE, CIRCLE, ARC, ARRAY, ALIGN, DISTRIBUTE, DIST, OFFSET, TRIM, EXTEND, FILLET, JOIN, SPLIT, CLOSE, OPEN, REVERSE, HATCH, MIRROR, MOVE, ROTATE, SCALE, COPY, DELETE, DIM, TEXT, LAYER, SNAP, ORTHO.");
-  const [cadCommandHistory, setCadCommandHistory] = useState<CadCommandHistoryEntry[]>([]);
+  const { setCadCommandStatus, pushCadCommandFeedback, cadCommandStatusDisplay, cadCommandHistoryDisplay } = usePreviewCadCommandFeedback();
   const [cadActiveCommand, setCadActiveCommand] = useState<CadActiveCommand | null>(null);
   const [cadSymbolDraft, setCadSymbolDraft] = useState<CadSymbolKind>("hydrant");
   const [cadDimensionMode, setCadDimensionMode] = useState<CadDimensionMode>("linear");
@@ -328,12 +327,6 @@ export default function PreviewPanel({
   const [cadHistory, setCadHistory] = useState<CadHistoryEntry[]>([]);
   const [cadRedoStack, setCadRedoStack] = useState<CadHistoryEntry[]>([]);
   const [activeSnapPoint, setActiveSnapPoint] = useState<(CadPoint & { kind: CadSnapKind }) | null>(null);
-  const cursorSitePointRafRef = useRef<number | null>(null);
-  const pendingCursorSitePointRef = useRef<CadPoint | null>(null);
-  const draftPointerRafRef = useRef<number | null>(null);
-  const pendingDraftPointerRef = useRef<(CadPoint & { kind: CadSnapKind }) | null>(null);
-  const canvasPanRafRef = useRef<number | null>(null);
-  const pendingCanvasPanViewRef = useRef<{ offsetX: number; offsetY: number } | null>(null);
   const canvasPanStartedAtRef = useRef<number | null>(null);
   const [selectedFireScenarioId, setSelectedFireScenarioId] = useState<string | null>(null);
   const [draftPoints, setDraftPoints] = useState<Array<[number, number]>>([]);
@@ -817,64 +810,9 @@ export default function PreviewPanel({
       showMap,
     ],
   );
-  const applyCursorSitePoint = useCallback((nextPoint: CadPoint | null) => {
-    setCursorSitePoint((current) => {
-      if (!nextPoint) return current === null ? current : null;
-      return current &&
-        Math.abs(current.x - nextPoint.x) < 0.5 &&
-        Math.abs(current.y - nextPoint.y) < 0.5
-        ? current
-        : { x: nextPoint.x, y: nextPoint.y };
-    });
-  }, []);
-  const scheduleCursorSitePoint = useCallback(
-    (nextPoint: CadPoint | null) => {
-      pendingCursorSitePointRef.current = nextPoint;
-      if (cursorSitePointRafRef.current !== null) return;
-      cursorSitePointRafRef.current = window.requestAnimationFrame(() => {
-        cursorSitePointRafRef.current = null;
-        applyCursorSitePoint(pendingCursorSitePointRef.current);
-      });
-    },
-    [applyCursorSitePoint],
-  );
-  const clearScheduledPointerState = useCallback(() => {
-    if (cursorSitePointRafRef.current !== null) {
-      window.cancelAnimationFrame(cursorSitePointRafRef.current);
-      cursorSitePointRafRef.current = null;
-    }
-    if (draftPointerRafRef.current !== null) {
-      window.cancelAnimationFrame(draftPointerRafRef.current);
-      draftPointerRafRef.current = null;
-    }
-    pendingCursorSitePointRef.current = null;
-    pendingDraftPointerRef.current = null;
-    setCursorSitePoint(null);
-    setDraftPreviewPoint(null);
-    setActiveSnapPoint(null);
-  }, []);
-  const scheduleCanvasPanView = useCallback((nextView: { offsetX: number; offsetY: number }) => {
-    pendingCanvasPanViewRef.current = nextView;
-    if (canvasPanRafRef.current !== null) return;
-    canvasPanRafRef.current = window.requestAnimationFrame(() => {
-      canvasPanRafRef.current = null;
-      const pending = pendingCanvasPanViewRef.current;
-      pendingCanvasPanViewRef.current = null;
-      if (!pending) return;
-      setCanvasView((prev) =>
-        Math.abs(prev.offsetX - pending.offsetX) < 0.5 && Math.abs(prev.offsetY - pending.offsetY) < 0.5
-          ? prev
-          : { ...prev, offsetX: pending.offsetX, offsetY: pending.offsetY },
-      );
-    });
-  }, []);
-  const clearScheduledCanvasPan = useCallback(() => {
-    if (canvasPanRafRef.current !== null) {
-      window.cancelAnimationFrame(canvasPanRafRef.current);
-      canvasPanRafRef.current = null;
-    }
-    pendingCanvasPanViewRef.current = null;
-  }, []);
+  const { scheduleCursorSitePoint, clearScheduledPointerState, scheduleCanvasPanView, clearScheduledCanvasPan, scheduleDraftPointerState } = usePreviewPointerScheduling({
+    setCursorSitePoint, setDraftPreviewPoint, setActiveSnapPoint, setCanvasView,
+  });
   const finishCanvasPanInteraction = useCallback(() => {
     if (canvasPanStartedAtRef.current !== null) {
       measureCivoraInteractionAfterPaint("preview.pan.drag", canvasPanStartedAtRef.current, {
@@ -885,34 +823,6 @@ export default function PreviewPanel({
     }
     clearScheduledCanvasPan();
   }, [clearScheduledCanvasPan, previewMode, previewQuality]);
-  const scheduleDraftPointerState = useCallback(
-    (sitePoint: (CadPoint & { kind: CadSnapKind }) | null) => {
-      pendingDraftPointerRef.current = sitePoint;
-      if (draftPointerRafRef.current !== null) return;
-      draftPointerRafRef.current = window.requestAnimationFrame(() => {
-        draftPointerRafRef.current = null;
-        const nextPoint = pendingDraftPointerRef.current;
-        setDraftPreviewPoint(nextPoint ? [nextPoint.x, nextPoint.y] : null);
-        setActiveSnapPoint(nextPoint);
-        applyCursorSitePoint(nextPoint);
-      });
-    },
-    [applyCursorSitePoint],
-  );
-  useEffect(
-    () => () => {
-      if (cursorSitePointRafRef.current !== null) {
-        window.cancelAnimationFrame(cursorSitePointRafRef.current);
-      }
-      if (draftPointerRafRef.current !== null) {
-        window.cancelAnimationFrame(draftPointerRafRef.current);
-      }
-      if (canvasPanRafRef.current !== null) {
-        window.cancelAnimationFrame(canvasPanRafRef.current);
-      }
-    },
-    [],
-  );
   const resolvePlacement = useCallback(
     (
       event: React.MouseEvent<HTMLDivElement>,
@@ -1471,15 +1381,6 @@ export default function PreviewPanel({
     cadPrecisionToolsVisible ||
     Boolean(cadActiveCommand) ||
     ["command", "circle", "arc", "text", "copy"].includes(cadToolRequest?.tool || "");
-  const cadCommandStatusDisplay = useMemo(() => formatCalmCadStatus(cadCommandStatus), [cadCommandStatus]);
-  const cadCommandHistoryDisplay = useMemo(
-    () =>
-      cadCommandHistory.map((entry) => ({
-        ...entry,
-        message: formatCalmCadStatus(entry.message),
-      })),
-    [cadCommandHistory],
-  );
   useEffect(() => {
     const currentIds = new Set(buildingPlacements.map((item) => item.id));
     const previousIds = previousPlacementIdsRef.current;
@@ -1511,18 +1412,6 @@ export default function PreviewPanel({
     [onUpdateBuilding],
   );
   const undoCadCommand = useCallback(() => {
-    const recordUndoFeedback = (status: CadCommandHistoryEntry["status"], message: string) => {
-      setCadCommandStatus(message);
-      setCadCommandHistory((prev) => [
-        ...prev.slice(-11),
-        {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          command: "UNDO",
-          status,
-          message,
-        },
-      ]);
-    };
     const entry = cadHistory[cadHistory.length - 1];
     if (!entry) {
       if (lastPolylineEdit || lastRectEdit) {
@@ -1530,52 +1419,28 @@ export default function PreviewPanel({
         const rectTs = lastRectEdit?.ts ?? 0;
         if (polyTs >= rectTs) applyPolylineUndo();
         else applyRectUndo();
-        recordUndoFeedback("applied", "UNDO restored the last canvas drawing edit.");
+        pushCadCommandFeedback("UNDO", "applied", "UNDO restored the last canvas drawing edit.");
       } else {
-        recordUndoFeedback("blocked", "UNDO blocked: no draft history is available.");
+        pushCadCommandFeedback("UNDO", "blocked", "UNDO blocked: no draft history is available.");
       }
       return;
     }
     applyCadHistorySnapshot(entry.before);
     setCadHistory((prev) => prev.slice(0, -1));
     setCadRedoStack((prev) => [...prev, entry]);
-    recordUndoFeedback("applied", "UNDO restored the last draft object edit.");
-  }, [applyCadHistorySnapshot, applyPolylineUndo, applyRectUndo, cadHistory, lastPolylineEdit, lastRectEdit]);
+    pushCadCommandFeedback("UNDO", "applied", "UNDO restored the last draft object edit.");
+  }, [applyCadHistorySnapshot, applyPolylineUndo, applyRectUndo, cadHistory, lastPolylineEdit, lastRectEdit, pushCadCommandFeedback]);
   const redoCadCommand = useCallback(() => {
-    const recordRedoFeedback = (status: CadCommandHistoryEntry["status"], message: string) => {
-      setCadCommandStatus(message);
-      setCadCommandHistory((prev) => [
-        ...prev.slice(-11),
-        {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          command: "REDO",
-          status,
-          message,
-        },
-      ]);
-    };
     const entry = cadRedoStack[cadRedoStack.length - 1];
     if (!entry) {
-      recordRedoFeedback("blocked", "REDO blocked: no draft redo history is available.");
+      pushCadCommandFeedback("REDO", "blocked", "REDO blocked: no draft redo history is available.");
       return;
     }
     applyCadHistorySnapshot(entry.after);
     setCadRedoStack((prev) => prev.slice(0, -1));
     setCadHistory((prev) => [...prev, entry]);
-    recordRedoFeedback("applied", "REDO restored the draft object edit.");
-  }, [applyCadHistorySnapshot, cadRedoStack]);
-  const pushCadCommandFeedback = useCallback((command: string, status: CadCommandHistoryEntry["status"], message: string) => {
-    setCadCommandStatus(message);
-    setCadCommandHistory((prev) => [
-      ...prev.slice(-11),
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        command: command || "COMMAND",
-        status,
-        message,
-      },
-    ]);
-  }, []);
+    pushCadCommandFeedback("REDO", "applied", "REDO restored the draft object edit.");
+  }, [applyCadHistorySnapshot, cadRedoStack, pushCadCommandFeedback]);
   const { beginCadWindowSelect, finishCadWindowSelect } = usePreviewCadWindowSelection({
     previewRef,
     cadWindowSelect,
@@ -1662,135 +1527,9 @@ export default function PreviewPanel({
     setDrawMode((prev) => prev === "select" ? "polyline" : prev);
     onSetPreviewInteraction("edit");
   }, [cadCoordinateDraft.x, cadCoordinateDraft.y, lotHeight, lotWidth, onSetPreviewInteraction, selectedCadObject, updateCadObject]);
-  const applySelectedCadLayer = useCallback(() => {
-    if (!selectedCadIds.length) {
-      pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: select one or more editable draft objects first.");
-      return;
-    }
-    let appliedCount = 0;
-    selectedCadIds.forEach((id) => {
-      const target = buildingPlacements.find((item) => item.id === id);
-      if (!target || target.locked || target.type === "site") return;
-      updateCadObject(target, { meta: { ...(target.meta ?? {}), cad_layer: cadLayerDraft || "C-DRAFT" } }, "Layer");
-      appliedCount += 1;
-    });
-    if (appliedCount) {
-      pushCadCommandFeedback("LAYER", "applied", `LAYER applied to ${appliedCount} draft object${appliedCount === 1 ? "" : "s"}.`);
-    } else {
-      pushCadCommandFeedback("LAYER", "blocked", "LAYER blocked: selected objects are locked or not editable draft objects.");
-    }
-  }, [buildingPlacements, cadLayerDraft, pushCadCommandFeedback, selectedCadIds, updateCadObject]);
-  const applySelectedCadDimension = useCallback(() => {
-    if (!selectedCadObject || selectedCadMetrics === null) {
-      pushCadCommandFeedback("DIM", "blocked", "DIM blocked: select one editable line/polyline draft object first.");
-      return;
-    }
-    const defaultLabel =
-      cadDimensionMode === "linear"
-        ? `${selectedCadMetrics.firstLength.toFixed(1)} ft`
-        : `${selectedCadMetrics.firstLength.toFixed(1)} ft @ ${selectedCadMetrics.firstAngle.toFixed(1)} deg`;
-    updateCadObject(
-      selectedCadObject,
-      {
-        meta: {
-          ...(selectedCadObject.meta ?? {}),
-          cad_dimension_mode: cadDimensionMode,
-          cad_dimension_label: cadDimensionLabelDraft.trim() || defaultLabel,
-        },
-      },
-      "Dimension",
-    );
-    pushCadCommandFeedback("DIM", "applied", "DIM label stored on selected draft geometry for review.");
-  }, [cadDimensionLabelDraft, cadDimensionMode, pushCadCommandFeedback, selectedCadMetrics, selectedCadObject, updateCadObject]);
-
-  const applyCadProperties = useCallback(() => {
-    if (!selectedCadObject) {
-      pushCadCommandFeedback("PROPERTIES", "blocked", "PROPERTIES blocked: select one editable draft object first.");
-      return;
-    }
-    const safeName = cadPropertyDraft.name.trim() || selectedCadObject.label || "Draft object";
-    const safeLayer = cadPropertyDraft.layer.trim().toUpperCase() || "C-DRAFT";
-    const safeType = cadPropertyDraft.type || selectedCadObject.type || "custom";
-    const classification = SITE_OBJECT_CATALOG[safeType];
-    updateCadObject(
-      selectedCadObject,
-      {
-        label: safeName,
-        type: safeType,
-        use: classification?.use ?? selectedCadObject.use,
-        meta: {
-          ...(selectedCadObject.meta ?? {}),
-          cad_layer: safeLayer,
-          source_note: cadPropertyDraft.sourceNote.trim(),
-          review_note: cadPropertyDraft.reviewNote.trim(),
-          source: cadPropertyDraft.source.trim() || "manual_drawn",
-          symbol_id: cadPropertyDraft.id.trim() || selectedCadObject.id,
-          symbol_attributes: {
-            id: cadPropertyDraft.id.trim() || selectedCadObject.id,
-            label: safeName,
-            elevation: cadPropertyDraft.elevation.trim(),
-            material: cadPropertyDraft.material.trim(),
-            size: cadPropertyDraft.size.trim(),
-            source: cadPropertyDraft.source.trim() || "manual_drawn",
-            review_note: cadPropertyDraft.reviewNote.trim(),
-          },
-          category: classification?.category ?? selectedCadObject.meta?.category ?? "advanced",
-          engineering_status: "draft_review_required",
-          review_status: "engineer_review_required",
-        },
-      },
-      "Properties",
-    );
-    pushCadCommandFeedback("PROPERTIES", "applied", "PROPERTIES applied to selected draft object.");
-  }, [cadPropertyDraft, pushCadCommandFeedback, selectedCadObject, updateCadObject]);
-
-  const insertCadSymbol = useCallback(() => {
-    const x = clampValue(parseCadNumber(cadCoordinateDraft.x, lotWidth / 2), 0, lotWidth);
-    const y = clampValue(parseCadNumber(cadCoordinateDraft.y, lotHeight / 2), 0, lotHeight);
-    const symbolInstanceId = `${cadSymbolDraft}-${Date.now()}`;
-    const labels: Record<CadSymbolKind, string> = {
-      hydrant: "Hydrant",
-      inlet: "Inlet",
-      manhole: "Manhole",
-      valve: "Valve",
-      tree: "Tree",
-      light: "Light",
-      sign: "Sign",
-      utility_marker: "Utility Marker",
-      benchmark: "Benchmark",
-      note_callout: "Note / Callout",
-    };
-    const created = onCreateCustomGeometry({
-      mode: "point",
-      points: [[x, y]],
-      label: labels[cadSymbolDraft],
-      meta: {
-        cad_symbol: cadSymbolDraft,
-        symbol_id: symbolInstanceId,
-        cad_layer: cadSymbolDraft === "tree" || cadSymbolDraft === "note_callout" ? "C-ANNO" : "C-SYMB",
-        symbol_attributes: {
-          id: symbolInstanceId,
-          label: labels[cadSymbolDraft],
-          elevation: "",
-          material: "",
-          size: "",
-          source: "manual_drawn",
-          review_note: "Inserted symbol remains draft/review-required.",
-        },
-        symbol_review_required: true,
-        engineering_status: "draft_review_required",
-        review_status: "engineer_review_required",
-        source: "manual_drawn",
-      },
-    });
-    if (!created) {
-      setCadCommandStatus(`${labels[cadSymbolDraft]} symbol was not inserted. Confirm and lock the site boundary, then try again.`);
-      pushCadCommandFeedback("SYMBOL", "blocked", "SYMBOL was not inserted. Confirm and lock the site boundary, then try again.");
-      return;
-    }
-    setCadCommandStatus(`${labels[cadSymbolDraft]} symbol inserted for draft review.`);
-    pushCadCommandFeedback("SYMBOL", "applied", `SYMBOL inserted: ${labels[cadSymbolDraft]} remains draft/review-required.`);
-  }, [cadCoordinateDraft.x, cadCoordinateDraft.y, cadSymbolDraft, lotHeight, lotWidth, onCreateCustomGeometry, pushCadCommandFeedback]);
+  const { applySelectedCadLayer, applySelectedCadDimension, applyCadProperties, insertCadSymbol } = usePreviewCadPropertyCommands({
+    buildingPlacements, selectedCadIds, selectedCadObject, selectedCadMetrics, cadLayerDraft, cadDimensionMode, cadDimensionLabelDraft, cadPropertyDraft, cadCoordinateDraft, cadSymbolDraft, lotWidth, lotHeight, onCreateCustomGeometry, pushCadCommandFeedback, updateCadObject
+  });
 
   const toggleCadLayerVisibility = useCallback((layer: string) => {
     setHiddenCadLayers((prev) => prev.includes(layer) ? prev.filter((item) => item !== layer) : [...prev, layer]);
@@ -1835,6 +1574,15 @@ export default function PreviewPanel({
     const [commandRaw, ...args] = tokens;
     const command = commandRaw.toUpperCase();
     const commandKey = normalizeCadCommandKey(command);
+    if (commandKey === "UNDO" || commandKey === "REDO") {
+      if (args.length) {
+        pushCadCommandFeedback(commandKey, "blocked", `${commandKey} accepts no arguments. Use the command alone.`);
+        return;
+      }
+      if (commandKey === "UNDO") undoCadCommand();
+      else redoCadCommand();
+      return;
+    }
     const pointArgs = getCadCommandPointArgs(args);
     const firstValue = getCadCommandFirstValue(args, cadTransformValue);
     const selectedRequested = hasSelectedCadCommandArg(args);
@@ -2016,6 +1764,8 @@ export default function PreviewPanel({
     drawMode,
     finishCadActiveCommand,
     filletSelectedCadObject,
+    undoCadCommand,
+    redoCadCommand,
     getObjectGeometryPoints,
     joinSelectedCadObjects,
     moveSelectedCadObjectsByVector,
@@ -2650,7 +2400,11 @@ export default function PreviewPanel({
               onSelectSemanticLayer: selectSemanticLayer,
               onShowAllSemanticLayers: showAllSemanticLayers,
               onToggleSourceLayer: toggleSourceLayer,
-              onTogglePrecisionTools: () => setCadPrecisionToolsVisible((value) => !value),
+              onTogglePrecisionTools: () => {
+                // Opening an editing dock must also enter its required mode.
+                if (!cadPrecisionToolsVisible) onSetPreviewInteraction("edit");
+                setCadPrecisionToolsVisible((value) => !value);
+              },
             }}
             activeDrawHudProps={{
               drawMode,

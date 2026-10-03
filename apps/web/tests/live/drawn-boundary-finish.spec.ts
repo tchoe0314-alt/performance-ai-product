@@ -379,8 +379,14 @@ test.describe("drawn site boundary Finish workflow", () => {
     await cadTools.getByLabel("Draft transform value").fill("15");
     await cadTools.getByRole("button", { name: "Move selected draft objects" }).click();
     await expect(cadTools).toContainText("Move");
-    await cadTools.getByRole("button", { name: "Undo draft command" }).click();
-    await cadTools.getByRole("button", { name: "Redo draft command" }).click();
+    await expect(cadTools.getByRole("button", { name: "Undo draft command" })).toBeEnabled();
+    await cadTools.getByLabel("Draft command input").fill("UNDO");
+    await cadTools.getByLabel("Draft command input").press("Enter");
+    await expect(cadTools.getByTestId("cad-command-feedback-panel").locator("li").first()).toContainText("UNDO restored the last draft object edit.");
+    await expect(cadTools.getByRole("button", { name: "Redo draft command" })).toBeEnabled();
+    await cadTools.getByLabel("Draft command input").fill("REDO");
+    await cadTools.getByLabel("Draft command input").press("Enter");
+    await expect(cadTools.getByTestId("cad-command-feedback-panel").locator("li").first()).toContainText("REDO restored the draft object edit.");
 
     await cadTools.getByLabel("Draft command input").fill("OFFSET");
     await cadTools.getByRole("button", { name: "Run" }).click();

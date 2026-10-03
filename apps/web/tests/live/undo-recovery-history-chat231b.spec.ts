@@ -60,6 +60,35 @@ async function openObjectList(page: Page) {
 }
 
 test.describe("Chat 231B undo recovery and change history", () => {
+  test("CAD feedback shares a bounded history and reports unavailable undo and redo honestly", async ({ page }) => {
+    const errors = await openDemoWorkspace(page);
+    const tools = await openCadPrecisionTools(page);
+    const feedback = tools.getByTestId("cad-command-feedback-panel");
+    const input = tools.getByLabel("Draft command input");
+    for (let index = 0; index < 13; index += 1) {
+      await input.fill(`UNSUPPORTED_${index}`);
+      await input.press("Enter");
+      await expect(feedback.locator("li").first()).toContainText(`UNSUPPORTED_${index}`);
+    }
+    await expect(feedback.locator("li")).toHaveCount(12);
+    await expect(feedback.locator("li").filter({ hasText: /^UNSUPPORTED_0\b/ })).toHaveCount(0);
+    await expect(tools.getByRole("button", { name: "Undo draft command" })).toBeDisabled();
+    await input.fill("UNDO");
+    await input.press("Enter");
+    await expect(feedback.locator("li").first()).toContainText("UNDO");
+    await expect(feedback.locator("li").first()).toContainText("no draft history is available");
+    await expect(tools.getByRole("button", { name: "Redo draft command" })).toBeDisabled();
+    await input.fill("REDO");
+    await input.press("Enter");
+    await expect(feedback.locator("li").first()).toContainText("REDO");
+    await expect(feedback.locator("li").first()).toContainText("no draft redo history is available");
+    await expect(feedback.locator("li")).toHaveCount(12);
+    await input.fill("UNDO 2");
+    await input.press("Enter");
+    await expect(feedback.locator("li").first()).toContainText("accepts no arguments");
+    expect(errors).toEqual([]);
+  });
+
   test("rename, style, type, hide/show, delete, and undo are recoverable draft UI actions", async ({ page }) => {
     const errors = await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

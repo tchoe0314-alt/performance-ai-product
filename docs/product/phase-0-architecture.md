@@ -46,3 +46,20 @@ Frontend paths in the table are relative to `apps/web` unless fully prefixed.
 ## Required next maintainability evidence
 
 Extract focused transaction/alternative UI orchestration from the dashboard while retaining math in utilities; audit all placement writers, project switching and asynchronous save boundaries; document serialization/migration compatibility; rerun affected tests and then combined release-critical checks. No broad rewrite, discarded legacy state or schema migration is justified by this responsibility map alone.
+# Phase 0.4 first extraction — October 3, 2026
+
+## Follow-up: command feedback, property actions, and observed UI gaps
+
+`usePreviewCadCommandFeedback.ts` owns the bounded command-feedback state and formatted display. Undo, Redo, and other command paths now share the same 12-entry feedback writer. `usePreviewCadPropertyCommands.ts` owns layer assignment, dimension annotations, classification/property updates, and draft symbol insertion; writes still use the existing edit/create adapters. No new geometry or persistence authority was introduced. Redundant status writes immediately overwritten by symbol feedback were removed.
+
+New website coverage exposed two pre-existing gaps: typed UNDO/REDO were unknown commands despite working buttons, and the Precision Tools toggle could remain invisible when viewing rather than editing. Typed commands now route to the existing undo/redo actions (arguments are explicitly rejected), and opening the precision dock enters its required editing mode. Tests check bounded history, unavailable history, typed undo/redo outcomes, and dock access from the initial workspace without opening Draw first.
+
+Final affected checks: **26 passed, zero failures/skips** across Chromium, desktop WebKit, mobile Chromium, and mobile WebKit; fresh production build `.next-phase04-precision-recovery` served at local port 3042. Report: `/tmp/civora-phase04-verified-report/index.html`. Affected-file lint and TypeScript checks passed. Initial failing/new-test setup runs and the runs exposing unknown-command/mobile-dock gaps remain in `/tmp/civora-phase04-*`; they are not counted as passing evidence. The original feedback-only extraction separately passed five affected Chromium checks before the next extraction.
+
+The preview is now 2,934 lines (246 fewer than the original 3,180); the 6,310-line dashboard still needs focused decomposition. This is partial 0.4 progress, not full-suite, Firefox, physical-device Safari, hosted, or overall Phase 0 certification. No push, deployment, or purchase.
+
+`apps/web/app/hooks/usePreviewPointerScheduling.ts` now owns the preview's three animation-frame queues: cursor coordinates, draft/snap feedback, and canvas panning. It owns queue cancellation and unmount cleanup; it does not own project geometry, persistence, command transactions, or the map camera. The preview keeps its displayed state and interaction timing. Thresholds and latest-event coalescing are unchanged. Hook callback dependencies explicitly include the supplied React setters.
+
+This reduces `PreviewPanelView.tsx` from 3,180 to 3,092 lines; it is a focused ownership boundary, not a completed split of the preview or dashboard. The dashboard remains approximately 6,310 lines. Remaining Phase 0.4 work includes additional focused extractions, command-adapter duplication review, and dependency/security review. Phase 0.3 platform disposition and Phase 0.5 release verification remain separate open requirements.
+
+Verification: affected-file lint, TypeScript checks, and a fresh production build passed. The new build (`.next-phase04-pointer`) was served on local port 3042, then 15 Chromium website checks passed with zero failures or skips, covering drawing/Finish, precision tools, selection, real Mapbox panning and locking, layers, undo/history, and 2D/3D preview states. This is affected-area local proof, not a fresh full-suite, all-browser, hosted, or engineering certification. No deployment, purchase, or push was performed.

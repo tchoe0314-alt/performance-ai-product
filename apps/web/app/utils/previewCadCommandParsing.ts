@@ -75,6 +75,8 @@ const KNOWN_CAD_COMMANDS = new Set([
   "SEL",
   "SNAP",
   "ORTHO",
+  "UNDO",
+  "REDO",
   "FINISH",
   "DONE",
   "CANCEL",

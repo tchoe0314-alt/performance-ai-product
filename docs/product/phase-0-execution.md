@@ -19,7 +19,7 @@ Authority: [master roadmap and approved governance](civora-master-product-roadma
 
 ## Working rules
 
-Current next milestone: **0.3 test-system repair**. The October 3 founder-approved 0.2 scope adjustment closes local feature verification only; retained exclusions, complete Phase 0 exit criteria and separate deployment/spending approvals remain in force. See [0.2 closeout and deferred gate owners](phase-0-feature-verification.md#approved-closeout-scope--october-3).
+Current next milestone: **0.4 maintainability**, authorized by the founder. Three preview responsibilities have been extracted: pointer scheduling, command feedback, and property/symbol actions. Typed undo/redo and precision-dock access gaps were repaired; final affected website checks: 26 passed across four browser/device configurations, with lint, type checks, and a fresh production build passing. See [architecture and scoped evidence](phase-0-architecture.md). Dashboard decomposition, remaining state/command adapters and dependency review remain open. The October 3 founder-approved 0.2 scope adjustment closes local feature verification only; retained exclusions, complete Phase 0 exit criteria and separate deployment/spending approvals remain in force. See [0.2 closeout and deferred gate owners](phase-0-feature-verification.md#approved-closeout-scope--october-3).
 
 October 3 final review: local test-system deliverables are verified; remaining 0.3 work is platform disposition/verification, not another claim that the Mapbox subscription is missing. Independent 0.4 maintainability work may proceed while the platform/release holds remain open. No Phase 1 work or deployment is authorized by this review.
 
