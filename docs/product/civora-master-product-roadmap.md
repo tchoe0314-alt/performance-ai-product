@@ -2470,3 +2470,10 @@ Civora is ready for public beta only when:
 
 These decisions should be added to the master roadmap as Civora’s initial product-governance rules.
 
+## October 3, 2026 — Founder-approved Phase 0.2 closeout scope
+
+The founder approved closing Phase 0.2 for the verified feature set, explicitly retaining unverified map/provider/Firefox behavior and carrying hosted deployment checks into Phase 0.5. This scope adjustment supersedes earlier requirements that kept 0.2 open solely for those external checks; it does not waive their evidence requirements or mark skipped tests as passed.
+
+Firefox/test-platform coverage remains tracked under 0.3 and must have recorded verification or approved limitations before release. Exact-candidate hosted authentication, persistence, exports, worker operation, migration/recovery, backup and rollback remain 0.5 gates. Real map/provider behavior requires approved access and verification or explicit exclusion from the released scope. Independent engineering, source and external CAD validation remain relevant pilot-readiness gates.
+
+The evidence register is `phase-0-feature-verification.md`. Overall Phase 0 remains active; next milestone is 0.3. Phase 1 still waits for the complete Phase 0 exit criteria. This closeout is not deployment approval, permission to spend money or a claim that Civora is fully verified or ready for a controlled pilot/public launch.

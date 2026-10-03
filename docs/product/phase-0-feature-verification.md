@@ -1,6 +1,21 @@
 # Phase 0.2 — Current-feature verification
 
-Recorded October 2, 2026. Status: **local verification pass completed; Phase 0.2 remains open for the findings and external evidence below**. This register maps the master roadmap's existing-feature checklist to actual evidence, not feature aspirations. Application baseline was `33c23e34`; subsequent 0.1 closeout `96be57c2` changed documentation only. This pass adds opt-in cross-browser workflow selection, repairs obscured mobile proposal/comparison controls, and makes mobile drawing controls collapsible and isolated from canvas input.
+Recorded October 2, 2026; closeout approved October 3, 2026. Status: **Phase 0.2 complete for the verified feature set, with founder-approved exclusions carried forward**. This register maps the master roadmap's existing-feature checklist to actual evidence, not feature aspirations. Application baseline was `33c23e34`; subsequent 0.1 closeout `96be57c2` changed documentation only. Repairs and verification through `6ba7cb2e` are recorded below.
+
+## Approved closeout scope — October 3
+
+The founder approved closing 0.2 for the verified feature set, explicitly recording unverified map/provider/Firefox behavior and carrying hosted deployment checks into 0.5. This changes milestone scope, not the test results. Historical open-status statements below describe the state before this approval and are superseded by this section.
+
+Evidence: full local browser collection **376 passed, 17 skipped**, full backend **1,851 passed plus 78 passing subtests**; subsequent image-detection repair **27 affected checks passed**, with lint/type/build checks. The full browser collection predates that repair and is not represented as a full run of `6ba7cb2e`. Native download/refresh/history passed the recorded device selections. Feature-specific evidence and its limitations remain in this register.
+
+| Carried-forward requirement | Owning gate | Closure requirement |
+| --- | --- | --- |
+| Exact-candidate hosted authentication, persistence, exports, workers, backup/restore and rollback | 0.5 release engineering | Approved isolated target, exact-build identity and recorded hosted results; separate production approval. |
+| Real map locking, physical pointer conversion and delayed scale-save behavior; actual provider operation | 0.5 release verification | Approved provider access/configuration and real target checks, or explicit exclusion from the released scope. Mock/contract tests do not qualify these features. |
+| Firefox/platform coverage and intermittent WebKit automation-protocol reload discrepancy | 0.3 test system, tracked by 0.5 before release | Supported test environment, recorded results or approved platform limitations; native refresh proof does not erase protocol failures. |
+| Real source accuracy, high-quality imagery evidence, external CAD and professional validation | Relevant engineering/provider and pilot-readiness gates; tracked by 0.5 | Independent inputs/review for the proposed release scope; no engineering certification inferred from software tests. |
+
+All excluded behavior remains **unverified**, not passed. Overall Phase 0 is still active, Phase 1 has not started, and this closeout does not authorize deployment, paid access or public/pilot readiness claims. Next milestone: **0.3 test-system repair**.
 
 ## Evidence boundaries
 
@@ -55,7 +70,7 @@ The named suites below were present in the complete baseline run. “Locally exe
 | Authentication | Real-local persistence/support lifecycle and this pass's enabled authenticated smoke; anonymous API access rejected. Hosted login remains open. |
 | Project saving and reopening | `phase0-local-persistence`, project-flow late-save/switch races and support data lifecycle. Real-local owner isolation verified; hosted storage behavior remains open. |
 
-## Unresolved verification gaps
+## Deferred verification gaps — retained evidence and historical status
 
 Later founder authorization explicitly permits bounded website checks against the current production backend using synthetic test accounts/projects, without deployment, destructive tests or paid generation. Four live-site geometry/save/reopen/navigation cases passed on desktop Chromium/WebKit and mobile Chromium/WebKit; real registration/login and anonymous API rejection were verified. See `docs/release/current-backend-safe-website-checks-2026-10-02.md` for scope, retained test records and the earlier helper failure. The API reports deployed revision `597c46a3353f`, not the local integration candidate. This narrow current-site evidence does not close exact-candidate hosted release, restore, migration, export or provider verification below.
 
