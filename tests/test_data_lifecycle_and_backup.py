@@ -414,6 +414,36 @@ class DataLifecycleAndBackupTests(unittest.TestCase):
         self.assertEqual(evidence['review"items']["row_count"], 1)
         self.assertEqual(len(evidence['review"items']["content_sha256"]), 64)
 
+    def test_restore_drill_blocks_before_copying_when_disk_is_full(self) -> None:
+        output = self.root / "capacity-backups"
+        report_path = self.root / "capacity-report.json"
+        usage = shutil.disk_usage(self.root)._replace(free=0)
+        source_before = self.db.db_path.read_bytes()
+        with patch("backend.services.backup_restore.shutil.disk_usage", return_value=usage):
+            report = DatabaseBackupService(self.db).run_restore_drill(
+                output_dir=output, report_path=report_path,
+            )
+        self.assertFalse(report["success"])
+        self.assertFalse(report["local_restore_drill_performed"])
+        self.assertEqual(report["blockers"][0]["code"], "restore_drill_insufficient_disk_space")
+        self.assertEqual(list(output.iterdir()), [])
+        self.assertEqual(self.db.db_path.read_bytes(), source_before)
+        self.assertEqual(json.loads(report_path.read_text())["status"], "blocked")
+
+    def test_shared_disk_requires_room_for_both_copies(self) -> None:
+        output = self.root / "shared-capacity-backups"
+        estimated = self.db.db_path.stat().st_size
+        wal = Path(str(self.db.db_path) + "-wal")
+        if wal.is_file():
+            estimated += wal.stat().st_size
+        usage = shutil.disk_usage(self.root)._replace(free=estimated + 64 * 1024 * 1024)
+        with patch("backend.services.backup_restore.shutil.disk_usage", return_value=usage):
+            report = DatabaseBackupService(self.db).run_restore_drill(output_dir=output)
+        self.assertFalse(report["success"])
+        self.assertTrue(report["disk_space"]["shared_filesystem"])
+        self.assertEqual(report["disk_space"]["backup_required_bytes"], estimated * 2 + 64 * 1024 * 1024)
+        self.assertEqual(list(output.iterdir()), [])
+
     def test_hosted_backup_evidence_stays_blocked_without_external_proof(self) -> None:
         blocked = hosted_backup_evidence({})
         ready = hosted_backup_evidence(

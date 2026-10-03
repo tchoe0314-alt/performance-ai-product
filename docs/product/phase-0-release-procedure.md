@@ -4,7 +4,7 @@ This procedure supplements the RC1 operations/recovery runbooks. It does not est
 
 ## Environment separation
 
-- Development validation uses localhost, disposable storage and disabled AI/image providers. Current local checks use port 3040 for the frontend and 18880 for the API. These addresses are not release configuration.
+- Development validation uses localhost, disposable storage and disabled AI/image providers. Current local checks use port 3042 for the frontend and 18882 for the API. These addresses are not release configuration.
 - Staging must have a separate database, storage volume, queue and frontend/backend origins. Never point staging jobs, deletion tests or restore drills at production storage. Start with synthetic accounts/projects and providers disabled unless separately authorized.
 - Production retains its own accounts/data and credentials. Do not copy production credentials into test commands or checked-in files. Public frontend variables are not a safe place for secrets.
 - An operator must configure allowed origins, API address, product mode, worker/shared-database settings, support and recovery ownership using the deployment/runbook instructions. Record variable names and configuration checks, never secret values.
@@ -16,6 +16,7 @@ The current database initializes tables and applies additive compatibility chang
 
 1. Record the current code/deployment revision, database type, storage location and responsible operator. Inspect the startup changes for the exact candidate diff.
 2. Take a consistent database backup and preserve uploads/artifacts using the existing recovery procedure. Verify recoverability before allowing candidate startup against valuable data.
+   The SQLite drill checks capacity for backup and temporary restore copies (including WAL and headroom) before copying. A blocked capacity report is not recovery proof. Capacity may change during execution; allow additional space and validate large-database memory requirements. Record an interrupted drill as interrupted, not passed.
 3. Restore into an isolated target with no production job access. Start the candidate there first. Compare project/user/job counts, serialized project geometry/results, file hashes and integrity checks. Confirm owner access and rejection of unauthorized access.
 4. Run candidate startup twice and confirm additive changes are idempotent. `tests/test_phase0_legacy_database_migration.py` verifies preservation and repeated startup on an older synthetic SQLite schema; it is not Postgres or customer-data migration evidence.
 5. Verify both a fresh database and the restored older database with real login, save/reopen, upload/export and queue completion. Hosted Postgres requires its own restored-target evidence; fake connections and SQLite tests cannot supply it.

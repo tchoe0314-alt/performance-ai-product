@@ -214,6 +214,40 @@ class DatabaseBackupService:
         source_path = Path(self.db.db_path).resolve()
         if not source_path.is_file():
             raise ValueError("SQLite database file does not exist.")
+        # The drill retains a backup and simultaneously creates a restore copy.
+        # Reserve headroom before starting either copy, including WAL growth.
+        restore_root = Path(tempfile.gettempdir()).resolve()
+        wal_path = Path(str(source_path) + "-wal")
+        estimated_size = source_path.stat().st_size + (wal_path.stat().st_size if wal_path.is_file() else 0)
+        headroom = 64 * 1024 * 1024
+        shared_filesystem = output_root.stat().st_dev == restore_root.stat().st_dev
+        backup_required = estimated_size * (2 if shared_filesystem else 1) + headroom
+        restore_required = estimated_size + headroom
+        backup_free = shutil.disk_usage(output_root).free
+        restore_free = shutil.disk_usage(restore_root).free
+        if backup_free < backup_required or restore_free < restore_required:
+            report = {
+                "version": BACKUP_REPORT_VERSION,
+                "success": False,
+                "status": "blocked",
+                "storage_kind": "sqlite",
+                "local_restore_drill_performed": False,
+                "disk_space": {
+                    "estimated_database_bytes": estimated_size,
+                    "shared_filesystem": shared_filesystem,
+                    "backup_required_bytes": backup_required,
+                    "backup_free_bytes": backup_free,
+                    "restore_required_bytes": restore_required,
+                    "restore_free_bytes": restore_free,
+                },
+                "blockers": [{"code": "restore_drill_insufficient_disk_space",
+                              "message": "Provide space for both backup and restore copies before retrying the drill."}],
+                "truth_label": "No backup or restore copy was started; disk capacity is a preflight check, not recovery proof.",
+            }
+            if report_path is not None:
+                Path(report_path).parent.mkdir(parents=True, exist_ok=True)
+                Path(report_path).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+            return report
         backup_path = output_root / f"civora-backup-{int(started_at)}.sqlite3"
         source_connection = sqlite3.connect(source_path)
         backup_connection = sqlite3.connect(backup_path)
