@@ -207,6 +207,13 @@ NEXT_PUBLIC_API_BASE_URL=https://your-backend-domain.up.railway.app
 CIVORA_FRONTEND_PUBLIC_URL=https://your-frontend-domain.vercel.app
 ```
 
+For release verification, expose Vercel's `VERCEL_GIT_COMMIT_SHA` to the build,
+or set `CIVORA_BUILD_REVISION` to the full 40-character candidate Git commit
+**before building**. The static `/api/release-identity` endpoint records that
+revision without exposing environment secrets. Missing/invalid identity blocks
+the hosted release canary; changing runtime variables does not update a built
+artifact's identity. Both frontend and API must match the expected revision.
+
 For local frontend development against the local backend, use:
 
 ```bash

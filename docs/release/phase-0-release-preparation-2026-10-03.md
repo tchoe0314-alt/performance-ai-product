@@ -23,6 +23,19 @@ Recovery now checks backup and temporary-restore filesystem capacity before copy
 
 ## Next gates, existing resources and required decisions
 
+### Follow-up: paired website/API identity
+
+At application revision `34d1cfecf865658773c9b4e16a8016370a8482f1`, release checks now require website identity as well as API identity. Previously, a healthy website shell plus matching backend could pass without proving the website revision. Added static `/api/release-identity`, strict 40-character build-revision validation, missing/old-website rejection and preservation of other public diagnostics when the endpoint returns 404 or an HTML fallback.
+
+- Initial read-only public canary confirmed website HTTP 200, healthy Postgres API/pool, enabled authentication, unauthenticated debug endpoints returning 401, exact-origin CORS, configured support and reported recovery readiness. API reports `597c46a3353f`, not the candidate. No login or project writes occurred. Report: `/tmp/civora-phase05-public-canary-8ecff4e8.json`.
+- Strengthened canary correctly blocks API revision mismatch and absent website identity on the unchanged live site: `/tmp/civora-phase05-paired-identity-canary.json`. The derived consecutive-success blocker does not represent another independent outage. Public health checks are not independent provider-backup or authenticated workflow proof.
+- Affected canary/operations/readiness contracts: 21 passed; combined canary/operations/readiness/recovery/legacy-migration selection: **38 passed**, zero failures, 0.75 seconds. Overlapping scopes; not a complete backend rerun.
+- Production build `.next-phase05-release-identity`, build ID `lcjmEohaVPOMwXI1gN3Jz`, passed. Built with revision `34d1cfecf865658773c9b4e16a8016370a8482f1`; started at localhost:3043 with a deliberately different runtime revision. Actual HTTP identity still returned the original build revision. Existing website at localhost:3042 was not replaced. Local API unchanged.
+- On that exact built artifact, **nine checks passed**, zero failures/skips, 8.8 seconds: identity contract plus accessibility/navigation on desktop Chromium/WebKit and mobile Chromium/WebKit. Report `/tmp/civora-phase05-identity-smoke-report/index.html`. Scoped lint, type checks and whitespace checks pass. Static scan of changed canary modules has no medium/high findings; five low findings remain, so this is not an all-severity clean claim.
+- Fresh local Firefox attempt failed to launch within 180 seconds; sandbox-extension permission and SWGL framebuffer errors were recorded before Civora navigation. One failed, one not run, not a passing or skipped Firefox proof. Report `/tmp/civora-phase05-firefox-report/index.html`. Linux verification or an explicit support disposition remains required.
+
+No push, CI dispatch, deployment, subscription change or paid provider request occurred. This endpoint is local until an approved deployment includes it. Exact-candidate hosted identity and authenticated/recovery evidence remain open.
+
 | Gate | Available path | Still missing |
 | --- | --- | --- |
 | Firefox | Existing `.github/workflows/rc1-firefox-accessibility.yml` on Linux | Exact-candidate successful run or explicit founder-approved pilot exclusion. Founder asked; no exclusion assumed. This workflow proves its accessibility/navigation selection, not every Firefox workflow. |

@@ -31,6 +31,7 @@ If old code is compatible, an authorized operator may redeploy the recorded prio
 ## Exact-build gate and release record
 
 - Produce a clean, scoped integration commit without adding unrelated investor artifacts or secrets. Record commit, lockfile/requirements hashes, source inventory fingerprint and frontend build ID.
+- Set `CIVORA_BUILD_REVISION` to the full 40-character candidate commit before the website build, or use its provider-supplied `VERCEL_GIT_COMMIT_SHA`. `/api/release-identity` is prerendered into that artifact and exposes only validated revision/service/status fields. Missing or invalid identity stays unknown; changing the runtime environment cannot certify a different build. The canary now requires both website and API revisions to match the expected candidate; an older site without this endpoint is unverified, not silently accepted.
 - Record full backend/browser results, affected regressions, lint/type/build, dependency/static scan scope, skips and known limitations for that artifact. A targeted rerun does not change a failed original full-run result.
 - Prepare staging approval with target, scope, costs/provider status, migration/backup evidence, rollback candidate and post-deployment checks. Deploy only after approval.
 - Verify deployed frontend/backend revision identity plus real authentication, project save/reopen, owner isolation, object editing, alternatives/apply/undo, exports and worker completion on staging. Record deployment IDs and report links.
