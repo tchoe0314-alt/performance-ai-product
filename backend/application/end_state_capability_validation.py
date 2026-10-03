@@ -166,10 +166,22 @@ BROWSER_GATE: Dict[str, Any] = {
         "tests/live/project-object-integration.spec.ts",
         "tests/live/phase0-review-sheet-truth.spec.ts",
         "tests/live/canvas-first-workspace-redesign.spec.ts",
-        "tests/live/video-website-regression.spec.ts",
+                "tests/live/video-website-regression.spec.ts",
+                "tests/live/error-states-chat223b.spec.ts",
         "--project=chromium",
         "--workers=1",
     ]],
+}
+
+LOCAL_WEBSITE_GATE = {
+    "gate_id": "real_local_persistence_and_exports",
+    "label": "Disposable local website authentication, persistence, and export downloads",
+    "evidence_level": "real_local_browser",
+    "cwd": "apps/web",
+    "commands": [["npx", "playwright", "test",
+                  "tests/live/phase0-local-persistence.spec.ts",
+                  "tests/live/phase0-local-export-download.spec.ts",
+                  "--project=chromium", "--workers=1"]],
 }
 
 
@@ -248,7 +260,17 @@ def build_end_state_validation_gates(
     include_browser: bool = True,
     hosted_url: str = "",
     include_hosted_auth: bool = False,
+    local_website_url: str = "",
+    local_api_url: str = "",
 ) -> List[Dict[str, Any]]:
+    import re
+
+    local_origin = re.compile(r"http://(?:127\.0\.0\.1|localhost):([0-9]+)")
+    if local_website_url or local_api_url:
+        for url in (local_website_url, local_api_url):
+            match = local_origin.fullmatch(url)
+            if match is None or not 1 <= int(match.group(1)) <= 65535:
+                raise ValueError("Real-local checks require both explicit localhost HTTP origins with valid ports.")
     gates = deepcopy(LOCAL_GATES)
     for gate in gates:
         for command in gate["commands"]:
@@ -258,6 +280,15 @@ def build_end_state_validation_gates(
         gates.append(deepcopy(FRONTEND_GATE))
     if include_browser:
         gates.append(deepcopy(BROWSER_GATE))
+    if local_website_url:
+        gate = deepcopy(LOCAL_WEBSITE_GATE)
+        gate["environment"] = {
+            "PLAYWRIGHT_BASE_URL": local_website_url,
+            "PLAYWRIGHT_API_BASE_URL": local_api_url,
+            "PLAYWRIGHT_SKIP_WEBSERVER": "1",
+            "CIVORA_PHASE0_LOCAL_TESTS": "1",
+        }
+        gates.append(gate)
     if hosted_url:
         hosted_commands = [["npm", "run", "test:hosted:public"]]
         if include_hosted_auth:
@@ -281,6 +312,8 @@ def run_end_state_capability_validation(
     include_browser: bool = True,
     hosted_url: str = "",
     include_hosted_auth: bool = False,
+    local_website_url: str = "",
+    local_api_url: str = "",
     selected_gate_ids: Optional[Iterable[str]] = None,
     output_path: Optional[Path] = None,
     executor: CommandExecutor = _default_executor,
@@ -292,6 +325,8 @@ def run_end_state_capability_validation(
         include_browser=include_browser,
         hosted_url=hosted_url,
         include_hosted_auth=include_hosted_auth,
+        local_website_url=local_website_url,
+        local_api_url=local_api_url,
     )
     available_gate_ids = {str(gate["gate_id"]) for gate in gates}
     unknown_gate_ids = sorted(selected - available_gate_ids)
@@ -370,6 +405,7 @@ def run_end_state_capability_validation(
         "internal_software_assurance_complete": internal_software_assurance_complete,
         "external_evidence_requirements": deepcopy(EXTERNAL_EVIDENCE_REQUIREMENTS),
         "external_evidence_complete": False,
+        "real_local_website_checks_complete": "real_local_persistence_and_exports" in passed_gate_ids,
         "construction_release_allowed": False,
         "truth_label": (
             "Passing automated gates proves the named local or hosted workflows only. It does not replace accepted survey/control, "

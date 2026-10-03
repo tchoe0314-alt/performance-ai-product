@@ -49,6 +49,18 @@ Current next milestone: **0.3 test-system repair**. The October 3 founder-approv
 
 ## Evidence log
 
+### October 3 — Phase 0.3 critical-runner refresh
+
+- Refreshed the complete suites after the runner and existing-Mapbox configuration repairs: **1,859 backend tests and 78 subtests passed**, 44 recorded warnings; **381 website tests passed, 15 skipped**, zero failures/flaky results. Global lint/typecheck passed. Stable tracked-source hash, runtime, local targets, build ID, archived report locations and limitations are recorded in the [October 3 test-system checkpoint](../release/phase-0-test-system-refresh-2026-10-03.md).
+- Phase 0.3 remains active: map pan/select and map-lock tests use a fictional no-anchor demo and still skip; drainage autofix matrix has incomplete engineering/deduplication assertions. These are coverage gaps, not evidence that the Mapbox subscription is absent. Hosted/platform/provider verification stays separate. No new application behavior was changed in this complete-validation pass.
+
+- Founder clarified that existing subscriptions may be used but nothing new purchased. Found Mapbox already configured in the website's local environment; the test process had not loaded it. Updated Playwright environment loading, preserving explicit target/provider overrides. Two previously skipped map tests passed, then the full project-flow plus real-local persistence/export selection passed **14/14**, no skips/failures. Typecheck/configuration lint passed. No subscription change, resource purchase or deployment; other provider/hosted evidence remains open.
+
+- Added image-upload/detection error-state regressions to the repeatable browser manifest, including preservation of previous detections on failed responses.
+- Added an explicitly opt-in real-local persistence/export gate. Both website and API must be localhost HTTP origins with valid ports; hosted and incomplete configurations are rejected. This does not attest disposable storage or approve customer-data mutation.
+- Runner configuration/evidence tests: **16 passed**. Combined affected website run: **120 passed, two skipped**; real local save/reload, owner isolation, PDF/DXF downloads and retained export history: **two passed**, no skips/failures. Providers disabled, website/API at localhost:3042/18882. Exact report/provenance recorded in the test matrix.
+- This completes the scoped runner repair, not all of 0.3. Fresh complete backend/browser validation and retained Firefox/platform limitations remain open. No deployment, push or paid resources.
+
 ### October 2 — Phase 0.1 closeout at `33c23e34`
 
 - Fresh read-only inventory: 1,173 paths, 141 local branches, 26 distinct non-equivalent historical patches; automated comparison found zero undocumented patches. All 15 other existing worktrees are clean; 63 registered historical directories are missing. User-owned untracked work and historical metadata remain untouched.

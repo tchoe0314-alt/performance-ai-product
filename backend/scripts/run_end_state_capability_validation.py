@@ -24,6 +24,8 @@ def main() -> None:
     parser.add_argument("--skip-browser", action="store_true")
     parser.add_argument("--hosted-url", default="")
     parser.add_argument("--include-hosted-auth", action="store_true")
+    parser.add_argument("--local-website-url", default="", help="Disposable localhost website origin; requires --local-api-url.")
+    parser.add_argument("--local-api-url", default="", help="Disposable localhost API origin; never use customer storage.")
     parser.add_argument("--gate", action="append", dest="gates", help="Run one named gate; repeat to run multiple gates.")
     parser.add_argument("--list", action="store_true", help="List available gates and exit.")
     parser.add_argument("--output", default="reports/validation/end_state_capability_validation.json")
@@ -34,6 +36,8 @@ def main() -> None:
         include_browser=not args.skip_browser,
         hosted_url=args.hosted_url,
         include_hosted_auth=args.include_hosted_auth,
+        local_website_url=args.local_website_url,
+        local_api_url=args.local_api_url,
     )
     if args.list:
         print(json.dumps([{"gate_id": item["gate_id"], "label": item["label"]} for item in available], indent=2))
@@ -44,6 +48,8 @@ def main() -> None:
         include_browser=not args.skip_browser,
         hosted_url=args.hosted_url,
         include_hosted_auth=args.include_hosted_auth,
+        local_website_url=args.local_website_url,
+        local_api_url=args.local_api_url,
         selected_gate_ids=args.gates,
         output_path=Path(args.output),
     )

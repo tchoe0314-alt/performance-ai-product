@@ -1,5 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
+import { loadEnvConfig } from "@next/env";
+
+// Match the built website's environment loading so configured Mapbox checks
+// are not silently skipped merely because Playwright is a separate process.
+loadEnvConfig(path.resolve(__dirname), false);
 
 const shouldUseManagedLocalServer =
   !process.env.PLAYWRIGHT_BASE_URL && process.env.PLAYWRIGHT_SKIP_WEBSERVER !== "1";

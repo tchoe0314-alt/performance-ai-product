@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import pytest
 
 import backend.application.end_state_capability_validation as validation
 
@@ -63,6 +64,7 @@ def test_browser_gate_includes_phase0_integrity_regressions_and_existing_files()
         "tests/live/phase0-review-sheet-truth.spec.ts",
         "tests/live/canvas-first-workspace-redesign.spec.ts",
         "tests/live/video-website-regression.spec.ts",
+        "tests/live/error-states-chat223b.spec.ts",
     } <= paths
     root = Path(__file__).resolve().parents[1]
     assert all((root / gate["cwd"] / path).is_file() for path in paths)
@@ -89,11 +91,41 @@ def test_runner_stops_each_failed_gate_and_keeps_external_truth_separate(tmp_pat
     assert report["success"] is False
     assert report["failed_gate_ids"] == ["semantic_project_lifecycle"]
     assert report["external_evidence_complete"] is False
+    assert report["real_local_website_checks_complete"] is False
     assert report["construction_release_allowed"] is False
     assert report["internal_calculation_crosschecks"]["passed"] is True
     assert report["internal_software_assurance_complete"] is False
     assert output.exists()
     assert len(seen) == 2
+
+
+@pytest.mark.parametrize("website,api", [
+    ("https://civoraai.com", "http://127.0.0.1:18882"),
+    ("http://localhost:3042", "https://api.civoraai.com"),
+    ("http://localhost:3042", ""),
+    ("", "http://localhost:18882"),
+    ("http://localhost:0", "http://localhost:18882"),
+    ("http://localhost:3042/path", "http://localhost:18882"),
+    ("http://localhost:3042", "http://localhost:65536"),
+])
+def test_real_local_gate_rejects_missing_or_hosted_origins(website, api) -> None:
+    with pytest.raises(ValueError, match="localhost"):
+        build_end_state_validation_gates(local_website_url=website, local_api_url=api)
+
+
+def test_real_local_gate_explicitly_enables_non_mocked_checks() -> None:
+    seen = []
+    report = run_end_state_capability_validation(
+        include_frontend=False, include_browser=False,
+        local_website_url="http://127.0.0.1:3042", local_api_url="http://127.0.0.1:18882",
+        selected_gate_ids=["real_local_persistence_and_exports"],
+        executor=lambda command, cwd, env: seen.append(env) or {"exit_code": 0, "elapsed_seconds": 0.0},
+    )
+    assert report["real_local_website_checks_complete"] is True
+    assert report["internal_software_assurance_complete"] is False
+    assert seen[0]["CIVORA_PHASE0_LOCAL_TESTS"] == "1"
+    assert seen[0]["PLAYWRIGHT_SKIP_WEBSERVER"] == "1"
+    assert seen[0]["PLAYWRIGHT_API_BASE_URL"] == "http://127.0.0.1:18882"
 
 
 def test_hosted_gate_is_opt_in_and_uses_environment_not_embedded_credentials() -> None:
