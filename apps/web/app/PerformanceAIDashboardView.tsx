@@ -1,5 +1,6 @@
 "use client";
 import { DashboardPanelContent } from "./components/DashboardPanelContent";
+import { DashboardWorkspaceFrame } from "./components/DashboardWorkspaceFrame";
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -106,7 +107,6 @@ import {
   SITE_OBJECT_CATALOG,
 } from "./utils/siteObjectCatalog";
 
-import { uploadedImageSrc } from "./utils/auth";
 import {
   chatFailureMessage,
   formatTimestamp,
@@ -220,6 +220,8 @@ import { useDashboardProjectLoad } from "./hooks/useDashboardProjectLoad";
 import { useDashboardPlanPdfActions } from "./hooks/useDashboardPlanPdfActions";
 import { useDashboardMapAnalysisActions } from "./hooks/useDashboardMapAnalysisActions";
 import { useDashboardProjectSave } from "./hooks/useDashboardProjectSave";
+import { useDashboardDesignControls } from "./hooks/useDashboardDesignControls";
+import { useDashboardSiteRestore } from "./hooks/useDashboardSiteRestore";
 import { ensureDashboardProjectDraft } from "./utils/dashboardProjectDraft";
 import { createDashboardPlanExecutor, isConnectivityFailureMessage } from "./utils/dashboardPlanExecution";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
@@ -306,7 +308,6 @@ import { useDashboardObjectManagerActions } from "./hooks/useDashboardObjectMana
 import { useDashboardPreviewModeState } from "./hooks/useDashboardPreviewModeState";
 import { useDashboardSidePanelState } from "./hooks/useDashboardSidePanelState";
 import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
-import { mapSurveyPointsToSite } from "./utils/dashboardExistingConditionsUpload";
 import { WorkspaceShortcutsOverlay } from "./components/WorkspaceShortcutsOverlay";
 import { type CanonicalDependencyProposal } from "./utils/canonicalDependencyPolicies";
 import { type LayoutAlternativeSearch, type LayoutGoal } from "./utils/layoutAlternatives";
@@ -372,33 +373,36 @@ function PerformanceAIDashboardView({
   const [fileName, setFileName] = useState("");
   const [siteNameAuto, setSiteNameAuto] = useState(false);
   const [fileNameAuto, setFileNameAuto] = useState(false);
-  const [lotWidth, setLotWidth] = useState("");
-  const [lotHeight, setLotHeight] = useState("");
-  const [buildingWidth, setBuildingWidth] = useState("");
-  const [buildingDepth, setBuildingDepth] = useState("");
-  const [buildingCount, setBuildingCount] = useState("");
-  const [setback, setSetback] = useState("");
-  const [parkingCount, setParkingCount] = useState("");
-  const [parkingStallWidth, setParkingStallWidth] = useState("9");
-  const [parkingStallDepth, setParkingStallDepth] = useState("18");
-  const [parkingAisleWidth, setParkingAisleWidth] = useState("24");
-  const [parkingAdaAisleWidth, setParkingAdaAisleWidth] = useState("8");
-  const [parkingAdaCount, setParkingAdaCount] = useState("0");
-  const [parkingCompactCount, setParkingCompactCount] = useState("0");
-  const [parkingCompactWidth, setParkingCompactWidth] = useState("8");
-  const [parkingAngle, setParkingAngle] = useState<"90" | "60" | "45">("90");
-  const [parkingLoading, setParkingLoading] = useState<"single" | "double">("double");
+  const designControls = useDashboardDesignControls();
+  const {
+    lotWidth, setLotWidth,
+    lotHeight, setLotHeight,
+    buildingWidth, setBuildingWidth,
+    buildingDepth, setBuildingDepth,
+    buildingCount, setBuildingCount,
+    setback, setSetback,
+    parkingCount, setParkingCount,
+    parkingStallWidth, setParkingStallWidth,
+    parkingStallDepth, setParkingStallDepth,
+    parkingAisleWidth, setParkingAisleWidth,
+    parkingAdaAisleWidth, setParkingAdaAisleWidth,
+    parkingAdaCount, setParkingAdaCount,
+    parkingCompactCount, setParkingCompactCount,
+    parkingCompactWidth, setParkingCompactWidth,
+    parkingAngle, setParkingAngle,
+    parkingLoading, setParkingLoading,
+    minSlopePct, setMinSlopePct,
+    pipeMinSlopePct, setPipeMinSlopePct,
+    maxParkingSlopePct, setMaxParkingSlopePct,
+    maxRoadGradePct, setMaxRoadGradePct,
+    maxAdaCrossSlopePct, setMaxAdaCrossSlopePct,
+    assumedTerrainSlopePct, setAssumedTerrainSlopePct,
+    roads, setRoads,
+    grading, setGrading,
+    drainage, setDrainage,
+  } = designControls;
   const [activeRoadwayWorkbenchTab, setActiveRoadwayWorkbenchTab] = useState<RoadwayWorkbenchTab>("alignment");
   const [activeCivil3DWorkflowTab, setActiveCivil3DWorkflowTab] = useState<Civil3DWorkflowTab>("surface");
-  const [minSlopePct, setMinSlopePct] = useState("");
-  const [pipeMinSlopePct, setPipeMinSlopePct] = useState("");
-  const [maxParkingSlopePct, setMaxParkingSlopePct] = useState("");
-  const [maxRoadGradePct, setMaxRoadGradePct] = useState("");
-  const [maxAdaCrossSlopePct, setMaxAdaCrossSlopePct] = useState("");
-  const [assumedTerrainSlopePct, setAssumedTerrainSlopePct] = useState("8");
-  const [roads, setRoads] = useState(true);
-  const [grading, setGrading] = useState(true);
-  const [drainage, setDrainage] = useState(true);
   const [utilityCatalog, setUtilityCatalog] = useState<UtilityCatalogResponse | null>(null);
   const [utilityCatalogStatus, setUtilityCatalogStatus] = useState("Catalog not loaded");
   const [utilityCatalogNetworkFilter, setUtilityCatalogNetworkFilter] = useState("all");
@@ -671,7 +675,6 @@ function PerformanceAIDashboardView({
   const demoWorkspaceSeededRef = useRef(false);
   const currentPhaseLabelRef = useRef<string>("");
   const previewRecoveryKeyRef = useRef("");
-  const lastSiteInputProjectRef = useRef("");
   const controlAutosaveTimeoutRef = useRef<number | null>(null);
   const lastAppliedSiteRef = useRef<{ w: number; h: number; lat?: number; lng?: number } | null>(null);
   const lastViewportSyncRef = useRef<{ w: number; h: number } | null>(null);
@@ -1321,7 +1324,6 @@ function PerformanceAIDashboardView({
       setUploadedImagePreviewUrl,
       setUseSurveyForGrading,
       setUtilities,
-      siteInputs,
       token,
     });
   };
@@ -2513,7 +2515,6 @@ function PerformanceAIDashboardView({
     fileName,
     fileNameAuto,
     isSeededDemoProjectId,
-    payloadPreview,
     payloadPreviewRef,
     projectId,
     projectLoadRequestRef,
@@ -2562,7 +2563,7 @@ function PerformanceAIDashboardView({
       chatAutosaveTimeoutRef.current = null;
       if (projectLoadRequestRef.current !== workspaceGeneration) return;
       if (resolvedProjectIdRef.current !== activeProjectId) return;
-      void saveProject({ silent: true, projectIdOverride: activeProjectId });
+      void saveProjectRef.current({ silent: true, projectIdOverride: activeProjectId });
     }, 700);
   }, [chatMessages, prompt, token, projectId, currentProject]);
 
@@ -2578,7 +2579,7 @@ function PerformanceAIDashboardView({
       controlAutosaveTimeoutRef.current = null;
       if (projectLoadRequestRef.current !== workspaceGeneration) return;
       if (resolvedProjectIdRef.current !== activeProjectId) return;
-      void saveProject({ silent: true, projectIdOverride: activeProjectId });
+      void saveProjectRef.current({ silent: true, projectIdOverride: activeProjectId });
     }, 700);
   }, [
     token,
@@ -2606,97 +2607,29 @@ function PerformanceAIDashboardView({
     buildingPlacements,
   ]);
 
-  useEffect(() => {
-    if (!currentProject?.project_id) return;
-    if (lastSiteInputProjectRef.current === currentProject.project_id) return;
-    lastSiteInputProjectRef.current = currentProject.project_id;
-    const siteInputs =
-      currentProject?.project_input?.meta?.site_inputs &&
-      typeof currentProject.project_input.meta.site_inputs === "object"
-        ? currentProject.project_input.meta.site_inputs
-        : {};
-    const mapSnapshot = siteInputs?.map_snapshot ?? {};
-    const mapAnalysisResult = siteInputs?.map_analysis ?? null;
-    const surveyFile = siteInputs?.survey_file ?? {};
-    const existingImport = (siteInputs as Record<string, unknown>)?.existing_conditions_import as Record<string, unknown> | undefined;
-    const slopeEstimate = siteInputs?.slope_estimate ?? null;
-      const detectionScale = siteInputs?.detection_scale ?? {};
-      const alignmentLocked =
-        typeof siteInputs?.site_alignment_locked === "boolean"
-          ? siteInputs.site_alignment_locked
-          : null;
-    const useSurvey = siteInputs?.use_survey_for_grading;
-    const storedPoints = Array.isArray(siteInputs?.survey_points) ? siteInputs?.survey_points : [];
-    const detectedObjects = Array.isArray(siteInputs?.detected_objects)
-      ? (siteInputs?.detected_objects as BuildingPlacement[])
-      : [];
-    setSiteAddress(String(siteInputs?.address || ""));
-    setSurveyFileName(String(surveyFile?.stored_filename || ""));
-    setSourceEffectRows(Array.isArray(existingImport?.source_effect_rows) ? existingImport.source_effect_rows.map(String) : []);
-    setSurveySlopeEstimate(slopeEstimate || null);
-    setUseSurveyForGrading(useSurvey !== undefined ? Boolean(useSurvey) : true);
-    setSurveyPoints(storedPoints as number[][]);
-    setSurveyPreviewPoints(
-      mapSurveyPointsToSite(
-        storedPoints as number[][],
-        parsePositiveNumber(lotWidth),
-        parsePositiveNumber(lotHeight),
-      ),
-    );
-    setDrainageSourceOverride(
-      siteInputs?.drainage_source_override === "user" ? "user" : "civora",
-    );
-    setSurveyDiagnostics((prev) => ({
-      ...(prev ?? {}),
-      fileType: siteInputs?.survey_file_type ?? prev?.fileType,
-      parseSuccess: siteInputs?.survey_parse_success ?? prev?.parseSuccess,
-      pointCount: siteInputs?.survey_point_count ?? prev?.pointCount,
-      recognizedColumns: siteInputs?.survey_point_columns ?? prev?.recognizedColumns,
-      invalidRows: siteInputs?.survey_invalid_rows ?? prev?.invalidRows,
-      bounds: siteInputs?.survey_bounds ?? prev?.bounds,
-      elevationRange: siteInputs?.survey_elevation_range ?? prev?.elevationRange,
-      warnings: siteInputs?.survey_point_warnings ?? prev?.warnings,
-    }));
-      setDetectionScaleFeet(
-        detectionScale?.distance_ft ? String(detectionScale.distance_ft) : "",
-      );
-    setDetectionScalePixels(
-      detectionScale?.pixel_distance ? String(detectionScale.pixel_distance) : "",
-    );
-      setDetectionScaleFtPerPx(
-        typeof detectionScale?.scale_ft_per_px === "number" ? detectionScale.scale_ft_per_px : null,
-      );
-      setDetectionScaleSource(
-        detectionScale?.scale_source === "mapbox" || detectionScale?.scale_source === "manual"
-          ? detectionScale.scale_source
-          : "approximate",
-      );
-      if (alignmentLocked !== null) {
-        const projectLot: { w?: string | number | null; h?: string | number | null } =
-          currentProject?.project_input?.manual_fields?.lot &&
-          typeof currentProject.project_input.manual_fields.lot === "object"
-            ? currentProject.project_input.manual_fields.lot
-            : {};
-        const lotW = parsePositiveNumber(lotWidth) ?? parsePositiveNumber(projectLot.w);
-        const lotH = parsePositiveNumber(lotHeight) ?? parsePositiveNumber(projectLot.h);
-        if (alignmentLocked && (!lotW || !lotH)) {
-          setSiteScaleLocked(false);
-        } else {
-          setSiteScaleLocked(alignmentLocked);
-        }
-      }
-      const rotationValue =
-        typeof siteInputs?.site_rotation_deg === "number" ? siteInputs.site_rotation_deg : 0;
-      setSiteRotationDeg(rotationValue);
-      setSiteRotationInput(String(rotationValue));
-    setDetectedPlacements(detectedObjects);
-    const mapUrl = String(mapSnapshot?.image_url || "");
-    if (mapUrl) {
-      setUploadedImageApiUrl(uploadedImageSrc(mapUrl, token));
-    }
-    setMapSnapshotPath(String(mapSnapshot?.image_path || ""));
-    setMapAnalysis(mapAnalysisResult || null);
-  }, [currentProject, lotHeight, lotWidth, token]);
+  // Save acknowledgements update identity, not the live workspace. Hydrate only an actual restore.
+  useDashboardSiteRestore(currentProject, token, {
+    setSiteAddress,
+    setSurveyFileName,
+    setSourceEffectRows,
+    setSurveySlopeEstimate,
+    setUseSurveyForGrading,
+    setSurveyPoints,
+    setSurveyPreviewPoints,
+    setDrainageSourceOverride,
+    setSurveyDiagnostics,
+    setDetectionScaleFeet,
+    setDetectionScalePixels,
+    setDetectionScaleFtPerPx,
+    setDetectionScaleSource,
+    setSiteScaleLocked,
+    setSiteRotationDeg,
+    setSiteRotationInput,
+    setDetectedPlacements,
+    setUploadedImageApiUrl,
+    setMapSnapshotPath,
+    setMapAnalysis,
+  }, projectLoadRequestRef.current, autosaveSuspendRef.current || workspaceRestoreState !== "restored");
 
   const { loadProject } = useDashboardProjectLoad({
     cancelPendingRun,
@@ -5651,17 +5584,11 @@ function PerformanceAIDashboardView({
   }
 
   return (
-    <div
-      className="civora-app-bg min-h-screen text-[var(--civora-text)]"
-      onKeyDownCapture={(event) => {
-        if (event.key !== "Escape") return;
-        event.preventDefault();
-        handleCancelActiveTool();
-      }}
-    >
-      <WorkspaceToasts toasts={jobToasts} />
-      <div className="flex min-h-screen flex-col">
-        <AppHeader
+    <DashboardWorkspaceFrame
+      onCancelActiveTool={handleCancelActiveTool}
+      statusSummary={`${projectStatusDisplayLabel[projectStatusSummary.state]}: ${projectStatusSummary.title}.`}
+      toasts={<WorkspaceToasts toasts={jobToasts} />}
+      header={<AppHeader
           userEmail={effectiveUser.email}
           projectName={siteName || currentProject?.name || "Untitled Project"}
           saveStatus={projectDrawerStateLabel}
@@ -5680,13 +5607,8 @@ function PerformanceAIDashboardView({
           onUndo={handleUndoDraftAction}
           onRedo={handleRedoDraftAction}
           onLogout={handleLogout}
-        />
-        <div data-testid="project-status-summary" className="sr-only" aria-live="polite">
-          {`${projectStatusDisplayLabel[projectStatusSummary.state]}: ${projectStatusSummary.title}.`}
-        </div>
-
-        <div className="relative h-[calc(100svh-52px)] min-h-0 w-full max-w-full overflow-hidden lg:h-[calc(100vh-52px)]">
-          {sidebarRendered ? (
+        />}
+      leftRail={sidebarRendered ? (
             <WorkspaceLeftRail
               visible={sidebarVisible}
               activeWorkflowKey={activePrimaryWorkflowKey}
@@ -5695,7 +5617,7 @@ function PerformanceAIDashboardView({
               onOpenPanel={handleOpenPanelFromDrawer}
             />
           ) : null}
-          {sidePanelForRender ? (
+      rightPanel={sidePanelForRender ? (
             <WorkspaceRightPanel
               title={activePanelTitle}
               description={activePanelDescription}
@@ -5881,23 +5803,21 @@ function PerformanceAIDashboardView({
                 />
             </WorkspaceRightPanel>
           ) : null}
-          <WorkspaceCanvasArea {...workspaceCanvasAreaProps} />
-          {shortcutsOverlayOpen ? (
+      canvas={<WorkspaceCanvasArea {...workspaceCanvasAreaProps} />}
+      shortcuts={shortcutsOverlayOpen ? (
             <WorkspaceShortcutsOverlay
               shortcuts={supportedShortcuts}
               onClose={() => setShortcutsOverlayOpen(false)}
             />
           ) : null}
-          {commandBarDockVisible ? (
+      commandBar={commandBarDockVisible ? (
             <PinnedCommandBar
               {...pinnedCommandBarProps}
               leftRailVisible={sidebarRendered && sidebarVisible}
               rightPanelSize={sidePanelForRender ? "standard" : "none"}
             />
           ) : null}
-        </div>
-      </div>
-    </div>
+    />
   );
 }
 

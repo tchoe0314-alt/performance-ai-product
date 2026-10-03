@@ -17,7 +17,9 @@ async function humanClick(locator: ReturnType<Page["locator"]>, label: string) {
   const box = await target.boundingBox();
   expect(box, `${label} should have a real click box`).not.toBeNull();
   await target.page().mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2, { steps: 6 });
-  await target.page().mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  // Address suggestions can shift the layout during pointer movement.
+  // Resolve the actionable target again instead of clicking stale coordinates.
+  await target.click();
 }
 
 async function openPanel(page: Page, name: RegExp | string, expected?: RegExp | string) {

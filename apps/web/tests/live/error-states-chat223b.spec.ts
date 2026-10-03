@@ -94,6 +94,31 @@ async function mockGeocode(page: Page) {
 }
 
 test.describe("Chat 223B empty/error/loading/recovery states", () => {
+  test("disclosures preserve click and keyboard intent across parent updates", async ({ page }) => {
+    await openDemoWorkspace(page, "debugPreview=1&seedDemo=1");
+    await openWorkspacePanel(page, /^Draw$/, /Draw|Objects/i);
+    const layers = page.getByTestId("object-manager-layers");
+    const summary = layers.locator(":scope > summary");
+    await summary.click();
+    await expect(layers).toHaveAttribute("open", "");
+    const lock = layers.getByTestId("object-manager-layer-lock").first();
+    const before = (await lock.textContent())!.trim();
+    await lock.click();
+    await expect(lock).not.toHaveText(before);
+    await expect(layers).toHaveAttribute("open", "");
+    await summary.focus();
+    await page.keyboard.press("Enter");
+    await expect(layers).not.toHaveAttribute("open", "");
+    await summary.focus();
+    await page.keyboard.press("Space");
+    await expect(layers).toHaveAttribute("open", "");
+    await lock.click();
+    await expect(lock).toHaveText(before);
+    await expect(layers).toHaveAttribute("open", "");
+    await summary.click();
+    await expect(layers).not.toHaveAttribute("open", "");
+  });
+
   for (const success of [false, undefined, true]) {
   test(`image detection ${String(success)} reports its actual outcome and guards replacement writes`, async ({ page }) => {
     await mockSignedInShell(page);
@@ -193,6 +218,11 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
   test("Auto Site Context separates provider failure from successful no-feature results", async ({ page }) => {
     await mockSignedInShell(page);
     await mockGeocode(page);
+    let unexpectedProjectRestores = 0;
+    await page.route("**/api/projects/pw-project", async (route) => {
+      unexpectedProjectRestores += 1;
+      await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "A save must not trigger a restore." }) });
+    });
     await page.route("**/api/existing-conditions/fetch-online", async (route) => {
       await route.fulfill({
         status: 200,
@@ -248,6 +278,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
     });
     await page.getByRole("button", { name: "Apply address" }).click();
     await expect(page.getByTestId("auto-site-context-candidates")).toContainText(/No source candidates found yet/i, { timeout: 30_000 });
+    expect(unexpectedProjectRestores).toBe(0);
     await expect(page.getByTestId("auto-site-context-found")).toContainText(/No usable features/i);
   });
 

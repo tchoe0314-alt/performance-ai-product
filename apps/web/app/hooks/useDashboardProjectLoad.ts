@@ -139,6 +139,7 @@ export function useDashboardProjectLoad({
         void loadJobRef.current?.(activeJobId);
       }
     } catch (error) {
+      if (projectLoadRequestRef.current !== requestId) return;
       const errorStatus =
         typeof error === "object" && error !== null && "status" in error
           ? Number((error as { status?: unknown }).status)
@@ -182,7 +183,7 @@ export function useDashboardProjectLoad({
       });
       measureCivoraInteractionAfterPaint("projects.drawer.open_project.failed", loadStartedAt, { projectId: id });
     } finally {
-      autosaveSuspendRef.current = false;
+      if (projectLoadRequestRef.current === requestId) autosaveSuspendRef.current = false;
     }
   }, [
     cancelPendingRun,
@@ -220,7 +221,9 @@ export function useDashboardProjectLoad({
       restoredActiveProjectRef.current ||
       suppressProjectAutoLoadRef.current
     ) return;
-    if (currentProject?.project_id || projectId) return;
+    // A save may publish its ID before React commits the matching state. Do not
+    // mistake that acknowledgement for a saved project from a previous session.
+    if (currentProject?.project_id || projectId || resolvedProjectIdRef.current) return;
     if (typeof window === "undefined") return;
     const savedProjectId = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
     if (!savedProjectId) return;
@@ -231,6 +234,7 @@ export function useDashboardProjectLoad({
     effectiveDemoWorkspaceEnabled,
     loadProject,
     projectId,
+    resolvedProjectIdRef,
     restoredActiveProjectRef,
     suppressProjectAutoLoadRef,
     token,

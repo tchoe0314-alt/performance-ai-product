@@ -1,6 +1,12 @@
 # Phase 0.4 dependency review — October 3, 2026
 
-This is local advisory evidence, not deployed-artifact or complete security certification. No dependency versions were changed and no paid services were used.
+This is local advisory evidence, not deployed-artifact or complete security certification. A compatible lint-tool patch was applied at the final 0.4 checkpoint; no paid services were used.
+
+## Final maintainability patch and support disposition
+
+ESLint 9.39.4 was updated to pinned 9.39.5. Its lockfile also resolves newer `@eslint/js`, `@eslint/eslintrc`, acorn and ajv development packages. Production dependencies are unchanged; production-only npm audit still reports zero vulnerabilities. This patch does not resolve the separate braces advisory below.
+
+The registry deprecates ESLint 9.39.5 as unsupported. This is a tracked toolchain-support risk, not a claim that the patch makes the entire toolchain current. ESLint 10 requires Node 20.19+/22.13+/24+, whereas the existing ESLint 9 floor accepts Node 20.9+. The major upgrade and runtime-floor/CI alignment require a separately verified migration; an untested major switch or incompatible Next lint-config downgrade was not forced into this stabilization checkpoint. Reassess before release together with the unpatched advisory. No release-risk waiver is implied.
 
 ## Verified scope
 

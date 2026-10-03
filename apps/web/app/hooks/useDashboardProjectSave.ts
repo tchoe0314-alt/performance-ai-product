@@ -1,11 +1,12 @@
 import type { MutableRefObject } from "react";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 import { postJson } from "../../lib/api";
 import type { ChatMessage, PlanResponse, ProjectInput, ProjectRecord } from "../types";
 import { panelErrorMessage } from "../utils/dashboardStatus";
 import { ACTIVE_PROJECT_STORAGE_KEY } from "../utils/workflowConstants";
 import type { ProjectStatusSummary } from "../utils/workspaceShell";
+import { enqueueDashboardProjectSave, type DashboardProjectSaveQueue } from "../utils/dashboardProjectSaveQueue";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type UpdateProjectStatus = (updates: Omit<ProjectStatusSummary, "updatedAt">) => void;
@@ -28,7 +29,6 @@ type UseDashboardProjectSaveOptions = {
   fileName: string;
   fileNameAuto: boolean;
   isSeededDemoProjectId: (projectId: string | null) => boolean;
-  payloadPreview: ProjectInput;
   payloadPreviewRef: MutableRefObject<ProjectInput>;
   projectId: string;
   projectLoadRequestRef: MutableRefObject<number>;
@@ -53,7 +53,6 @@ export function useDashboardProjectSave({
   fileName,
   fileNameAuto,
   isSeededDemoProjectId,
-  payloadPreview,
   payloadPreviewRef,
   projectId,
   projectLoadRequestRef,
@@ -70,6 +69,7 @@ export function useDashboardProjectSave({
   updateProjectStatus,
   upsertProjectSummary,
 }: UseDashboardProjectSaveOptions) {
+  const saveQueueRef = useRef<DashboardProjectSaveQueue | null>(null);
   const saveProject = useCallback(async ({
     silent = false,
     projectIdOverride,
@@ -94,141 +94,146 @@ export function useDashboardProjectSave({
       }
       return null;
     }
-    const effectiveProjectId =
-      projectIdOverride !== undefined
-        ? projectIdOverride
-        : resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
-    const resolvedName = (nameOverride ?? siteName).trim();
-    const resolvedFileName = (fileNameOverride ?? fileName).trim();
-    if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
-      if (!silent) {
-        updateProjectStatus({
-          state: "blocked",
-          area: "projects",
-          title: "Save unavailable in demo",
-          detail: "Demo workspace changes stay local and are not saved to pilot projects.",
-          nextAction: "Start a non-demo project or sign in/connect backend before saving.",
-        });
-      }
-      return currentProject;
-    }
-    if (!silent) {
-      setBusy(true);
-      updateProjectStatus({
-        state: "working",
-        area: "projects",
-        title: "Saving project",
-        detail: `Saving "${resolvedName || "Untitled Project"}" to the project backend.`,
-        nextAction: "Keep the drawer open until the save finishes or shows what needs attention.",
-      });
-    }
-    const liveChatThread = chatMessagesRef.current;
-    const projectInputToSave = projectInputOverride
-      ? {
-          ...projectInputOverride,
-          manual_fields: {
-            ...(projectInputOverride.manual_fields ?? {}),
-            project_name: resolvedName,
-            file_name: resolvedFileName,
-          },
-          meta: {
-            ...(projectInputOverride.meta ?? {}),
-            chat_thread: liveChatThread,
-            auto_named: autoNamedOverride ?? siteNameAuto,
-            auto_file_named: autoFileNamedOverride ?? fileNameAuto,
-            setup_wizard_state_v1: setupWizardStateRef.current,
-          },
-        }
-      : {
-          ...payloadPreview,
-          manual_fields: {
-            ...(payloadPreview.manual_fields ?? {}),
-            project_name: resolvedName,
-            file_name: resolvedFileName,
-          },
-          meta: {
-            ...(payloadPreview.meta ?? {}),
-            chat_thread: liveChatThread,
-            auto_named: autoNamedOverride ?? siteNameAuto,
-            auto_file_named: autoFileNamedOverride ?? fileNameAuto,
-            setup_wizard_state_v1: setupWizardStateRef.current,
-          },
-        };
-    const latestResultToSave =
-      latestResultOverride !== undefined ? latestResultOverride : undefined;
     const workspaceGeneration = projectLoadRequestRef.current;
-    try {
-      const requestBody: Record<string, unknown> = {
-        project_id: effectiveProjectId,
-        name: resolvedName,
-        project_input: projectInputToSave,
-        metadata: {
-          auto_named: autoNamedOverride ?? siteNameAuto,
-          auto_file_named: autoFileNamedOverride ?? fileNameAuto,
-        },
-      };
-      if (latestResultToSave !== undefined) {
-        requestBody.latest_result = latestResultToSave;
-      }
-      const data = await postJson<{ project: ProjectRecord }>(
-        "/api/projects",
-        requestBody,
-        { token },
-      );
-      if (projectLoadRequestRef.current !== workspaceGeneration) {
-        return null;
-      }
-      resolvedProjectIdRef.current = data.project.project_id;
-      setProjectId(data.project.project_id);
-      setCurrentProject((existing) => {
-        if (!silent || !existing || existing.project_id !== data.project.project_id) {
-          return data.project;
+    return enqueueDashboardProjectSave(saveQueueRef, workspaceGeneration, async () => {
+      if (projectLoadRequestRef.current !== workspaceGeneration) return null;
+      const liveInput = payloadPreviewRef.current;
+      const effectiveProjectId =
+        projectIdOverride !== undefined
+          ? projectIdOverride
+          : resolvedProjectIdRef.current || projectId || currentProject?.project_id || null;
+      const resolvedName = (nameOverride ?? liveInput.manual_fields?.project_name ?? siteName).trim();
+      const resolvedFileName = (fileNameOverride ?? liveInput.manual_fields?.file_name ?? fileName).trim();
+      if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
+        if (!silent) {
+          updateProjectStatus({
+            state: "blocked",
+            area: "projects",
+            title: "Save unavailable in demo",
+            detail: "Demo workspace changes stay local and are not saved to pilot projects.",
+            nextAction: "Start a non-demo project or sign in/connect backend before saving.",
+          });
         }
-        return {
-          ...data.project,
-          // Silent object autosaves may finish after another canvas edit. Keep
-          // the live workspace input so an older response cannot remove or
-          // reselect newer draft geometry while the queued save catches up.
-          project_input: payloadPreviewRef.current,
-          latest_result: data.project.latest_result ?? existing.latest_result,
-          has_result: data.project.has_result || existing.has_result,
+        return currentProject;
+      }
+      if (!silent) {
+        setBusy(true);
+        updateProjectStatus({
+          state: "working",
+          area: "projects",
+          title: "Saving project",
+          detail: `Saving "${resolvedName || "Untitled Project"}" to the project backend.`,
+          nextAction: "Keep the drawer open until the save finishes or shows what needs attention.",
+        });
+      }
+      const liveChatThread = chatMessagesRef.current;
+      const projectInputToSave = projectInputOverride
+        ? {
+            ...projectInputOverride,
+            manual_fields: {
+              ...(projectInputOverride.manual_fields ?? {}),
+              project_name: resolvedName,
+              file_name: resolvedFileName,
+            },
+            meta: {
+              ...(projectInputOverride.meta ?? {}),
+              chat_thread: liveChatThread,
+              auto_named: autoNamedOverride ?? siteNameAuto,
+              auto_file_named: autoFileNamedOverride ?? fileNameAuto,
+              setup_wizard_state_v1: setupWizardStateRef.current,
+            },
+          }
+        : {
+            ...liveInput,
+            manual_fields: {
+              ...(liveInput.manual_fields ?? {}),
+              project_name: resolvedName,
+              file_name: resolvedFileName,
+            },
+            meta: {
+              ...(liveInput.meta ?? {}),
+              chat_thread: liveChatThread,
+              auto_named: autoNamedOverride ?? siteNameAuto,
+              auto_file_named: autoFileNamedOverride ?? fileNameAuto,
+              setup_wizard_state_v1: setupWizardStateRef.current,
+            },
+          };
+      const latestResultToSave =
+        latestResultOverride !== undefined ? latestResultOverride : undefined;
+      try {
+        const requestBody: Record<string, unknown> = {
+          project_id: effectiveProjectId,
+          name: resolvedName,
+          project_input: projectInputToSave,
+          metadata: {
+            auto_named: autoNamedOverride ?? siteNameAuto,
+            auto_file_named: autoFileNamedOverride ?? fileNameAuto,
+          },
         };
-      });
-      // A successful save makes the project reloadable, but it does not mean
-      // this browser session restored it. Preserve that stronger claim only
-      // when the project was actually loaded from saved state.
-      setWorkspaceRestoreState((previous) => previous === "restored" ? "restored" : "idle");
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, data.project.project_id);
-      }
-      upsertProjectSummary(data.project);
-      setProjectDrawerNotice("Saved. Reload will restore this project on this browser.");
-      if (!silent) {
-        updateProjectStatus({
-          state: "ready",
-          area: "projects",
-          title: "Project saved",
-          detail: `Saved project "${data.project.name || resolvedName || "Untitled Project"}".`,
-          nextAction: "Continue setup, generate a review draft, or open Deliver when ready.",
+        if (latestResultToSave !== undefined) {
+          requestBody.latest_result = latestResultToSave;
+        }
+        const data = await postJson<{ project: ProjectRecord }>(
+          "/api/projects",
+          requestBody,
+          { token },
+        );
+        if (projectLoadRequestRef.current !== workspaceGeneration) {
+          return null;
+        }
+        resolvedProjectIdRef.current = data.project.project_id;
+        setProjectId(data.project.project_id);
+        setCurrentProject((existing) => {
+          if (!silent || !existing || existing.project_id !== data.project.project_id) {
+            return data.project;
+          }
+          return {
+            ...data.project,
+            // Silent object autosaves may finish after another canvas edit. Keep
+            // the live workspace input so an older response cannot remove or
+            // reselect newer draft geometry while the queued save catches up.
+            project_input: payloadPreviewRef.current,
+            latest_result: data.project.latest_result ?? existing.latest_result,
+            has_result: data.project.has_result || existing.has_result,
+          };
         });
+        // A successful save makes the project reloadable, but it does not mean
+        // this browser session restored it. Preserve that stronger claim only
+        // when the project was actually loaded from saved state.
+        setWorkspaceRestoreState((previous) => previous === "restored" ? "restored" : "idle");
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, data.project.project_id);
+        }
+        upsertProjectSummary(data.project);
+        setProjectDrawerNotice("Saved. Reload will restore this project on this browser.");
+        if (!silent) {
+          updateProjectStatus({
+            state: "ready",
+            area: "projects",
+            title: "Project saved",
+            detail: `Saved project "${data.project.name || resolvedName || "Untitled Project"}".`,
+            nextAction: "Continue setup, generate a review draft, or open Deliver when ready.",
+          });
+        }
+        return data.project;
+      } catch (error) {
+        if (projectLoadRequestRef.current !== workspaceGeneration) return null;
+        const message = panelErrorMessage(error, "Project save could not complete.");
+        setProjectDrawerNotice(`Save needs attention: ${message}`);
+        if (!silent) {
+          updateProjectStatus({
+            state: "blocked",
+            area: "projects",
+            title: "Save could not finish",
+            detail: message,
+            nextAction: "Check auth/backend connectivity, then press Save Project again.",
+          });
+        }
+        return null;
+      } finally {
+        if (!silent && projectLoadRequestRef.current === workspaceGeneration) setBusy(false);
       }
-      return data.project;
-    } catch (error) {
-      const message = panelErrorMessage(error, "Project save could not complete.");
-      setProjectDrawerNotice(`Save needs attention: ${message}`);
-      if (!silent) {
-        updateProjectStatus({
-          state: "blocked",
-          area: "projects",
-          title: "Save could not finish",
-          detail: message,
-          nextAction: "Check auth/backend connectivity, then press Save Project again.",
-        });
-      }
-      return null;
-    } finally {
-      if (!silent) setBusy(false);
-    }
+    });
   }, [
     chatMessagesRef,
     currentProject,
@@ -236,7 +241,6 @@ export function useDashboardProjectSave({
     fileName,
     fileNameAuto,
     isSeededDemoProjectId,
-    payloadPreview,
     payloadPreviewRef,
     projectId,
     projectLoadRequestRef,

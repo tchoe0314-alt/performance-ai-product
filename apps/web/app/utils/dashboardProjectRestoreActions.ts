@@ -58,7 +58,6 @@ export function runDashboardApplyProjectInput({
   setUploadedImagePreviewUrl,
   setUseSurveyForGrading,
   setUtilities,
-  siteInputs,
   token,
 }: {
   chatMessagesRef: MutableRefObject<ChatMessage[]>;
@@ -104,7 +103,6 @@ export function runDashboardApplyProjectInput({
   setUploadedImagePreviewUrl: StateSetter<string>;
   setUseSurveyForGrading: StateSetter<boolean>;
   setUtilities: StateSetter<boolean>;
-  siteInputs: SiteInputs | null | undefined;
   token: string | null;
 }) {
   if (!projectInput || typeof projectInput !== "object") {
@@ -114,7 +112,7 @@ export function runDashboardApplyProjectInput({
   const projectSiteInputs =
     projectInput.meta?.site_inputs && typeof projectInput.meta.site_inputs === "object"
       ? (projectInput.meta.site_inputs as SiteInputs)
-      : siteInputs;
+      : undefined;
   const restoredProjectInput = buildDashboardProjectInputView(projectInput, projectSiteInputs);
 
   setPrompt(restoredProjectInput.promptText);

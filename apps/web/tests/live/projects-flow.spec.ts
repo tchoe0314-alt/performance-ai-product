@@ -527,7 +527,7 @@ test.describe("project drawer reliability", () => {
       .toBeNull();
   });
 
-  test("keeps rapid drawn objects selected and persisted when autosaves finish out of order", async ({ page }) => {
+  test("keeps rapid drawn objects selected and persists saves in order when an earlier save is slow", async ({ page }) => {
     const store = new Map<string, SavedProject>();
     store.set("rapid-draw-project", {
       project_id: "rapid-draw-project",
@@ -543,12 +543,16 @@ test.describe("project drawer reliability", () => {
     await mockShell(page, store);
 
     let saveSequence = 0;
+    let activeSaves = 0;
+    let peakActiveSaves = 0;
     await page.route("**/api/projects", async (route) => {
       if (route.request().method() !== "POST") {
         await route.fallback();
         return;
       }
       saveSequence += 1;
+      activeSaves += 1;
+      peakActiveSaves = Math.max(peakActiveSaves, activeSaves);
       const payload = route.request().postDataJSON() as {
         project_id?: string | null;
         name?: string;
@@ -568,6 +572,7 @@ test.describe("project drawer reliability", () => {
         contentType: "application/json",
         body: JSON.stringify({ success: true, project }),
       });
+      activeSaves -= 1;
     });
 
     await openApp(page);
@@ -620,6 +625,61 @@ test.describe("project drawer reliability", () => {
       .poll(() => JSON.stringify(store.get("rapid-draw-project")?.project_input ?? {}))
       .toContain("Office Building A");
     expect(JSON.stringify(store.get("rapid-draw-project")?.project_input ?? {})).toContain("Parking Field A");
+    expect(peakActiveSaves).toBe(1);
+  });
+
+  test("opening legacy project with no site metadata clears previous source context", async ({ page }) => {
+    const store = new Map<string, SavedProject>([
+      ["context-source", { project_id: "context-source", name: "Context Source", updated_at: 1, project_input: {
+        manual_fields: { lot: { x: 0, y: 0, w: 900, h: 700 } },
+        meta: { site_inputs: { address: "Previous project address", site_alignment_locked: true,
+          detected_objects: [{ id: "old-detection", label: "Old Detection", type: "building", x: 100, y: 100, w: 100, d: 80, placed: true }] } },
+      } }],
+      ["legacy-blank", { project_id: "legacy-blank", name: "Legacy Blank", updated_at: 2,
+        project_input: { manual_fields: { lot: { x: 0, y: 0, w: 600, h: 500 } } } }],
+    ]);
+    await mockShell(page, store);
+    await openApp(page);
+    await openProjects(page);
+    await page.getByRole("button", { name: "Open project Context Source" }).click();
+    await expect(page.getByTestId("site-status")).toContainText("Site Locked");
+    await openSetup(page);
+    await expect(page.getByLabel("Type project address")).toHaveValue("Previous project address");
+    await openProjects(page);
+    await page.getByRole("button", { name: "Open project Legacy Blank" }).click();
+    await openSetup(page);
+    await expect(page.getByLabel("Type project address")).toHaveValue("");
+    await expect(page.getByTestId("site-status")).not.toContainText("Site Locked");
+    await openWorkspaceMode(page, /^Draw$/);
+    await expect(page.getByTestId("object-manager-panel")).not.toContainText("Old Detection");
+  });
+
+  test("an old missing-project response cannot clear a newer restored project", async ({ page }) => {
+    const store = new Map<string, SavedProject>(["Older Pending", "Newer Restored"].map((name, index) => [String(index), {
+      project_id: String(index), name, updated_at: index,
+      project_input: { manual_fields: { lot: { x: 0, y: 0, w: 600, h: 500 } } },
+    }]));
+    await mockShell(page, store);
+    let release!: () => void;
+    let started = false;
+    let returned = false;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    await page.route("**/api/projects/0", async route => {
+      started = true;
+      await gate;
+      await route.fulfill({ status: 404, json: { detail: "Project not found" } });
+      returned = true;
+    });
+    await openApp(page);
+    await openProjects(page);
+    await page.getByRole("button", { name: "Open project Older Pending" }).click();
+    await expect.poll(() => started).toBe(true);
+    await page.getByRole("button", { name: "Open project Newer Restored" }).click();
+    await expect(page.getByTestId("projects-drawer")).toContainText('Restored "Newer Restored".');
+    release();
+    await expect.poll(() => returned).toBe(true);
+    await page.waitForTimeout(250);
+    await expect(page.getByTestId("projects-drawer")).toContainText('Restored "Newer Restored".');
   });
 
   for (const outcome of ["late-queue", "failed-system"] as const) {

@@ -46,13 +46,12 @@ export function useDashboardPlacementTransactions({
 
   const commit = useCallback((placements: BuildingPlacement[], undo: DraftUndoAction,
     change: Omit<RecentChange, "id" | "createdAt" | "undo">) => {
-    placementsRef.current = placements;
     setPlacements(placements);
     clearPreview();
     markStale(["roads", "parking", "grading", "drainage", "utilities"]);
     recordUndo(undo);
     recordChange({ ...change, undo });
-  }, [placementsRef, setPlacements, clearPreview, markStale, recordUndo, recordChange]);
+  }, [setPlacements, clearPreview, markStale, recordUndo, recordChange]);
 
   const handleAcceptDependencyProposal = useCallback(() => {
     if (!proposal) return;

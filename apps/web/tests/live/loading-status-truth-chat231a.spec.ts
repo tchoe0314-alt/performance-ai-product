@@ -72,6 +72,9 @@ async function mockSignedInProjectShell(page: Page) {
   await page.route("**/api/jobs**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, jobs: [] }) });
   });
+  await page.route("**/api/projects-deleted", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, projects: [] }) });
+  });
   await page.route("**/api/projects", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({
@@ -270,7 +273,7 @@ test.describe("Chat 231A loading states and status truth", () => {
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: /Delete project Playwright Project/i }).click();
     await expect(page.getByTestId("project-status-summary")).toContainText(/working|ready/i, { timeout: 5_000 });
-    await expect(page.getByTestId("project-status-summary")).toContainText(/Project deleted|Deleting project/i, { timeout: 10_000 });
+    await expect(page.getByTestId("project-status-summary")).toContainText(/Project moved to Recently Deleted/i, { timeout: 10_000 });
 
     await openDemoWorkspace(page, "debugPreview=1&aiRealismProvider=mock");
     await runCommand(page, "create AI visualization");

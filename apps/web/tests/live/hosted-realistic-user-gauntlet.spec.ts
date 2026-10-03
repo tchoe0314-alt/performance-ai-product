@@ -53,7 +53,9 @@ async function clickLikeHuman(page: Page, locator: ReturnType<Page["locator"]>, 
   const box = await target.boundingBox();
   expect(box, `${label} should have a clickable box`).not.toBeNull();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2, { steps: 8 });
-  await page.mouse.click(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  // Suggestions can move controls while the pointer travels. Recheck the
+  // target's current actionability rather than clicking an obsolete box.
+  await target.click();
 }
 
 async function openPanel(page: Page, name: RegExp | string, expected: RegExp | string) {

@@ -169,7 +169,16 @@ export function DisclosurePanel({
       className={`civora-disclosure-panel overflow-clip rounded-[8px] border border-slate-200/90 bg-white ${className}`}
       data-testid={testId}
     >
-      <summary className="flex min-h-12 cursor-pointer items-center gap-2.5 px-3 py-2.5">
+      <summary
+        className="flex min-h-12 cursor-pointer items-center gap-2.5 px-3 py-2.5"
+        onClick={(event) => {
+          if (event.target instanceof HTMLElement && event.target.closest("a,button,input,select,textarea")) return;
+          // Native toggle is delayed; publish the click before other renders
+          // can restore the previous controlled `open` value.
+          event.preventDefault();
+          setIsOpen((current) => !current);
+        }}
+      >
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-900">
             {title}

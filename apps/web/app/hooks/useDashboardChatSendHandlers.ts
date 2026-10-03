@@ -10,6 +10,7 @@ import type {
 } from "../types";
 import { buildAssumedSlopeEstimate } from "../utils/workflowConstants";
 import { parsePositiveNumber } from "../utils/formatting";
+import { routeDashboardCommand } from "../utils/dashboardCommandRouter";
 import type { SystemGenerationTarget } from "../utils/workflowConstants";
 
 type PendingClarification = {
@@ -304,45 +305,16 @@ export function useDashboardChatSendHandlers({
       return;
     }
     if (trimmed) {
-      const handledPowerCommand = tryHandlePowerCommand(trimmed);
-      if (handledPowerCommand) {
+      const outcome = routeDashboardCommand(trimmed, {
+        power: tryHandlePowerCommand, shouldOrchestrate: shouldRouteToOrchestrator,
+        object: tryHandleObjectIntent, sheet: tryHandleSheetIntent,
+        info: tryHandleInfoIntent, action: tryHandleActionIntent,
+      });
+      if (outcome !== "orchestrate") {
         clearStaleClarificationStatus();
         setPrompt("");
-        if (handledPowerCommand !== "panel") {
-          keepChatVisible();
-        }
+        if (outcome !== "panel") keepChatVisible();
         return;
-      }
-      const routeToOrchestrator = shouldRouteToOrchestrator(trimmed);
-      if (!routeToOrchestrator) {
-        const handled = tryHandleObjectIntent(trimmed);
-        if (handled) {
-          clearStaleClarificationStatus();
-          setPrompt("");
-          keepChatVisible();
-          return;
-        }
-        const handledSheet = tryHandleSheetIntent(trimmed);
-        if (handledSheet) {
-          clearStaleClarificationStatus();
-          setPrompt("");
-          keepChatVisible();
-          return;
-        }
-        const handledInfo = tryHandleInfoIntent(trimmed);
-        if (handledInfo) {
-          clearStaleClarificationStatus();
-          setPrompt("");
-          keepChatVisible();
-          return;
-        }
-        const handledAction = tryHandleActionIntent(trimmed);
-        if (handledAction) {
-          clearStaleClarificationStatus();
-          setPrompt("");
-          keepChatVisible();
-          return;
-        }
       }
     }
     void runOrchestrator("run");
