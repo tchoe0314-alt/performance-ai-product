@@ -50,8 +50,11 @@ jobs:
           test "$(docker image inspect --format '{{.Config.User}}' civora-container-proof)" = '10001:10001'
           # Disposable CI volume only. Neither image may start against a mount
           # unavailable to UID 10001, or silently change its ownership.
-          docker run --rm --user 0:0 --volume civora-proof-data:/data --entrypoint sh civora-container-proof -c 'chown 0:0 /data && chmod 700 /data'
+          # Keep the volume nonempty so Docker copy-up cannot reinitialize its
+          # metadata from the image's /data directory on the next attachment.
+          docker run --rm --user 0:0 --volume civora-proof-data:/data --entrypoint sh civora-container-proof -c 'touch /data/permission-fixture && chown 0:0 /data && chmod 700 /data'
           docker run --rm --user 0:0 --volume civora-proof-data:/data --entrypoint sh civora-container-proof -c 'stat -c "%u %g %a" /data' > container-evidence/storage-mode.txt
+          test "$(cat container-evidence/storage-mode.txt)" = '0 0 700'
           if timeout 30s docker run --name civora-blocked-proof --volume civora-proof-data:/data civora-container-proof > container-evidence/blocked-storage.txt 2>&1; then
             echo 'Backend unexpectedly started with inaccessible storage.' >&2
             exit 1
