@@ -81,7 +81,7 @@ test.describe("hosted/public workspace smoke", () => {
     await expect(page.getByTestId("active-draw-hud")).toContainText(/Line/i);
 
     await page.getByTestId("canvas-quick-cancel").click();
-    await openPanel(page, "Generate", /Generate project systems|Generate/i);
+    await openPanel(page, "Generate", /Generate systems|Generate/i);
     await expect(page.getByTestId("generate-main-action")).toBeVisible();
     await expect(page.getByTestId("generate-system-details")).toContainText(/Advanced/i);
 

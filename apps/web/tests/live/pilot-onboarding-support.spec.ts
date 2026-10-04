@@ -4,8 +4,9 @@ test("pilot onboarding and support surfaces render", async ({ page, baseURL }) =
   test.skip(!baseURL, "PLAYWRIGHT_BASE_URL is required.");
 
   await page.goto(baseURL!, { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("private-pilot planning and review workspace")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Pilot limits" })).toBeVisible();
+  await expect(page.getByText("Plan civil site concepts and prepare review packages.")).toBeVisible();
+  await expect(page.getByText(/beta/i)).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Limitations" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Responsibility" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Support" })).toBeVisible();
 
@@ -28,6 +29,6 @@ test("pilot onboarding and support surfaces render", async ({ page, baseURL }) =
   await expect(rightPanel.getByRole("link", { name: /support@civora.ai/i })).toBeVisible();
 
   await page.getByTestId("primary-workflow-sidebar").getByRole("button", { name: /^Deliver\b/i }).click();
-  await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/Make a review package/i);
+  await expect(page.getByTestId("deliver-review-package-flow")).toContainText(/Create package/i);
   await expect(page.getByTestId("deliver-review-package-flow").getByText("Review-only and engineer-review-required.")).toHaveCount(0);
 });

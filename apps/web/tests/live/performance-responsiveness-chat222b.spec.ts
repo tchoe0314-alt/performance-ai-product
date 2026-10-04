@@ -160,7 +160,7 @@ test.describe("Chat 222B performance and responsiveness", () => {
     await measureVisible(
       page,
       "panel open generate",
-      () => openWorkspacePanel(page, "Generate", /Generate project systems/i),
+      () => openWorkspacePanel(page, "Generate", /Generate systems/i),
       page.getByTestId("generate-main-action"),
     );
     await measureVisible(

@@ -145,7 +145,7 @@ test.describe("button functionality audit", () => {
     const panels: Array<[RegExp | string, RegExp | string]> = [
       [/^Setup$/, /Setup|Address \/ Location|Site Boundary/],
       [/^Draw$/, /Draw & Objects|Tools/],
-      ["Generate", /^Generate|Generate project systems/],
+      ["Generate", /^Generate|Generate systems/],
       [/^Deliver$/, /Deliver|Plan Sheets|Files/],
     ];
 

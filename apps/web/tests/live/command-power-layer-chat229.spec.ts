@@ -86,7 +86,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("civora-command-input")).not.toBeFocused();
     await page.keyboard.press("G");
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate systems/i);
 
     await page.locator("body").click({ position: { x: 20, y: 20 } });
     await page.keyboard.press("?");
@@ -396,7 +396,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Review|Issue|blocker/i);
 
     await runCommand(page, "generate");
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate systems/i);
 
     await runCommand(page, "make review package");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Review package|Plan Sheets|Deliver/i);
@@ -414,7 +414,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await openDemoWorkspace(page);
 
     await page.keyboard.press("G");
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate systems/i);
     await page.keyboard.press("D");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/i);
     await page.keyboard.press("P");
@@ -454,7 +454,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await page.locator("body").click({ position: { x: 20, y: 20 } });
     await page.keyboard.press("G");
     const generatePanel = page.getByTestId("workspace-right-panel");
-    await expect(generatePanel).toContainText(/Generate project systems/i);
+    await expect(generatePanel).toContainText(/Generate systems/i);
     await expect(generatePanel).not.toContainText(/Command refused|Construction authorization refused/i);
   });
 });

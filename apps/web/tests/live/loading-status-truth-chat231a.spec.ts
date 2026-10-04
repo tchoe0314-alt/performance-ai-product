@@ -178,7 +178,7 @@ test.describe("Chat 231A loading states and status truth", () => {
 
     await page.keyboard.press("G");
     await expect(page.getByTestId("project-status-summary")).toContainText(/Ready/i);
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate systems/i);
 
     await page.keyboard.press("D");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/i);
@@ -217,7 +217,7 @@ test.describe("Chat 231A loading states and status truth", () => {
   test("generate and deliver loading states resolve to review or blocker summaries", async ({ page }) => {
     await openDemoWorkspace(page);
 
-    await openPanel(page, "Generate", /Generate project systems/i);
+    await openPanel(page, "Generate", /Generate systems/i);
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("project-status-summary")).toContainText(/working|needs review/i, { timeout: 5_000 });
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input/i, { timeout: 10_000 });

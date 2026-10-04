@@ -89,7 +89,7 @@ test.describe("hosted authenticated smoke", () => {
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/i);
 
     await page.getByRole("button", { name: "Generate" }).click();
-    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate project systems/i);
+    await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate systems/i);
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input/i, { timeout: 10_000 });
 

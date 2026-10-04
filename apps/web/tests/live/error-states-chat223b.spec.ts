@@ -350,7 +350,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
   test("Generate partial runs say started with skipped systems", async ({ page }) => {
     await openDemoWorkspace(page, "debugPreview=1&seedDemo=1");
     page.on("dialog", async (dialog) => dialog.accept());
-    await openWorkspacePanel(page, "Generate", /Generate project systems/i);
+    await openWorkspacePanel(page, "Generate", /Generate systems/i);
     const systemDetails = page.getByTestId("generate-system-details");
     if (!(await systemDetails.evaluate((element) => element.hasAttribute("open")))) {
       await systemDetails.locator("summary").click();

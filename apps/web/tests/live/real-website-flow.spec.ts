@@ -117,7 +117,7 @@ test.describe("real website workflow clarity", () => {
     await page.getByRole("button", { name: /^Draw$/ }).click();
     await (await revealCadTool(page, "command")).click();
     await expect((await openCadPrecisionTools(page)).getByLabel("Draft command input")).toHaveValue(/LINE/);
-    const generateOpenMs = await timedOpen(page, "Generate", /Generate project systems|Generate/);
+    const generateOpenMs = await timedOpen(page, "Generate", /Generate systems|Generate/);
     const deliverOpenMs = await timedOpen(page, /^Deliver$/, /Deliver|Plan Sheets|Files/);
 
     expect(objectOpenMs).toBeLessThan(1_500);

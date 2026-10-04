@@ -206,7 +206,7 @@ async function exercisePreview(page: Page) {
 }
 
 async function generateDeliverAndChat(page: Page, scenario: Scenario) {
-  await openPanel(page, /^Generate$/, /Generate project systems|Generate/i);
+  await openPanel(page, /^Generate$/, /Generate systems|Generate/i);
   await clickLikeHuman(page, page.getByTestId("generate-main-action"), "Generate");
   await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input|blocked|review/i, { timeout: 60_000 });
 

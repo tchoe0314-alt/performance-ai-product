@@ -44,7 +44,7 @@ test("signed-in local website exports and downloads preliminary PDF and DXF with
     ["Review PDF", "review-pdf", "pdf"], ["Export DXF", "dxf", "dxf"],
   ]) {
     await page.getByRole("button", { name: "Deliver", exact: true }).first().click();
-    await expect(page.getByTestId("deliver-export-source-disclosure")).toContainText("not newer unsaved canvas edits");
+    await expect(page.getByTestId("deliver-export-source-disclosure")).toContainText("not unsaved edits");
     const queued = page.waitForResponse(response => response.url().endsWith(`/api/jobs/export/${endpoint}`) && response.request().method() === "POST");
     await page.getByRole("button", { name: button, exact: true }).first().click();
     const response = await queued;
@@ -63,7 +63,7 @@ test("signed-in local website exports and downloads preliminary PDF and DXF with
     const url = path.startsWith("http") ? path : `${api}${path}`;
     expect((await request.get(url)).status()).toBe(401);
     expect([403, 404]).toContain((await request.get(url, { headers: { Authorization: `Bearer ${stranger.token}` } })).status());
-    await page.getByRole("button", { name: "Export progress and downloads", exact: true }).click();
+    await page.getByRole("button", { name: "Downloads", exact: true }).click();
     const row = page.getByTestId("async-jobs-panel").locator("div.flex.items-center.justify-between").filter({ hasText: artifact!.filename });
     const downloadEvent = page.waitForEvent("download");
     const workspaceUrl = page.url();
@@ -94,7 +94,7 @@ test("signed-in local website exports and downloads preliminary PDF and DXF with
     }
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
     await page.getByRole("button", { name: "Deliver", exact: true }).first().click();
-    await page.getByRole("button", { name: "Export progress and downloads", exact: true }).click();
+    await page.getByRole("button", { name: "Downloads", exact: true }).click();
     await expect(page.getByTestId("async-jobs-panel")).toContainText(artifact!.filename);
   }
 });

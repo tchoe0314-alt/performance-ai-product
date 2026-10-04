@@ -10,7 +10,6 @@ import {
   CardContent,
   CardHeader,
   Field,
-  Pill,
   SectionTitle,
   SmallButton,
   TextInput,
@@ -67,7 +66,6 @@ export default function AuthScreen({
               markClassName="h-14 w-14"
               wordmarkClassName="text-2xl font-semibold tracking-[-0.035em] text-slate-950"
             />
-            <Pill>Beta Control Room</Pill>
             <h1 className="max-w-2xl text-5xl font-semibold tracking-tight text-slate-950">
               Civora AI — Civil Site Planning Review
             </h1>
@@ -81,21 +79,17 @@ export default function AuthScreen({
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
               <div className="space-y-2 text-sm leading-6 text-slate-600">
                 <p>
-                  Civora is a private-pilot planning and review workspace for
-                  civil site concepts, assumptions, needs, and review-package
-                  materials.
+                  Plan civil site concepts and prepare review packages.
                 </p>
                 <p className="font-semibold text-slate-800">
-                  Every output requires user or licensed engineer review. Civora
-                  does not replace professional responsibility or construction
-                  release.
+                  Outputs require review. Not for construction.
                 </p>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <a
                     href="/pilot#limitations"
                     className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:bg-slate-50"
                   >
-                    Pilot limits
+                    Limitations
                   </a>
                   <a
                     href="/pilot#responsibility"
@@ -151,8 +145,8 @@ export default function AuthScreen({
             <CardHeader>
               <SectionTitle
                 icon={Sparkles}
-                title={authMode === "register" ? "Request Pilot Access" : "Sign In"}
-                desc="Auth is now user-scoped so projects and jobs are private per beta tester."
+                title={authMode === "register" ? "Request Access" : "Sign In"}
+                desc="Access your projects."
               />
             </CardHeader>
             <CardContent>
@@ -190,8 +184,7 @@ export default function AuthScreen({
               <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
                 {authStatus ? (
                   <span>
-                    Pilot access is invite-only. Use <strong>Sign In</strong> if you
-                    already have approved access, or request pilot access.
+                    Access is invite-only. Sign in or request access.
                   </span>
                 ) : (
                   <span>Account status will appear here once the Civora AI backend responds.</span>
@@ -259,7 +252,7 @@ export default function AuthScreen({
                   {authLoading
                     ? "Working..."
                     : authMode === "register"
-                      ? "Request Pilot Access"
+                      ? "Request Access"
                       : "Sign In"}
                 </SmallButton>
                 <SmallButton

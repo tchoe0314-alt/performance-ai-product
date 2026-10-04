@@ -210,7 +210,7 @@ test("hosted human chaos pass clicks visible controls and builds a small site", 
   await shot(page, testInfo, "06-preview-toggles");
 
   await timed("generate and deliver visible flow", async () => {
-    await openPanel(page, /^Generate$/, /Generate project systems/i);
+    await openPanel(page, /^Generate$/, /Generate systems/i);
     await humanClick(page.getByTestId("generate-main-action"), "Generate");
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|blocked|Needs review/i, { timeout: 15_000 });
     await openPanel(page, /^Deliver$/, /Review package|Make Review Package/i);

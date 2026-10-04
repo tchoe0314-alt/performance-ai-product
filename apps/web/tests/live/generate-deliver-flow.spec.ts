@@ -43,7 +43,7 @@ test.describe("Generate and Deliver product flow", () => {
   test("Generate uses Auto Site Context notes and Deliver makes a review-only package", async ({ page }) => {
     await openDemoWorkspace(page);
 
-    await openWorkspacePanel(page, "Generate", /Generate project systems/i);
+    await openWorkspacePanel(page, "Generate", /Generate systems/i);
     await expect(page.getByTestId("generate-auto-site-context")).toContainText(/review-required source candidate/i);
     await expect(page.getByTestId("generate-auto-site-context")).toContainText(/Sources still needed/i);
     await page.getByTestId("generate-main-action").click();
@@ -57,7 +57,7 @@ test.describe("Generate and Deliver product flow", () => {
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/drainage/i);
 
     await openWorkspacePanel(page, /^Deliver$/, /Review package/i);
-    await expect(page.getByTestId("deliver-export-source-disclosure")).toContainText(/not newer unsaved canvas edits/i);
+    await expect(page.getByTestId("deliver-export-source-disclosure")).toContainText(/not unsaved edits/i);
     await expect(page.getByTestId("deliver-export-source-disclosure")).toContainText(/Not for construction/i);
     await page.getByRole("button", { name: /Make Review Package/i }).click();
     await expect(page.getByTestId("deliver-review-package-summary")).toContainText(/Package made|Needs input/i);

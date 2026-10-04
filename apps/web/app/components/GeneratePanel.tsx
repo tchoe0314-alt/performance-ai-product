@@ -166,8 +166,8 @@ export function GeneratePanel({
       <PanelCard>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-950">Generate project systems</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">Civora uses the current site, drawn objects, and accepted context.</p>
+            <p className="text-sm font-semibold text-slate-950">Generate systems</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Uses your site, objects, and accepted context.</p>
           </div>
           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
             missingSite
@@ -297,7 +297,7 @@ export function GeneratePanel({
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Issue Fixes</p>
-              <p className="mt-1 text-sm font-semibold text-slate-950">Apply one focused drainage fix, then Civora reruns the review draft.</p>
+              <p className="mt-1 text-sm font-semibold text-slate-950">Fix drainage and rerun review.</p>
             </div>
             <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
               Review
