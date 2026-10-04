@@ -140,7 +140,7 @@ export default function PinnedCommandBar({
           onKeyDown={onPromptKeyDown}
           placeholder="Ask Civora to change the site plan…"
           rows={1}
-          className="max-h-24 min-h-10 flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-[15px] font-medium leading-5 text-slate-950 outline-none placeholder:text-slate-400"
+          className="max-h-24 min-h-[60px] min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2.5 text-[15px] font-medium leading-5 text-slate-950 outline-none placeholder:text-slate-400 sm:min-h-10"
         />
         <button
           type="button"

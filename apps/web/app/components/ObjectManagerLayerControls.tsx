@@ -56,7 +56,7 @@ export function ObjectManagerLayerControls({
                   {layer.count} object{layer.count === 1 ? "" : "s"} · {layer.hiddenCount} hidden · {layer.lockedCount} locked
                 </p>
               </div>
-              <div className="mt-2 grid grid-cols-4 gap-1.5">
+            <div className="mt-2 grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() => onSelectLayer(layer.type)}

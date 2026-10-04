@@ -283,7 +283,7 @@ export function DeliverPanel({
 
       <PanelCard testId="deliver-export-actions">
         <p className="text-sm font-semibold text-slate-900">Exports</p>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={onPlanSheetExportPdf}
