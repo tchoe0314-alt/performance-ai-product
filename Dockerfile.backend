@@ -19,4 +19,4 @@ RUN groupadd --gid 10001 civora \
 
 USER 10001:10001
 
-CMD ["python", "-m", "uvicorn", "backend.api.app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["sh", "scripts/start_backend_api.sh"]

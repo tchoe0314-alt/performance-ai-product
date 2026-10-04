@@ -8,15 +8,17 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 START_SCRIPT = ROOT / "scripts" / "start_backend_service.sh"
+API_SCRIPT = ROOT / "scripts" / "start_backend_api.sh"
 
 
 @pytest.mark.parametrize("blocked_variable", ["PERFORMANCE_AI_STORAGE_DIR", "MPLCONFIGDIR"])
-def test_startup_rejects_runtime_path_that_is_a_file(tmp_path: Path, blocked_variable: str) -> None:
+@pytest.mark.parametrize("start_script", [START_SCRIPT, API_SCRIPT])
+def test_startup_rejects_runtime_path_that_is_a_file(tmp_path: Path, blocked_variable: str, start_script: Path) -> None:
     blocked = tmp_path / "existing-file"
     blocked.write_text("preserve this content", encoding="utf-8")
     env = {**os.environ, "PERFORMANCE_AI_STORAGE_DIR": str(tmp_path / "data"),
            "MPLCONFIGDIR": str(tmp_path / "mpl"), blocked_variable: str(blocked)}
-    result = subprocess.run(["sh", str(START_SCRIPT)], cwd=ROOT, env=env, capture_output=True, text=True)
+    result = subprocess.run(["sh", str(start_script)], cwd=ROOT, env=env, capture_output=True, text=True)
     assert result.returncode == 1
     assert "Civora startup blocked" in result.stderr
     assert "10001" in result.stderr
@@ -25,21 +27,22 @@ def test_startup_rejects_runtime_path_that_is_a_file(tmp_path: Path, blocked_var
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="Root bypasses normal directory permissions")
 @pytest.mark.parametrize("blocked_variable", ["PERFORMANCE_AI_STORAGE_DIR", "MPLCONFIGDIR"])
-def test_startup_rejects_read_only_runtime_directory(tmp_path: Path, blocked_variable: str) -> None:
+@pytest.mark.parametrize("start_script", [START_SCRIPT, API_SCRIPT])
+def test_startup_rejects_read_only_runtime_directory(tmp_path: Path, blocked_variable: str, start_script: Path) -> None:
     blocked = tmp_path / "read-only"
     blocked.mkdir()
     blocked.chmod(0o500)
     try:
         env = {**os.environ, "PERFORMANCE_AI_STORAGE_DIR": str(tmp_path / "data"),
                "MPLCONFIGDIR": str(tmp_path / "mpl"), blocked_variable: str(blocked)}
-        result = subprocess.run(["sh", str(START_SCRIPT)], cwd=ROOT, env=env, capture_output=True, text=True)
+        result = subprocess.run(["sh", str(start_script)], cwd=ROOT, env=env, capture_output=True, text=True)
         assert result.returncode == 1
         assert "Civora startup blocked" in result.stderr
     finally:
         blocked.chmod(0o700)
 
 
-def _run_startup(tmp_path: Path, *, role: str, extra_env: dict[str, str] | None = None) -> str:
+def _run_startup(tmp_path: Path, *, role: str, extra_env: dict[str, str] | None = None, start_script: Path = START_SCRIPT) -> str:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     recorder = tmp_path / "recorded.txt"
@@ -60,8 +63,21 @@ def _run_startup(tmp_path: Path, *, role: str, extra_env: dict[str, str] | None 
         "PORT": "8123",
         **(extra_env or {}),
     }
-    subprocess.run(["sh", str(START_SCRIPT)], cwd=ROOT, env=env, check=True)
+    subprocess.run(["sh", str(start_script)], cwd=ROOT, env=env, check=True)
     return recorder.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("port", ["8080", "8123"])
+def test_alternate_api_checks_storage_and_preserves_uvicorn(tmp_path: Path, port: str) -> None:
+    output = _run_startup(tmp_path, role="worker", start_script=API_SCRIPT, extra_env={"PORT": "" if port == "8080" else port})
+    assert output == f"python\n-m\nuvicorn\nbackend.api.app:app\n--host\n0.0.0.0\n--port\n{port}\n"
+    assert (tmp_path / "data").is_dir()
+    assert (tmp_path / "mpl").is_dir()
+
+
+def test_both_container_entrypoints_use_guarded_startup() -> None:
+    assert 'CMD ["sh", "scripts/start_backend_service.sh"]' in (ROOT / "Dockerfile").read_text()
+    assert 'CMD ["sh", "scripts/start_backend_api.sh"]' in (ROOT / "Dockerfile.backend").read_text()
 
 
 def test_combined_service_keeps_one_stable_worker_process(tmp_path: Path) -> None:
