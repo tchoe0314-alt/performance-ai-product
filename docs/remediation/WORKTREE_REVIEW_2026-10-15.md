@@ -30,7 +30,12 @@ this is not a complete secret/security audit. Five evidence manifests and27
 referenced artifacts matched their stored hashes and sizes. Their manifest
 anchor files also matched. Local hashes are not independent attestation.
 
-`git diff --check` passed. The fake-email unittest module passed3/3 checks.
+The tracked repair diff passed `git diff --check`. Once historical documents
+were staged, the cached check reported pre-existing trailing whitespace and
+extra EOF blank lines in the eight preserved plans. Those bytes were retained
+deliberately because recorded evidence fingerprints those documents; this is
+a documented formatting exception, not a clean cached whitespace result.
+The fake-email unittest module passed3/3 checks.
 No application startup, production data access, deployment, paid service,
 dependency installation or real email was involved in this review.
 
