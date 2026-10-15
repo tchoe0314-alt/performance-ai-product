@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode, urlsplit
 
 import requests
+from backend.services.outbound_http import safe_get
 
 from backend.planning.vision_detection_learning import (
     DETECTION_VERSION,
@@ -577,14 +578,17 @@ def _call_civora_learned_detector(
 
 def _fetch_image(*, image_url: str, session: Any) -> tuple[bytes, str]:
     _validate_image_url(image_url)
+    maximum_bytes = max(1024, int(float(os.getenv("CIVORA_GATEWAY_MAX_IMAGE_BYTES") or 15 * 1024 * 1024)))
     try:
-        response = session.get(image_url, timeout=60, stream=True)
-    except TypeError:
-        response = session.get(image_url, timeout=60)
+        response = safe_get(image_url, timeout=20, response_kind="binary", max_bytes=maximum_bytes,
+            destination_policy=_validate_image_url, session=None if session is requests else session)
+    except ValueError as exc:
+        if "too large" in str(exc):
+            raise ValueError("Source image exceeds the configured imagery gateway size limit.") from exc
+        raise
     response.raise_for_status()
     final_url = str(getattr(response, "url", "") or image_url)
     _validate_image_url(final_url)
-    maximum_bytes = max(1024, int(float(os.getenv("CIVORA_GATEWAY_MAX_IMAGE_BYTES") or 15 * 1024 * 1024)))
     content_length = str(getattr(response, "headers", {}).get("content-length", "")).strip()
     if content_length:
         try:

@@ -118,7 +118,7 @@ class SafeResponse:
         return json.loads(self.content)
 
 
-def safe_get(url, *, params=None, timeout=10, session=None, resolver=None, response_kind="json"):
+def safe_get(url, *, params=None, timeout=10, session=None, resolver=None, response_kind="json", max_bytes=MAX_BYTES, destination_policy=None):
     """Return a small requests-compatible response; each HTTPS connect pins IP.
 
     `session` is solely a fake-transport seam for offline tests. It must not be
@@ -126,6 +126,8 @@ def safe_get(url, *, params=None, timeout=10, session=None, resolver=None, respo
     """
     if response_kind not in ("json", "text", "binary"):
         raise ValueError("Unsupported response kind.")
+    if type(max_bytes) is not int or not 1 <= max_bytes <= 15 * 1024 * 1024:
+        raise ValueError("Invalid upstream byte budget.")
     if session is not None and (getattr(session,"__name__","")=="requests" or type(session).__module__.startswith("requests")):
         raise UnsafeDestination("Real requests transports are not permitted; use the pinned transport.")
     if type(timeout) not in (int,float) or not math.isfinite(timeout) or timeout <= 0:
@@ -146,6 +148,8 @@ def safe_get(url, *, params=None, timeout=10, session=None, resolver=None, respo
         if remaining <= 0:
             raise TimeoutError("Upstream request deadline exceeded.")
         parsed,host,addresses=validate_destination(url,resolver=effective_resolver,dns_timeout=remaining)
+        if destination_policy is not None:
+            destination_policy(url)
         if session is not None:
             kwargs={"params":params,"timeout":min(timeout,20),"allow_redirects":False,"stream":True}
             signature=inspect.signature(session.get)
@@ -154,11 +158,21 @@ def safe_get(url, *, params=None, timeout=10, session=None, resolver=None, respo
             response=session.get(fake_url,**kwargs)
             response.raise_for_status()
             # A fake JSON response is bounded too; no external session is used.
-            payload = (bytes(response.content) if response_kind == "binary" else
+            if response_kind == "binary" and hasattr(response, "iter_content"):
+                blocks = []
+                size = 0
+                for block in response.iter_content(chunk_size=65536):
+                    size += len(block)
+                    if size > max_bytes:
+                        raise ValueError("Upstream response is too large.")
+                    blocks.append(block)
+                payload = b"".join(blocks)
+            else:
+                payload = (bytes(response.content) if response_kind == "binary" else
                        str(response.text).encode("utf-8") if response_kind == "text" else
                        json.dumps(response.json(),allow_nan=False).encode())
-            if len(payload)>MAX_BYTES:raise ValueError("Upstream response is too large.")
-            headers = dict(getattr(response, "headers", {}) or {}) if response_kind == "text" else {}
+            if len(payload)>max_bytes:raise ValueError("Upstream response is too large.")
+            headers = dict(getattr(response, "headers", {}) or {}) if response_kind in ("text", "binary") else {}
             if response_kind == "text":
                 headers["content-type"] = str(headers.get("content-type") or headers.get("Content-Type") or "text/plain").split(";")[0] + "; charset=utf-8"
             return SafeResponse(200,payload,headers,url)
@@ -181,17 +195,17 @@ def safe_get(url, *, params=None, timeout=10, session=None, resolver=None, respo
             if response.getheader("Content-Encoding", "identity").lower() not in ("identity",""):
                 raise ValueError("Compressed upstream responses are not supported by the bounded GIS client.")
             length=response.getheader("Content-Length")
-            if length is not None and int(length)>MAX_BYTES:
+            if length is not None and int(length)>max_bytes:
                 raise ValueError("Upstream response is too large.")
             chunks=[];total=0
             while True:
                 remaining=deadline-time.monotonic()
                 if remaining<=0:raise TimeoutError("Upstream response deadline exceeded.")
                 if connection.sock is not None:connection.sock.settimeout(remaining)
-                block=response.read1(min(65536,MAX_BYTES+1-total))
+                block=response.read1(min(65536,max_bytes+1-total))
                 if not block:break
                 total+=len(block)
-                if total>MAX_BYTES:raise ValueError("Upstream response is too large.")
+                if total>max_bytes:raise ValueError("Upstream response is too large.")
                 chunks.append(block)
             content=b"".join(chunks)
             return SafeResponse(response.status,content,{key.lower(): value for key, value in response.getheaders()},url)
