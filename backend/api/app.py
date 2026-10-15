@@ -2685,10 +2685,17 @@ def list_deleted_projects(current_user: Dict[str, Any] = Depends(get_current_use
 def save_project(payload: SaveProjectPayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     if payload.project_id and not payload.expected_revision:
         raise HTTPException(status_code=409, detail="A current project revision is required. Save a copy or reopen the original before saving.")
+    payload_data = _model_to_dict(payload)
+    if payload.project_id:
+        # Browser autosaves may echo an old result. Results are published by
+        # execution/review workflows, never by a design-save side channel.
+        # Dropping the echoed field selects the locked shell-save boundary,
+        # which preserves the current server calculation without a read/write race.
+        payload_data.pop("latest_result", None)
     return application_save_project_record(
         project_store=PROJECT_STORE,
         user_id=current_user["user_id"],
-        payload_data=_model_to_dict(payload),
+        payload_data=payload_data,
         export_session_state=_maybe_export_session,
         build_run_summary=_build_run_summary,
     )
