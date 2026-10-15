@@ -74,6 +74,7 @@ type GeneratePanelProps = {
   onStatusMessageChange: (message: string) => void;
   onGenerateFlowSummaryChange: (summary: GenerateFlowSummary) => void;
   onGenerateSystem: (target: GenerateSystemTarget) => void;
+  onCompareLayouts?: () => void;
   onContinueActiveJob: () => void;
   drainageIssueApplyLabel: (issue: Issue) => string | null;
   canApplyDrainageIssue: (issue: Issue) => boolean;
@@ -104,6 +105,7 @@ export function GeneratePanel({
   onStatusMessageChange,
   onGenerateFlowSummaryChange,
   onGenerateSystem,
+  onCompareLayouts,
   onContinueActiveJob,
   drainageIssueApplyLabel,
   canApplyDrainageIssue,
@@ -225,6 +227,7 @@ export function GeneratePanel({
                 ? "Generate needs site boundary"
                 : "Generate"}
         </button>
+        {onCompareLayouts && <button type="button" data-testid="generate-layout-options" disabled={actionBusy || missingSite} onClick={onCompareLayouts} title="Preview up to five geometry options. The current plan stays unchanged until Apply." className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold disabled:opacity-50">Compare layouts</button>}
         {isAwaitingApproval ? (
           <div
             className="mt-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-900"

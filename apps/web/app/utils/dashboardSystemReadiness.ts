@@ -14,6 +14,7 @@ export type DashboardSystemBlockerTarget =
   | "sanitary"
   | "water"
   | "utilities"
+  | "parking"
   | "roadway";
 
 type ConfirmedObjectCounts = {
@@ -78,7 +79,7 @@ export function getDashboardSystemBlockers(
   if ((target === "drainage" || target === "storm") && !context.buildingPlacements.some((item) => item.type === "outfall" && item.placed)) {
     blockers.push(context.buildingPlacements.some((item) => item.type === "outfall") ? "outfall exists but is not placed" : "missing outfall");
   }
-  if (target === "roadway" && context.confirmedObjectCounts.buildings === 0 && context.confirmedObjectCounts.access === 0) {
+  if ((target === "roadway" || target === "parking") && context.confirmedObjectCounts.buildings === 0 && context.confirmedObjectCounts.access === 0) {
     blockers.push("Add at least one building, entrance, driveway, road, or parking object.");
   }
   if ((target === "sanitary" || target === "water" || target === "utilities") && !context.utilities) {
@@ -104,6 +105,7 @@ export function buildDashboardSystemReadinessRows({
   blockerContext: DashboardSystemBlockerContext;
 }): DashboardSystemReadinessRow[] {
   return [
+    { key: "parking", label: "Parking", panel: "roadway", runTarget: "parking", status: systemStatuses.parking, blockers: getDashboardSystemBlockers("parking", blockerContext) },
     { key: "grading", label: "Grading", panel: "grading", runTarget: "grading", status: systemStatuses.grading, blockers: getDashboardSystemBlockers("grading", blockerContext) },
     { key: "drainage", label: "Drainage", panel: "drainage", runTarget: "drainage", status: systemStatuses.drainage, blockers: getDashboardSystemBlockers("drainage", blockerContext) },
     { key: "storm", label: "Storm", panel: "drainage", runTarget: "drainage", status: systemStatuses.drainage, blockers: getDashboardSystemBlockers("storm", blockerContext) },

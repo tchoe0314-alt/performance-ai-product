@@ -11,6 +11,8 @@ import {
 } from "./dashboardObjectManagerTrace";
 import type { ObjectManagerBulkActions } from "./dashboardObjectManagerBulkActions";
 import { getObjectEditBlocker } from "./objectGeometry";
+import { groupDescendantIds } from "./objectGroups";
+import {canonicalControlState} from "./canonicalEditCommands";
 
 type TransformEditableAction = "transform" | "resize";
 export type ObjectManagerSingleTransform = "rotate" | "flip_horizontal" | "flip_vertical";
@@ -65,6 +67,10 @@ function applyTransformUpdate({
   chatSuffix: string;
   actions: ObjectManagerBulkActions;
 }) {
+  const memberIds = new Set(updateEntries.flatMap(({item}) => item.type === "group" ? groupDescendantIds(item.id, buildingPlacements) : []));
+  if (buildingPlacements.some(item => memberIds.has(item.id) && ["fixed", "existing", "reference"].includes(canonicalControlState(item)))) {
+    actions.reportObjectActionBlocker("Unlock protected members before transforming a group."); return;
+  }
   const { undo, afterById } = createTraceAwareBulkUpdate({
     entries: updateEntries,
     label: undoLabel,

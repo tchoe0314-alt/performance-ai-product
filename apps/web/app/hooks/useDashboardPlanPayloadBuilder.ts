@@ -10,6 +10,7 @@ import type {
   ProjectRecord,
 } from "../types";
 import { buildDashboardManualFields } from "../utils/dashboardManualFields";
+import { preserveExplicitBriefProgram } from "../utils/briefProgramPreservation";
 import {
   REACTIVE_EDIT_POLICY_PREFERENCE,
   REACTIVE_SYSTEM_STAGE_MAP,
@@ -151,7 +152,7 @@ export function useDashboardPlanPayloadBuilder({
         site_object_id: buildingPlacements.find((item) => item.type === "site")?.id ?? null,
         assisted_enabled: assistedEnabled,
       },
-      manual_fields: buildManualFields({
+      manual_fields: preserveExplicitBriefProgram(buildManualFields({
         nextSiteName,
         nextFileName,
         nextUnits,
@@ -173,7 +174,7 @@ export function useDashboardPlanPayloadBuilder({
         nextDrainage,
         nextUtilities,
         placementsOverride,
-      }),
+      }), currentProject?.project_input),
       allow_ai_fill_for_blanks: assistedEnabled,
     };
   }, [
@@ -184,7 +185,7 @@ export function useDashboardPlanPayloadBuilder({
     buildingPlacements,
     buildingWidth,
     chatMessagesRef,
-    currentProject?.project_input?.meta?.site_inputs,
+    currentProject?.project_input,
     drainage,
     fileName,
     grading,

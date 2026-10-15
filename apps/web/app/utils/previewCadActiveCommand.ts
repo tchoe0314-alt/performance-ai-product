@@ -92,7 +92,8 @@ export function handlePreviewCadToolRequest({
   runCadCommand,
   pushCadCommandFeedback,
 }: HandlePreviewCadToolRequestContext) {
-  onSetPreviewMode("2d");
+  // Navigation restores a quiet selection state, not a request to leave 3D.
+  if (!(cadToolRequest.tool === "select" && cadToolRequest.silent)) onSetPreviewMode("2d");
   onSetPreviewInteraction("edit");
 
   const clearDraftDrawState = () => {

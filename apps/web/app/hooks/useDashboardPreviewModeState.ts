@@ -2,21 +2,42 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import type { ProjectStatusSummary } from "../utils/workspaceShell";
+import { environmentStorageKey, parseEnvironment, type EnvironmentScope } from "../utils/workspaceEnvironment";
 
 export type DashboardPreviewMode = "2d" | "3d";
 export type DashboardPreviewQuality = "standard" | "high";
 
 type UseDashboardPreviewModeStateOptions = {
   updateProjectStatus: (summary: Omit<ProjectStatusSummary, "updatedAt">) => void;
+  environmentScope?: EnvironmentScope;
 };
 
 export function useDashboardPreviewModeState({
   updateProjectStatus,
+  environmentScope,
 }: UseDashboardPreviewModeStateOptions) {
   const [previewMode, setPreviewMode] = useState<DashboardPreviewMode>("2d");
   const [previewQuality, setPreviewQuality] = useState<DashboardPreviewQuality>("standard");
   const previewModeProbeRef = useRef<{ value: DashboardPreviewMode; startedAt: number } | null>(null);
   const previewQualityProbeRef = useRef<{ value: DashboardPreviewQuality; startedAt: number } | null>(null);
+  const previousEnvironmentScope = useRef<EnvironmentScope | null>(null);
+  const account = environmentScope?.account ?? "", project = environmentScope?.project ?? "", generation = environmentScope?.generation ?? 0;
+  useEffect(() => {
+    if (!account) return;
+    const scope = {account, project, generation}, old = previousEnvironmentScope.current;
+    previousEnvironmentScope.current = scope;
+    let raw: string | null = null;
+    try {raw = sessionStorage.getItem(environmentStorageKey(scope));} catch { /* Optional tab memory. */ }
+    // A first save or branch acknowledgement inherits the live view. A true
+    // project open increments generation and restores that project's choice.
+    if (!raw && old?.account === account && old.project !== project && project && old.generation === generation) return;
+    const view = parseEnvironment(raw);
+    // Parent-owned view hydration cannot be overwritten by an old canvas
+    // instance's queued restoration when project loading remounts the canvas.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPreviewMode(view.mode);
+    setPreviewQuality(view.quality);
+  }, [account, project, generation]);
 
   const handleSetPreviewMode = useCallback(
     (value: DashboardPreviewMode) => {

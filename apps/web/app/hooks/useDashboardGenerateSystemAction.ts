@@ -1,4 +1,5 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useLayoutEffect, useRef, type Dispatch, type SetStateAction } from "react";
+import { flushSync } from "react-dom";
 
 import type {
   BuildingPlacement,
@@ -62,7 +63,7 @@ type UseDashboardGenerateSystemActionInput = {
   minSlopePct: string;
   pendingPlacementLabels: string[];
   pendingPlacementObjects: BuildingPlacement[];
-  persistFlowMetadata: (updates: Partial<{ generate_flow_summary_v1: GenerateFlowSummary }>) => Promise<void>;
+  persistFlowMetadata: (updates: Partial<{ generate_flow_summary_v1: GenerateFlowSummary }>) => Promise<boolean | void>;
   projectId: string;
   reactiveChangedSystems: EngineeringSystemKey[];
   reactiveValidation: ReactiveValidationState;
@@ -99,12 +100,10 @@ export function useDashboardGenerateSystemAction({
   handleOpenSidePanel,
   hasAssumedTerrainSlope,
   hasSiteBoundary,
-  minSlopePct,
   pendingPlacementLabels,
   pendingPlacementObjects,
   persistFlowMetadata,
   projectId,
-  reactiveChangedSystems,
   reactiveValidation,
   recordRecentChange,
   resolveLotBounds,
@@ -118,6 +117,10 @@ export function useDashboardGenerateSystemAction({
   useSurveyForGrading,
   withReactiveRerunContext,
 }: UseDashboardGenerateSystemActionInput) {
+  const payloadBuilderRef = useRef(buildPayloadFromOverrides);
+  useLayoutEffect(() => {
+    payloadBuilderRef.current = buildPayloadFromOverrides;
+  }, [buildPayloadFromOverrides]);
   return useCallback(
     async (
       target: SystemGenerationTarget,
@@ -181,7 +184,7 @@ export function useDashboardGenerateSystemAction({
           ran: summary.ran.length,
           skipped: summary.skipped.length,
         });
-        void persistFlowMetadata({ generate_flow_summary_v1: summary });
+        return persistFlowMetadata({ generate_flow_summary_v1: summary });
       };
       if (hardPreflightBlockers.length) {
         const firstHardBlocker = hardPreflightBlockers[0];
@@ -250,9 +253,14 @@ export function useDashboardGenerateSystemAction({
           return;
         }
       }
-      const conceptCount = createGenerateConceptObjects(target, reviewNotes);
-      const requestPayload = buildPayloadFromOverrides({}, undefined, projectId || null);
-      const omitField = { source: "omit", value: null } as const;
+      // Publish Generate's own geometry before capturing a calculation snapshot.
+      // Otherwise React's batched commit looks like a later user edit to the
+      // freshness guard and archives an otherwise current result.
+      let conceptCount = 0;
+      flushSync(() => {
+        conceptCount = createGenerateConceptObjects(target, reviewNotes);
+      });
+      const requestPayload = payloadBuilderRef.current({}, undefined, projectId || null);
       const nextManualFields = {
         ...(requestPayload.manual_fields ?? {}),
       } as Record<string, unknown>;
@@ -264,33 +272,16 @@ export function useDashboardGenerateSystemAction({
         (targetUsesTerrain && !hasSurvey && !hasMapTerrain && !surveySlopePercent
           ? buildAssumedSlopeEstimate(parsePositiveNumber(assumedTerrainSlopePct) ?? 8)
           : null);
-      if (slopeEstimateOverride?.slope_percent) {
-        nextManualFields.grading = {
-          ...((typeof nextManualFields.grading === "object" && nextManualFields.grading !== null
-            ? nextManualFields.grading
-            : {}) as Record<string, unknown>),
-          min_slope_pct:
-            parsePositiveNumber(minSlopePct) ?? slopeEstimateOverride.slope_percent,
-          assumed_terrain_source: true,
-        };
-        nextManualFields.terrain =
-          slopeEstimateOverride.direction && slopeEstimateOverride.slope_percent
-            ? `First-pass assumed ${slopeEstimateOverride.slope_percent.toFixed(2)}% slope toward ${slopeEstimateOverride.direction}`
-            : "First-pass assumed terrain slope";
-      }
+      const terrainAssumption = requestPayload.allow_ai_fill_for_blanks === true && slopeEstimateOverride
+        ? { version: 1, slope_percent: slopeEstimateOverride.slope_percent, direction: slopeEstimateOverride.direction || "unspecified" }
+        : undefined;
 
-      if (target === "roads" || target === "parking") {
-        nextManualFields.grading = omitField;
-        nextManualFields.drainage = omitField;
-        nextManualFields.utility_network = omitField;
-      } else if (target === "grading") {
-        nextManualFields.drainage = omitField;
-        nextManualFields.utility_network = omitField;
-      } else if (target === "drainage") {
-        nextManualFields.utility_network = omitField;
-      } else if (target === "utilities") {
-        nextManualFields.drainage = omitField;
-      }
+      // Run scope is not a change to the user's canonical engineering inputs.
+      const omittedFields = target === "roads" || target === "parking"
+        ? ["grading", "drainage", "utility_network"]
+        : target === "grading" ? ["drainage", "utility_network"]
+        : target === "drainage" ? ["utility_network"]
+        : target === "utilities" ? ["drainage"] : [];
 
       const systemLabel = target === "full" ? "full site systems" : target;
       const queueLongRun = target === "full";
@@ -321,6 +312,8 @@ export function useDashboardGenerateSystemAction({
           meta: {
             ...(requestPayload.meta ?? {}),
             requested_system: target,
+            calculation_omit_fields_v1: omittedFields,
+            ...(terrainAssumption ? { calculation_terrain_assumption_v1: terrainAssumption } : {}),
             auto_site_context_review_summary: autoSiteContextFlowSummary,
             user_layout_context_summary: userLayoutContextSummary,
             generate_notes: reviewNotes,
@@ -415,7 +408,19 @@ export function useDashboardGenerateSystemAction({
         safety_wording:
           "Generate creates review-required drafts for qualified review.",
       };
-      recordGenerateSummary(runSummary);
+      let checkpointSave: Promise<boolean | void> | undefined;
+      flushSync(() => { checkpointSave = recordGenerateSummary(runSummary); });
+      if (await checkpointSave === false) {
+        updateProjectStatus({ state: "blocked", area: "generate", title: "Calculation needs saved inputs",
+          detail: "The calculation checkpoint could not be saved. No calculation was started.", nextAction: "Save this layout successfully, then run again." });
+        return;
+      }
+      // The review summary is stored in site inputs. Seal that same published
+      // metadata into this request without weakening later-edit protection.
+      systemRequestPayload.meta = {
+        ...systemRequestPayload.meta,
+        site_inputs: payloadBuilderRef.current({}, undefined, projectId || null).meta?.site_inputs,
+      };
       updateProjectStatus({
         state: "working",
         area: "generate",
@@ -447,9 +452,6 @@ export function useDashboardGenerateSystemAction({
       setSystemStatuses((prev) => {
         const next = { ...prev };
         next[target] = "fresh";
-        reactiveChangedSystems.forEach((system) => {
-          next[system] = "fresh";
-        });
         return next;
       });
       updateProjectStatus({
@@ -465,7 +467,6 @@ export function useDashboardGenerateSystemAction({
       askClarification,
       assumedTerrainSlopePct,
       autoSiteContextFlowSummary,
-      buildPayloadFromOverrides,
       createGenerateConceptObjects,
       currentGenerateLayoutContext,
       effectiveDemoWorkspaceEnabled,
@@ -475,12 +476,10 @@ export function useDashboardGenerateSystemAction({
       handleOpenSidePanel,
       hasAssumedTerrainSlope,
       hasSiteBoundary,
-      minSlopePct,
       pendingPlacementLabels,
       pendingPlacementObjects,
       persistFlowMetadata,
       projectId,
-      reactiveChangedSystems,
       reactiveValidation,
       recordRecentChange,
       resolveLotBounds,

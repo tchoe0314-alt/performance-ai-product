@@ -19,7 +19,7 @@ export type CanonicalEditResult = {
   blockedReason: string | null;
 };
 
-const GEOMETRY_FIELDS: Array<keyof BuildingPlacement> = ["x", "y", "w", "d", "h", "rotation", "geometry"];
+const GEOMETRY_FIELDS: Array<keyof BuildingPlacement> = ["x", "y", "w", "d", "h", "rotation", "geometry", "geometryType", "type"];
 
 export function canonicalControlState(object: BuildingPlacement): CanonicalControlState {
   const declared = String(object.meta?.canonical_control_state ?? "").trim().toLowerCase();

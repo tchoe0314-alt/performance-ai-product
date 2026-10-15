@@ -18,9 +18,11 @@
 
 # next.js
 /.next/
+/.next-*/
 /.next-concept-check/
 /.next-concept-production/
 /.next-phase0-*/
+/.next-pilot-*/
 /out/
 
 # production
@@ -48,5 +50,8 @@ yarn-error.log*
 .next-detailed-object-check/
 .next-phase0-baseline/
 .next-aesthetics-pass/
+/.next-canonical-phase1/
+/.next-phase21/
+/.next-phase22/
 *.tsbuildinfo
 next-env.d.ts

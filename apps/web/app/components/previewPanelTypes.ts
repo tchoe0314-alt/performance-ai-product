@@ -212,6 +212,7 @@ export const AI_REALISM_WATERMARK =
   "AI visualization from current review layout - visual concept only, not engineering evidence.";
 
 export type PreviewPanelProps = {
+  environmentScope?: import("../utils/workspaceEnvironment").EnvironmentScope;
   authToken?: string | null;
   previewReview: PreviewReview | null;
   onRefreshPreview: () => void;

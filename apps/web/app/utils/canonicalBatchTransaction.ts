@@ -1,6 +1,7 @@
 import type { BuildingPlacement } from "../types";
 import { applyCanonicalUpdateCommand, canonicalControlState, createCanonicalUpdateCommand } from "./canonicalEditCommands";
 import { applyBuildingParkingDependency, type CanonicalDependencyProposal } from "./canonicalDependencyPolicies";
+import {planDependencyGraph} from "./dependencyGraph";
 
 export type CanonicalBatchEdit = { objectId: string; updates: Partial<BuildingPlacement> };
 
@@ -44,12 +45,16 @@ export function planCanonicalBatchTransaction(
     replacements.set(current.id, next);
     working = working.map(item => replacements.get(item.id) ?? item);
   }
+  const graph=planDependencyGraph(source,working,projectId,label);
+  if(graph.status==="blocked")return fail(graph.reason);
+  working=graph.placements;asks ||= graph.status==="proposed";
+  reports.push(...(graph.proposal?.reflowReports??[]));
   const before = source.filter((item, index) => JSON.stringify(item) !== JSON.stringify(working[index]));
   const ids = new Set(before.map(item => item.id));
   const after = working.filter(item => ids.has(item.id));
   const proposal: CanonicalDependencyProposal | null = asks ? {
     id: transactionId, transactionId, buildingId: edits[0]?.objectId ?? "", buildingLabel: label,
-    before, after, reflowReports: reports, createdAt, projectId, sourceSnapshot: JSON.stringify(source),
+    before, after, reflowReports: reports, createdAt, projectId, sourceSnapshot: JSON.stringify(source),completePlacements:working,
   } : null;
   return { status: asks ? "proposed" as const : "applied" as const, reason: null, placements: working, proposal, before, after };
 }

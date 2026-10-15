@@ -14,6 +14,8 @@ import {
 } from "./objectGeometry";
 import { SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
 import type { EngineeringSystemKey } from "./workflowConstants";
+import { connectedLineChain } from "./objectLineChain";
+import {canonicalControlState} from "./canonicalEditCommands";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type AppendChatMessage = (role: ChatMessage["role"], content: string, kind?: ChatMessage["kind"]) => void;
@@ -65,15 +67,47 @@ export function runObjectManagerCombineSelected({
     (item) =>
       item.type !== "site" &&
       !item.locked &&
-      !getObjectEditBlocker(item, "type") &&
+      (combineObjectType === "group" || !["fixed", "existing", "reference"].includes(canonicalControlState(item))) &&
+      !(combineObjectType === "group" ? getObjectEditBlocker(item, "style") : getObjectEditBlocker(item, "type")) &&
       !getObjectEditBlocker(item, "style"),
   );
-  if (editable.length < 1) {
+  if (editable.length !== targets.length) {
     actions.reportObjectActionBlocker("Combine needs input: selected objects are locked or source-only.");
     return;
   }
+  if (combineObjectType === "group") {
+    const roots = editable.filter(item => !editable.some(other => other.id === item.meta?.group_id));
+    const parents = new Set(roots.map(item => item.meta?.group_id ?? null));
+    if (parents.size > 1) {
+      actions.reportObjectActionBlocker("Group objects from the same parent first.");
+      return;
+    }
+    const id = `group-${crypto.randomUUID()}`;
+    const minX = Math.min(...roots.map(item => item.x ?? 0)), minY = Math.min(...roots.map(item => item.y ?? 0));
+    const group: BuildingPlacement = { id, label: combineObjectName.trim() || "Group", type: "group", x: minX, y: minY,
+      w: Math.max(1, ...roots.map(item => (item.x ?? 0) + item.w - minX)), d: Math.max(1, ...roots.map(item => (item.y ?? 0) + item.d - minY)),
+      placed: true, locked:false, generated:false, systemDependencies:[], source: "manual_drawn", geometryType: "rect", meta: { group_id: roots[0].meta?.group_id ?? null, organization_only: true } };
+    const undo: DraftUndoAction = { action: "combine", object: group, hiddenSources: roots.map(cloneBuildingPlacementForUndo), label: "group objects" };
+    const ids = new Set(roots.map(item => item.id));
+    actions.setBuildingPlacements([...buildingPlacementsRef.current.map(item => ids.has(item.id) ? {...item, meta: {...item.meta, group_id: id}} : item), group]);
+    actions.recordDraftUndoAction(undo);
+    actions.setSelectedObjectIds([id]); actions.setActivePlacementId(id); actions.setCombineObjectName("");
+    actions.setObjectManagerStatusMessage("Grouped. Members stay separate and visible.");
+    actions.persistDraftRefresh("Saving object group...");
+    return;
+  }
+  const parentGroups = new Set(editable.map(item => item.meta?.group_id ?? null));
+  if (parentGroups.size > 1) { actions.reportObjectActionBlocker("Combine objects from the same group first."); return; }
   let effectiveEditable = editable;
   let semanticArea = selectedObjectsToSemanticArea(effectiveEditable);
+  let openOutline = false;
+  if (editable.every(item => item.geometryType === "polyline")) {
+    const chain = connectedLineChain(editable);
+    if (chain.error) { actions.reportObjectActionBlocker(chain.error); return; }
+    const closed = chain.closed || (chain.points.length >= 3 && window.confirm("Close this outline? Cancel keeps an editable open outline and pauses affected calculations."));
+    openOutline = !closed;
+    semanticArea = { valid: true, geometry: chain.points, blockers: [], sourceMode: "linework" };
+  }
   if (!semanticArea.valid && editable.length > 1) {
     const customLineworkEditable = editable.filter(
       (item) =>
@@ -89,7 +123,7 @@ export function runObjectManagerCombineSelected({
       semanticArea = lineworkArea;
     }
   }
-  if (!semanticArea.valid || semanticArea.geometry.length < 3) {
+  if (!semanticArea.valid || semanticArea.geometry.length < (openOutline ? 2 : 3)) {
     actions.reportObjectActionBlocker(`Combine needs input: ${semanticArea.blockers[0] || "selected geometry does not form one closed area."}`);
     return;
   }
@@ -107,7 +141,7 @@ export function runObjectManagerCombineSelected({
   const nextType = combineObjectType || "custom";
   const existingCount = buildingPlacements.filter((item) => item.type === nextType).length + 1;
   const nextLabel = combineObjectName.trim() || `${SITE_OBJECT_CATALOG[nextType]?.label ?? "Combined Object"} ${existingCount}`;
-  const nextGeometryType = pointTypes.has(nextType) ? "point" : linearTypes.has(nextType) ? "polyline" : "polygon";
+  const nextGeometryType = pointTypes.has(nextType) ? "point" : openOutline || linearTypes.has(nextType) ? "polyline" : "polygon";
   const nextGeometry = nextGeometryType === "point"
     ? ([[minX + width / 2, minY + depth / 2]] as Array<[number, number]>)
     : validPoints;
@@ -146,6 +180,8 @@ export function runObjectManagerCombineSelected({
       semantic_geometry_state: "engineering_object_geometry",
       semantic_object_model: "cad_engineering_objects_v1",
       semantic_source_mode: semanticArea.sourceMode,
+      outline_incomplete: openOutline,
+      group_id: effectiveEditable[0].meta?.group_id ?? null,
       canonical_object_type: nextType,
       footprint_area_sf: semanticAreaSf,
       combined_from_object_ids: effectiveEditable.map((item) => item.id),
@@ -581,7 +617,10 @@ export function runObjectManagerExplodeCombined({
   actions: ObjectManagerBlockActions;
 }) {
   actions.clearGeneratedPreview();
-  const sourceIds = Array.isArray(item.meta?.combined_from_object_ids)
+  if (item.locked || getObjectEditBlocker(item, item.type === "group" ? "style" : "type")) {
+    actions.reportObjectActionBlocker("Unlock this object before uncombining."); return;
+  }
+  const sourceIds = item.type === "group" ? buildingPlacements.filter(candidate => candidate.meta?.group_id === item.id).map(candidate => candidate.id) : Array.isArray(item.meta?.combined_from_object_ids)
     ? item.meta.combined_from_object_ids.map((id) => String(id)).filter(Boolean)
     : [];
   if (!sourceIds.length) {
@@ -593,9 +632,23 @@ export function runObjectManagerExplodeCombined({
     actions.reportObjectActionBlocker("Explode blocked: the original source pieces are missing from this workspace.");
     return;
   }
-  const afterSources = restoredSources.map((source) => cloneBuildingPlacementWithUpdatesForUndo(source, {
+  let currentSources = restoredSources;
+  if (item.type !== "group" && item.meta?.semantic_source_mode === "linework" && item.geometry && item.geometry.length >= 2) {
+    const points = [...item.geometry];
+    if (item.geometryType === "polygon" && Math.hypot(points[0][0]-points.at(-1)![0],points[0][1]-points.at(-1)![1]) > 1e-7) points.push(points[0]);
+    currentSources = points.slice(1).map((end,index) => {
+      const start=points[index], source=restoredSources[index] ?? restoredSources[0];
+      return {...source,id:restoredSources[index]?.id ?? `line-${crypto.randomUUID()}`,label:restoredSources[index]?.label ?? `${item.label} edge ${index+1}`,
+        type:"custom" as const, geometryType:"polyline" as const, geometry:[start,end], x:Math.min(start[0],end[0]),y:Math.min(start[1],end[1]),
+        w:Math.max(1,Math.abs(start[0]-end[0])),d:Math.max(1,Math.abs(start[1]-end[1]))};
+    });
+  }
+  const afterSources = currentSources.map((source) => cloneBuildingPlacementWithUpdatesForUndo(source, {
     meta: {
       ui_hidden: false,
+      group_id: item.type === "group" ? item.meta?.group_id ?? null : source.meta?.group_id ?? null,
+      combined_into_object_id: undefined,
+      combined_into_label: undefined,
       exploded_from_object_id: item.id,
       exploded_from_label: item.label,
     },
@@ -607,17 +660,9 @@ export function runObjectManagerExplodeCombined({
     afterSources,
     label: "explode combined object",
   };
-  const afterSourceById = new Map(afterSources.map((source) => [source.id, source]));
-  actions.setBuildingPlacements((prev) =>
-    prev
-      .filter((candidate) => candidate.id !== item.id)
-      .map((candidate) =>
-        afterSourceById.has(candidate.id)
-          ? { ...afterSourceById.get(candidate.id)! }
-          : candidate,
-      ),
-  );
-  const restoredIds = restoredSources.map((source) => source.id);
+  const sourceSet = new Set(sourceIds);
+  actions.setBuildingPlacements((prev) => [...prev.filter(candidate => candidate.id !== item.id && !sourceSet.has(candidate.id)), ...afterSources]);
+  const restoredIds = afterSources.map((source) => source.id);
   actions.setSelectedObjectIds(restoredIds);
   actions.setActivePlacementId(restoredIds[0] ?? null);
   actions.markSystemsStale(actions.systemsImpactedByPlacement(item));

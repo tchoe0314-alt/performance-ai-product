@@ -296,6 +296,7 @@ export function useDashboardProjectActions({
     if (typeof window !== "undefined") {
       try {
         window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+        window.sessionStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
         window.localStorage.removeItem(getChatThreadStorageKey("draft"));
       } catch {
         // Ignore local storage failures.
@@ -315,6 +316,7 @@ export function useDashboardProjectActions({
     window.setTimeout(() => {
       try {
         window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+        window.sessionStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
       } catch {
         // Ignore local storage failures.
       }

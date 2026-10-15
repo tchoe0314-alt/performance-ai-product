@@ -73,6 +73,21 @@ export function parsePositiveNumber(
   return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
 }
 
+// A missing requirement is not a requirement of zero. Dimensions continue to
+// use the strictly-positive parser; nonnegative requirements opt in explicitly.
+export function parseNonNegativeNumber(
+  value: string | number | null | undefined,
+): number | null {
+  if (value == null || (typeof value === "string" && !value.trim())) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+}
+
+export function parseNonNegativeInteger(value: string | number | null | undefined, maximum = Number.MAX_SAFE_INTEGER): number | null {
+  const numeric = parseNonNegativeNumber(value);
+  return numeric !== null && Number.isSafeInteger(numeric) && numeric <= maximum ? numeric : null;
+}
+
 export function readMetricValue(value: MetricValue | undefined): number | null {
   if (value == null) return null;
   if (typeof value === "number" && Number.isFinite(value)) return value;

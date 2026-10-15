@@ -36,7 +36,7 @@ export type DashboardPlanSheetActionsConfig = {
   currentProject: ProjectRecord | null;
   downloadBlob: DownloadBlob;
   issues: unknown[];
-  persistFlowMetadata: (metadata: Record<string, unknown>) => Promise<void> | void;
+  persistFlowMetadata: (metadata: Record<string, unknown>) => Promise<unknown> | void;
   planPreviewUrl: string;
   planSheetSet: PlanSheetSet;
   previewBlockedReasons: string[];

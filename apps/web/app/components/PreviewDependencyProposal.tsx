@@ -16,7 +16,7 @@ export function PreviewDependencyProposalGeometry({
 }: ProposalGeometryProps) {
   if (!proposal) return null;
   return (
-    <g data-testid="dependency-proposal-geometry" aria-label="Proposed linked parking positions">
+    <g data-testid="dependency-proposal-geometry" aria-label="Proposed linked object positions">
       {proposal.after.map((item) => {
         if (item.geometryType && item.geometry?.length) {
           const points = item.geometry.map(sitePointToSvgPercent).join(" ");
@@ -64,24 +64,25 @@ export function PreviewDependencyProposalCard({ proposal, onAccept, onAdjust, on
     <section
       data-testid="dependency-proposal-card"
       data-presentation={compactViewport ? "viewport" : "canvas"}
-      className={`${compactViewport
+      className={`civora-dialog ${compactViewport
         ? "fixed left-1/2 top-[calc(env(safe-area-inset-top)+5rem)] z-[850] max-h-[calc(100svh-12rem)] overflow-y-auto"
-        : "absolute left-1/2 top-4 z-[70]"} w-[min(92%,34rem)] -translate-x-1/2 rounded-2xl border border-sky-200 bg-white/95 p-3 shadow-xl backdrop-blur`}
-      aria-label="Linked parking proposal"
+        : "absolute left-1/2 top-20 z-[70]"} w-[min(92%,34rem)] -translate-x-1/2 rounded-2xl border border-sky-200 bg-white p-3 shadow-xl`}
+      role="dialog"
+      aria-label="Linked object proposal"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Civora suggestion · not applied</p>
           <p className="mt-1 text-sm font-semibold text-slate-900">
-            Apply the complete {proposal.after.length}-object change to {proposal.buildingLabel} and its linked objects?
+            Apply this {proposal.after.length}-object change for {proposal.buildingLabel}?
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
-            The dashed blue geometry previews the whole transaction. Nothing has been applied; the working plan is unchanged.
+            Dashed blue is the proposal. Your plan is unchanged.
           </p>
-          <p className={`mt-1 text-[11px] font-semibold ${reviewCount ? "text-amber-700" : "text-emerald-700"}`} data-testid="dependency-proposal-validation">
+          <p className={`mt-1 text-[11px] font-semibold ${reviewCount||!proposal.reflowReports.length ? "text-amber-700" : "text-emerald-700"}`} data-testid="dependency-proposal-validation">
             {reviewCount
               ? `${reviewCount} parking field${reviewCount === 1 ? "" : "s"} still needs boundary or collision review.`
-              : "Site boundary and basic collision checks are clear."}
+              : proposal.reflowReports.length ? "Basic parking checks passed. Engineering review required." : "Draft geometry. Check boundaries and engineering requirements."}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

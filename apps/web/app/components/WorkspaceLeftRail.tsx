@@ -1,24 +1,22 @@
 "use client";
 
-import type { PrimaryWorkflowItem, PrimaryWorkflowKey } from "../utils/dashboardTypes";
-import type { SidePanelKey } from "../utils/workspaceShell";
+import { MapPinned, Box, SlidersHorizontal, CircleAlert, FileText } from "lucide-react";
+import { WORKSPACE_STAGE_KEYS, WORKSPACE_STAGES, type WorkspaceStage } from "../utils/workspaceStages";
 
 type WorkspaceLeftRailProps = {
   visible: boolean;
-  activeWorkflowKey: PrimaryWorkflowKey;
+  activeStage: WorkspaceStage;
   restoreTruthLabel: string;
-  primaryWorkflowItems: PrimaryWorkflowItem[];
-  onOpenPanel: (panel: SidePanelKey) => void;
+  onSelectStage: (stage:WorkspaceStage) => void;
 };
 
-const LEFT_RAIL_WORKFLOWS: PrimaryWorkflowKey[] = ["setup", "draw", "design", "analyze", "deliver"];
+const icons = {brief:MapPinned,explore:Box,analyze:SlidersHorizontal,review:CircleAlert,deliver:FileText};
 
 export function WorkspaceLeftRail({
   visible,
-  activeWorkflowKey,
+  activeStage,
   restoreTruthLabel,
-  primaryWorkflowItems,
-  onOpenPanel,
+  onSelectStage,
 }: WorkspaceLeftRailProps) {
   return (
     <aside
@@ -30,19 +28,19 @@ export function WorkspaceLeftRail({
       <span data-testid="workspace-restore-status" className="sr-only">{restoreTruthLabel}</span>
       <div className="rounded-lg border border-transparent bg-transparent" data-testid="primary-workflow-sidebar">
         <div className="space-y-1">
-          {primaryWorkflowItems
-            .filter((item) => LEFT_RAIL_WORKFLOWS.includes(item.key))
-            .map((item) => {
-              const Icon = item.icon;
-              const isActive = activeWorkflowKey === item.key || (item.key === "draw" && activeWorkflowKey === "objects");
+          {WORKSPACE_STAGE_KEYS.map((stage) => {
+              const item = WORKSPACE_STAGES[stage];
+              const Icon = icons[stage];
+              const isActive = activeStage === stage;
               return (
                 <button
-                  key={item.key}
+                  key={stage}
                   type="button"
-                  aria-label={item.key === "draw" ? "Draw" : item.label}
-                  onClick={() => onOpenPanel(item.panel)}
+                  aria-label={item.label}
+                  data-testid={`workspace-stage-${stage}`}
+                  onClick={() => onSelectStage(stage)}
                   aria-current={isActive ? "page" : undefined}
-                  title={`${item.label}: ${item.metric}`}
+                  title={`Open ${item.label}`}
                   className={`group relative flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-[10px] border px-1 py-2 text-center transition ${
                     isActive
                       ? "border-slate-900 bg-slate-950 text-white shadow-sm"
@@ -52,7 +50,7 @@ export function WorkspaceLeftRail({
                   {isActive ? <span className="absolute -left-1.5 top-3 h-8 w-0.5 rounded-r bg-blue-500" /> : null}
                   <Icon className="h-4 w-4 shrink-0" />
                   <span className="text-[10px] font-semibold tracking-normal">
-                    {item.key === "design" ? "Generate" : item.key === "analyze" ? "Review" : item.label}
+                    {item.label}
                   </span>
                 </button>
               );

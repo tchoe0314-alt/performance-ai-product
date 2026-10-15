@@ -84,6 +84,9 @@ export function isLikelyStaleJob(job: JobSummary | null, nowMs: number): boolean
 
 type ArtifactJobResult = {
   artifact?: {
+    artifact_id?: string;
+    snapshot_status?: string;
+    calculation_reference?: Record<string, unknown>;
     kind?: string;
     filename?: string;
     download_path?: string;

@@ -107,7 +107,7 @@ type UseDashboardPowerCommandHandlerInput = {
   handleAddObject: HandleAddObject;
   handleCreateDenseCommercialConcept: (message: string) => boolean;
   handleGenerateSystem: (target: SystemGenerationTarget) => void | Promise<void>;
-  handleGenerateLayoutAlternatives: (count: number, goalPrompt?: string) => void;
+  handleGenerateLayoutAlternatives: (count: number, goalPrompt?: string) => string | void;
   handleMakeReviewPackage: () => void | Promise<void>;
   handleOpenSidePanel: (panel: SidePanelKey) => void;
   handleSetPreviewMode: (mode: "2d" | "3d") => void;
@@ -486,16 +486,16 @@ export function useDashboardPowerCommandHandler({
     const profileAlternativesRequest = /(?:show|create|generate|give|make)(?: me)?\s+.+\b(?:conservative|aggressive)\s+(?:options?|alternatives?|variations?)/.test(normalized);
     if (alternativesRequest || profileAlternativesRequest || /(?:layout|design)\s+(?:options|alternatives)$/.test(normalized)) {
       const numberWords: Record<string, number> = { two: 2, three: 3, four: 4, five: 5 };
-      const countToken = alternativesRequest?.[1] ?? "3";
+      const countToken = alternativesRequest?.[1] ?? "5";
       const splitProfileCounts = [...normalized.matchAll(/\b(\d+|one|two|three|four|five)\s+(?:conservative|aggressive)\b/g)]
         .map((match) => Number(match[1]) || ({ one: 1, ...numberWords }[match[1]] ?? 0));
       const requestedTotal = splitProfileCounts.length > 1
         ? splitProfileCounts.reduce((sum, value) => sum + value, 0)
-        : Number(countToken) || numberWords[countToken] || 3;
-      const requested = Math.max(2, Math.min(5, requestedTotal));
+        : Number(countToken) || numberWords[countToken] || 5;
+      const requested = Math.max(2, Math.min(10, requestedTotal));
       appendChatMessage("user", message);
-      handleGenerateLayoutAlternatives(requested, message);
-      appendChatMessage("assistant", `Created and ranked ${requested} editable layout alternatives against your stated priorities. Preview the score and reasons on the canvas; the working plan stays unchanged until you apply one.`, "status");
+      const searchMessage = handleGenerateLayoutAlternatives(requested, message);
+      appendChatMessage("assistant", searchMessage || "Layout search requested. Review its result on the canvas; the working plan is unchanged.", "status");
       setCommandBarExpanded(false);
       return true;
     }

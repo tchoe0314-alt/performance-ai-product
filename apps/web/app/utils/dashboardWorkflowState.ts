@@ -64,10 +64,12 @@ export function buildDashboardWorkflowState({
     .map((job) => artifactFromJob(job))
     .filter((artifact): artifact is NonNullable<ReturnType<typeof artifactFromJob>> => Boolean(artifact))
     .map((artifact) => ({
-      artifact_id: artifact.filename || artifact.download_path || "job-artifact",
+      artifact_id: artifact.artifact_id || artifact.filename || artifact.download_path || "job-artifact",
       kind: artifact.kind,
       filename: artifact.filename,
       download_path: artifact.download_path,
+      snapshot_status: artifact.snapshot_status,
+      calculation_reference: artifact.calculation_reference,
     }));
   const artifactHistory = [...fromJobs, ...completedExportArtifacts, ...workflowArtifacts].filter((item, index, all) => {
     const key = `${item.artifact_id || ""}:${item.download_path || ""}:${item.filename || ""}`;

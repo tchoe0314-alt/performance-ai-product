@@ -78,7 +78,7 @@ export function PreviewMobileDrawToolbar({
               }`}
             >
               <Icon className="h-4 w-4" />
-              <span className="truncate">{label}</span>
+              <span className="sr-only">{label}</span>
             </button>
           );
         })}

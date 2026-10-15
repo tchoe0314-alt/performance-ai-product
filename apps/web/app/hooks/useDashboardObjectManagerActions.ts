@@ -559,6 +559,11 @@ export function useDashboardObjectManagerActions({
     });
   }, [buildingPlacements, buildingPlacementsRef, combineObjectName, combineObjectType, objectManagerBlockActions, selectedObjectIds]);
 
+  const handleObjectManagerGroupSelected = useCallback(() => {
+    runObjectManagerCombineSelected({ buildingPlacements, buildingPlacementsRef, selectedObjectIds, combineObjectName,
+      combineObjectType: "group", actions: objectManagerBlockActions });
+  }, [buildingPlacements, buildingPlacementsRef, combineObjectName, objectManagerBlockActions, selectedObjectIds]);
+
   const handleObjectManagerSaveBlock = useCallback(() => {
     runObjectManagerSaveBlock({
       buildingPlacements,
@@ -632,6 +637,7 @@ export function useDashboardObjectManagerActions({
     handleObjectManagerBulkType,
     handleObjectManagerBulkVisibility,
     handleObjectManagerCombineSelected,
+    handleObjectManagerGroupSelected,
     handleObjectManagerCopy,
     handleObjectManagerDelete,
     handleObjectManagerDeleteBlock,

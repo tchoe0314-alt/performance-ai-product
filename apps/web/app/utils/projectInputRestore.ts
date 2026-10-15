@@ -8,9 +8,26 @@ import type {
 import { isCustomGeometryMode, normalizeGeometryPoints } from "./objectGeometry";
 import { requestedProgramToPendingPlacements, SITE_OBJECT_CATALOG } from "./siteObjectCatalog";
 import { regenerateCulDeSac } from "./parametricRoad";
+import { hasCanonicalCanvasSnapshot, resolveCanonicalCanvasInput } from "./canonicalCanvasProject";
+import { parseNonNegativeInteger } from "./formatting";
 
 const numberFrom = (value: unknown) =>
   typeof value === "number" ? value : value !== undefined ? Number(value) : NaN;
+
+function savedParkingCount(rec: Record<string, unknown>): number | undefined {
+  const meta = rec.meta && typeof rec.meta === "object" ? rec.meta as Record<string, unknown> : undefined;
+  const raw = Object.hasOwn(rec, "stall_count") ? rec.stall_count : Object.hasOwn(rec, "stallCount") ? rec.stallCount : meta?.requested_stalls;
+  return typeof raw === "number" || typeof raw === "string" ? parseNonNegativeInteger(raw) ?? undefined : undefined;
+}
+
+/** Alias conversion only: history replay must not invent presentation defaults. */
+export function restoreExactCanvasPlacements(objects: NonNullable<ManualFields["site_objects"]>): BuildingPlacement[] {
+  return objects.map(item => ({
+    ...item, label: item.label ?? item.name ?? "Object", h: item.height_ft,
+    stallCount: item.type === "parking" ? savedParkingCount(item as Record<string, unknown>) : undefined,
+    geometryType: (item as unknown as { geometry_type?: BuildingPlacement["geometryType"] }).geometry_type,
+  })) as BuildingPlacement[];
+}
 
 const sourceBuildingHeight = (value: unknown) => {
   const properties = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -423,6 +440,8 @@ const parseSiteObjectPlacements = (manualFields: ManualFields): BuildingPlacemen
         w,
         d,
         h: typeof rec.height_ft === "number" ? rec.height_ft : undefined,
+        stallCount: rec.type === "parking" ? savedParkingCount(rec) : undefined,
+        use: typeof rec.use === "string" ? rec.use : undefined,
         rotation: typeof rec.rotation === "number" ? rec.rotation : undefined,
         locked: Boolean(rec.locked),
         placed,
@@ -495,6 +514,8 @@ export const buildProjectInputPlacements = ({
   projectInput: ProjectInput;
   siteInputs: SiteInputs;
 }): BuildingPlacement[] => {
+  projectInput = resolveCanonicalCanvasInput(projectInput);
+  const authoritativeCanvas = hasCanonicalCanvasSnapshot(projectInput);
   const manualFields = projectInput.manual_fields ?? {};
   const lot = (manualFields.lot ?? {}) as { w?: number; h?: number };
   const requestedProgram = projectInput.meta?.requested_site_program_v1;
@@ -511,15 +532,15 @@ export const buildProjectInputPlacements = ({
     siteInputs,
     hasRestoredSiteObject,
   });
-  const baseRestoredPlacements = siteObjectPlacements.length
+  const baseRestoredPlacements = authoritativeCanvas || siteObjectPlacements.length
     ? siteObjectPlacements
     : [...restoredSiteBoundary, ...parsedPlacements, ...pondPlacements, ...inletPlacements];
-  const acceptedCandidatePlacements = buildAcceptedCandidatePlacements({ projectInput, siteInputs });
+  const acceptedCandidatePlacements = authoritativeCanvas ? [] : buildAcceptedCandidatePlacements({ projectInput, siteInputs });
   const acceptedCandidateIds = new Set(acceptedCandidatePlacements.map((item) => item.id));
   const restoredWithAccepted = [
     ...baseRestoredPlacements.filter((item) => !acceptedCandidateIds.has(item.id)),
     ...acceptedCandidatePlacements,
   ];
-  const requestedProgramPlacements = requestedProgramToPendingPlacements(requestedProgram, restoredWithAccepted);
+  const requestedProgramPlacements = authoritativeCanvas ? [] : requestedProgramToPendingPlacements(requestedProgram, restoredWithAccepted);
   return [...restoredWithAccepted, ...requestedProgramPlacements];
 };

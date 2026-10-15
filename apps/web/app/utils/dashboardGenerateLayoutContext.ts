@@ -14,6 +14,7 @@ export type GenerateLayoutContext = {
 };
 
 export function systemsImpactedByPlacement(target?: Partial<BuildingPlacement> | null): EngineeringSystemKey[] {
+  if (target?.type === "group" || target?.type === "custom") return [];
   const explicit = Array.isArray(target?.systemDependencies)
     ? target.systemDependencies.filter((item): item is EngineeringSystemKey => item in REACTIVE_SYSTEM_STAGE_MAP)
     : [];

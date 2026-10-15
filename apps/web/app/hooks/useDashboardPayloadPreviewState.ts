@@ -118,8 +118,8 @@ export function useDashboardPayloadPreviewState({
   );
 
   const payloadPreview = useMemo(
-    () =>
-      buildDashboardPayloadPreview({
+    () => {
+      const payload=buildDashboardPayloadPreview({
         projectId,
         assistedEnabled,
         prompt,
@@ -151,7 +151,10 @@ export function useDashboardPayloadPreviewState({
           nextDrainage: drainage,
           nextUtilities: utilities,
         }),
-      }),
+      });
+      payload.meta={...payload.meta,edit_controls_v1:{buildingCount,buildingWidth,buildingDepth,parkingCount}};
+      return payload;
+    },
     [
       assistedEnabled,
       buildManualFields,

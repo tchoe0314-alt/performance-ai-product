@@ -52,6 +52,7 @@ type PanelProbeRef = MutableRefObject<{
 } | null>;
 
 type UseDashboardShellShortcutsOptions = {
+  applyWorkspaceTransaction?: (direction:"undo"|"redo", action:Extract<DraftUndoAction,{action:"workspace_transaction"}>)=>void;
   activePlacementId: string | null;
   activeSidePanel: SidePanelKey | null;
   appendChatMessage: AppendChatMessage;
@@ -111,6 +112,7 @@ type UseDashboardShellShortcutsOptions = {
 };
 
 export function useDashboardShellShortcuts({
+  applyWorkspaceTransaction,
   activePlacementId,
   activeSidePanel,
   appendChatMessage,
@@ -359,7 +361,9 @@ export function useDashboardShellShortcuts({
     markSystemsStale,
     systemsImpactedByPlacement,
     handleRestoreBuilding,
+    applyWorkspaceTransaction,
   }), [
+    applyWorkspaceTransaction,
     appendChatMessage,
     handleRestoreBuilding,
     markSystemsStale,
@@ -398,10 +402,10 @@ export function useDashboardShellShortcuts({
   const handleUndoRecentChange = useCallback((change: RecentChange) => {
     runDashboardUndoRecentChange({
       change,
-      recordDraftRedoAction,
+      recordDraftRedoAction: (action) => { recordDraftRedoAction(action); clearDraftUndoAction(); },
       actions: recoveryActions,
     });
-  }, [recordDraftRedoAction, recoveryActions]);
+  }, [clearDraftUndoAction, recordDraftRedoAction, recoveryActions]);
 
   const handleShortcutSaveProject = useCallback(() => {
     const effectiveProjectId = resolvedProjectIdRef.current || projectId || currentProjectId || null;

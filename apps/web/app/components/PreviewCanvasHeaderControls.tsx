@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import {
   Eye,
   EyeOff,
   Layers3,
+  Map,
   Lock,
   MoreHorizontal,
   MousePointer2,
@@ -28,6 +29,8 @@ import { PreviewQualityToggle } from "./PreviewQualityToggle";
 import { loadPreview3DCanvas } from "./preview3DLoader";
 
 type PreviewCanvasHeaderControlsProps = {
+  environmentLayerControls?: ReactNode;
+  environmentViewControls?: ReactNode;
   previewMode: "2d" | "3d";
   previewQuality: "standard" | "high";
   coordinateMode: CoordinateMode;
@@ -81,6 +84,8 @@ const controlClass = (active: boolean) =>
   }`;
 
 export function PreviewCanvasHeaderControls({
+  environmentLayerControls,
+  environmentViewControls,
   previewMode,
   previewQuality,
   coordinateMode,
@@ -123,6 +128,26 @@ export function PreviewCanvasHeaderControls({
 }: PreviewCanvasHeaderControlsProps) {
   const layerMenuRef = useRef<HTMLDetailsElement>(null);
   const viewMenuRef = useRef<HTMLDetailsElement>(null);
+  const fitHeaderMenus = () => {
+    for (const details of [layerMenuRef.current, viewMenuRef.current]) {
+      if (!details?.open) continue;
+      const menu = details.querySelector<HTMLElement>(".civora-view-menu");
+      if (!menu) continue;
+      const box = menu.getBoundingClientRect();
+      let bottom = window.innerHeight - 8;
+      for (const blocker of document.querySelectorAll<HTMLElement>('.civora-command-dock,[data-testid="left-sidebar"]')) {
+        const rect = blocker.getBoundingClientRect();
+        if (rect.height && rect.top > box.top && rect.left < box.right && rect.right > box.left) bottom = Math.min(bottom, rect.top - 8);
+      }
+      menu.style.maxHeight = `${Math.max(48, bottom - box.top)}px`;
+    }
+  };
+  useEffect(() => {
+    window.addEventListener("resize", fitHeaderMenus);
+    const observer = new ResizeObserver(fitHeaderMenus);
+    document.querySelectorAll('.civora-command-dock,[data-testid="left-sidebar"]').forEach(element => observer.observe(element));
+    return () => { window.removeEventListener("resize", fitHeaderMenus); observer.disconnect(); };
+  }, []);
   const closeHeaderMenus = () => {
     if (layerMenuRef.current) layerMenuRef.current.open = false;
     if (viewMenuRef.current) viewMenuRef.current.open = false;
@@ -190,6 +215,7 @@ export function PreviewCanvasHeaderControls({
       <button
         type="button"
         data-testid="preview-inner-map-toggle"
+        aria-label="Map"
         aria-pressed={mapOverlayEnabled}
         onClick={() => {
           closeHeaderMenus();
@@ -197,9 +223,9 @@ export function PreviewCanvasHeaderControls({
         }}
         disabled={!mapAvailable}
         title={mapAvailable ? "Toggle map context" : "Apply an address to enable map context"}
-        className={`${controlClass(mapOverlayEnabled)} disabled:cursor-not-allowed disabled:opacity-35`}
+        className={`${controlClass(mapOverlayEnabled)} civora-icon-control disabled:cursor-not-allowed disabled:opacity-35`}
       >
-        Map
+        <Map aria-hidden="true" className="h-4 w-4" />
       </button>
 
       <details
@@ -208,15 +234,15 @@ export function PreviewCanvasHeaderControls({
         className="group relative"
         onToggle={(event) => {
           if (event.currentTarget.open && viewMenuRef.current) viewMenuRef.current.open = false;
+          if (event.currentTarget.open) requestAnimationFrame(fitHeaderMenus);
         }}
       >
-        <summary className={`${controlClass(false)} cursor-pointer list-none gap-1.5 marker:hidden`}>
-          <Layers3 className="h-3.5 w-3.5" />
-          Layers
+        <summary aria-label="Layers" title="Layers" className={`${controlClass(false)} civora-icon-control cursor-pointer list-none marker:hidden`}>
+          <Layers3 aria-hidden="true" className="h-4 w-4" />
         </summary>
         <div
           data-testid="preview-semantic-layer-controls"
-          className="absolute right-0 top-[calc(100%+0.45rem)] z-[320] w-[min(19rem,calc(100vw-1.5rem))] rounded-[8px] border border-slate-200 bg-white p-3 text-slate-700 shadow-[0_22px_64px_-32px_rgba(15,23,42,0.55)]"
+          className="civora-view-menu absolute right-0 top-[calc(100%+0.45rem)] z-[320] w-[min(19rem,calc(100vw-1.5rem))] rounded-[8px] border border-slate-200 bg-white p-3 text-slate-700 shadow-[0_22px_64px_-32px_rgba(15,23,42,0.55)]"
         >
           <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
             <div>
@@ -235,6 +261,7 @@ export function PreviewCanvasHeaderControls({
             </button>
           </div>
           <div className="divide-y divide-slate-100">
+            {environmentLayerControls}
             <button
               type="button"
               data-testid="preview-source-layer-existing"
@@ -321,12 +348,14 @@ export function PreviewCanvasHeaderControls({
         className="group relative"
         onToggle={(event) => {
           if (event.currentTarget.open && layerMenuRef.current) layerMenuRef.current.open = false;
+          if (event.currentTarget.open) requestAnimationFrame(fitHeaderMenus);
         }}
       >
         <summary aria-label="Preview view options" title="View options" className={`${controlClass(false)} w-8 cursor-pointer list-none px-0 marker:hidden`}>
           <MoreHorizontal className="h-4 w-4" />
         </summary>
-        <div className="absolute right-0 top-[calc(100%+0.45rem)] z-[320] w-[17rem] rounded-[8px] border border-slate-200 bg-white p-3 shadow-[0_22px_64px_-32px_rgba(15,23,42,0.55)]">
+        <div className="civora-view-menu absolute right-0 top-[calc(100%+0.45rem)] z-[320] w-[17rem] rounded-[8px] border border-slate-200 bg-white p-3 shadow-[0_22px_64px_-32px_rgba(15,23,42,0.55)]">
+          {environmentViewControls}
           <p className="text-xs font-semibold text-slate-950">View</p>
           <div className="mt-2">
             <PreviewQualityToggle

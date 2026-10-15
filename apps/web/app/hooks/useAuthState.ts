@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { apiErrorMessage, classifyApiError, getJson, postJson } from "../../lib/api";
 
 import type { AuthStatus, UserRecord } from "../types";
+import { isTransientLoginError, retryTransientLogin, withLoginDeadline } from "../utils/loginRetry";
 
 import {
   clearStoredToken,
@@ -91,6 +92,7 @@ export default function useAuthState({
     try {
       const data = await getJson<AuthStatus>("/api/auth/status");
       setAuthStatus(data);
+      if (data.public_registration_enabled === false) setAuthMode("login");
       setAuthStatusError("");
     } catch (error) {
       setAuthStatus(null);
@@ -110,6 +112,9 @@ export default function useAuthState({
     setAuthError("");
     setAuthStatusError("");
     try {
+      if (authMode === "register" && authStatus?.public_registration_enabled === false) {
+        throw new Error("Access is invitation-only. Sign in or contact support.");
+      }
       const path =
         authMode === "register" ? "/api/auth/register" : "/api/auth/login";
       const body =
@@ -123,10 +128,10 @@ export default function useAuthState({
               email: authEmail,
               password: authPassword,
             };
-      const data = await postJson<{ token: string; user: UserRecord }>(
-        path,
-        body,
-      );
+      const submit = () => postJson<{ token: string; user: UserRecord }>(path, body);
+      const data = authMode === "login"
+        ? await retryTransientLogin(() => withLoginDeadline(signal => postJson<{ token: string; user: UserRecord }>(path, body, { signal })))
+        : await submit();
       setToken(data.token);
       setStoredToken(data.token);
       setUser(data.user);
@@ -143,7 +148,9 @@ export default function useAuthState({
     } catch (error) {
       const kind = classifyApiError(error);
       setAuthError(
-        kind === "backend_unreachable"
+        authMode === "login" && isTransientLoginError(error)
+          ? "Sign-in is temporarily unavailable. Try again shortly."
+          : kind === "backend_unreachable"
           ? "Backend connection needs attention. Check the backend URL, then try signing in again."
           : kind === "api_blocked"
             ? "Backend access needs attention. Check the app/backend access settings, then retry sign-in."
@@ -152,7 +159,7 @@ export default function useAuthState({
     } finally {
       setAuthLoading(false);
     }
-  }, [authMode, authName, authEmail, authPassword, onStatusMessage]);
+  }, [authMode, authName, authEmail, authPassword, authStatus, onStatusMessage]);
 
   const handleLogout = useCallback(async () => {
     try {

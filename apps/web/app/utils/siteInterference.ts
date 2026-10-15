@@ -1,4 +1,5 @@
 import type { BuildingPlacement } from "../types";
+import {isPhysicalCanvasObject} from "./objectGroups";
 import { checkFootprint, polygonContains, segmentsTouch, type FootprintPoint } from "./culDeSacConcept";
 import { culDeSacFrame } from "./parametricRoad";
 import { objectRule, readCoordinationEnvelope, hasReviewedConnection, SITE_OBJECT_RULEBOOK } from "./siteObjectRulebook";
@@ -90,9 +91,13 @@ export function footprintInside(boundary: FootprintPoint[], footprint: Footprint
 }
 /** Draft coordination rules, not a claim of regulatory or engineering approval. */
 export function assessSiteInterference(objects: BuildingPlacement[]): InterferenceResult[] {
-  // A combined object's hull is an editing wrapper, not another occupied volume.
-  // Keep its underlying sources (including hidden ones) as the physical objects.
-  const candidates = objects.filter(o => o.placed && Number.isFinite(o.x) && Number.isFinite(o.y) && category(o) !== "container" && !(Array.isArray(o.meta?.combined_from_object_ids) && o.meta.combined_from_object_ids.length > 0));
+  // A linework conversion is physical geometry. Program/block bounds are only
+  // editing wrappers: their source objects remain physical, even when hidden.
+  // Hiding an ordinary object never makes an engineering conflict disappear.
+  const candidates = objects.filter(o => {
+    if (!o.placed || !Number.isFinite(o.x) || !Number.isFinite(o.y) || category(o) === "container") return false;
+    return isPhysicalCanvasObject(o,objects);
+  });
   const results: InterferenceResult[] = [];
   const shapes = new Map(candidates.map(o => [o, [...objectFootprints(o), ...reviewedComponentFootprints(o)]]));
   for (const o of candidates) {

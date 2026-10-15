@@ -66,7 +66,7 @@ export function ProjectTeamMemoryPanel({ projectId, projectName, token }: Projec
   const [memory, setMemory] = useState<MemorySurface>({ consent: EMPTY_CONSENT, items: [] });
   const [comment, setComment] = useState("");
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("reviewer");
+  const [inviteRole, setInviteRole] = useState("viewer");
   const [reviewEmail, setReviewEmail] = useState("");
   const [reviewMessage, setReviewMessage] = useState("");
   const [memoryScope, setMemoryScope] = useState<"project" | "personal" | "company">("project");

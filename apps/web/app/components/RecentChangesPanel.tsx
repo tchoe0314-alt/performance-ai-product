@@ -1,3 +1,5 @@
+import {useState} from "react";
+
 type RecentChangeRow = {
   id: string;
   label: string;
@@ -26,6 +28,7 @@ export function RecentChangesPanel({
   onUndoDraft,
   onRedoDraft,
 }: RecentChangesPanelProps) {
+  const [visibleCount,setVisibleCount]=useState(50);
   return (
     <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="recent-changes-section">
       <div className="flex items-center justify-between gap-3">
@@ -66,7 +69,7 @@ export function RecentChangesPanel({
       {open ? (
         <div className="mt-3 space-y-2" data-testid="recent-changes-list">
           {changes.length ? (
-            changes.map((change) => (
+            changes.slice(0,visibleCount).map((change) => (
               <div key={change.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -92,6 +95,7 @@ export function RecentChangesPanel({
               Recent draft UI changes will appear here. Engineering outputs remain review-required.
             </p>
           )}
+          {changes.length>visibleCount?<button type="button" onClick={()=>setVisibleCount(value=>value+50)} className="text-xs font-semibold text-slate-600">Earlier changes</button>:null}
         </div>
       ) : null}
     </div>

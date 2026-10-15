@@ -1,3 +1,5 @@
+import { WorkspaceStateBadge } from "./WorkspaceStateBadge";
+
 export type DashboardHealthItem = {
   key: string;
   label: string;
@@ -37,15 +39,7 @@ export function DashboardStatusPanels({
                 <span className="block text-sm font-semibold text-slate-800">{item.label}</span>
                 <span className="block text-xs text-slate-500">{item.detail}</span>
               </span>
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${
-                  item.state === "complete"
-                    ? "bg-emerald-500"
-                    : item.state === "blocked"
-                      ? "bg-red-500"
-                      : "bg-amber-400"
-                }`}
-              />
+              <WorkspaceStateBadge state={item.state === "blocked" ? "blocked" : "unverified"} label={item.state === "complete" ? "Ready" : item.state === "blocked" ? "Blocked" : "Review"} title="Workflow readiness, not engineering verification." />
             </button>
           ))}
         </div>

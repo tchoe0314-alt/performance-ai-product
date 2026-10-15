@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./design-system.css";
 
 :root {
   --background: #f7f7f7;
@@ -403,12 +404,12 @@ body,
 }
 
 [data-testid="workspace-right-panel"] :where(button, input, select, textarea) {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
 }
 
 [data-testid="workspace-right-panel"] :where(button) {
-  min-height: 2.25rem;
-  letter-spacing: 0.04em;
+  min-height: var(--civora-control-height);
+  letter-spacing: normal;
 }
 
 [data-testid="workspace-right-panel"] :where(button:not(:disabled)) {
@@ -441,12 +442,12 @@ body,
 }
 
 [data-testid="workspace-right-panel"] :where([data-testid="object-manager-row"]) {
-  border-radius: 14px;
+  border-radius: 8px;
   box-shadow: none;
 }
 
 [data-testid="workspace-right-panel"] [data-testid="draw-cad-tools-section"] :where(button[data-testid^="cad-tool-"]) {
-  min-height: 58px;
+  min-height: 36px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.98);
   position: relative;
@@ -474,7 +475,7 @@ body,
 }
 
 [data-testid="workspace-right-panel"] :where([data-testid="object-manager-row"] input, [data-testid="object-manager-row"] select) {
-  min-height: 2.25rem;
+  min-height: var(--civora-control-height);
   background: rgba(255, 255, 255, 0.92);
 }
 

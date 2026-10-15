@@ -86,6 +86,7 @@ const detectedObjectLabels: Record<SiteObjectType, string> = {
   lot_block: "Detected Lot Block",
   bridge: "Detected Bridge",
   custom: "Detected Custom Geometry",
+  group: "Object Group",
 };
 
 export function useDashboardImageDetectionActions({

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 
 import type { BuildingPlacement, PlanRequestPayload, ProjectInput, ProjectRecord, SiteInputs } from "../types";
 import type { GenerateFlowSummary, ReviewPackageFlowSummary } from "../utils/dashboardDataTypes";
@@ -32,7 +32,6 @@ type UseDashboardGenerateFlowCoordinatorInput = {
 
 export function useDashboardGenerateFlowCoordinator({
   buildingPlacements,
-  currentProject,
   panelOpenProbeRef,
   payloadPreview,
   saveProject,
@@ -46,6 +45,8 @@ export function useDashboardGenerateFlowCoordinator({
   setRightRailCollapsed,
   sidePanelCloseTimeoutRef,
 }: UseDashboardGenerateFlowCoordinatorInput) {
+  const liveInputRef = useRef(payloadPreview);
+  useLayoutEffect(() => { liveInputRef.current = payloadPreview; }, [payloadPreview]);
   const persistFlowMetadata = useCallback(
     async (
       updates: Partial<{
@@ -53,7 +54,7 @@ export function useDashboardGenerateFlowCoordinator({
         review_package_flow_summary_v1: ReviewPackageFlowSummary;
       }>,
     ) => {
-      const currentInput = currentProject?.project_input ?? payloadPreview;
+      const currentInput = liveInputRef.current;
       const currentInputMode = currentInput?.input_mode === "assisted" ? "assisted" : "user";
       const nextProjectInput: ProjectInput = {
         ...currentInput,
@@ -77,9 +78,9 @@ export function useDashboardGenerateFlowCoordinator({
             }
           : project,
       );
-      await saveProject({ silent: true, projectInputOverride: nextProjectInput });
+      return Boolean(await saveProject({ silent: true, projectInputOverride: nextProjectInput }));
     },
-    [currentProject, payloadPreview, saveProject, setCurrentProject],
+    [saveProject, setCurrentProject],
   );
 
   const generatePendingPlacementObjects = useMemo(

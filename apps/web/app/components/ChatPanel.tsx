@@ -109,10 +109,8 @@ export default function ChatPanel({
         className="flex w-full min-w-0 items-center justify-between gap-4 border-b border-slate-200 px-4 py-3 text-left"
       >
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Command Center (AI)
-          </p>
-          <p className="mt-1 text-sm text-slate-700">{summaryText}</p>
+          <p className="text-xs font-semibold text-slate-800">Civora</p>
+          <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{summaryText}</p>
         </div>
         <ChevronDown
           className={`h-4 w-4 text-slate-500 transition ${collapsed ? "" : "rotate-180"}`}
@@ -171,7 +169,7 @@ export default function ChatPanel({
                 </p>
                 {message.role === "assistant" ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-slate-400">Was this helpful?</span>
+                    <span className="text-slate-600">Was this helpful?</span>
                     <button
                       type="button"
                       onClick={() => onSetMessageFeedback(message.id, "up")}

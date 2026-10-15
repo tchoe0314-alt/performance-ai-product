@@ -54,6 +54,7 @@ type UseDashboardJobLoaderOptions = {
   activeJobProjectSyncRef: MutableRefObject<string>;
   appendChatMessage: AppendChatMessage;
   applyBackendResult: (data: PlanResponse) => void;
+  isLiveResultCurrent: (data: PlanResponse) => Promise<boolean>;
   applyProjectInput: (projectInput: ProjectInput) => void;
   autosaveSuspendRef: MutableRefObject<boolean>;
   currentProject: ProjectRecord | null;
@@ -94,6 +95,7 @@ export function useDashboardJobLoader({
   activeJobProjectSyncRef,
   appendChatMessage,
   applyBackendResult,
+  isLiveResultCurrent,
   applyProjectInput,
   autosaveSuspendRef,
   currentProject,
@@ -300,8 +302,32 @@ export function useDashboardJobLoader({
           } as ProjectRecord);
         }
       }
+      if (!isArtifactExportJob(job) && job.status === "completed" && job.result?.success === false) {
+        const detail = job.result.message?.trim() || "Calculation did not complete. Review the inputs and try again.";
+        setJobsPanelStatusMessage(detail);
+        setActiveJobId("");
+        updateProjectStatus({ state: "blocked", area: "generate", title: "Calculation needs attention",
+          detail, nextAction: "Review the missing inputs or calculation issues. Previous active results were not replaced." });
+        return;
+      }
+      const calculationSave = job.result?.metadata?.calculation_save_v1 as { disposition?: string } | undefined;
+      const liveResultCurrent = !job.result || isArtifactExportJob(job) || await isLiveResultCurrent(job.result);
+      if (projectLoadRequestRef.current !== workspaceGeneration) return;
+      if (!liveResultCurrent || calculationSave?.disposition === "archived" || job.result_freshness_v1?.status === "stale") {
+        setJobsPanelStatusMessage("Saved in history. Layout changed; recalculate to use new results.");
+        if (job.status === "completed") {
+          setActiveJobId("");
+          updateProjectStatus({
+            state: "needs review", area: "generate", title: "Calculation saved in history",
+            detail: "Layout changed. This calculation was saved without replacing the current layout or results.",
+            nextAction: "Recalculate using the current layout.",
+          });
+        }
+        return;
+      }
       if (
         job.result &&
+        job.result.success !== false &&
         Object.keys(job.result).length &&
         activeTrackedProjectId &&
         ["queued", "running", "awaiting_approval"].includes(String(job.status || "").toLowerCase())
@@ -480,6 +506,7 @@ export function useDashboardJobLoader({
     activeJobProjectSyncRef,
     appendChatMessage,
     applyBackendResult,
+    isLiveResultCurrent,
     applyProjectInput,
     autosaveSuspendRef,
     currentProject,

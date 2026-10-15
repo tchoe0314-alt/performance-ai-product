@@ -104,6 +104,7 @@ export const SITE_OBJECT_CATALOG: Record<
   lot_block: { label: "Lot / Subdivision Block", category: "advanced", defaultW: 160, defaultD: 120 },
   bridge: { label: "Bridge", category: "advanced", defaultW: 80, defaultD: 24 },
   custom: { label: "Custom Geometry", category: "advanced", defaultW: 40, defaultD: 40 },
+  group: { label: "Group", category: "advanced", defaultW: 40, defaultD: 40 },
 };
 
 const REQUESTED_PROGRAM_OBJECT_TYPE_MAP: Record<string, SiteObjectType> = {

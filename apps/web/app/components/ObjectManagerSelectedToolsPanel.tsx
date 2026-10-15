@@ -68,6 +68,7 @@ export function ObjectManagerSelectedToolsPanel({
   onCombineObjectNameChange,
   onCombineObjectTypeChange,
   onCombineSelected,
+  onGroupSelected,
   onDraftBlockNameChange,
   onSaveBlock,
   onRenameBlock,
@@ -123,6 +124,7 @@ export function ObjectManagerSelectedToolsPanel({
   onCombineObjectNameChange: (value: string) => void;
   onCombineObjectTypeChange: (value: SiteObjectType) => void;
   onCombineSelected: () => void;
+  onGroupSelected: () => void;
   onDraftBlockNameChange: (value: string) => void;
   onSaveBlock: () => void;
   onRenameBlock: (blockId: string, value: string) => void;
@@ -202,6 +204,7 @@ export function ObjectManagerSelectedToolsPanel({
         onCombineObjectNameChange={onCombineObjectNameChange}
         onCombineObjectTypeChange={onCombineObjectTypeChange}
         onCombineSelected={onCombineSelected}
+        onGroupSelected={onGroupSelected}
         onDraftBlockNameChange={onDraftBlockNameChange}
         onSaveBlock={onSaveBlock}
         onRenameBlock={onRenameBlock}

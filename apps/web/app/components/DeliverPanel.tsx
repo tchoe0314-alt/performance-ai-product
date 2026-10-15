@@ -60,6 +60,8 @@ type DeliverPanelProps = {
   onMakeReviewPackage: () => void;
   onPlanSheetExportPdf: () => void;
   onExportDxf: () => void;
+  onExportCurrentDrawingDxf?: () => void;
+  onExportCurrentDrawingPdf?: () => void;
   onExportReport: () => void;
   onOpenQuantities: () => void;
   onOpenExportHistory: () => void;
@@ -132,6 +134,8 @@ export function DeliverPanel({
   onMakeReviewPackage,
   onPlanSheetExportPdf,
   onExportDxf,
+  onExportCurrentDrawingDxf,
+  onExportCurrentDrawingPdf,
   onExportReport,
   onOpenQuantities,
   onOpenExportHistory,
@@ -283,6 +287,7 @@ export function DeliverPanel({
 
       <PanelCard testId="deliver-export-actions">
         <p className="text-sm font-semibold text-slate-900">Exports</p>
+        {(onExportCurrentDrawingDxf || onExportCurrentDrawingPdf) && <details className="mt-2 text-xs" data-testid="current-drawing-export"><summary className="cursor-pointer font-medium">Drawing only</summary><p className="mt-2 text-slate-600">Saved footprints and linework. No calculations or parking-stall detailing.</p><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" className="rounded border px-2 py-2" onClick={onExportCurrentDrawingDxf}>Drawing DXF</button><button type="button" className="rounded border px-2 py-2" onClick={onExportCurrentDrawingPdf}>Drawing PDF</button></div></details>}
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -316,13 +321,13 @@ export function DeliverPanel({
             Quantities
           </button>
         </div>
-        <p data-testid="deliver-export-source-disclosure" className="mt-3 text-xs text-slate-600">Exports use the generated/saved snapshot—not unsaved edits. Preliminary; not for construction.</p>
+        <p data-testid="deliver-export-source-disclosure" className="mt-3 text-xs text-slate-600">Calculated exports use generated/saved snapshots, not unsaved edits. Drawing only saves the current canvas first. Preliminary; not for construction.</p>
         <button type="button" onClick={onOpenExportHistory} className="mt-3 rounded-[7px] border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
           Downloads
         </button>
         {exportBlockReason ? (
           <p data-testid="deliver-export-blocker" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-            Export needs input: {exportBlockReason}
+            Calculated export needs input: {exportBlockReason}
           </p>
         ) : null}
         {exportActionMessage ? (

@@ -13,6 +13,7 @@ import {
   Ruler,
   Scissors,
   Shapes,
+  Minus,
   Square,
   Spline,
   Trash2,
@@ -47,7 +48,10 @@ const TOOL_ICONS: Partial<Record<CadToolName, LucideIcon>> = {
   trim: Scissors,
   extend: MoveDiagonal2,
   delete: Trash2,
+  arc: Spline,
 };
+
+const ICON_ONLY_TOOLS = new Set<CadToolName>(["select", "pan", "line", "area", "box", "point", "circle", "text", "dimension", "move", "copy", "rotate", "scale", "trim", "delete"]);
 
 export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelProps) {
   return (
@@ -55,7 +59,7 @@ export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelPro
       <div className="flex items-center gap-2.5 text-left">
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-900">Tools</span>
-          <span className="mt-0.5 block text-xs leading-4 text-slate-500">
+          <span className="sr-only">
             Choose a tool, then use the canvas
           </span>
         </span>
@@ -63,20 +67,23 @@ export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelPro
       <div className="mt-3 space-y-2">
         {groups.map((group, groupIndex) => {
           const toolGrid = (
-            <div className="grid grid-cols-3 gap-1">
+            <div className="civora-tool-grid">
               {group.tools.map((item) => {
-                const Icon = TOOL_ICONS[item.tool] ?? BoxSelect;
+                const Icon = item.tool === "line" ? Minus : TOOL_ICONS[item.tool] ?? BoxSelect;
+                const iconOnly = ICON_ONLY_TOOLS.has(item.tool);
                 return (
                   <button
                     key={`${group.title}-${item.tool}`}
                     type="button"
                     onClick={() => onSelectTool(item.tool, item.label)}
                     data-testid={`cad-tool-${item.tool}`}
-                    title={item.hint}
-                    className="flex min-h-[58px] flex-col items-center justify-center gap-1.5 rounded-[7px] border border-transparent px-1.5 py-2 text-center text-slate-600 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950"
+                    title={`${item.label} · ${item.hint}`}
+                    aria-label={item.label}
+                    data-tool-label={iconOnly ? undefined : "true"}
+                    className="flex items-center justify-center rounded-[6px] border border-transparent text-center text-slate-600 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950"
                   >
-                    <Icon className="h-4 w-4" />
-                    <span className="block text-[11px] font-semibold leading-none text-slate-700">{item.label}</span>
+                    <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+                    <span className={iconOnly ? "sr-only" : "text-[11px] font-semibold"}>{item.label}</span>
                   </button>
                 );
               })}

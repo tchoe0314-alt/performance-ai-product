@@ -25,6 +25,7 @@ type ObjectManagerCombineBlocksPanelProps = {
   onCombineObjectNameChange: (value: string) => void;
   onCombineObjectTypeChange: (type: SiteObjectType) => void;
   onCombineSelected: () => void;
+  onGroupSelected: () => void;
   onDraftBlockNameChange: (value: string) => void;
   onSaveBlock: () => void;
   onRenameBlock: (blockId: string, value: string) => void;
@@ -42,6 +43,7 @@ export function ObjectManagerCombineBlocksPanel({
   onCombineObjectNameChange,
   onCombineObjectTypeChange,
   onCombineSelected,
+  onGroupSelected,
   onDraftBlockNameChange,
   onSaveBlock,
   onRenameBlock,
@@ -80,7 +82,7 @@ export function ObjectManagerCombineBlocksPanel({
               data-testid="object-manager-combine-type"
               className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-sm font-semibold text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
             >
-              {objectTypeOptions.map((option) => (
+              {objectTypeOptions.filter(option=>option.type!=="group").map((option) => (
                 <option key={`combine-${option.type}`} value={option.type}>
                   {option.label}
                 </option>
@@ -94,8 +96,9 @@ export function ObjectManagerCombineBlocksPanel({
           data-testid="object-manager-combine-action"
           className="mt-2 w-full rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800"
         >
-          Combine into Area
+          {combineObjectType === "group" ? "Group selected" : "Combine into object"}
         </button>
+        <button type="button" onClick={onGroupSelected} data-testid="object-manager-group-action" className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold">Group selected (keep separate)</button>
         <p className="mt-2 text-[11px] leading-5 text-slate-500">
           Source pieces are hidden, not deleted. The result keeps trace, name, type, and affected systems for review.
         </p>

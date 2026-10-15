@@ -1,0 +1,183 @@
+/* Compact light workspace. Scoped to workspace surfaces, never the plan's
+   geometry, marketing pages, or trusted status calculations. */
+/* Neutral status chips need AA contrast on their tinted background. */
+.civora-disclosure-panel > summary > .bg-slate-100.text-slate-500 { color: #475569; }
+:root {
+  --civora-space-1: .25rem;
+  --civora-space-2: .5rem;
+  --civora-space-3: .75rem;
+  --civora-space-4: 1rem;
+  --civora-control-height: 2rem;
+  --civora-control-radius: 6px;
+  --civora-focus-ring: #2563eb;
+}
+
+.civora-icon-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--civora-control-height);
+  height: var(--civora-control-height);
+  min-height: var(--civora-control-height);
+  padding: 0;
+  border-radius: var(--civora-control-radius);
+}
+.civora-icon-control > svg { width: 1rem; height: 1rem; flex-shrink: 0; }
+.civora-icon-control:focus-visible,
+.civora-app-bg :where(button, summary, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--civora-focus-ring);
+  outline-offset: 2px;
+}
+.civora-app-bg :where(button, summary) { -webkit-tap-highlight-color: transparent; }
+.civora-app-bg button:disabled { cursor: not-allowed; }
+
+[data-testid="workspace-right-panel"] :where(button, input, select, textarea) {
+  font-size: .75rem;
+  letter-spacing: normal;
+}
+[data-testid="workspace-right-panel"] :where(button) { min-height: var(--civora-control-height); }
+[data-testid="workspace-right-panel"] :where(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]), select, textarea) {
+  min-width: 0;
+  max-width: 100%;
+  min-height: var(--civora-control-height);
+  border-radius: var(--civora-control-radius);
+}
+[data-testid="workspace-right-panel"] :where(label, p, h2, h3, summary) { overflow-wrap: anywhere; }
+[data-testid="workspace-right-panel"] :where(summary) { display: flex; align-items: center; gap: .5rem; }
+[data-testid="workspace-right-panel"] :where(.uppercase) { text-transform: none; letter-spacing: normal; }
+[data-testid="workspace-right-panel"] :where(.p-4) { padding: var(--civora-space-3); }
+[data-testid="workspace-right-panel"] :where(.rounded-xl, .rounded-2xl) { border-radius: 8px; }
+[data-testid="workspace-right-panel"] [data-testid="draw-cad-tools-section"] button[data-testid^="cad-tool-"] {
+  min-height: 36px;
+  height: 36px;
+  border-radius: var(--civora-control-radius);
+}
+.civora-tool-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .25rem; }
+.civora-tool-grid button { min-width: 0; padding: .25rem; }
+.civora-tool-grid button[data-tool-label="true"] { grid-column: span 2; gap: .375rem; }
+.civora-preview-mobile-draw-toolbar button { min-height: 44px; }
+.civora-panel-header { height: 44px; padding-inline: .75rem; }
+.civora-panel-actions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .25rem; }
+.civora-panel-actions button { width: 100%; min-width: 0; }
+.civora-panel-actions button:not(.civora-icon-control) { height: var(--civora-control-height); padding: .25rem; font-size: .6875rem; line-height: 1.25; }
+
+.civora-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  max-width: 100%;
+  padding: .2rem .4rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: .6875rem;
+  line-height: 1.25;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.civora-state-badge svg { width: .75rem; height: .75rem; flex-shrink: 0; }
+.civora-state-badge[data-ui-state="selected"] { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
+.civora-state-badge[data-ui-state="hovered"] { border-style: dotted; }
+.civora-state-badge[data-ui-state="hidden"] { border-style: dashed; }
+.civora-state-badge[data-ui-state="locked"] { border-width: 2px; padding: calc(.2rem - 1px) calc(.4rem - 1px); }
+.civora-state-badge[data-ui-state="fixed"] { border-style: double; border-width: 3px; padding: calc(.2rem - 2px) calc(.4rem - 2px); }
+.civora-state-badge[data-ui-state="following"], .civora-state-badge[data-ui-state="updating"] { color: #1d4ed8; background: #eff6ff; }
+.civora-state-badge[data-ui-state="stale"], .civora-state-badge[data-ui-state="unverified"], .civora-state-badge[data-ui-state="ask"] { color: #92400e; border-color: #fcd34d; background: #fffbeb; }
+.civora-state-badge[data-ui-state="assumed"] { border-style: dashed; color: #6d28d9; background: #f5f3ff; }
+.civora-state-badge[data-ui-state="blocked"], .civora-state-badge[data-ui-state="conflicting"] { color: #b91c1c; border-color: #fca5a5; background: #fef2f2; }
+.civora-state-badge[data-ui-state="conflicting"] { border-style: dashed; }
+.civora-state-badge[data-ui-state="verified"] { color: #166534; border-color: #86efac; background: #f0fdf4; }
+[data-testid="object-manager-row"][data-selected="true"] { border-color: #2563eb; box-shadow: inset 3px 0 #2563eb; }
+[data-testid="object-manager-row"]:hover { border-color: #94a3b8; }
+.civora-state-spinner { animation: civora-state-spin 1s linear infinite; }
+@keyframes civora-state-spin { to { transform: rotate(360deg); } }
+
+/* Tables scroll inside their own panel; chart graphics retain their ratio. */
+[data-testid="workspace-right-panel"] table { width: 100%; border-collapse: collapse; font-size: .75rem; }
+[data-testid="workspace-right-panel"] :where(th, td) { padding: .5rem; text-align: left; overflow-wrap: anywhere; }
+[data-testid="workspace-right-panel"] th { font-weight: 600; letter-spacing: normal; }
+[data-testid="workspace-right-panel"] tr + tr { border-top: 1px solid #e2e8f0; }
+.civora-chart-frame { min-width: 0; overflow: auto; }
+.civora-chart-frame > svg { display: block; width: 100%; height: auto; margin-inline: auto; }
+.civora-empty-state { display: grid; place-items: center; gap: .5rem; padding: 1rem; text-align: center; color: #64748b; font-size: .75rem; }
+.civora-notice { display: flex; align-items: flex-start; gap: .5rem; padding: .5rem .75rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: .75rem; overflow-wrap: anywhere; }
+[data-testid="workspace-right-panel"] p[role="alert"] { border-left: 3px solid #dc2626; padding: .5rem .75rem; background: #fef2f2; color: #991b1b; }
+[data-testid="workspace-right-panel"] p[role="status"] { padding: .5rem .75rem; border-left: 3px solid #94a3b8; background: #f8fafc; }
+.civora-dialog { max-width: calc(100vw - 1.5rem); max-height: calc(100svh - 7rem); overflow-y: auto; overflow-wrap: anywhere; }
+.civora-view-menu { max-height: calc(100svh - 8rem); overflow-y: auto; overscroll-behavior: contain; }
+
+@media (pointer: coarse) {
+  /* Compact appearance is not a reason to make touch targets hard to hit. */
+  :root { --civora-control-height: 2.75rem; }
+  [data-testid="workspace-right-panel"] [data-testid="draw-cad-tools-section"] button[data-testid^="cad-tool-"] { min-height: 44px; height: 44px; }
+  .civora-preview-view-toolbar { max-width: calc(100% - 1rem); }
+  .civora-preview-view-toolbar > div { gap: 0; }
+  .civora-preview-view-toolbar button, .civora-preview-view-toolbar summary { min-height: 44px; min-width: 44px; }
+}
+@media (max-width: 639px) {
+  .civora-preview-view-toolbar { width: calc(100% - 1.5rem); }
+  .civora-preview-view-toolbar > div { justify-content: center; }
+  .civora-preview-view-toolbar details { position: static; }
+  .civora-preview-view-toolbar .civora-view-menu { right: 0; max-width: 100%; max-height: calc(100svh - 9rem); overflow-y: auto; }
+}
+@media (min-width: 640px) and (max-width: 1023px) {
+  .civora-app-bg .civora-workspace-drawer { width: calc(100% - 1.5rem); }
+}
+@media (max-height: 500px) and (max-width: 1023px) {
+  /* Short screens cannot fit an open view menu above the command composer. */
+  .civora-app-bg:has(.civora-preview-view-toolbar details[open]) .civora-command-dock { display: none; }
+  /* In landscape, preserve one usable editing surface instead of stacking a
+     drawer, command composer and navigation into a nearly zero-height panel. */
+  .civora-app-bg:has(.civora-workspace-drawer[data-motion-state="open"]) .civora-command-dock { display: none; }
+  .civora-app-bg .civora-workspace-drawer[data-motion-state="open"] { top: 4rem; bottom: 6rem; max-height: calc(100svh - 10rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .civora-state-spinner { animation: none; }
+  .civora-app-bg *, .civora-app-bg *::before, .civora-app-bg *::after { transition-duration: 0s !important; }
+}
+/* Per-user layout affects presentation only. Focus retains mounted project editors. */
+.civora-layout-controls { position: fixed; left: 64px; top: 60px; z-index: 990; }
+.civora-layout-controls[open] { left: 8px; }
+.civora-layout-controls > div { max-height: calc(100dvh - 110px); overflow-y: auto; }
+.civora-layout-left-panel,.civora-layout-right-panel { position: fixed; top: 52px; bottom: 0; z-index: 690; display: flex; flex-direction: column; min-width: 0; background: white; border: 1px solid #e2e8f0; }
+.civora-layout-left-panel { left: var(--civora-shell-rail-width); width: var(--civora-layout-left-width); }
+.civora-layout-right-panel { right: 0; width: var(--civora-shell-drawer-width); }
+.civora-layout-resizer { position: absolute; right: -3px; top: 40px; bottom: 0; width: 6px; cursor: ew-resize; touch-action: none; z-index: 750; }
+.civora-layout-right-panel .civora-layout-resizer { right: auto; left: -3px; }
+.civora-layout-resizer:focus-visible,.civora-layout-horizontal-resizer:focus-visible { outline: 2px solid #2563eb; background: #dbeafe; }
+.civora-layout-horizontal-resizer { position: absolute; inset: -3px 0 auto; height: 6px; cursor: ns-resize; touch-action: none; }
+.civora-existing-panel-resizer { position: fixed; right: var(--civora-shell-drawer-width); top: 110px; bottom: 0; z-index: 710; width: 6px; }
+.civora-layout-delta { position: fixed; bottom: calc(var(--civora-command-dock-height,10rem) + 1.5rem); left: 4.5rem; right: 1rem; height: var(--civora-layout-delta-height); overflow-y: auto; z-index: 715; background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; }
+[data-layout-focus="true"] :is(.civora-left-mode-rail,.civora-workspace-drawer,.civora-command-dock) { visibility: hidden; pointer-events: none; }
+[data-layout-focus="true"] .civora-layout-controls { left: 8px; }
+[data-layout-focus="true"] .civora-workspace-canvas-frame { inset: 0 !important; }
+@media (min-width:1024px) {
+  .civora-layout-controls { left: 12px; top: auto; bottom: 16px; }
+  .civora-layout-controls > div { position: absolute; bottom: 36px; left: 0; margin-top: 0; }
+  [data-layout-focus="true"] .civora-layout-controls { left: 12px; }
+  [data-layout-left="true"] .civora-workspace-canvas-frame { left: calc(var(--civora-shell-rail-width) + var(--civora-layout-left-width)); }
+  [data-layout-right="true"] .civora-workspace-canvas-frame { right: var(--civora-shell-drawer-width); }
+  [data-layout-right="true"] .civora-workspace-canvas-frame :is(.civora-preview-view-toolbar,.civora-3d-object-strip) { right: .75rem !important; }
+  [data-layout-right="true"] .civora-workspace-canvas-frame .civora-active-draw-hud { left: 50% !important; max-width: calc(100% - 1.5rem) !important; }
+  [data-layout-left="true"] .civora-command-dock { --civora-command-left-inset: calc(var(--civora-shell-rail-width) + var(--civora-layout-left-width)) !important; }
+  [data-layout-right="true"] .civora-command-dock { --civora-command-right-inset: var(--civora-shell-drawer-width) !important; }
+  [data-layout-left="true"] .civora-layout-delta { left: calc(var(--civora-shell-rail-width) + var(--civora-layout-left-width) + .75rem); }
+  [data-layout-right="true"] .civora-layout-delta { right: calc(var(--civora-shell-drawer-width) + .75rem); }
+  [data-layout-focus="true"] .civora-workspace-canvas-frame { left: 0 !important; right: 0 !important; }
+  [data-layout-focus="true"] .civora-workspace-canvas-frame :is(.civora-preview-view-toolbar,.civora-3d-object-strip) { right: .75rem !important; }
+}
+@media (max-width:1023px) {
+  .civora-layout-controls { left: 8px; }
+  .civora-layout-left-panel,.civora-layout-right-panel { top: 100px; bottom: calc(var(--civora-command-dock-height,10rem) + 7rem); left: 8px; right: 8px; width: auto; border-radius: 8px; }
+  [data-layout-left="true"] .civora-command-dock,[data-layout-right="true"] .civora-command-dock { display: none; }
+  .civora-layout-left-panel,.civora-layout-right-panel { bottom: 7rem; }
+  [data-layout-left="true"][data-layout-mobile-panel="brief"] .civora-layout-right-panel { display: none; }
+  [data-layout-right="true"][data-layout-mobile-panel="inspector"] .civora-layout-left-panel { display: none; }
+  .civora-layout-resizer,.civora-existing-panel-resizer { display: none; }
+  .civora-layout-delta { left: 8px; right: 8px; bottom: calc(var(--civora-command-dock-height,10rem) + 7rem); max-height: 20vh; }
+  [data-layout-left="true"] .civora-layout-delta,[data-layout-right="true"] .civora-layout-delta { display: none; }
+  [data-layout-mobile-panel="delta"] :is(.civora-layout-left-panel,.civora-layout-right-panel) { display: none; }
+  [data-layout-mobile-panel="delta"] .civora-layout-delta { display: block; bottom: 7rem; }
+}

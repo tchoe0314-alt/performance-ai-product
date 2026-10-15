@@ -31,6 +31,8 @@ export function usePreviewMapLayerSync({
   resolveVisualKind,
   showSiteBounds,
   surveyPoints,
+  showSurveyPoints = true,
+  displayUnits = "ft",
   useLightHighQuality,
   waterFireFlow,
   siteToLatLng,
@@ -53,6 +55,8 @@ export function usePreviewMapLayerSync({
   resolveVisualKind: (item: BuildingPlacement) => string;
   showSiteBounds?: boolean;
   surveyPoints: PreviewPanelProps["surveyPoints"];
+  showSurveyPoints?: boolean;
+  displayUnits?: "ft" | "m";
   useLightHighQuality: boolean;
   waterFireFlow: WaterFireFlowViewModel;
   siteToLatLng: SiteToLatLng;
@@ -190,6 +194,7 @@ export function usePreviewMapLayerSync({
             properties: {
               id: `survey-${idx}`,
               elevation: typeof pt.z === "number" ? pt.z : null,
+              elevationLabel: typeof pt.z === "number" && Number.isFinite(pt.z) ? `${(pt.z * (displayUnits === "m" ? 0.3048 : 1)).toFixed(2)} ${displayUnits}` : "",
             },
           };
         })
@@ -732,7 +737,7 @@ export function usePreviewMapLayerSync({
       } else if (map.getLayer("civora-center-crosshair")) {
         map.removeLayer("civora-center-crosshair");
       }
-      if (surveyPoints && surveyPoints.length) {
+      if (showSurveyPoints && surveyPoints && surveyPoints.length) {
         ensureLayer("civora-survey-points", "civora-survey", "circle", {
           "circle-color": "#7c3aed",
           "circle-radius": 2.2,
@@ -741,12 +746,18 @@ export function usePreviewMapLayerSync({
       } else if (map.getLayer("civora-survey-points")) {
         map.removeLayer("civora-survey-points");
       }
+      if (surveyPoints?.some(point => Number.isFinite(point.z))) {
+        if (!map.getLayer("civora-survey-elevations")) map.addLayer({id:"civora-survey-elevations",source:"civora-survey",type:"symbol",paint:{"text-color":"#475569","text-halo-color":"#ffffff","text-halo-width":1},layout:{"text-field":["get","elevationLabel"],"text-size":10,"text-offset":[0,1.1]}});
+      } else if (map.getLayer("civora-survey-elevations")) map.removeLayer("civora-survey-elevations");
       if (map.getLayer("civora-visual-labels")) {
         map.removeLayer("civora-visual-labels");
       }
       if (debugStatsEnabled && typeof window !== "undefined") {
         const hatchFeatureCount = placedObjects.filter((item) => Boolean(item.meta?.cad_hatch_enabled)).length;
         const summary = {
+          styleName: map.getStyle()?.name ?? "",
+          surveyPointsVisible: Boolean(map.getLayer("civora-survey-points")),
+          elevationsVisible: Boolean(map.getLayer("civora-survey-elevations")),
           featureCounts: {
             buildings: buildings.length,
             roads: roads.length,
@@ -819,6 +830,8 @@ export function usePreviewMapLayerSync({
     showSiteBounds,
     suggestedPlacementsLength,
     surveyPoints,
+    showSurveyPoints,
+    displayUnits,
     useLightHighQuality,
     waterFireFlow,
     mapRef,

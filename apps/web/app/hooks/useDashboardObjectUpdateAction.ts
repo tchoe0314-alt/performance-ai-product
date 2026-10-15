@@ -5,6 +5,7 @@ import type { BuildingPlacement, PlanResponse, ProjectInput, ProjectRecord } fro
 import { buildDashboardObjectUpdateRecentChange } from "../utils/dashboardObjectChangeMessages";
 import {
   applyCanonicalUpdateCommand,
+  canonicalControlState,
   createCanonicalUpdateCommand,
   type CanonicalEditSource,
 } from "../utils/canonicalEditCommands";
@@ -23,6 +24,7 @@ import type { ParkingParams } from "../utils/previewGeometryTruth";
 import type { EngineeringSystemKey } from "../utils/workflowConstants";
 import { reconcileCulDeSacUpdate } from "../utils/parametricRoad";
 import { guardedTransactionSave } from "../utils/guardedTransactionSave";
+import { planDependencyGraph } from "../utils/dependencyGraph";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type SaveProject = (options?: {
@@ -123,6 +125,11 @@ export function useDashboardObjectUpdateAction({
   return useCallback((id: string, updates: Partial<BuildingPlacement>) => {
     const nextUpdates = { ...updates };
     const target = buildingPlacementsRef.current.find((item) => item.id === id);
+    if (updates.type !== undefined) {
+      if (updates.type === "group" && target?.type !== "group") { setStatusMessage("Use Group selected to organize objects."); return; }
+      updates = {...updates,meta:{...updates.meta,canonical_object_type:updates.type,
+        ...(updates.meta?.custom_type_definition_v1 === undefined ? {custom_type_id:null,custom_type_definition_v1:null,custom_properties_v1:{}} : {})}};
+    }
     if (target?.type === "site" && (typeof updates.x === "number" || typeof updates.y === "number")) {
       const currentX = target.x ?? 0;
       const currentY = target.y ?? 0;
@@ -313,7 +320,17 @@ export function useDashboardObjectUpdateAction({
         setDependencyProposal(null);
         dependencyNotice = " Linked parking is fixed and stayed in place.";
       }
-      const combinedSourceIds = Array.isArray(target.meta?.combined_from_object_ids)
+      const descendants = new Set<string>();
+      if (target.type === "group") {
+        descendants.add(target.id);
+        let grew = true;
+        while (grew) {
+          grew = false;
+          for (const item of buildingPlacementsRef.current) if (typeof item.meta?.group_id === "string" && descendants.has(item.meta.group_id) && !descendants.has(item.id)) { descendants.add(item.id); grew = true; }
+        }
+        descendants.delete(target.id);
+      }
+      const combinedSourceIds = target.type === "group" ? [...descendants] : Array.isArray(target.meta?.combined_from_object_ids)
         ? target.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
         : [];
       const groupGeometryChanged =
@@ -330,10 +347,14 @@ export function useDashboardObjectUpdateAction({
           updates.type !== undefined ||
           typeof updates.locked === "boolean" ||
           groupGeometryChanged ||
+          (target.type === "group" && typeof updates.meta?.ui_hidden === "boolean") ||
           Boolean(updates.meta && ("ui_color" in updates.meta || "color" in updates.meta || "style" in updates.meta))
         );
       if (shouldSyncCombinedSources) {
         const sourceObjects = buildingPlacementsRef.current.filter((item) => combinedSourceIds.includes(item.id));
+        if (groupGeometryChanged && sourceObjects.some(item => ["existing", "reference", "fixed"].includes(canonicalControlState(item)))) {
+          setStatusMessage("Unlock protected members before moving this group."); return;
+        }
         if (sourceObjects.length) {
           const nextGroupLabel = nextObject.label || target.label;
           const nextGroupType = nextObject.type ?? target.type ?? "custom";
@@ -362,7 +383,13 @@ export function useDashboardObjectUpdateAction({
               [(source.x ?? 0) + source.w, (source.y ?? 0) + source.d],
               [source.x ?? 0, (source.y ?? 0) + source.d],
             ];
-            const transformedGeometry = source.geometry?.map((point) => groupGeometryChanged ? transformPoint(point) : ([point[0], point[1]] as [number, number]));
+            const transformedGeometry = source.geometry?.map((point) => {
+              if (target.type !== "group" && Array.isArray(updates.geometry) && target.geometry?.length === nextObject.geometry?.length) {
+                const vertex = target.geometry?.findIndex(p => Math.hypot(p[0]-point[0], p[1]-point[1]) <= 1e-7) ?? -1;
+                if (vertex >= 0) return [...nextObject.geometry![vertex]] as [number, number];
+              }
+              return groupGeometryChanged ? transformPoint(point) : ([point[0], point[1]] as [number, number]);
+            });
             const boundsPoints = groupGeometryChanged ? (transformedGeometry?.length ? transformedGeometry : sourceCorners.map(transformPoint)) : sourceCorners;
             const boundsXs = boundsPoints.map(([x]) => x);
             const boundsYs = boundsPoints.map(([, y]) => y);
@@ -381,9 +408,9 @@ export function useDashboardObjectUpdateAction({
               capabilities: source.capabilities ? { ...source.capabilities } : source.capabilities,
               meta: {
                 ...(source.meta ?? {}),
-                combined_into_object_id: target.id,
-                combined_into_label: nextGroupLabel,
-                combined_into_type: nextGroupType,
+                ...(target.type === "group" && typeof updates.meta?.ui_hidden === "boolean" ? {ui_hidden:updates.meta.ui_hidden} : {}),
+                ...(target.type === "group" ? {} : { combined_into_object_id: target.id,
+                  combined_into_label: nextGroupLabel, combined_into_type: nextGroupType }),
                 combined_trace_synced_at: new Date().toISOString(),
                 ...(typeof updates.locked === "boolean" ? { combined_into_locked: updates.locked } : {}),
                 ...(groupGeometryChanged ? { combined_transform_synced: true } : {}),
@@ -415,17 +442,7 @@ export function useDashboardObjectUpdateAction({
       const changeUndo = bulkUpdateUndo ?? undo;
       recentChange = buildDashboardObjectUpdateRecentChange({ target, updates, undo: changeUndo });
     }
-    if (pendingProposal && target && nextObject) {
-      const before = [...new Map([...(bulkUpdateUndo?.before ?? [target]), ...pendingProposal.before].map(item => [item.id, item])).values()];
-      const after = [...new Map([...(bulkUpdateUndo?.after ?? [nextObject]), ...pendingProposal.after].map(item => [item.id, item])).values()];
-      setDependencyProposal({ ...pendingProposal, before, after });
-      const message = `Review the complete change to ${target.label} and its linked objects before applying. Your working plan is unchanged.`;
-      setStatusMessage(message);
-      pushRecoveryMessage(message);
-      return "proposed" as const;
-    }
-    clearGeneratedPreview();
-    const nextPlacements = bulkUpdateUndo?.after
+    let nextPlacements = bulkUpdateUndo?.after
       ? (() => {
           const afterById = new Map(bulkUpdateUndo.after.map((item) => [item.id, item]));
           return buildingPlacementsRef.current.map((item) =>
@@ -433,6 +450,12 @@ export function useDashboardObjectUpdateAction({
           );
         })()
       : buildingPlacementsRef.current.map((item) => (item.id === id && nextObject ? nextObject : item));
+    if(pendingProposal){const replacements=new Map(pendingProposal.after.map(item=>[item.id,item]));nextPlacements=nextPlacements.map(item=>replacements.get(item.id)??item);}
+    const graph=planDependencyGraph(buildingPlacementsRef.current,nextPlacements,currentProject?.project_id??null,target?.label??"Object change");
+    if(graph.status==="blocked"){setStatusMessage(graph.reason);pushRecoveryMessage(graph.reason);return "blocked" as const;}
+    if(graph.proposal){setDependencyProposal(graph.proposal);const message=`Review the complete change to ${target?.label??"this object"} and its linked objects before applying. Your working plan is unchanged.`;setStatusMessage(message);pushRecoveryMessage(message);return "proposed" as const;}
+    nextPlacements=graph.placements;
+    clearGeneratedPreview();
     setBuildingPlacements(nextPlacements);
     markSystemsStale(systemsImpactedByPlacement(target));
     if (recentChange?.undo) {

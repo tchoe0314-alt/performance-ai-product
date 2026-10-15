@@ -8,6 +8,7 @@ import type {
   SiteInputs,
 } from "../types";
 import type { SystemStatus } from "./workflowConstants";
+import { preserveExplicitBriefProgram } from "./briefProgramPreservation";
 
 type BuildDashboardPayloadPreviewOptions = {
   projectId: string;
@@ -45,12 +46,13 @@ export function buildDashboardPayloadPreview({
       chat_thread: chatMessages,
       site_inputs: (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs,
       requested_site_program_v1: currentProject?.project_input?.meta?.requested_site_program_v1,
+      project_identity_v1: currentProject?.project_input?.meta?.project_identity_v1,
       system_dirty_state: systemStatuses,
       reactive_edit_policy_preference: reactiveEditPolicyPreference,
       site_object_id: siteObjectId ?? null,
       assisted_enabled: assistedEnabled,
     },
-    manual_fields: manualFields,
+    manual_fields: preserveExplicitBriefProgram(manualFields, currentProject?.project_input),
     allow_ai_fill_for_blanks: assistedEnabled,
   };
 }

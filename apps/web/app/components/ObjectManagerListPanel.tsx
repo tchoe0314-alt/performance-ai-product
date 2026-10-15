@@ -196,7 +196,7 @@ export function ObjectManagerListPanel({
           );
         })
       ) : (
-        <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-500" data-testid="object-manager-empty-state">
+        <p className="civora-empty-state rounded-xl border border-slate-200 bg-slate-50" data-testid="object-manager-empty-state">
           No objects yet. Draw, add, or ask Civora to create one.
         </p>
       )}

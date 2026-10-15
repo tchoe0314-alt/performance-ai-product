@@ -8,8 +8,10 @@ import { createWelcomeMessage } from "./chat";
 import { buildAssumedSlopeEstimate, DEFAULT_SYSTEM_STATUS, isEngineeringSystemStatus, type SystemStatus } from "./workflowConstants";
 import { toArray } from "./formatting";
 import { buildProjectInputPlacements } from "./projectInputRestore";
+import { resolveCanonicalCanvasInput } from "./canonicalCanvasProject";
 
 export function buildDashboardProjectInputView(projectInput: ProjectInput, siteInputs: SiteInputs | null | undefined) {
+  projectInput = resolveCanonicalCanvasInput(projectInput);
   const manualFields = projectInput.manual_fields ?? {};
   const lot = (manualFields.lot ?? {}) as { w?: number; h?: number };
   const sitePlan = (manualFields.site_plan ?? {}) as {
@@ -31,6 +33,7 @@ export function buildDashboardProjectInputView(projectInput: ProjectInput, siteI
     : [];
   const disciplines = toArray(manualFields.disciplines);
   const buildingsList = Array.isArray(manualFields.buildings) ? manualFields.buildings : [];
+  const editControls=projectInput.meta?.edit_controls_v1 as Record<string,unknown>|undefined;
   const restoredThread: ChatMessage[] = Array.isArray(projectInput.meta?.chat_thread)
     ? projectInput.meta.chat_thread
         .filter((message) => message && typeof message.content === "string")
@@ -109,16 +112,16 @@ export function buildDashboardProjectInputView(projectInput: ProjectInput, siteI
     fileName: manualFields.file_name ?? "",
     siteNameAuto: autoNamed || !manualFields.project_name,
     fileNameAuto: autoFileNamed || !(manualFields.file_name ?? manualFields.project_name),
-    units: manualFields.units ?? "ft",
+    units: manualFields.units ?? "",
     projectType: manualFields.project_type ?? "",
     lotWidth: String(lot.w ?? ""),
     lotHeight: String(lot.h ?? ""),
     setback: String(manualFields.setback ?? ""),
-    buildingWidth: String(manualFields.building_width ?? ""),
-    buildingDepth: String(manualFields.building_depth ?? ""),
-    buildingCount: buildingsList.length ? String(buildingsList.length) : "",
+    buildingWidth: typeof editControls?.buildingWidth==="string"?editControls.buildingWidth:String(manualFields.building_width ?? ""),
+    buildingDepth: typeof editControls?.buildingDepth==="string"?editControls.buildingDepth:String(manualFields.building_depth ?? ""),
+    buildingCount: typeof editControls?.buildingCount==="string"?editControls.buildingCount:buildingsList.length ? String(buildingsList.length) : "",
     mergedPlacements,
-    parkingCount: String(sitePlan.parking_count ?? ""),
+    parkingCount: typeof editControls?.parkingCount==="string"?editControls.parkingCount:String(sitePlan.parking_count ?? ""),
     officeProgramDims,
     minSlopePct: String(gradingFields.min_slope_pct ?? ""),
     assumedTerrainSlopePct,

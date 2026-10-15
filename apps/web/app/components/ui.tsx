@@ -85,8 +85,8 @@ export function SmallButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center rounded-[var(--civora-radius-md)] px-4 py-2.5 text-sm font-medium shadow-[0_12px_30px_-22px_rgba(15,23,42,0.55)] transition duration-200 ${styles} ${
-        disabled ? "cursor-not-allowed opacity-60" : "hover:-translate-y-0.5"
+      className={`inline-flex min-h-[var(--civora-control-height)] items-center justify-center gap-1.5 rounded-[var(--civora-control-radius)] px-3 py-1.5 text-xs font-semibold transition duration-200 ${styles} ${
+        disabled ? "cursor-not-allowed opacity-60" : ""
       }`}
     >
       {children}
@@ -170,7 +170,7 @@ export function DisclosurePanel({
       data-testid={testId}
     >
       <summary
-        className="flex min-h-12 cursor-pointer items-center gap-2.5 px-3 py-2.5"
+        className="flex min-h-10 cursor-pointer items-center gap-2 px-3 py-2"
         onClick={(event) => {
           if (event.target instanceof HTMLElement && event.target.closest("a,button,input,select,textarea")) return;
           // Native toggle is delayed; publish the click before other renders
@@ -183,7 +183,7 @@ export function DisclosurePanel({
           <span className="block text-sm font-semibold text-slate-900">
             {title}
           </span>
-          <span className="mt-0.5 block break-words text-xs font-medium leading-4 text-slate-500">
+          <span className="civora-disclosure-description mt-0.5 block break-words text-xs font-medium leading-4 text-slate-500">
             {subtitle}
           </span>
         </span>

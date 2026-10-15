@@ -3,8 +3,14 @@ import {
   buildSourceBackedSurveyTrace,
   type PreviewSurveyPoint,
 } from "../utils/previewLayoutHelpers";
+import { useId } from "react";
+import { displayLength, type DisplayUnits } from "../utils/workspaceEnvironment";
 
 type PreviewBasePlanGridProps = {
+  displayUnits?: DisplayUnits;
+  gridEnabled?: boolean;
+  gridFt?: number;
+  showSurveyPoints?: boolean;
   showMap: boolean;
   isHighQuality: boolean;
   cadReferenceMode?: boolean;
@@ -20,6 +26,10 @@ type PreviewBasePlanGridProps = {
 };
 
 export function PreviewBasePlanGrid({
+  displayUnits = "ft",
+  gridEnabled = false,
+  gridFt = 5,
+  showSurveyPoints = true,
   showMap,
   isHighQuality,
   cadReferenceMode = false,
@@ -30,6 +40,9 @@ export function PreviewBasePlanGrid({
   planScaleBar,
   surveyPoints,
 }: PreviewBasePlanGridProps) {
+  const gridId = useId().replace(/:/g, "");
+  const gridX = 100 * gridFt / Math.max(lotWidth, 1);
+  const gridY = 100 * gridFt / Math.max(lotHeight, 1);
   const sourceSurveyTrace = buildSourceBackedSurveyTrace({ points: surveyPoints, lotWidth, lotHeight });
   const sourceSurveySpots = buildSourceBackedSurveySpots({ points: surveyPoints, lotWidth, lotHeight });
   const hasSourceSurveyPoints = sourceSurveyTrace.length > 0;
@@ -51,7 +64,7 @@ export function PreviewBasePlanGrid({
           <g data-testid="survey-base-plan-frame" pointerEvents="none">
             <rect x={0.8} y={0.8} width={98.4} height={98.4} fill="none" stroke={cadReferenceMode ? "#f8fafc" : "#111827"} strokeWidth={0.1} />
             <text x={2.2} y={3.1} fontSize="0.62" fontWeight={760} fill={cadReferenceMode ? "rgba(248,250,252,0.68)" : "rgba(15,23,42,0.62)"}>
-              {cadReferenceMode ? "CAD RECREATION" : hasSurveyOrTerrainEvidence ? "SOURCE EXHIBIT" : "CONCEPT PLAN"} · {Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT
+              {cadReferenceMode ? "CAD RECREATION" : hasSurveyOrTerrainEvidence ? "SOURCE EXHIBIT" : "CONCEPT PLAN"} · {displayLength(lotWidth, displayUnits)} x {displayLength(lotHeight, displayUnits)}
             </text>
           </g>
         ) : null}
@@ -66,14 +79,14 @@ export function PreviewBasePlanGrid({
           strokeWidth={siteLocked ? (isHighQuality ? 0.04 : 0.18) : 0.12}
           strokeDasharray={isHighQuality ? "1.9 1.35" : siteLocked ? undefined : "2 1.2"}
         />
-        {siteLocked ? (
+        {siteLocked || (showSurveyPoints && hasSourceSurveyPoints) ? (
           <>
-            {!isHighQuality ? (
+            {!isHighQuality && siteLocked ? (
               <text x={2.4} y={4.2} fontSize={1.12} fill="rgba(4,120,87,0.58)" fontWeight={800} letterSpacing={0.16}>
-                SITE LOCKED · {Math.round(lotWidth)} FT x {Math.round(lotHeight)} FT
+                SITE LOCKED · {displayLength(lotWidth, displayUnits)} x {displayLength(lotHeight, displayUnits)}
               </text>
             ) : null}
-            {isHighQuality && hasSourceSurveyPoints ? (
+            {showSurveyPoints && hasSourceSurveyPoints ? (
               <g data-testid="survey-boundary-annotation" pointerEvents="none">
                 <text x={50} y={2.55} textAnchor="middle" fontSize="0.66" fill="#475569">SOURCE POINT EXTENT · {sourceSurveyTrace.length} PTS SHOWN</text>
                 <text x={50} y={98.2} textAnchor="middle" fontSize="0.66" fill="#475569">UPLOADED POINTS FOR REVIEW · FIELD VERIFY</text>
@@ -95,9 +108,13 @@ export function PreviewBasePlanGrid({
         <line x1={4 + planScaleBar.widthPct} y1={94.1} x2={4 + planScaleBar.widthPct} y2={95.9} stroke={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} strokeWidth={isHighQuality ? 0.15 : 0.2} />
         <text x={4} y={93.1} fontSize="1.25" fill={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} fontWeight={700}>0</text>
         <text x={4 + planScaleBar.widthPct} y={93.1} fontSize="1.25" fill={cadReferenceMode && isHighQuality ? "#f8fafc" : "#0f172a"} fontWeight={700} textAnchor="end">
-          {planScaleBar.lengthFt} FT
+          {displayLength(planScaleBar.lengthFt, displayUnits)}
         </text>
       </g>
+      {gridEnabled ? <g data-testid="drafting-grid" data-grid-ft={gridFt} pointerEvents="none">
+        <defs><pattern id={gridId} width={gridX} height={gridY} patternUnits="userSpaceOnUse"><path d={`M ${gridX} 0 L 0 0 0 ${gridY}`} fill="none" stroke="#64748b" strokeWidth="0.06" opacity="0.45" /></pattern></defs>
+        <rect width="100" height="100" fill={`url(#${gridId})`} />
+      </g> : null}
       {showMap && siteLocked ? (
         <g data-testid="map-site-boundary" pointerEvents="none">
           <rect
@@ -123,11 +140,11 @@ export function PreviewBasePlanGrid({
           <title>Locked site boundary at the current map scale.</title>
         </g>
       ) : null}
-      {isHighQuality && !showMap && siteLocked && hasSourceElevations ? (
+      {!showMap && hasSourceElevations ? (
         <g data-testid="plan-grading-context-lines" opacity={0.2} pointerEvents="none">
           {sourceSurveySpots.map((spot) => (
             <g key={spot.id} data-testid="survey-spot-elevation">
-              <text x={spot.x} y={spot.y} fontSize="0.86" fill="#64748b">{spot.label}</text>
+              <text x={spot.x} y={spot.y} fontSize="0.86" fill="#64748b">{displayUnits === "m" ? `x ${displayLength(Number(spot.label.slice(2)), displayUnits, 2)}` : spot.label}</text>
               <line x1={spot.x - 0.32} y1={spot.y - 0.32} x2={spot.x + 0.32} y2={spot.y + 0.32} stroke="#64748b" strokeWidth={0.08} />
               <line x1={spot.x - 0.32} y1={spot.y + 0.32} x2={spot.x + 0.32} y2={spot.y - 0.32} stroke="#64748b" strokeWidth={0.08} />
               <title>Uploaded/source elevation point. Review only.</title>

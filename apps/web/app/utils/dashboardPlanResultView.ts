@@ -40,7 +40,13 @@ export function applyDashboardReactiveSystemStatusFromPlanResult(
   previous: Record<EngineeringSystemKey, SystemStatus>,
 ): Record<EngineeringSystemKey, SystemStatus> {
   const report = data?.final_plan?.meta?.reactive_update_report;
-  if (!report?.partial_rerun_executed) return previous;
+  const next = { ...previous };
+  const scope = data.metadata?.calculation_scope_v1;
+  if (data.success === true && scope?.version === 1 && scope.requested_system !== "full" &&
+      ["roads", "parking", "grading", "drainage", "utilities"].includes(scope.requested_system)) {
+    next[scope.requested_system] = "fresh";
+  }
+  if (!report?.partial_rerun_executed) return next;
   const completedStages = new Set(
     [
       ...(report.post_rerun_completed_stages ?? []),
@@ -51,7 +57,6 @@ export function applyDashboardReactiveSystemStatusFromPlanResult(
   );
   const staleAfter = new Set(report.post_rerun_stale_outputs ?? []);
   const impacted = new Set(report.impacted_stages ?? []);
-  const next = { ...previous };
   (Object.entries(REACTIVE_SYSTEM_STAGE_MAP) as Array<[EngineeringSystemKey, string[]]>).forEach(
     ([system, stages]) => {
       const touchedStages = stages.filter((stage) => impacted.has(stage));

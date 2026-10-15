@@ -5,6 +5,7 @@ import {
   cloneBuildingPlacementWithUpdatesForUndo,
   formatObjectManagerCountMessage,
   partitionObjectManagerTargets,
+  createTraceAwareBulkUpdate,
 } from "./dashboardObjectManagerTrace";
 import { toReadableLabel } from "./formatting";
 import type { EngineeringSystemKey } from "./workflowConstants";
@@ -80,22 +81,9 @@ export function runObjectManagerBulkVisibility({
     actions.reportObjectActionBlocker(blocked[0] ?? "Bulk visibility blocked: selected objects cannot be hidden from the preview.");
     return;
   }
-  const undo: DraftUndoAction = {
-    action: "bulk_update",
-    before: editable.map(cloneBuildingPlacementForUndo),
-    after: editable.map((item) => cloneBuildingPlacementWithUpdatesForUndo(item, {
-      meta: { ui_hidden: hidden },
-    })),
-    label: hidden ? "bulk hide" : "bulk show",
-  };
-  editable.forEach((item) => {
-    actions.handleUpdateBuilding(item.id, {
-      meta: {
-        ...(item.meta ?? {}),
-        ui_hidden: hidden,
-      },
-    });
-  });
+  const {undo,afterById}=createTraceAwareBulkUpdate({entries:editable.map(item=>({item,updates:{meta:{ui_hidden:hidden}}})),label:hidden?"bulk hide":"bulk show",buildingPlacements});
+  actions.setBuildingPlacements(previous=>previous.map(item=>afterById.get(item.id)??item));
+  actions.persistDraftRefresh("Saving visibility...");
   const message = `${hidden ? "Hidden" : "Shown"} ${editable.length} selected object${editable.length === 1 ? "" : "s"}${blocked.length ? `; ${blocked.length} blocked.` : "."}`;
   actions.setObjectManagerStatusMessage(message);
   actions.setStatusMessage(message);
@@ -287,6 +275,7 @@ export function runObjectManagerBulkType({
   selectedObjectIds: string[];
   actions: ObjectManagerBulkActions;
 }) {
+  if (nextType === "group") { actions.reportObjectActionBlocker("Use Group selected to organize objects."); return; }
   const targets = selectedTargets({
     buildingPlacements,
     selectedObjectIds,

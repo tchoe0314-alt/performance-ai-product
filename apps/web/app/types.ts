@@ -43,6 +43,7 @@ export type ProjectSummary = {
 };
 
 export type ProjectRecord = {
+  revision_token?: string;
   project_id: string;
   name: string;
   description?: string;
@@ -139,6 +140,7 @@ export type JobSummary = {
   updated_at?: number;
   error?: string | null;
   result?: PlanResponse | null;
+  result_freshness_v1?: { version: number; status: "current" | "stale" | "unverified" } | null;
   stage?: string;
   stage_detail?: string;
   progress?: number;
@@ -203,6 +205,8 @@ export type WorkflowArtifact = {
   filename?: string;
   created_at?: number;
   download_path?: string;
+  snapshot_status?: "current" | "stale" | "historical" | "unverified" | string;
+  calculation_reference?: Record<string, unknown>;
 };
 
 export type WorkflowReviewDashboard = {
@@ -1478,6 +1482,14 @@ export type PlanResponse = {
   };
   metadata?: {
     iterations?: IterationRecord[];
+    calculation_scope_v1?: { version: number; requested_system: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full"; omitted_fields: string[] };
+    canvas_result_binding_v1?: { version: number; scope: string; input_signature: string; live_input_key_v1?: string };
+    quantity_binding_v1?: { version: number; workflow_run_id?: string | null; input_signature: string; live_input_key_v1: string; quantities_path: string; cost_estimate_path: string };
+    calculation_save_v1?: {
+      calculation_id: string;
+      disposition: "active" | "archived";
+      reason: string;
+    };
     missing_requirements?: {
       missing_fields?: string[];
       why_needed?: Record<string, string>;
@@ -1579,6 +1591,11 @@ export type LocalGisProviderRegistry = {
 };
 
 export type SiteInputs = {
+  unit_interpretation_v1?: {
+    units: "ft" | "m";
+    method: "user_declared_existing_coordinates";
+    verified: false;
+  };
   address?: string;
   geocode?: {
     lat?: number;
@@ -1658,6 +1675,10 @@ export type SiteInputs = {
   site_boundary_source?: "manual_drawn" | "dimensions" | "map_viewport" | "imported";
   site_boundary_state?: "draft_editable" | "locked_canonical";
   site_boundary_acres?: number;
+  active_brief_classifications_v1?: unknown;
+  brief_edit_originals_v1?: unknown;
+  brief_sources_v1?: unknown;
+  brief_requirements_v1?: unknown;
   site_boundary_geometry?: {
     type: "polygon";
     source: "manual_drawn";
@@ -1671,7 +1692,10 @@ export type SiteInputs = {
   drainage_source_override?: "civora" | "user";
 };
 
+export type ProjectIdentity = { client: string; siteId: string; address: string; parcel: string; stage: string };
+
 export type ProjectInputMeta = Record<string, unknown> & {
+  project_identity_v1?: ProjectIdentity;
   site_inputs?: SiteInputs;
   chat_thread?: ChatMessage[];
   auto_named?: boolean;
@@ -1787,8 +1811,11 @@ export type ManualFields = {
     w?: number;
     d?: number;
     height_ft?: number;
+    stall_count?: number;
+    use?: string;
     rotation?: number;
     locked?: boolean;
+    placed?: boolean;
     source?: string;
     generated?: boolean;
     geometry_type?: "polygon" | "polyline" | "rect" | "point";
@@ -1798,7 +1825,7 @@ export type ManualFields = {
     systemDependencies?: string[];
   }>;
   canonical_geometry_handoff_v1?: CanonicalGeometryHandoffV1[];
-  site_plan?: { parking_count?: number; building_program_sf?: number; building_type?: string };
+  site_plan?: { parking_count?: number; building_count?: number; building_program_sf?: number; building_type?: string };
   grading?: {
     min_slope_pct?: number;
     max_parking_slope_pct?: number;
@@ -1895,6 +1922,7 @@ export type ManualFields = {
 };
 
 export type ProjectInput = {
+  canonical_project_v1?: Record<string, unknown>;
   project_id?: string | null;
   full_design_mode?: boolean;
   input_mode?: StrategyMode;
@@ -2048,6 +2076,7 @@ export type WaterFireFlowAnnotations = {
 
 export type AuthStatus = {
   auth_enabled: boolean;
+  public_registration_enabled?: boolean;
   account_setup?: "configured" | "not_configured";
 };
 
@@ -2334,6 +2363,7 @@ export type SiteObjectType =
   | "utility_corridor"
   | "lot_block"
   | "bridge"
+  | "group"
   | "custom";
 
 export type SiteObjectPlacement = BuildingPlacement & {

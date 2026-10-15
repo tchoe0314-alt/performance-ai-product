@@ -93,6 +93,7 @@ type DashboardObjectManagerPanelProps = {
   setCombineObjectName: Dispatch<SetStateAction<string>>;
   setCombineObjectType: Dispatch<SetStateAction<SiteObjectType>>;
   handleObjectManagerCombineSelected: () => void;
+  handleObjectManagerGroupSelected: () => void;
   setDraftBlockName: Dispatch<SetStateAction<string>>;
   handleObjectManagerSaveBlock: () => void;
   handleObjectManagerRenameBlock: (definition: DraftBlockDefinition, rawName: string) => void;
@@ -196,6 +197,7 @@ export function DashboardObjectManagerPanel({
   setCombineObjectName,
   setCombineObjectType,
   handleObjectManagerCombineSelected,
+  handleObjectManagerGroupSelected,
   setDraftBlockName,
   handleObjectManagerSaveBlock,
   handleObjectManagerRenameBlock,
@@ -442,6 +444,7 @@ export function DashboardObjectManagerPanel({
         onCombineObjectNameChange: setCombineObjectName,
         onCombineObjectTypeChange: setCombineObjectType,
         onCombineSelected: handleObjectManagerCombineSelected,
+        onGroupSelected: handleObjectManagerGroupSelected,
         onDraftBlockNameChange: setDraftBlockName,
         onSaveBlock: handleObjectManagerSaveBlock,
         onRenameBlock: (blockId, value) => {

@@ -1,7 +1,7 @@
 import type { BuildingPlacement } from "../types";
 import type { CanonicalUpdateCommand } from "./canonicalEditCommands";
 
-export type CanonicalDependencyPolicy = "follow" | "ask" | "fixed";
+export type CanonicalDependencyPolicy = "follow" | "ask" | "fixed" | "independent";
 
 type RelationshipRecord = {
   policy?: CanonicalDependencyPolicy;
@@ -36,6 +36,7 @@ export type CanonicalDependencyProposal = {
   createdAt: string;
   projectId: string | null;
   sourceSnapshot: string;
+  completePlacements?: BuildingPlacement[];
 };
 
 /** Approval is atomic and fails closed if any project/object changed during review. */
@@ -43,6 +44,7 @@ export function resolveDependencyProposal(proposal: CanonicalDependencyProposal,
   if (proposal.projectId !== projectId || proposal.sourceSnapshot !== JSON.stringify(placements)) {
     return { accepted: false as const, placements, reason: "The project changed during review. Request a fresh proposal; your current plan was not changed." };
   }
+  if(proposal.completePlacements)return {accepted:true as const,placements:proposal.completePlacements};
   const afterById = new Map(proposal.after.map(item => [item.id, item]));
   return { accepted: true as const, placements: placements.map(item => afterById.get(item.id) ?? item) };
 }
@@ -73,9 +75,10 @@ function planParkingReflow(
   const linkedIds = new Set(linked.map((item) => item.id));
   const site = placements.find((item) => item.type === "site" && item.placed);
   const siteRect = site ? rectFor(site) : null;
-  const ignoredSurfaceTypes = new Set(["site", "road", "sidewalk", "drive_aisle", "access_drive"]);
+  const ignoredSurfaceTypes = new Set(["site", "group", "road", "sidewalk", "drive_aisle", "access_drive"]);
   const obstacles = [afterBuilding, ...placements.filter((item) =>
     item.placed &&
+    item.meta?.ui_hidden !== true &&
     item.id !== beforeBuilding.id &&
     !linkedIds.has(item.id) &&
     !ignoredSurfaceTypes.has(item.type ?? ""),
@@ -160,7 +163,7 @@ export function parkingDependencyRelationship(building: BuildingPlacement): Requ
   const parking = relationships?.parking;
   const policy = parking?.policy;
   return {
-    policy: policy === "follow" || policy === "fixed" ? policy : "ask",
+    policy: policy === "follow" || policy === "fixed" || policy === "independent" ? policy : "ask",
     object_ids: Array.isArray(parking?.object_ids) ? parking.object_ids.map(String).filter(Boolean) : [],
   };
 }
@@ -224,7 +227,7 @@ export function applyBuildingParkingDependency(
   const centerShiftX = deltaX + (afterBuilding.w - beforeBuilding.w) / 2;
   const centerShiftY = deltaY + (afterBuilding.d - beforeBuilding.d) / 2;
   const geometryChanged = centerShiftX !== 0 || centerShiftY !== 0;
-  if (!geometryChanged || relationship.policy === "fixed") {
+  if (!geometryChanged || relationship.policy === "fixed" || relationship.policy === "independent") {
     return { policy: relationship.policy, before: linked, after: linked, proposalObjectIds: [], reflowReports: [] };
   }
   const reflow = planParkingReflow(placements, linked, beforeBuilding, afterBuilding, centerShiftX, centerShiftY);

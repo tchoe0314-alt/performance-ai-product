@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { loadEnvConfig } from "@next/env";
 
 // Match the built website's environment loading so configured Mapbox checks
@@ -15,6 +16,12 @@ const managedBackendPort =
     ? requestedBackendPort
     : 18_000 + (process.pid % 10_000);
 const managedBackendBaseURL = `http://127.0.0.1:${managedBackendPort}`;
+// The backend is developed and validated on Python 3.11. Do not silently fall
+// back to macOS' system Python 3.9, which cannot even import the canonical
+// project services. CI or another workstation may provide an explicit path.
+const repositoryPython = path.resolve(__dirname, "../..", ".venv311", "bin", "python");
+const managedBackendPython =
+  process.env.CIVORA_PYTHON || (existsSync(repositoryPython) ? repositoryPython : "python3.11");
 if (shouldUseManagedLocalServer) {
   process.env.PLAYWRIGHT_BACKEND_PORT = String(managedBackendPort);
   process.env.PLAYWRIGHT_API_BASE_URL = managedBackendBaseURL;
@@ -27,11 +34,14 @@ const outputDir =
 
 // Keep the default device smoke scope; explicitly opt into existing workflow
 // suites when verifying Phase 0 across browser engines and touch viewports.
-const deviceTestMatch = process.env.CIVORA_PRODUCTION_SAFE_TESTS === "1" || process.env.CIVORA_LOCAL_SAFE_TESTS === "1"
+const baseDeviceTestMatch = process.env.CIVORA_PRODUCTION_SAFE_TESTS === "1" || process.env.CIVORA_LOCAL_SAFE_TESTS === "1"
   ? /hosted-current-backend-safe\.spec\.ts/
   : process.env.CIVORA_PHASE0_CROSS_BROWSER === "1"
-  ? /(?:workspace-layout-boundaries|rc1-accessibility-cross-browser|dashboard-panel-routing|project-object-integration|canonical-edit-command-foundation|dense-commercial-concept-chat240|preview-realism-truth-chat234|phase0-concept-replacement|phase0-local-persistence|phase0-local-export-download|drawn-boundary-finish|undo-recovery-history-chat231b|video-website-regression|error-states-chat223b)\.spec\.ts/
+  ? /(?:phase3-active-brief-summary|settings-panel-extraction|phase2-workspace-layout|phase2-project-actions|phase2-workspace-environment|phase2-workspace-stages|phase2-project-header|phase1-design-system|canvas-first-workspace-redesign|workspace-layout-boundaries|rc1-accessibility-cross-browser|dashboard-panel-routing|project-object-integration|canonical-edit-command-foundation|dense-commercial-concept-chat240|preview-realism-truth-chat234|phase0-concept-replacement|phase0-local-persistence|phase1-local-canonical-persistence|phase1-local-tab-branches|phase1-local-object-model|phase1-local-transactions|phase1-local-dependencies|phase0-local-export-download|drawn-boundary-finish|undo-recovery-history-chat231b|video-website-regression|error-states-chat223b)\.spec\.ts/
   : /rc1-accessibility-cross-browser\.spec\.ts/;
+const deviceTestMatch = process.env.CIVORA_PHASE0_CROSS_BROWSER === "1" && process.env.CIVORA_PRODUCTION_SAFE_TESTS !== "1" && process.env.CIVORA_LOCAL_SAFE_TESTS !== "1"
+  ? new RegExp(`${baseDeviceTestMatch.source}|(?:phase3-brief-classification|pilot-brief-editing|pilot-current-drawing-export|pilot-layout-loop|pilot-login-retry|pilot-calculated-workflow|pilot-system-readiness|independent-audit-local-zero)\\.spec\\.ts`)
+  : baseDeviceTestMatch;
 
 export default defineConfig({
   testDir: "./tests/live",
@@ -47,7 +57,7 @@ export default defineConfig({
   webServer: shouldUseManagedLocalServer
     ? [
         {
-          command: `cd ../.. && python3 -m uvicorn backend.api.app:app --host 127.0.0.1 --port ${managedBackendPort}`,
+          command: `cd ../.. && ${JSON.stringify(managedBackendPython)} -m uvicorn backend.api.app:app --host 127.0.0.1 --port ${managedBackendPort}`,
           url: `${managedBackendBaseURL}/api/health`,
           env: {
             ...process.env,

@@ -52,6 +52,7 @@ export default function AuthScreen({
   onClearAuthError,
   onSubmit,
 }: AuthScreenProps) {
+  const registrationClosed = authStatus?.public_registration_enabled === false;
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] p-6">
       <div className="mx-auto grid min-h-[90vh] max-w-6xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
@@ -154,7 +155,7 @@ export default function AuthScreen({
                 className="space-y-4"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (!authLoading) onSubmit();
+                  if (!authLoading && !(registrationClosed && authMode === "register")) onSubmit();
                 }}
               >
               <div className="inline-flex rounded-2xl border border-black/10 bg-slate-100 p-1">
@@ -169,7 +170,7 @@ export default function AuthScreen({
                 >
                   Sign In Mode
                 </button>
-                <button
+                {!registrationClosed && <button
                   type="button"
                   onClick={() => onAuthModeChange("register")}
                   className={`rounded-2xl px-4 py-2 text-sm font-medium transition ${
@@ -179,12 +180,12 @@ export default function AuthScreen({
                   }`}
                 >
                   Request Access Mode
-                </button>
+                </button>}
               </div>
               <div className="rounded-2xl border border-black/10 bg-slate-50 p-4 text-sm text-slate-600">
                 {authStatus ? (
                   <span>
-                    Access is invite-only. Sign in or request access.
+                    {registrationClosed ? "Access is invitation-only. Sign in with your approved account." : "Sign in or request access."}
                   </span>
                 ) : (
                   <span>Account status will appear here once the Civora AI backend responds.</span>
@@ -247,7 +248,7 @@ export default function AuthScreen({
                 </div>
               ) : null}
               <div className="flex flex-wrap gap-3">
-                <SmallButton type="submit" disabled={authLoading}>
+                <SmallButton type="submit" disabled={authLoading || (registrationClosed && authMode === "register")}>
                   <Sparkles className="mr-2 h-4 w-4" />
                   {authLoading
                     ? "Working..."
@@ -255,7 +256,7 @@ export default function AuthScreen({
                       ? "Request Access"
                       : "Sign In"}
                 </SmallButton>
-                <SmallButton
+                {registrationClosed ? <a href="/support" className="self-center text-sm text-slate-600 underline">Contact support</a> : <SmallButton
                   variant="secondary"
                   onClick={() => {
                     onClearAuthError();
@@ -263,7 +264,7 @@ export default function AuthScreen({
                   }}
                 >
                   {authMode === "register" ? "Switch to sign-in" : "Request access"}
-                </SmallButton>
+                </SmallButton>}
               </div>
               </form>
             </CardContent>

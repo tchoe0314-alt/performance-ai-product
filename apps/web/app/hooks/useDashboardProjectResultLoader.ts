@@ -14,6 +14,7 @@ type PreviewRequest = {
 
 type UseDashboardProjectResultLoaderOptions = {
   applyBackendResult: (data: PlanResponse) => void;
+  isLiveResultCurrent: (data: PlanResponse) => Promise<boolean>;
   backendResult: PlanResponse | null;
   currentProject: ProjectRecord | null;
   fileName: string;
@@ -41,6 +42,7 @@ type UseDashboardProjectResultLoaderOptions = {
 
 export function useDashboardProjectResultLoader({
   applyBackendResult,
+  isLiveResultCurrent,
   backendResult,
   currentProject,
   fileName,
@@ -63,11 +65,11 @@ export function useDashboardProjectResultLoader({
     const workspaceGeneration = projectLoadRequestRef.current;
     const requestId = projectResultLoadRequestRef.current + 1;
     projectResultLoadRequestRef.current = requestId;
-    void getJson<{ project_id: string; latest_result: PlanResponse }>(
+    void getJson<{ project_id: string; latest_result: PlanResponse; result_freshness_v1?: { status: string } | null }>(
       `/api/projects/${project.project_id}/result`,
       { token },
     )
-      .then((data) => {
+      .then(async (data) => {
         if (
           projectResultLoadRequestRef.current !== requestId ||
           projectLoadRequestRef.current !== workspaceGeneration
@@ -75,6 +77,12 @@ export function useDashboardProjectResultLoader({
           return;
         }
         const latestResult = data.latest_result ?? {};
+        const liveCurrent = await isLiveResultCurrent(latestResult);
+        if (projectResultLoadRequestRef.current !== requestId || projectLoadRequestRef.current !== workspaceGeneration) return;
+        if (!liveCurrent || data.result_freshness_v1?.status === "stale") {
+          setStatusMessage("Saved results are out of date. Recalculate for this layout.");
+          return;
+        }
         if (latestResult && Object.keys(latestResult).length) {
           const activeStatus = String(visibleActiveJob?.status || "").toLowerCase();
           const hasStaleSystems = Object.values(systemStatuses).some(
@@ -82,6 +90,7 @@ export function useDashboardProjectResultLoader({
           );
           const shouldSuppressLatestResult =
             hasStaleSystems &&
+            data.result_freshness_v1?.status !== "current" &&
             activeStatus !== "running" &&
             activeStatus !== "queued" &&
             activeStatus !== "awaiting_approval";
@@ -134,6 +143,7 @@ export function useDashboardProjectResultLoader({
       });
   }, [
     applyBackendResult,
+    isLiveResultCurrent,
     backendResult,
     currentProject?.project_id,
     fileName,

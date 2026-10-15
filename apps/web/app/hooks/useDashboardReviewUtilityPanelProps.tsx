@@ -43,6 +43,7 @@ type UseDashboardReviewUtilityPanelPropsInput = {
   hasBasinPlaced: boolean;
   buildingPlacements: BuildingPlacement[];
   selectedBuilding: BuildingPlacement | null;
+  objectTypeLibrary?: ComponentProps<typeof SelectedObjectInspectorPanel>["objectTypeLibrary"];
   sourceConfidenceByObjectId: Map<string, SourceConfidenceEntry>;
   objectManagerStatusMessage: string;
   objectClipboardCount: number;
@@ -95,6 +96,7 @@ export function useDashboardReviewUtilityPanelProps({
   hasBasinPlaced,
   buildingPlacements,
   selectedBuilding,
+  objectTypeLibrary,
   sourceConfidenceByObjectId,
   objectManagerStatusMessage,
   objectClipboardCount,
@@ -156,6 +158,7 @@ export function useDashboardReviewUtilityPanelProps({
       <SelectedObjectInspectorPanel
         selectedBuilding={selectedBuilding}
         availableObjects={buildingPlacements}
+        objectTypeLibrary={objectTypeLibrary}
         confidenceEntry={selectedBuilding ? sourceConfidenceByObjectId.get(selectedBuilding.id) : null}
         objectManagerStatusMessage={objectManagerStatusMessage}
         objectClipboardCount={objectClipboardCount}
@@ -232,6 +235,7 @@ export function useDashboardReviewUtilityPanelProps({
     roads,
     selectedBuilding,
     sourceConfidenceByObjectId,
+    objectTypeLibrary,
     utilities,
   ]);
 

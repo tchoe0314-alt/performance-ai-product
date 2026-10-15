@@ -16,6 +16,7 @@ type DebugStats = { enabled?: boolean } | null | undefined;
 type MapSize = { w: number; h: number };
 
 type PreviewMapRuntimeOptions = {
+  satellite?: boolean;
   mapAvailable: boolean;
   mapOverlayEnabled: boolean;
   mapContainerRef: RefObject<HTMLDivElement | null>;
@@ -66,6 +67,7 @@ type PreviewMapRuntimeOptions = {
 };
 
 export function usePreviewMapRuntime({
+  satellite = true,
   mapAvailable,
   mapOverlayEnabled,
   mapContainerRef,
@@ -115,13 +117,16 @@ export function usePreviewMapRuntime({
   onSetSiteRotationDeg,
 }: PreviewMapRuntimeOptions) {
   const lastFittedSiteKeyRef = useRef("");
+  const satelliteRef = useRef(satellite);
+  useEffect(() => {satelliteRef.current = satellite;}, [satellite]);
+  const appliedStyles = useRef(new WeakMap<mapboxgl.Map, boolean>());
   useEffect(() => {
     if (!mapAvailable || !mapOverlayEnabled || !showMap) return;
     if (!mapContainerRef.current || mapRef.current) return;
     mapboxgl.accessToken = mapboxToken || "";
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
-      style: "mapbox://styles/mapbox/satellite-streets-v12",
+      style: satelliteRef.current ? "mapbox://styles/mapbox/satellite-streets-v12" : "mapbox://styles/mapbox/streets-v12",
       center: [-95.9345, 41.2565],
       zoom: 16,
       pitch: 0,
@@ -129,6 +134,7 @@ export function usePreviewMapRuntime({
       attributionControl: false,
     });
     mapRef.current = map;
+    appliedStyles.current.set(map, satelliteRef.current);
     const markMapReady = () => {
       if (mapRef.current !== map) return;
       map.resize();
@@ -158,7 +164,7 @@ export function usePreviewMapRuntime({
       }
       markMapReady();
     });
-    map.once("style.load", markMapReady);
+    map.on("style.load", markMapReady);
     map.once("render", markMapReady);
     window.setTimeout(markMapReady, 500);
     return () => {
@@ -452,7 +458,7 @@ export function usePreviewMapRuntime({
     const zoom = mapRef.current?.getZoom();
     const fullscreenMap = new mapboxgl.Map({
       container: fullscreenMapContainerRef.current,
-      style: "mapbox://styles/mapbox/satellite-streets-v12",
+      style: satelliteRef.current ? "mapbox://styles/mapbox/satellite-streets-v12" : "mapbox://styles/mapbox/streets-v12",
       center: center ? [center.lng, center.lat] : [-95.9345, 41.2565],
       zoom: typeof zoom === "number" ? zoom : 16,
       pitch: mapPitch,
@@ -460,6 +466,8 @@ export function usePreviewMapRuntime({
       attributionControl: false,
     });
     fullscreenMapRef.current = fullscreenMap;
+    appliedStyles.current.set(fullscreenMap, satelliteRef.current);
+    fullscreenMap.on("style.load", () => setMapRevision(value => value + 1));
     const requestMapOverlayUpdate = () => setMapRevision((value) => value + 1);
     fullscreenMap.on("move", requestMapOverlayUpdate);
     fullscreenMap.on("zoom", requestMapOverlayUpdate);
@@ -492,6 +500,23 @@ export function usePreviewMapRuntime({
     fullscreenMapRef.current.remove();
     fullscreenMapRef.current = null;
   }, [fullscreenMapRef, previewFullscreenOpen]);
+
+  useEffect(() => {
+    for (const map of [mapRef.current, fullscreenMapRef.current]) {
+      if (!map || appliedStyles.current.get(map) === satellite) continue;
+      appliedStyles.current.set(map, satellite);
+      // setStyle preserves the camera. Existing overlay synchronization runs
+      // again on style.load, after Mapbox has replaced its sources and layers.
+      map.once("style.load", () => {
+        try {
+          if (!map.getSource("mapbox-dem")) map.addSource("mapbox-dem", {type:"raster-dem",url:"mapbox://mapbox.terrain-rgb",tileSize:512,maxzoom:14});
+          if (mapPitch > 0) map.setTerrain({source:"mapbox-dem",exaggeration:1});
+        } catch (error) { setMapError(error instanceof Error ? error.message : "Map style failed"); }
+        setMapRevision(value => value + 1);
+      });
+      map.setStyle(satellite ? "mapbox://styles/mapbox/satellite-streets-v12" : "mapbox://styles/mapbox/streets-v12", {diff:false, localFontFamily:undefined, localIdeographFontFamily:undefined});
+    }
+  }, [satellite, mapLoaded, showMap, fullscreenContainerReady, previewFullscreenOpen, mapRef, fullscreenMapRef, mapPitch, setMapError, setMapRevision]);
 
   useEffect(() => {
     if (!showMap) return;

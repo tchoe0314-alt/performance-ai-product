@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { getJson } from "../../lib/api";
 
 import type { JobSummary } from "../types";
+import { mergeJobSummaries } from "../utils/jobSummaryMerge";
 
 type RefreshJobsOptions = { suppressError?: boolean; force?: boolean };
 
@@ -38,7 +39,7 @@ export default function useJobsState({ activeJobId }: { activeJobId: string }) {
         const data = await getJson<{ jobs: JobSummary[] }>("/api/jobs", {
           token: authToken,
         });
-        setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+        setJobs(current => mergeJobSummaries(current, Array.isArray(data.jobs) ? data.jobs : []));
       } catch (error) {
         if (!suppressError) {
           throw error;

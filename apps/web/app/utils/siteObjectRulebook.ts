@@ -29,6 +29,7 @@ export const SITE_OBJECT_RULEBOOK: Record<SiteObjectType, { category: ObjectCate
   open_space: { category: "landscape", guidance: "Planning overlap may be intentional; identify protected or maintained space." },
   bridge: { category: "unknown", guidance: "Deck, supports, foundations and underpass clearances need separate geometry/evidence." },
   custom: { category: "unknown", guidance: "Unclassified geometry requires review; do not infer engineering compatibility." },
+  group: { category: "container", guidance: "Organizes objects; not a physical footprint or engineering input." },
 };
 export function objectRule(item: BuildingPlacement) {
   if (item.meta?.asset_kind === "pipe" || (item.geometryType === "polyline" && item.meta?.network)) return { category: "utility" as const, guidance: "Pipe/network crossing requires occupied diameter, depths and specified separation." };

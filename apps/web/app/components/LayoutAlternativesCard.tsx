@@ -48,9 +48,10 @@ export function LayoutAlternativesCard({ alternatives, selectedId, onSelect, onA
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Layout alternatives · preview only</p>
           <p className="mt-1 text-sm font-semibold text-slate-900">Compare options before changing the working plan</p>
+          <p className="mt-1 text-[11px] text-slate-500">Geometry checks only—not engineering approval.</p>
           <p className="mt-1 text-[11px] text-slate-500">Ranked for {selected.goalLabels.join(" + ")}</p>
           <p data-testid="layout-search-report" className="mt-1 text-[10px] text-slate-400">
-            Searched {selected.searchReport.explored} candidates · {selected.searchReport.accepted} valid distinct · {selected.searchReport.rejected} rejected
+            Searched {selected.searchReport.explored} candidates · {selected.searchReport.accepted} modeled-pass distinct · {selected.searchReport.rejected} rejected
             {selected.searchReport.rejectionReasons.length ? ` (${selected.searchReport.rejectionReasons.join(", ")})` : ""}
           </p>
         </div>
@@ -98,7 +99,7 @@ export function LayoutAlternativesCard({ alternatives, selectedId, onSelect, onA
               <span className="flex items-center justify-between gap-2 text-xs font-bold text-slate-900"><span>#{alternative.rank} {alternative.label}</span><span data-testid={`layout-alternative-score-${alternative.id}`} className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-blue-700">{alternative.score}</span></span>
               <span className="mt-1 block text-[9px] font-semibold uppercase tracking-wide text-slate-400">{alternative.profile}</span>
               <span className="mt-1 block text-[10px] leading-4 text-slate-500">Capacity {alternative.metrics.capacity} · Short {alternative.metrics.shortfall}</span>
-              <span className={`mt-1 block text-[10px] font-semibold ${alternative.metrics.conflicts ? "text-red-600" : "text-emerald-600"}`}>{alternative.metrics.conflicts} conflict{alternative.metrics.conflicts === 1 ? "" : "s"}</span>
+              <span className={`mt-1 block text-[10px] font-semibold ${alternative.metrics.conflicts ? "text-red-600" : alternative.metrics.reviews ? "text-amber-700" : "text-emerald-600"}`}>{alternative.metrics.conflicts} conflict{alternative.metrics.conflicts === 1 ? "" : "s"}{alternative.metrics.reviews ? ` · ${alternative.metrics.reviews} review flags` : ""}</span>
             </button>
           );
         })}

@@ -19,6 +19,9 @@ type AppendChatMessage = (
 ) => void;
 
 export type DashboardExportActionsConfig = {
+  isResultCurrent?: () => Promise<boolean>;
+  resultIsStale?: boolean;
+  calculationReference?: Record<string, unknown>;
   appendChatMessage: AppendChatMessage;
   artifactPayload: Record<string, unknown>;
   backendResultPresent: boolean;
@@ -59,7 +62,12 @@ export function resolveDashboardExportBlockReason({
   projectId,
   systemStatuses,
   staleOutputs,
-  exportScope = "construction",
+  exportSource,
+  geometryIsCurrent,
+  geometryValid,
+  unitsKnown,
+  preliminaryAcknowledged,
+  exportScope,
 }: {
   token: string | null;
   backendResultPresent: boolean;
@@ -67,14 +75,28 @@ export function resolveDashboardExportBlockReason({
   systemStatuses: Record<string, SystemStatus>;
   staleOutputs: unknown;
   exportScope?: "review" | "construction";
+  exportSource?: "current_geometry_only";
+  geometryIsCurrent?: boolean;
+  geometryValid?: boolean;
+  unitsKnown?: boolean;
+  preliminaryAcknowledged?: boolean;
 }) {
   if (!token) return "authenticate with a backend session before exporting review packages";
+  if (exportSource === "current_geometry_only") {
+    if (exportScope !== "review") return "drawing-only exports are preliminary, not construction packages";
+    if (!projectId) return "save a project before exporting its current drawing";
+    if (!preliminaryAcknowledged) return "acknowledge the preliminary drawing-only scope";
+    if (!geometryIsCurrent) return "save the current drawing first";
+    if (!unitsKnown) return "set valid drawing units first";
+    if (!geometryValid) return "repair unrepresentable drawing geometry first";
+    return ""; // Separate drawing path; it never exports stale calculations.
+  }
   if (!backendResultPresent) {
     return projectId
       ? "run systems or load a generated review package before exporting"
       : "run the planner or load a saved project before exporting";
   }
-  if (exportScope === "review") return "";
+  // Review exports are still exports of the current plan, not historical downloads.
   const staleSystems = Object.entries(systemStatuses)
     .filter(([, status]) => status === "stale")
     .map(([system]) => system);
@@ -160,7 +182,13 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     }
   };
 
-  const handleExportQuantityReviewReport = () => {
+  const handleExportQuantityReviewReport = async () => {
+    const blockReason = getExportBlockReason() ||
+      (config.isResultCurrent && !await config.isResultCurrent() ? "calculation is out of date; recalculate before exporting" : "");
+    if (blockReason) {
+      setStatusMessage(`Quantity export needs input: ${blockReason}`);
+      return;
+    }
     const safeProjectName = (currentProject?.name || siteName || "civora-project")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -168,6 +196,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
       .slice(0, 64);
     const report = {
       schema_version: "quantity_takeoff_review_report_v1",
+      calculation_reference: config.calculationReference ?? null,
       generated_at: new Date().toISOString(),
       project: {
         project_id: currentProject?.project_id || projectId || "",
@@ -226,6 +255,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
   };
 
   const getExportBlockReason = (exportScope: "review" | "construction" = "review") => {
+    if (config.resultIsStale) return "calculation is out of date; recalculate before exporting";
     return resolveDashboardExportBlockReason({
       token,
       backendResultPresent,
@@ -251,7 +281,8 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     exportScope?: "review" | "construction";
     extraPayload?: Record<string, unknown>;
   }) => {
-    const blockReason = getExportBlockReason(exportScope ?? "construction");
+    const blockReason = getExportBlockReason(exportScope ?? "construction") ||
+      (config.isResultCurrent && !await config.isResultCurrent() ? "calculation is out of date; recalculate before exporting" : "");
     if (blockReason) {
       setExportActionMessage(`Export needs input: ${blockReason}`);
       setStatusMessage(`Export needs input: ${blockReason}`);
@@ -284,7 +315,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
         { token },
       );
       setActiveJobId(queued.job.job_id);
-      const disclosure = exportScope === "review" ? " Preliminary generated/saved snapshot; newer unsaved canvas edits are not included. Stale inputs are disclosed in the file." : "";
+      const disclosure = exportScope === "review" ? " Preliminary calculation snapshot." : "";
       setExportActionMessage(`${queuedLabel} queued as ${queued.job.job_id}.${disclosure}`);
       setStatusMessage(`${queuedLabel} queued as ${queued.job.job_id}.${disclosure}`);
       appendChatMessage(
@@ -309,6 +340,19 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
       chatLabel: "DXF review export",
       exportScope: "review",
     });
+
+  const handleExportLandxml = async () => {
+    const blocked = getExportBlockReason() || (config.isResultCurrent && !await config.isResultCurrent() ? "Recalculate before exporting." : "");
+    if(blocked){setStatusMessage(`LandXML needs input: ${blocked}`);setExportActionMessage(`LandXML needs input: ${blocked}`);setActiveSidePanel("deliverables");return;}
+    setBusy(true);
+    try{
+      const response=await fetch(toApiUrl("/api/export/landxml"),{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({...artifactPayload,export_scope:"review"})});
+      if(!response.ok){const result=await response.json().catch(()=>({}));throw new Error(typeof result.detail==="string"?result.detail:"LandXML export failed.");}
+      downloadBlob(await response.blob(),"civora-pipe-network.landxml");
+      setExportActionMessage("LandXML downloaded. Pipe-network review data; external verification required.");setStatusMessage("LandXML downloaded. Pipe-network review data; external verification required.");
+    }catch(error){const message=error instanceof Error?error.message:"LandXML export failed.";setStatusMessage(message);setExportActionMessage(message);setActiveSidePanel("deliverables");}
+    finally{setBusy(false);}
+  };
 
   const handleExportReviewPdf = () => {
     const projectName = currentProject?.name || siteName || "Untitled Project";
@@ -340,6 +384,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
     getExportBlockReason,
     handleArtifactDownload,
     handleExportDxf,
+    handleExportLandxml,
     handleExportReviewPdf,
     handleExportQuantityReviewReport,
     handleExportReport,

@@ -66,6 +66,9 @@ export function useDashboardObjectRemoveRestoreActions({
   const handleRemoveBuilding = useCallback((id: string) => {
     const target = buildingPlacementsRef.current.find((item) => item.id === id);
     if (!target) return;
+    if (target.type === "group" && buildingPlacementsRef.current.some(item => item.meta?.group_id === target.id)) {
+      setStatusMessage("Ungroup first to keep or delete members individually."); return;
+    }
     const combinedSourceIds = target && Array.isArray(target.meta?.combined_from_object_ids)
       ? target.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
       : [];

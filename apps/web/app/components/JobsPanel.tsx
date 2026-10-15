@@ -1,5 +1,6 @@
 import type { JobSummary, WorkflowArtifact } from "../types";
 import { PanelCard } from "./ui";
+import { WorkspaceStateBadge } from "./WorkspaceStateBadge";
 
 export function JobsPanel({
   activeJob,
@@ -49,6 +50,7 @@ export function JobsPanel({
             <p className="mt-1 text-sm font-semibold text-slate-900">
               {activeJob ? `${toReadableLabel(String(activeJob.status || "active"))} active` : "No active job"}
             </p>
+            {activeJob && (activeJob.status === "running" || activeJob.status === "queued") ? <WorkspaceStateBadge state="updating" /> : null}
           </div>
           <button
             type="button"
@@ -73,6 +75,7 @@ export function JobsPanel({
         </div>
         {activeJobStale || selectedJobStale ? (
           <p data-testid="jobs-stale-warning" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+            <WorkspaceStateBadge state="stale" />{" "}
             Backend status is stale. Last update: {formatTimestamp(staleJob?.updated_at)}. Refresh jobs, wait for the worker, or cancel/retry from the detail drawer.
           </p>
         ) : null}
@@ -160,6 +163,11 @@ export function JobsPanel({
           <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
             {jobDetailMessage(selectedJob)}
           </p>
+          {selectedJob.result?.metadata?.calculation_save_v1?.disposition === "archived" || selectedJob.result_freshness_v1?.status === "stale" ? (
+            <p data-testid="job-archived-calculation" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Saved in history, not active. Layout changed.
+            </p>
+          ) : null}
           <div className="mt-3 grid grid-cols-3 gap-2">
             <button
               type="button"
@@ -225,6 +233,7 @@ export function JobsPanel({
                   </span>
                   <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     {toReadableLabel(String(artifact.kind || "artifact"))}
+                    {artifact.snapshot_status === "historical" ? " · Historical" : ""}
                   </span>
                 </span>
                 {artifact.download_path ? (

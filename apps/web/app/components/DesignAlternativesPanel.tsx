@@ -26,7 +26,7 @@ export function DesignAlternativesPanel({
             {topAlternative?.label || "Generate review-required concepts"}
           </p>
           <p className="mt-1 text-xs font-medium text-slate-500">
-            Parking, circulation, basin, utility, grading/drainage, and organization options.
+            Written strategies only. No alternative geometry or feasibility checks.
           </p>
         </div>
         <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-700">
@@ -52,7 +52,7 @@ export function DesignAlternativesPanel({
           onClick={() => onAction("generate")}
           className="rounded-lg border border-slate-900 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-white hover:bg-slate-800"
         >
-          Show 3 Options
+          Show 5 Strategies
         </button>
         <button
           type="button"
@@ -100,6 +100,7 @@ export function DesignAlternativesPanel({
                 </div>
                 {quantityDeltas.length ? (
                   <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                    <p className="sm:col-span-2 text-slate-500">Heuristic deltas—not calculated layout quantities.</p>
                     {quantityDeltas.slice(0, 4).map(([key, delta]) => (
                       <p key={key} className="rounded-lg border border-slate-200 bg-white px-2 py-2 font-medium text-slate-600">
                         <span className="font-semibold text-slate-400">{key.replaceAll("_", " ")} </span>

@@ -36,6 +36,11 @@ type DraftSiteSize = { width: number; height: number };
 type DraftRectPercent = { left: number; top: number; width: number; height: number };
 
 type PreviewPlanCanvasLayersProps = {
+  displayUnits?: ComponentProps<typeof PreviewBasePlanGrid>["displayUnits"];
+  gridEnabled?: boolean;
+  gridFt?: number;
+  showSurveyPoints?: boolean;
+  constraintObjects?: BuildingPlacement[];
   overlayBoundsResolved: { left: number; top: number; width: number; height: number } | null;
   previewMode: "2d" | "3d";
   siteLocked: boolean;
@@ -102,6 +107,11 @@ export function PreviewPlanCanvasLayers({
   dependencyProposal,
   layoutDifferences = [],
   surveyPointCount,
+  displayUnits,
+  gridEnabled = false,
+  gridFt = 5,
+  showSurveyPoints,
+  constraintObjects,
   surveyPoints,
   hasTerrainSurfaceEvidence,
   showMap,
@@ -140,7 +150,7 @@ export function PreviewPlanCanvasLayers({
     isPreviewSemanticLayerVisible(semanticLayerForPlacement(item), semanticLayerVisibility),
   );
   const showSvgObjectGeometry = !showMap;
-  const liveConstraintFeedback = buildLiveConstraintFeedback(buildingPlacements, selectedBuildingId);
+  const liveConstraintFeedback = buildLiveConstraintFeedback(constraintObjects ?? buildingPlacements, selectedBuildingId);
   const visibleLayoutDifferences = layoutDifferences.filter((difference) =>
     isPreviewSemanticLayerVisible(semanticLayerForPlacement(difference.after), semanticLayerVisibility),
   );
@@ -162,7 +172,7 @@ export function PreviewPlanCanvasLayers({
           style={viewportTransformStyle}
         />
       ) : null}
-      {buildingPlacements.length || suggestedPlacements.length || hasSurveyOrTerrainEvidence ? (
+      {buildingPlacements.length || suggestedPlacements.length || hasSurveyOrTerrainEvidence || gridEnabled ? (
         <svg
           data-testid="preview-plan-canvas-svg"
           className="absolute inset-0 h-full w-full"
@@ -173,6 +183,10 @@ export function PreviewPlanCanvasLayers({
           <PreviewSvgDefs />
           {!presentationActive ? (
             <PreviewBasePlanGrid
+              displayUnits={displayUnits}
+              gridEnabled={gridEnabled}
+              gridFt={gridFt}
+              showSurveyPoints={showSurveyPoints}
               showMap={showMap}
               isHighQuality={isHighQuality}
               cadReferenceMode={cadReferenceMode}

@@ -1,5 +1,7 @@
 import type { DragEvent, ReactNode } from "react";
 import type { BuildingPlacement, SiteObjectType, SourceConfidenceEntry } from "../types";
+import { Copy, Eye, EyeOff, Focus, Lock, Unlock, Move, MousePointer2, PanelRightOpen, RotateCw, Trash2 } from "lucide-react";
+import { WorkspaceStateBadge } from "./WorkspaceStateBadge";
 
 type ObjectTypeOption = {
   type: SiteObjectType;
@@ -103,7 +105,7 @@ export function ObjectManagerRow({
             />
             <div className="min-w-0">
               <p className="truncate font-semibold text-slate-900">{item.label}</p>
-              <p className="mt-1 uppercase tracking-[0.12em] text-slate-400">
+              <p className="mt-1 text-slate-500">
                 {displayType} · {item.placed ? "Placed" : "Unplaced"} · {item.meta?.ui_hidden ? "Hidden" : "Visible"}
               </p>
             </div>
@@ -114,6 +116,12 @@ export function ObjectManagerRow({
           <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400" data-testid="object-manager-row-status">
             {sourceLabel} · {reviewLabel} · {layerLabel}
           </p>
+          <div className="mt-1 flex flex-wrap gap-1" data-testid="object-state-badges">
+            {isSelected ? <WorkspaceStateBadge state="selected" /> : null}
+            {item.locked ? <WorkspaceStateBadge state="locked" /> : null}
+            {item.meta?.ui_hidden ? <WorkspaceStateBadge state="hidden" /> : null}
+            {item.source === "inferred" ? <WorkspaceStateBadge state="assumed" /> : <WorkspaceStateBadge state="unverified" title="Draft geometry is not engineering verification." />}
+          </div>
           {confidenceEntry ? (
             <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
               confidenceEntry.confidence_band === "higher"
@@ -131,9 +139,11 @@ export function ObjectManagerRow({
           type="button"
           onClick={onDelete}
           data-testid="object-manager-delete"
-          className="text-[11px] font-semibold uppercase tracking-[0.12em] text-rose-500"
+          aria-label="Delete"
+          title="Delete object"
+          className="civora-icon-control text-rose-600 hover:bg-rose-50"
         >
-          Delete
+          <Trash2 aria-hidden="true" />
         </button>
       </div>
       {item.type !== "site" ? (
@@ -211,70 +221,81 @@ export function ObjectManagerRow({
               />
             </label>
           ) : null}
+          <div className="civora-panel-actions col-span-2">
           <button
             type="button"
             onClick={onToggleLock}
             data-testid="object-manager-lock"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+            aria-label={item.locked ? "Unlock" : "Lock"}
+            title={item.locked ? "Unlock object" : "Lock object"}
+            className="civora-icon-control border border-slate-200 hover:bg-slate-50"
           >
-            {item.locked ? "Unlock" : "Lock"}
+            {item.locked ? <Unlock aria-hidden="true" /> : <Lock aria-hidden="true" />}
           </button>
           <button
             type="button"
             onClick={onMove}
             aria-label={`${item.placed ? "Move" : "Place"} on canvas: ${item.label}`}
             data-testid="object-manager-move"
-            className="rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-white"
+            title={item.placed ? "Move on canvas" : "Place on canvas"}
+            className="civora-icon-control border border-slate-900 bg-slate-950 text-white"
           >
-            {item.placed ? "Move on Canvas" : "Place on Canvas"}
+            <Move aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={onSelect}
             data-testid="object-manager-select"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+            aria-label="Select" title="Select object"
+            className="civora-icon-control border border-slate-200 hover:bg-slate-50"
           >
-            Select
+            <MousePointer2 aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={onFocus}
             data-testid="object-manager-focus"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+            aria-label="Focus" title="Focus object"
+            className="civora-icon-control border border-slate-200 hover:bg-slate-50"
           >
-            Focus
+            <Focus aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={onToggleVisibility}
             data-testid="object-manager-visibility"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+            aria-label={item.meta?.ui_hidden ? "Show" : "Hide"}
+            title={item.meta?.ui_hidden ? "Show object" : "Hide object"}
+            className="civora-icon-control border border-slate-200 hover:bg-slate-50"
           >
-            {item.meta?.ui_hidden ? "Show" : "Hide"}
+            {item.meta?.ui_hidden ? <Eye aria-hidden="true" /> : <EyeOff aria-hidden="true" />}
           </button>
           <button
             type="button"
             onClick={onInspect}
             data-testid="object-manager-inspect"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+            aria-label="Inspect" title="Inspect object"
+            className="civora-icon-control border border-slate-200 hover:bg-slate-50"
           >
-            Inspect
+            <PanelRightOpen aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={onCopy}
             data-testid="object-manager-copy"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+            aria-label="Copy" title="Copy object"
+            className="civora-icon-control border border-slate-200 hover:bg-slate-50"
           >
-            Copy
+            <Copy aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={onRotate}
             data-testid="object-manager-rotate"
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50"
+            aria-label="Rotate 90" title="Rotate 90°"
+            className="civora-icon-control border border-slate-200 hover:bg-slate-50"
           >
-            Rotate 90
+            <RotateCw aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -292,14 +313,15 @@ export function ObjectManagerRow({
           >
             Flip V
           </button>
-          {isCombined ? (
+          </div>
+          {isCombined || item.type === "group" ? (
             <button
               type="button"
               onClick={onExplodeCombined}
               data-testid="object-manager-explode-combined"
               className="col-span-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-800 hover:bg-amber-100"
             >
-              Explode combined
+              {item.type === "group" ? "Ungroup" : "Uncombine"}
             </button>
           ) : null}
         </div>

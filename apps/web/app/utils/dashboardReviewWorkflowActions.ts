@@ -341,7 +341,7 @@ export async function runDashboardDesignAlternativesAction({
       `/api/projects/${activeProjectId}/design-alternatives`,
       {
         action,
-        requested_count: Math.max(3, designAlternativeCount || 3),
+        requested_count: Math.max(5, designAlternativeCount || 5),
         option_number: optionNumber,
         reason:
           action === "generate"

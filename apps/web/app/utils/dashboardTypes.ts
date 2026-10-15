@@ -33,6 +33,7 @@ export type ApprovalState = "idle" | "approving" | "starting";
 
 export type RecentChangeType =
   | "object_added"
+  | "brief_classified"
   | "object_deleted"
   | "object_renamed"
   | "object_style_changed"
@@ -45,6 +46,7 @@ export type RecentChangeType =
   | "ai_realism_recorded";
 
 export type DraftUndoAction =
+  | {action: "workspace_transaction"; transaction: import("./editTransactions").EditTransaction}
   | { action: "add"; object: BuildingPlacement }
   | {
       action: "add_many";

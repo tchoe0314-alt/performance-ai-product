@@ -6,6 +6,8 @@ import {
   type CanonicalDependencyPolicy,
 } from "../utils/canonicalDependencyPolicies";
 import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
+import { ObjectClassificationFields } from "./ObjectClassificationFields";
+import { ObjectDependencyEditor } from "./ObjectDependencyEditor";
 
 type ObjectConfidenceSummary = {
   confidence_band?: string;
@@ -19,6 +21,7 @@ type ObjectConfidenceSummary = {
 type SelectedObjectInspectorPanelProps = {
   selectedBuilding: BuildingPlacement | null;
   availableObjects?: BuildingPlacement[];
+  objectTypeLibrary?: Record<string, import("../utils/siteObjectDefinition").CustomTypeDefinition>;
   confidenceEntry?: ObjectConfidenceSummary;
   objectManagerStatusMessage?: string;
   objectClipboardCount: number;
@@ -54,6 +57,7 @@ const parsePositiveNumber = (value: string) => {
 export function SelectedObjectInspectorPanel({
   selectedBuilding,
   availableObjects = [],
+  objectTypeLibrary,
   confidenceEntry,
   objectManagerStatusMessage,
   objectClipboardCount,
@@ -175,6 +179,7 @@ export function SelectedObjectInspectorPanel({
               </span>
             </label>
           </div>
+          <ObjectClassificationFields key={selectedBuilding.id} object={selectedBuilding} objects={availableObjects} library={objectTypeLibrary} disabled={editBlocked || selectedBuilding.locked === true} onUpdate={onUpdateObject} />
           <div className="grid grid-cols-2 gap-2" data-testid="selected-object-inspector-facts">
             {[
               ["Type", displayType],
@@ -294,6 +299,7 @@ export function SelectedObjectInspectorPanel({
                   <option value="follow">Follow</option>
                   <option value="ask">Ask</option>
                   <option value="fixed">Fixed</option>
+                  <option value="independent">Independent</option>
                 </select>
               </div>
               <div className="mt-3 border-t border-blue-100 pt-3" data-testid="parking-relationship-editor">
@@ -330,6 +336,7 @@ export function SelectedObjectInspectorPanel({
               </div>
             </div>
           ) : null}
+          <ObjectDependencyEditor object={selectedBuilding} objects={availableObjects} onUpdate={onUpdateObject} />
           <div className="grid grid-cols-2 gap-2 text-[11px]" data-testid="selected-object-exact-geometry">
             <label className="flex flex-col gap-1 font-semibold uppercase tracking-[0.12em] text-slate-500">
               X

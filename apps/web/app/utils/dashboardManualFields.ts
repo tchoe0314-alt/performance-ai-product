@@ -6,7 +6,8 @@ import type {
   SurveySlopeResponse,
 } from "../types";
 import { buildCanonicalGeometryHandoffV1, isCustomGeometryMode } from "./objectGeometry";
-import { parsePositiveNumber } from "./formatting";
+import { parseNonNegativeNumber, parseNonNegativeInteger, parsePositiveNumber } from "./formatting";
+import {isPhysicalCanvasObject} from "./objectGroups";
 
 export function buildDashboardManualFields({
     nextSiteName,
@@ -67,21 +68,21 @@ export function buildDashboardManualFields({
   }) {
     const lotWidthValue = parsePositiveNumber(nextLotWidth);
     const lotHeightValue = parsePositiveNumber(nextLotHeight);
-    const setbackValue = parsePositiveNumber(nextSetback);
+    const setbackValue = parseNonNegativeNumber(nextSetback);
     const buildingWidthValue = parsePositiveNumber(nextBuildingWidth);
     const buildingDepthValue = parsePositiveNumber(nextBuildingDepth);
-    const buildingCountValue = parsePositiveNumber(nextBuildingCount);
-    const parkingCountValue = parsePositiveNumber(nextParkingCount);
-    const minSlopeValue = parsePositiveNumber(nextMinSlopePct);
-    const pipeMinSlopeValue = parsePositiveNumber(nextPipeMinSlopePct);
-    const maxParkingSlopeValue = parsePositiveNumber(nextMaxParkingSlopePct);
-    const maxRoadGradeValue = parsePositiveNumber(nextMaxRoadGradePct);
-    const maxAdaSlopeValue = parsePositiveNumber(nextMaxAdaCrossSlopePct);
+    const buildingCountValue = parseNonNegativeInteger(nextBuildingCount, 500);
+    const parkingCountValue = parseNonNegativeInteger(nextParkingCount);
+    const minSlopeValue = parseNonNegativeNumber(nextMinSlopePct);
+    const pipeMinSlopeValue = parseNonNegativeNumber(nextPipeMinSlopePct);
+    const maxParkingSlopeValue = parseNonNegativeNumber(nextMaxParkingSlopePct);
+    const maxRoadGradeValue = parseNonNegativeNumber(nextMaxRoadGradePct);
+    const maxAdaSlopeValue = parseNonNegativeNumber(nextMaxAdaCrossSlopePct);
 
     const manualFields: ManualFields = {
       project_name: nextSiteName,
       file_name: nextFileName,
-      units: nextUnits,
+      ...(nextUnits.trim() ? { units: nextUnits } : {}),
       project_type: nextProjectType,
       disciplines: [
         nextRoads ? "corridor" : null,
@@ -137,11 +138,11 @@ export function buildDashboardManualFields({
         systemDependencies: placement.systemDependencies,
       }));
     const placementOverrides = allPlacementSnapshots
-      .filter((placement) => placement.placed && Number.isFinite(placement.x) && Number.isFinite(placement.y))
+      .filter((placement) => placement.placed && isPhysicalCanvasObject(placement,allPlacementSnapshots) && Number.isFinite(placement.x) && Number.isFinite(placement.y))
       .map((placement) => placement);
     const canonicalGeometryHandoffs = placementOverrides
       .filter((placement) => {
-        if (placement.type === "site" || placement.generated) return false;
+        if (placement.type === "site" || placement.type === "custom" || placement.generated) return false;
         if (placement.source === "detected_from_gis" || placement.source === "detected_from_image" || placement.source === "inferred") {
           return placement.confirmed === true || placement.meta?.acceptance_status === "accepted";
         }
@@ -364,7 +365,7 @@ export function buildDashboardManualFields({
     }
 
     if (!buildingOverrides.length && buildingCountValue !== null) {
-      manualFields.buildings = Array.from({ length: Math.max(1, Math.round(buildingCountValue)) }).map(
+      manualFields.buildings = Array.from({ length: buildingCountValue }).map(
         (_, idx) => ({
           name: `Building ${idx + 1}`,
           w: buildingWidthValue ?? undefined,
@@ -381,20 +382,22 @@ export function buildDashboardManualFields({
       return sum + (value ?? 0);
     }, 0);
     const resolvedParkingCount =
-      parkingFromPlacements > 0 ? parkingFromPlacements : parkingCountValue;
+      parkingCountValue !== null ? parkingCountValue : parkingFromPlacements > 0 ? parkingFromPlacements : null;
     const requestedOfficeArea = buildingOverrides
       .map((placement) => Number(placement.meta?.requested_area_sf))
       .find((value) => Number.isFinite(value) && value > 0);
 
-    if (resolvedParkingCount !== null || requestedOfficeArea) {
+    if (resolvedParkingCount !== null || requestedOfficeArea || buildingCountValue !== null) {
       manualFields.site_plan = {
         ...(resolvedParkingCount !== null ? { parking_count: resolvedParkingCount } : {}),
+        ...(buildingCountValue !== null ? { building_count: buildingCountValue } : {}),
         ...(requestedOfficeArea ? { building_program_sf: requestedOfficeArea, building_type: "office" } : {}),
       };
     }
 
-    if (allPlacementSnapshots.length) {
-      manualFields.site_objects = allPlacementSnapshots.map((placement) => ({
+    // This builder owns the live canvas. An empty canvas is an explicit empty
+    // list, not an absent projection that may retain a previous saved drawing.
+    manualFields.site_objects = allPlacementSnapshots.map((placement) => ({
         id: placement.id,
         name: placement.label,
         label: placement.label,
@@ -415,7 +418,6 @@ export function buildDashboardManualFields({
         canonical_geometry_handoff_v1: canonicalGeometryHandoffs.find((handoff) => handoff.object_id === placement.id),
         systemDependencies: placement.systemDependencies,
       }));
-    }
 
     if (canonicalGeometryHandoffs.length) {
       manualFields.canonical_geometry_handoff_v1 = canonicalGeometryHandoffs;

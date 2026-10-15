@@ -120,7 +120,7 @@ export const selectedObjectsToSemanticArea = (items: BuildingPlacement[], tolera
   ]);
   items.forEach((item) => {
     const geometry = normalizeGeometryPoints(item.geometry);
-    if (item.type && semanticAreaTypes.has(item.type) && item.w > 0 && item.d > 0) {
+    if (item.geometryType !== "polyline" && item.geometryType !== "point" && item.type && semanticAreaTypes.has(item.type) && item.w > 0 && item.d > 0) {
       const x = item.x ?? 0;
       const y = item.y ?? 0;
       areaItems.push({
@@ -716,8 +716,11 @@ export const formatCustomGeometryMetrics = (item: BuildingPlacement) => {
   return parts.join(" · ");
 };
 
-export const getObjectDisplayType = (item: BuildingPlacement) =>
-  SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? "Object";
+export const getObjectDisplayType = (item: BuildingPlacement) => {
+  const custom = item.meta?.custom_type_definition_v1 as {id?:string;name?:string} | undefined;
+  if (item.type === "custom" && custom?.id === item.meta?.custom_type_id && typeof custom?.name === "string" && custom.name.trim()) return custom.name;
+  return SITE_OBJECT_CATALOG[item.type ?? "custom"]?.label ?? "Object";
+};
 
 export const getObjectLayerLabel = (item: BuildingPlacement) => {
   const rawLayer =
@@ -769,6 +772,7 @@ export const getObjectDimensionsLabel = (item: BuildingPlacement) => {
 };
 
 export const getObjectEditBlocker = (item: BuildingPlacement, action: "rename" | "style" | "type" | "hide" | "delete" | "copy" | "move" | "transform" | "resize") => {
+  if (item.type === "group" && (action === "copy" || action === "delete" || action === "type")) return "Ungroup first to copy, delete or reclassify members.";
   if (item.type === "site") {
     return `${action} needs input: locked site boundary is controlled from Setup.`;
   }

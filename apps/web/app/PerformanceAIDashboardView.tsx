@@ -1,9 +1,18 @@
 "use client";
 import { DashboardPanelContent } from "./components/DashboardPanelContent";
 import { DashboardWorkspaceFrame } from "./components/DashboardWorkspaceFrame";
+import ChatPanel from "./components/ChatPanel";
+import { ProjectTabBranchDialog } from "./components/ProjectTabBranchDialog";
 /* eslint-disable react-hooks/exhaustive-deps */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { buildActiveBriefSummary, type BriefSummaryRow } from "./utils/activeBriefSummary";
+import { changeBriefClassification, type RequirementClass } from "./utils/briefClassification";
+import { editBriefValue, type EditableBriefField } from "./utils/briefEditing";
+import { withCanonicalCanvasSnapshot } from "./utils/canonicalCanvasProject";
+import type { EditBriefHandler } from "./components/BriefValueEditor";
+import { upsertBriefSource, validateBriefSources, type BriefSource } from "./utils/briefSources";
 import { usePathname } from "next/navigation";
 import { getJson, postJson } from "../lib/api";
 import { useAuthenticatedUploadUrl } from "./hooks/useAuthenticatedUploadUrl";
@@ -56,7 +65,6 @@ import {
 import { buildDashboardCapabilityAuditRows } from "./utils/dashboardCapabilityAuditRows";
 import { resolveDashboardPanelStatus } from "./utils/dashboardPanelStatus";
 import { resolveActivePrimaryWorkflowKey } from "./utils/dashboardPrimaryWorkflows";
-import { buildDashboardPrimaryWorkflowItems } from "./utils/dashboardPrimaryWorkflowItems";
 import {
   DASHBOARD_SOURCE_HUB_LINKS,
   DASHBOARD_SUPPORTED_SHORTCUTS,
@@ -193,6 +201,7 @@ import { useDashboardAutoExistingConditions } from "./hooks/useDashboardAutoExis
 import { useDashboardApplySiteAction } from "./hooks/useDashboardApplySiteAction";
 import { useDashboardSiteAddressAction } from "./hooks/useDashboardSiteAddressAction";
 import { useDashboardSiteSetupUtilityActions } from "./hooks/useDashboardSiteSetupUtilityActions";
+import { ActiveBriefSummary } from "./components/ActiveBriefSummary";
 import { useDashboardSelectedDetectionActions } from "./hooks/useDashboardSelectedDetectionActions";
 import { useDashboardReviewWorkflowActions } from "./hooks/useDashboardReviewWorkflowActions";
 import { useDashboardPlanPdfDerivedState } from "./hooks/useDashboardPlanPdfDerivedState";
@@ -225,6 +234,8 @@ import { useDashboardSiteRestore } from "./hooks/useDashboardSiteRestore";
 import { ensureDashboardProjectDraft } from "./utils/dashboardProjectDraft";
 import { createDashboardPlanExecutor, isConnectivityFailureMessage } from "./utils/dashboardPlanExecution";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
+import { isLiveCalculationCurrent, liveInputFingerprint } from "./utils/liveCalculationFreshness";
+import {transactionReplayMessage} from "./utils/editTransactions";
 import { useDashboardShellShortcuts } from "./hooks/useDashboardShellShortcuts";
 import { useDashboardWorkspaceReset } from "./hooks/useDashboardWorkspaceReset";
 import { useDashboardObjectUpdateAction } from "./hooks/useDashboardObjectUpdateAction";
@@ -278,6 +289,9 @@ import {
 } from "./utils/workspaceShell";
 
 import AppHeader from "./components/AppHeader";
+import { useProjectHeaderStatus } from "./hooks/useProjectHeaderStatus";
+import { useWorkspaceStages } from "./hooks/useWorkspaceStages";
+import { WorkspaceStagePanels } from "./components/WorkspaceStagePanels";
 import AuthScreen from "./components/AuthScreen";
 import CivoraLogo from "./components/CivoraLogo";
 import {
@@ -311,9 +325,12 @@ import { useWorkspaceShortcuts } from "./hooks/useWorkspaceShortcuts";
 import { WorkspaceShortcutsOverlay } from "./components/WorkspaceShortcutsOverlay";
 import { type CanonicalDependencyProposal } from "./utils/canonicalDependencyPolicies";
 import { type LayoutAlternativeSearch, type LayoutGoal } from "./utils/layoutAlternatives";
+import { restoreExactCanvasPlacements } from "./utils/projectInputRestore";
+import { protectedBriefWriteReason } from "./utils/protectedBriefWrites";
 import { useDashboardLayoutComparison } from "./hooks/useDashboardLayoutComparison";
 import { useDashboardPlacementTransactions } from "./hooks/useDashboardPlacementTransactions";
 import { useDashboardPlacementState } from "./hooks/useDashboardPlacementState";
+import { planDependencyGraph } from "./utils/dependencyGraph";
 
 function PerformanceAIDashboardView({
   forceDemoWorkspace = false,
@@ -416,10 +433,10 @@ function PerformanceAIDashboardView({
   const [drainageAllowSlopeAdjust, setDrainageAllowSlopeAdjust] = useState(false);
   const [drainageMaxSlopeAdjust, setDrainageMaxSlopeAdjust] = useState(0.001);
   const [utilities, setUtilities] = useState(true);
-  const { buildingPlacements, buildingPlacementsRef, setBuildingPlacements } = useDashboardPlacementState();
+  const { buildingPlacements, buildingPlacementsRef, setBuildingPlacements,restoreBuildingPlacements,placementGuardRef } = useDashboardPlacementState();
   const [dependencyProposal, setDependencyProposal] = useState<CanonicalDependencyProposal | null>(null);
   const [layoutSearch, setLayoutSearch] = useState<LayoutAlternativeSearch | null>(null);
-  const layoutSearchSourceRef = useRef<{ projectId: string | null; placements: string } | null>(null);
+  const layoutSearchSourceRef = useRef<{ projectId: string | null; placements: string; inputKey?: string } | null>(null);
   const layoutAlternatives = layoutSearch?.alternatives ?? [];
   const [selectedLayoutAlternativeId, setSelectedLayoutAlternativeId] = useState("");
   const [layoutAlternativeGoals, setLayoutAlternativeGoals] = useState<LayoutGoal[]>([]);
@@ -619,6 +636,7 @@ function PerformanceAIDashboardView({
     redoDraftAction,
     redoDraftActionRef,
     setRecentChangesOpen,
+    observeDraftInput,restoreDraftHistory,exportDraftHistory,replayDraftTransaction,transactionObserverRef,
   } = useDashboardDraftHistoryState();
   const [jobClockMs, setJobClockMs] = useState(() => Date.now());
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -878,7 +896,8 @@ function PerformanceAIDashboardView({
   const payloadPreviewRef = useRef(payloadPreview);
   useEffect(() => {
     payloadPreviewRef.current = payloadPreview;
-  }, [payloadPreview]);
+    observeDraftInput(payloadPreview);
+  }, [payloadPreview,observeDraftInput]);
 
   const artifactPayload = useMemo(
     () => buildDashboardArtifactPayload({ backendResult, projectId, currentProject, fileName, siteName }),
@@ -1164,7 +1183,7 @@ function PerformanceAIDashboardView({
     setPreviewQuality,
     handleSetPreviewMode,
     handleSetPreviewQuality,
-  } = useDashboardPreviewModeState({ updateProjectStatus });
+  } = useDashboardPreviewModeState({ updateProjectStatus, environmentScope:{account:effectiveUser?.user_id??"",project:currentProject?.project_id??"",generation:projectLoadRequestRef.current} });
 
   const pushRecoveryMessage = useCallback(
     (message: string) => {
@@ -1180,6 +1199,15 @@ function PerformanceAIDashboardView({
     setIssues(buildDashboardIssuesFromPlanResult(data));
     setSystemStatuses((prev) => applyDashboardReactiveSystemStatusFromPlanResult(data, prev));
   };
+  const isLiveResultCurrent = (data: PlanResponse) => isLiveCalculationCurrent(data, () => payloadPreviewRef.current);
+  const [resultIsStale, setResultIsStale] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void isLiveCalculationCurrent(backendResult ?? {}, () => payloadPreview).then(current => {
+      if (!cancelled) setResultIsStale(!current);
+    });
+    return () => { cancelled = true; };
+  }, [backendResult, payloadPreview]);
 
   const appendChatMessage = (
     role: ChatMessage["role"],
@@ -1279,7 +1307,9 @@ function PerformanceAIDashboardView({
     setStatusMessage("Demo workspace loaded for UI QA.");
   }, [clientMounted, forceDemoWorkspace, routeDemoWorkspaceEnabled, seededDemoWorkspaceEnabled]);
 
-  const applyProjectInput = (projectInput: ProjectInput) => {
+  const applyProjectInput = (projectInput: ProjectInput, restoreHistory=true) => {
+    if(restoreHistory)restoreDraftHistory(projectInput);
+    setAssistedEnabled(projectInput.input_mode==="assisted");
     runDashboardApplyProjectInput({
       chatMessagesRef,
       projectInput,
@@ -1287,7 +1317,7 @@ function PerformanceAIDashboardView({
       setAssumedTerrainSlopePct,
       setBuildingCount,
       setBuildingDepth,
-      setBuildingPlacements,
+      setBuildingPlacements:restoreBuildingPlacements,
       setBuildingWidth,
       setChatMessages,
       setDrainage,
@@ -1464,6 +1494,7 @@ function PerformanceAIDashboardView({
   );
 
   const markSystemsStale = useCallback((systems?: EngineeringSystemKey[]) => {
+    if (systems && systems.length === 0) return;
     const targets = systems?.length
       ? Array.from(new Set(systems))
       : (["roads", "parking", "grading", "drainage", "utilities"] as EngineeringSystemKey[]);
@@ -1475,6 +1506,7 @@ function PerformanceAIDashboardView({
       utilities: targets.includes("utilities") && prev.utilities !== "not_generated" ? "stale" : prev.utilities,
     }));
   }, []);
+  transactionObserverRef.current=transaction=>markSystemsStale(transaction.calculation_invalidations as EngineeringSystemKey[]);
 
 
   const formatObjectLabel = useCallback(
@@ -1626,7 +1658,25 @@ function PerformanceAIDashboardView({
     units,
   });
 
+  placementGuardRef.current=(before,requested)=>{
+    const result=planDependencyGraph(before,requested,currentProjectRef.current?.project_id??null);
+    if(result.status!=="applied") {
+      if(result.proposal)setDependencyProposal(result.proposal);
+      const message=result.reason??"Review linked changes. Nothing has been applied.";
+      queueMicrotask(()=>{setStatusMessage(message);setObjectManagerStatusMessage(message);});
+      return before;
+    }
+    if(JSON.stringify(result.placements)!==JSON.stringify(requested)) {
+      const snapshot=JSON.stringify(result.placements),generation=projectLoadRequestRef.current;
+      window.setTimeout(()=>{
+        if(projectLoadRequestRef.current===generation&&JSON.stringify(buildingPlacementsRef.current)===snapshot)void saveProjectRef.current({silent:true});
+      },0);
+    }
+    return result.placements;
+  };
+
   const { handleAcceptDependencyProposal, handleRejectDependencyProposal, handleCanonicalBatchEdit, handleApplyLayoutAlternative: applyLayoutAlternativeTransaction } = useDashboardPlacementTransactions({
+    inputRef: payloadPreviewRef,
     proposal: dependencyProposal,
     placementsRef: buildingPlacementsRef,
     projectRef: currentProjectRef,
@@ -1635,6 +1685,7 @@ function PerformanceAIDashboardView({
     saveRef: saveProjectRef,
     refreshIntentRef: previewRefreshIntentRef,
     setPlacements: setBuildingPlacements,
+    acceptPlacements: restoreBuildingPlacements,
     setProposal: setDependencyProposal,
     clearPreview: clearGeneratedPreview,
     markStale: markSystemsStale,
@@ -1646,7 +1697,7 @@ function PerformanceAIDashboardView({
   });
 
   const handleAdjustDependencyProposal = useCallback(() => {
-    const parkingId = dependencyProposal?.before.find(item => item.type === "parking")?.id;
+    const parkingId = dependencyProposal?.before.find(item => item.type === "parking")?.id??dependencyProposal?.before[0]?.id;
     if (!parkingId) return;
     setDependencyProposal(null);
     setActivePlacementId(parkingId);
@@ -1656,8 +1707,8 @@ function PerformanceAIDashboardView({
     setRenderedSidePanel("objects");
     setSidePanelVisible(true);
     setRightRailCollapsed(false);
-    setStatusMessage("Parking selected for manual adjustment. The proposed move was not applied.");
-    setObjectManagerStatusMessage("Parking selected for manual adjustment. The proposed move was not applied.");
+    setStatusMessage("Linked object selected for adjustment. Proposal not applied.");
+    setObjectManagerStatusMessage("Linked object selected for adjustment. Proposal not applied.");
   }, [dependencyProposal]);
 
   const showLayoutComparison = useCallback(() => {
@@ -1674,6 +1725,7 @@ function PerformanceAIDashboardView({
     setObjectManagerStatusMessage(message);
   }, []);
   const { handleGenerateLayoutAlternatives, handleCancelLayoutAlternatives, handleLayoutAlternativeGoalsChange } = useDashboardLayoutComparison({
+    inputRef: payloadPreviewRef,
     placementsRef: buildingPlacementsRef,
     projectRef: currentProjectRef,
     sourceRef: layoutSearchSourceRef,
@@ -1757,6 +1809,7 @@ function PerformanceAIDashboardView({
     handleObjectManagerBulkType,
     handleObjectManagerBulkVisibility,
     handleObjectManagerCombineSelected,
+    handleObjectManagerGroupSelected,
     handleObjectManagerCopy,
     handleObjectManagerDelete,
     handleObjectManagerDeleteBlock,
@@ -1919,13 +1972,16 @@ function PerformanceAIDashboardView({
     siteScaleLockedRef,
   });
 
-  useEffect(() => {
-    if (buildingPlacements.length > 0) {
-      setBuildingCount(String(buildingPlacements.length));
-    }
-  }, [buildingPlacements.length]);
+  // The program count is a user input, not the count of roads, groups and traces.
+  // Actual physical buildings are derived separately by buildManualFields.
 
   const applyControlOverrides = (overrides: ControlOverrides) => {
+    for (const [field, value] of [["setbacks", overrides.setback], ["required-parking", overrides.parkingCount]] as const) {
+      if (typeof value === "string" || typeof value === "number") {
+        const blocked = protectedBriefWriteReason(payloadPreviewRef.current, field, value);
+        if (blocked) { setStatusMessage(blocked); return; }
+      }
+    }
     if (overrides.projectType) setProjectType(overrides.projectType);
     if (overrides.units) setUnits(overrides.units);
     if (typeof overrides.roads === "boolean") setRoads(overrides.roads);
@@ -2013,6 +2069,11 @@ function PerformanceAIDashboardView({
   const executePlanAction = createDashboardPlanExecutor({
     token, projectId, currentProjectId: currentProject?.project_id, fileName, siteName,
     getWorkspaceGeneration: () => projectLoadRequestRef.current,
+    getLiveInputFingerprint: () => liveInputFingerprint(payloadPreviewRef.current),
+    retainStaleResult: async (result, source_input, id) => {
+      if (!id) throw new Error("Save the project to retain calculation history.");
+      await postJson(`/api/projects/${id}/calculations/archive`, { result, source_input }, { token });
+    },
     directRunAbortRef, setBusy, setActivePlanTool, setActiveJobId, setPrompt,
     setStatusMessage, updateProjectStatus, appendChatMessage, applyBackendResult,
     requestPreview: (payload, options) => requestPreview(payload, options),
@@ -2508,7 +2569,8 @@ function PerformanceAIDashboardView({
     updateProjectStatus,
   });
 
-  const { saveProject } = useDashboardProjectSave({
+  const { saveProject, tabBranch, saveState } = useDashboardProjectSave({
+    exportDraftHistory,
     chatMessagesRef,
     currentProject,
     effectiveDemoWorkspaceEnabled,
@@ -2523,6 +2585,7 @@ function PerformanceAIDashboardView({
     setCurrentProject,
     setProjectDrawerNotice,
     setProjectId,
+    setSiteName,
     setWorkspaceRestoreState,
     setupWizardStateRef,
     siteName,
@@ -2531,6 +2594,9 @@ function PerformanceAIDashboardView({
     updateProjectStatus,
     upsertProjectSummary,
   });
+  const projectHeaderStatus = useProjectHeaderStatus(currentProject?.project_id ?? "", token, currentProject?.revision_token, backendResult?.metadata?.calculation_save_v1?.calculation_id);
+  const headerSaveStatus = saveState === "saving" ? "Saving" : saveState === "failed" ? "Save failed" : effectiveDemoWorkspaceEnabled ? "Local only" : currentProject?.project_id && !tabBranch.hasEdits(currentProject.project_id, payloadPreview) ? "Saved" : "Unsaved";
+  const headerHealth = projectStatusSummary.state === "blocked" ? "Blocked" : resultIsStale ? "Stale" : projectStatusSummary.state === "working" ? "Updating" : !backendResult ? "Unverified" : "Review needed";
 
   useEffect(() => {
     const activeProjectId = resolvedProjectIdRef.current;
@@ -3168,6 +3234,7 @@ function PerformanceAIDashboardView({
   ) => {
     if (!token) return;
     const workspaceGeneration = projectLoadRequestRef.current;
+    const previewInputFingerprint = liveInputFingerprint(payloadPreviewRef.current);
     if (effectiveDemoWorkspaceEnabled || isSeededDemoProjectId(payload.project_id)) {
       return;
     }
@@ -3191,6 +3258,7 @@ function PerformanceAIDashboardView({
         token,
       });
       if (projectLoadRequestRef.current !== workspaceGeneration) return;
+      if (previewInputFingerprint !== liveInputFingerprint(payloadPreviewRef.current)) return;
       setPlanPreviewUrl(data.preview_image_data_url);
       setPlanPreviewProjectId(projectId || currentProject?.project_id || null);
       setPlanPreviewSummary(data.summary ?? null);
@@ -3211,11 +3279,14 @@ function PerformanceAIDashboardView({
     options?: { loadingMessage?: string; successMessage?: string; silentStatus?: boolean; track?: boolean },
   ) => {
     if (!token) return;
+    const previewGeneration = projectLoadRequestRef.current;
+    const previewFingerprint = liveInputFingerprint(payloadPreviewRef.current);
     if (options?.loadingMessage && !options?.silentStatus) {
       setStatusMessage(options.loadingMessage);
     }
     void requestPreview(payload, { silent: true, track: options?.track })
       .then(() => {
+        if (projectLoadRequestRef.current !== previewGeneration || previewFingerprint !== liveInputFingerprint(payloadPreviewRef.current)) return;
         if (options?.successMessage && !options?.silentStatus) {
           setStatusMessage(options.successMessage);
         }
@@ -3313,6 +3384,7 @@ function PerformanceAIDashboardView({
   }, [token, backendResult, projectId, fileName, currentProject?.name, siteName]);
 
   const { loadProjectResultInBackground } = useDashboardProjectResultLoader({
+    isLiveResultCurrent,
     applyBackendResult,
     backendResult,
     currentProject,
@@ -3719,12 +3791,19 @@ function PerformanceAIDashboardView({
     getExportBlockReason,
     handleArtifactDownload,
     handleExportDxf,
+    handleExportLandxml,
     handleExportReviewPdf,
     handleExportQuantityReviewReport,
     handleExportReport,
   } = useMemo(
     () =>
       createDashboardExportActions({
+        resultIsStale,
+        isResultCurrent: () => isLiveCalculationCurrent(backendResult ?? {}, () => payloadPreviewRef.current),
+        calculationReference: backendResult?.metadata?.quantity_binding_v1 ? {
+          ...backendResult.metadata.quantity_binding_v1,
+          calculation_id: backendResult.metadata.calculation_save_v1?.calculation_id ?? null,
+        } : undefined,
         appendChatMessage,
         artifactPayload,
         autoSiteContextSummary: autoSiteContextFlowSummary,
@@ -3754,6 +3833,7 @@ function PerformanceAIDashboardView({
       autoSiteContextFlowSummary,
       backendResult,
       costEstimate,
+      resultIsStale,
       currentPlanMeta,
       currentProject,
       projectId,
@@ -3774,6 +3854,39 @@ function PerformanceAIDashboardView({
     previewRunningPhase,
     previewNextPendingPhase,
   } = usePreviewReview({ currentPlanMeta, planPreviewSummary });
+  const currentDrawingExportInFlightRef = useRef(false);
+  const handleExportCurrentDrawing = async (exportFormat: "dxf" | "pdf") => {
+    if (currentDrawingExportInFlightRef.current) return;
+    if (!token || ["viewer", "reviewer"].includes(currentProjectRef.current?.access_role ?? "owner")) {
+      setExportActionMessage("Sign in with editing permission to export a current drawing."); return;
+    }
+    if (["queued", "running", "awaiting_approval", "cancelling"].includes(String(visibleActiveJob?.status ?? ""))) {
+      setExportActionMessage("Wait for the active job to finish."); return;
+    }
+    if (!window.confirm("Export the saved current drawing only? Calculations and parking-stall detailing are excluded. Sources, assumptions and incomplete systems will be disclosed. Preliminary only; not for construction.")) return;
+    currentDrawingExportInFlightRef.current = true;
+    setBusy(true);
+    const generation = projectLoadRequestRef.current;
+    try {
+      const before = liveInputFingerprint(payloadPreviewRef.current);
+      const saved = await saveProjectRef.current({ silent: false });
+      if (!saved?.project_id || !saved.revision_token) throw new Error("Save an authenticated project before exporting its current drawing.");
+      if (projectLoadRequestRef.current !== generation || liveInputFingerprint(payloadPreviewRef.current) !== before || liveInputFingerprint(saved.project_input ?? {}) !== before) throw new Error("The drawing changed while saving. Review it and export again.");
+      const queued = await postJson<{ job: JobSummary }>("/api/jobs/export/current-geometry", { project_id: saved.project_id, expected_revision: saved.revision_token, export_format: exportFormat, acknowledgement: true }, { token });
+      if (projectLoadRequestRef.current !== generation) return;
+      setActiveJobId(queued.job.job_id);
+      setExportActionMessage(`Drawing ${exportFormat.toUpperCase()} queued. No calculations included.`);
+      setStatusMessage(`Drawing export queued as ${queued.job.job_id}.`);
+    } catch (error) {
+      if (projectLoadRequestRef.current === generation) {
+        const message = error instanceof Error ? error.message : "Current drawing export failed.";
+        setExportActionMessage(message); setStatusMessage(message);
+      }
+    } finally {
+      currentDrawingExportInFlightRef.current = false;
+      if (projectLoadRequestRef.current === generation) setBusy(false);
+    }
+  };
   const approvalCheckpointLabel = useMemo(() => {
     const runtimeCheckpoint = (
       visibleActiveJob?.result?.metadata as { runtime_phase_checkpoint?: { stage_name?: string } } | undefined
@@ -3818,6 +3931,7 @@ function PerformanceAIDashboardView({
     visibleActiveJob,
   });
   const { handleSelectJob, loadJob } = useDashboardJobLoader({
+    isLiveResultCurrent,
     activeJobProjectSyncRef,
     appendChatMessage,
     applyBackendResult,
@@ -4370,6 +4484,23 @@ function PerformanceAIDashboardView({
     handleUndoRecentChange,
     triggerCadTool,
   } = useDashboardShellShortcuts({
+    applyWorkspaceTransaction: (direction,action)=>{
+      const current=direction==="undo"?lastDraftActionRef.current:redoDraftActionRef.current;
+      if(current?.action!=="workspace_transaction"||current.transaction.id!==action.transaction.id){pushRecoveryMessage("This entry is on a saved history branch. Use Undo/Redo on the current branch.");return;}
+      const snapshot=replayDraftTransaction(direction);if(!snapshot)return;
+      setAssistedEnabled(snapshot.input_mode==="assisted");
+      setCurrentProject(previous=>previous?{...previous,project_input:{...previous.project_input,meta:{...previous.project_input?.meta,...snapshot.meta}}}:previous);
+      applyProjectInput({...payloadPreviewRef.current,...snapshot,meta:{...payloadPreviewRef.current.meta,...snapshot.meta}},false);
+      const changedIds=new Set(action.transaction.undo_description?.object_ids??action.transaction.affected_object_ids);
+      // Replay the actual saved placement values, not restore-time presentation defaults.
+      // Defaults must not create a new edit or erase the redo branch.
+      if(Array.isArray(snapshot.manual_fields?.site_objects))restoreBuildingPlacements(restoreExactCanvasPlacements(snapshot.manual_fields.site_objects));
+      const selected=(snapshot.manual_fields?.site_objects??[]).filter(item=>item.id&&changedIds.has(item.id)&&!item.meta?.ui_hidden&&!(typeof item.meta?.group_id==="string"&&changedIds.has(item.meta.group_id)));
+      setSelectedObjectIds(selected.map(item=>item.id!));setActivePlacementId(selected[0]?.id??null);
+      markSystemsStale(action.transaction.calculation_invalidations as EngineeringSystemKey[]);
+      pushRecoveryMessage(transactionReplayMessage(action.transaction,direction));
+      window.setTimeout(()=>void saveProjectRef.current({silent:true}),0);
+    },
     activePlacementId,
     activeSidePanel,
     appendChatMessage,
@@ -4427,6 +4558,12 @@ function PerformanceAIDashboardView({
     token,
     updateProjectStatus,
   });
+  const setCommandParkingCount = useCallback((value: string | ((current: string) => string)) => {
+    const next = typeof value === "function" ? value(parkingCount) : value;
+    const blocked = protectedBriefWriteReason(payloadPreviewRef.current, "required-parking", next);
+    if (blocked) { setStatusMessage(blocked); return; }
+    setParkingCount(next);
+  }, [setParkingCount, parkingCount]);
   const tryHandleObjectIntent = useDashboardObjectCommandIntentHandler({
     addGradingDrainageReviewContext,
     appendChatMessage,
@@ -4440,7 +4577,7 @@ function PerformanceAIDashboardView({
     setBuildingPlacements,
     setLotHeight,
     setLotWidth,
-    setParkingCount,
+    setParkingCount: setCommandParkingCount,
     setStatusMessage,
   });
   const tryHandleSheetIntent = useDashboardSheetIntentHandler({
@@ -4515,22 +4652,10 @@ function PerformanceAIDashboardView({
       siteScaleLocked,
       previewReleaseStatus: previewReview?.release_status,
     });
+  const workspaceStages = useWorkspaceStages({account:effectiveUser?.user_id??"",project:currentProject?.project_id??"",generation:projectLoadRequestRef.current,panel:activeSidePanel,onOpenPanel:handleOpenSidePanel});
   const activePrimaryWorkflowKey = resolveActivePrimaryWorkflowKey({
     sidePanelForRender,
     activeWorkspaceMode,
-  });
-  const primaryWorkflowItems = buildDashboardPrimaryWorkflowItems({
-    sidebarModeStatus,
-    panelStatus,
-    siteScaleLocked,
-    placedObjectCount: placedObjects.length,
-    pendingPlacementCount: pendingPlacementObjects.length,
-    hasHardSystemBlock,
-    controlsHealthStatus,
-    systemStatuses,
-    issueCount: issues.length + analysisIssues.length,
-    backendResultPresent: Boolean(backendResult),
-    exportBlockReason,
   });
   useWorkspaceShortcuts({
     onCancelActiveTool: handleCancelActiveTool,
@@ -4714,7 +4839,7 @@ function PerformanceAIDashboardView({
     setFitToSiteRequest,
     setLotHeight,
     setLotWidth,
-    setParkingCount,
+    setParkingCount: setCommandParkingCount,
     setPreviewInteraction,
     setPreviewLayers,
     setPreviewMode,
@@ -4834,6 +4959,87 @@ function PerformanceAIDashboardView({
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not copy issue summary.");
     }
+  };
+  const handleClassifyBrief = (requestedRow: BriefSummaryRow, priority: RequirementClass, confirm = false, override = false) => {
+    const project = currentProjectRef.current;
+    if (project?.project_id !== currentProject?.project_id) {
+      setStatusMessage("The project changed. Review its current brief before classifying."); return;
+    }
+    if (!project || ["viewer", "reviewer"].includes(project.access_role ?? "owner")) {
+      setStatusMessage("Save an editable project to classify its brief."); return;
+    }
+    try {
+      const live = payloadPreviewRef.current;
+      const row = buildActiveBriefSummary(live, project.project_input).find(item => item.id === requestedRow.id);
+      if (!row || row.valueKey !== requestedRow.valueKey) throw new Error("This value changed. Review it before classifying.");
+      const next = changeBriefClassification(row, live.meta?.site_inputs?.active_brief_classifications_v1, priority, confirm, override);
+      recordRecentChange({ type: "brief_classified", label: "Classify brief", detail: `${row.label}: ${priority}${confirm ? ", user confirmed" : ""}.` });
+      flushSync(() => {
+        setCurrentProject(previous => previous?.project_id === project.project_id ? {
+          ...previous, project_input: { ...previous.project_input, meta: {
+            ...previous.project_input?.meta, site_inputs: {
+              ...previous.project_input?.meta?.site_inputs, active_brief_classifications_v1: next,
+            },
+          } },
+        } : previous);
+        markSystemsStale();
+      });
+      setStatusMessage(`${row.label}: ${priority}. Changes retained; saving project.`);
+      void saveProjectRef.current({ silent: true });
+    } catch (error) { setStatusMessage(error instanceof Error ? error.message : "Could not classify this value."); }
+  };
+  const classifyBrief = currentProject && !["viewer", "reviewer"].includes(currentProject.access_role ?? "owner") ? handleClassifyBrief : undefined;
+  const handleEditBrief: EditBriefHandler = (requestedRow, text, options) => {
+    const project = currentProjectRef.current;
+    if (!project || project.project_id !== currentProject?.project_id || ["viewer", "reviewer"].includes(project.access_role ?? "owner")) {
+      setStatusMessage("Open an editable project first."); return false;
+    }
+    try {
+      const baseInput = { ...payloadPreviewRef.current, canonical_project_v1: project.project_input?.canonical_project_v1 };
+      const next = editBriefValue(baseInput, requestedRow.id as EditableBriefField, text, { ...options, expectedValueKey: requestedRow.valueKey });
+      if (next === baseInput) { setStatusMessage("Requirement unchanged."); return true; }
+      recordRecentChange({ type: "brief_classified", label: options.reset ? "Reset brief" : "Edit brief", detail: `${requestedRow.label}${options.override ? ": source overridden" : ""}.` });
+      flushSync(() => {
+        applyProjectInput(next, false);
+        setCurrentProject(previous => previous?.project_id === project.project_id ? { ...previous, project_input: next } : previous);
+        markSystemsStale();
+      });
+      setStatusMessage(`${requestedRow.label} updated. Dependent results need recalculation.`);
+      void saveProjectRef.current({ silent: true });
+      return true;
+    } catch (error) { setStatusMessage(error instanceof Error ? error.message : "Could not edit this requirement."); return false; }
+  };
+  const editBrief = classifyBrief ? handleEditBrief : undefined;
+  const handleSaveBriefSource = (source: BriefSource, previousSource?: BriefSource) => {
+    const project = currentProjectRef.current;
+    if (!project || project.project_id !== currentProject?.project_id || ["viewer", "reviewer"].includes(project.access_role ?? "owner")) {
+      setStatusMessage("Open an editable project first."); return false;
+    }
+    try {
+      const live = payloadPreviewRef.current;
+      const stored = live.meta?.site_inputs?.brief_sources_v1;
+      const existing = stored === undefined ? undefined : validateBriefSources(stored).records.find(item => item.id === source.id);
+      if (JSON.stringify(existing) !== JSON.stringify(previousSource)) throw new Error("This source changed. Reopen its editor.");
+      const sources = upsertBriefSource(stored, source);
+      const previousClassifications = live.meta?.site_inputs?.active_brief_classifications_v1 as { version: 1; fields: Record<string, { source_reference?: string; trust: string; priority: string }> } | undefined;
+      const classifications = previousClassifications ? { version: 1, fields: Object.fromEntries(Object.entries(previousClassifications.fields).map(([id, entry]) => [id, entry.source_reference === source.id && JSON.stringify(existing) !== JSON.stringify(source) ? { ...entry, trust: "unverified", priority: "unknown" } : entry])) } : undefined;
+      recordRecentChange({ type: "brief_classified", label: "Edit source", detail: `${source.name}: ${source.superseded ? "superseded" : source.verification}.` });
+      flushSync(() => {
+        setCurrentProject(previous => previous?.project_id === project.project_id ? { ...previous, project_input: { ...previous.project_input, meta: { ...previous.project_input?.meta, site_inputs: { ...previous.project_input?.meta?.site_inputs, brief_sources_v1: sources, ...(classifications ? { active_brief_classifications_v1: classifications } : {}) } } } } : previous);
+        markSystemsStale();
+      });
+      setStatusMessage("Source record updated. Verification is recorded, not engineering approval.");
+      void saveProjectRef.current({ silent: true }); return true;
+    } catch (error) { setStatusMessage(error instanceof Error ? error.message : "Could not save this source."); return false; }
+  };
+  const handleSetDrawingUnits = (nextUnits: "ft" | "m") => {
+    const project = currentProjectRef.current, live = payloadPreviewRef.current;
+    if (!project || ["viewer", "reviewer"].includes(project.access_role ?? "owner") || live.manual_fields?.units?.trim()) return;
+    if (!window.confirm(`Interpret the existing coordinates as ${nextUnits === "ft" ? "feet" : "metres"}? Coordinates will not be rescaled. Source units still need verification.`)) return;
+    const next = withCanonicalCanvasSnapshot({ ...live, canonical_project_v1: project.project_input?.canonical_project_v1, manual_fields: { ...live.manual_fields, units: nextUnits }, meta: { ...live.meta, site_inputs: { ...live.meta?.site_inputs, unit_interpretation_v1: { units: nextUnits, method: "user_declared_existing_coordinates", verified: false } } } });
+    recordRecentChange({ type: "brief_classified", label: "Set drawing units", detail: `Existing coordinates interpreted as ${nextUnits}; not rescaled or independently verified.` });
+    flushSync(() => { applyProjectInput(next, false); setCurrentProject(previous => previous?.project_id === project.project_id ? { ...previous, project_input: next } : previous); markSystemsStale(); });
+    window.setTimeout(() => void saveProjectRef.current({ silent: true }), 0);
   };
   const { dashboardHomePanelProps, importSurveyPanelProps, siteSetupPanelProps } = useDashboardStartPanelProps({
     siteName,
@@ -5156,6 +5362,8 @@ function PerformanceAIDashboardView({
     deliverPanelProps,
     reportsQuantitiesPanelProps,
   } = useDashboardDeliverReportsPanelProps({
+    resultIsStale,
+    calculationReference: backendResult?.metadata?.calculation_save_v1?.calculation_id ?? backendResult?.metadata?.quantity_binding_v1?.workflow_run_id ?? undefined,
     sidePanelForRender,
     reviewPackageFlowSummary,
     planPreviewUrl,
@@ -5178,6 +5386,8 @@ function PerformanceAIDashboardView({
     onMakeReviewPackage: handleMakeReviewPackage,
     onPlanSheetExportPdf: handleExportReviewPdf,
     onExportDxf: handleExportDxf,
+    onExportCurrentDrawingDxf: token && !["viewer", "reviewer"].includes(currentProject?.access_role ?? "owner") ? () => { void handleExportCurrentDrawing("dxf"); } : undefined,
+    onExportCurrentDrawingPdf: token && !["viewer", "reviewer"].includes(currentProject?.access_role ?? "owner") ? () => { void handleExportCurrentDrawing("pdf"); } : undefined,
     onExportReport: handleExportReport,
     onOpenPanel: handleOpenSidePanel,
     onPlanSheetTitleBlockUpdate: handlePlanSheetTitleBlockUpdate,
@@ -5303,6 +5513,7 @@ function PerformanceAIDashboardView({
     modelReviewPanelProps,
     workspaceSettingsPanelProps,
   } = useDashboardReviewUtilityPanelProps({
+    objectTypeLibrary: (currentProject?.project_input?.canonical_project_v1?.extensions as {object_type_library_v1?: Record<string, import("./utils/siteObjectDefinition").CustomTypeDefinition>} | undefined)?.object_type_library_v1,
     previewMode,
     previewQuality,
     hasGradingSurface,
@@ -5356,6 +5567,7 @@ function PerformanceAIDashboardView({
   const selectedLayoutAlternative = layoutAlternatives.find((item) => item.id === selectedLayoutAlternativeId) ?? null;
   const canvasBuildingPlacements = selectedLayoutAlternative?.placements ?? buildingPlacements;
   const workspaceCanvasAreaProps = useDashboardCanvasAreaProps({
+    environmentScope:{account:effectiveUser?.user_id??"",project:currentProject?.project_id??"",generation:projectLoadRequestRef.current},
     authToken: token,
     siteScaleLocked,
     sidebarVisible,
@@ -5585,13 +5797,48 @@ function PerformanceAIDashboardView({
 
   return (
     <DashboardWorkspaceFrame
+      userId={effectiveUser.user_id}
+      onCollapseTools={()=>setRightRailCollapsed(true)}
+      toolPanelContext={sidePanelForRender}
+      token={effectiveDemoWorkspaceEnabled?null:token}
+      briefChat={<div className="space-y-3"><section className="flex items-center justify-between gap-2 text-xs" aria-label="Active brief"><div className="min-w-0"><h2 className="truncate font-semibold">{siteName||currentProject?.name||"Untitled Project"}</h2><p className="text-slate-500">{placedObjectCount} objects · {projectStatusDisplayLabel[projectStatusSummary.state]}</p></div><button type="button" aria-label="Edit brief" className="shrink-0 rounded border px-2 py-1" onClick={()=>handleOpenSidePanel("site_existing")}>Edit</button></section><ActiveBriefSummary input={payloadPreview} savedInput={currentProject?.project_input} onClassify={classifyBrief} onEdit={editBrief} docked /><ChatPanel {...chatPanelProps}/></div>}
+      inspectorHealth={<div className="space-y-4 text-xs"><section><p className="text-[10px] text-slate-500">SELECTION</p><h2 className="mt-1 font-semibold">{selectedBuilding?.label||"Nothing selected"}</h2>{selectedBuilding&&<button type="button" onClick={()=>handleOpenSidePanel("objects")} className="mt-2 rounded border px-2 py-1">Properties</button>}</section><section><p className="text-[10px] text-slate-500">HEALTH</p><h2 className="mt-1 font-semibold">{projectStatusDisplayLabel[projectStatusSummary.state]}</h2><button type="button" onClick={()=>handleOpenSidePanel("analysis")} className="mt-2 rounded border px-2 py-1">Review</button></section></div>}
+      delta={<div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs" data-testid="workspace-live-delta-summary"><span><strong>Recalculate:</strong> {reactiveRerunSummary.enabled?reactiveRerunSummary.rerunStages.join(", ")||"None":"None"}</span><span><strong>Changed:</strong> {reactiveChangedSystems.join(", ")||"None"}</span></div>}
       onCancelActiveTool={handleCancelActiveTool}
       statusSummary={`${projectStatusDisplayLabel[projectStatusSummary.state]}: ${projectStatusSummary.title}.`}
-      toasts={<WorkspaceToasts toasts={jobToasts} />}
+      toasts={<><WorkspaceToasts toasts={jobToasts} /><ProjectTabBranchDialog open={Boolean(tabBranch.questionProject)} onChoose={tabBranch.answer} /></>}
       header={<AppHeader
+          actions={{projectId:currentProject?.project_id,token,
+            onWorkspaceSettings:()=>handleOpenSidePanel("settings"),
+            onShare:()=>{handleOpenSidePanel("projects");window.requestAnimationFrame(()=>{const panel=document.querySelector<HTMLDetailsElement>('[data-testid="project-team-memory"]');if(panel){panel.open=true;panel.scrollIntoView({block:"nearest"});}});},
+            onReport:()=>{void handleExportReport();},onDxf:()=>{void handleExportDxf();},onLandxml:()=>{void handleExportLandxml();},
+            onSettings:()=>{const button=document.querySelector<HTMLButtonElement>('button[aria-controls="project-header-details"]');if(button?.getAttribute("aria-expanded")!=="true")button?.click();}}}
           userEmail={effectiveUser.email}
           projectName={siteName || currentProject?.name || "Untitled Project"}
           saveStatus={projectDrawerStateLabel}
+          details={{
+            projectKey:`${currentProject?.project_id ?? "new"}:${projectLoadRequestRef.current}`,
+            name:siteName || currentProject?.name || "Untitled Project",
+            identity:currentProject?.project_input?.meta?.project_identity_v1,
+            saveStatus:headerSaveStatus,
+            connection:projectHeaderStatus.connection,
+            revision:currentProject?.revision_token,
+            savedAt:currentProject?.updated_at,
+            calculatedAt:projectHeaderStatus.lastCalculation?.timestamp,
+            calculationUnavailable:projectHeaderStatus.lastCalculation?.failed,
+            health:headerHealth,
+            healthDetail:`${projectStatusSummary.title}. Workspace status, not engineering approval.`,
+            editable:Boolean(token)&&!effectiveDemoWorkspaceEnabled,
+            onSave:async (name,identity)=>{
+              const generation=projectLoadRequestRef.current;
+              const previousName=siteName;
+              const saved=await saveProject({nameOverride:name,identityOverride:identity,autoNamedOverride:false});
+              if(!saved||generation!==projectLoadRequestRef.current)return false;
+              setSiteName(previous=>previous===previousName?saved.name:previous);
+              setSiteNameAuto(false);
+              return true;
+            },
+          }}
           canUndo={Boolean(lastDraftAction)}
           canRedo={Boolean(redoDraftAction)}
           onOpenProjects={() => {
@@ -5611,14 +5858,14 @@ function PerformanceAIDashboardView({
       leftRail={sidebarRendered ? (
             <WorkspaceLeftRail
               visible={sidebarVisible}
-              activeWorkflowKey={activePrimaryWorkflowKey}
+              activeStage={workspaceStages.activeStage}
               restoreTruthLabel={restoreTruthLabel}
-              primaryWorkflowItems={primaryWorkflowItems}
-              onOpenPanel={handleOpenPanelFromDrawer}
+              onSelectStage={workspaceStages.selectStage}
             />
           ) : null}
       rightPanel={sidePanelForRender ? (
             <WorkspaceRightPanel
+              navigation={<WorkspaceStagePanels stage={workspaceStages.activeStage} panel={sidePanelForRender} onOpenPanel={handleOpenSidePanel} />}
               title={activePanelTitle}
               description={activePanelDescription}
               visible={sidePanelVisible}
@@ -5669,11 +5916,11 @@ function PerformanceAIDashboardView({
                       />
                     ),
                     dashboard: dashboardHomePanelProps,
-                    site_existing: siteSetupPanelProps,
+                    site_existing: { ...siteSetupPanelProps, briefInput: payloadPreview, savedBriefInput: currentProject?.project_input, onClassifyBrief: classifyBrief, onEditBrief: editBrief, onSaveBriefSource: classifyBrief ? handleSaveBriefSource : undefined, onSetDrawingUnits: classifyBrief ? handleSetDrawingUnits : undefined },
                     import_survey: importSurveyPanelProps,
                     data: dataSourcesPanelProps,
                     model: modelReviewPanelProps,
-                    generate: generatePanelProps,
+                    generate: { ...generatePanelProps, onCompareLayouts: () => { handleGenerateLayoutAlternatives(5); } },
                     grading: gradingWorkbenchPanelProps,
                     drainage: drainageWorkbenchPanelProps,
                     utilities: utilitiesWorkbenchPanelProps,
@@ -5778,6 +6025,7 @@ function PerformanceAIDashboardView({
                       setCombineObjectName={setCombineObjectName}
                       setCombineObjectType={setCombineObjectType}
                       handleObjectManagerCombineSelected={handleObjectManagerCombineSelected}
+                      handleObjectManagerGroupSelected={handleObjectManagerGroupSelected}
                       setDraftBlockName={setDraftBlockName}
                       handleObjectManagerSaveBlock={handleObjectManagerSaveBlock}
                       handleObjectManagerRenameBlock={handleObjectManagerRenameBlock}

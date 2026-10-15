@@ -41,7 +41,7 @@ export function WorkspaceSettingsPanel({
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
           {settingsRows.map(([label, value]) => (
             <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <p className="text-slate-400">{label}</p>
+              <p className="text-slate-600">{label}</p>
               <p className="mt-1 text-slate-800">{value}</p>
             </div>
           ))}

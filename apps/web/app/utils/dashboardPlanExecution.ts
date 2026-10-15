@@ -3,6 +3,9 @@ import type { ChatMessage, JobSummary, PlanRequestPayload, PlanResponse, PlanToo
 import { panelErrorMessage } from "./dashboardStatus";
 import { summarizePlanResponse } from "./formatting";
 import type { ProjectStatusSummary } from "./workspaceShell";
+import { withCanonicalCanvasSnapshot } from "./canonicalCanvasProject";
+import { pausedObjectSystems } from "./siteObjectDefinition";
+import type { BuildingPlacement } from "../types";
 
 export const isConnectivityFailureMessage = (message: string) =>
   message.toLowerCase().includes("backend unreachable") ||
@@ -31,6 +34,8 @@ type PlanExecutionOptions = {
   fileName: string;
   siteName: string;
   getWorkspaceGeneration: () => number;
+  getLiveInputFingerprint?: () => string;
+  retainStaleResult?: (result: PlanResponse, input: PlanRequestPayload, projectId: string | null) => Promise<void>;
   directRunAbortRef: { current: AbortController | null };
   setBusy: (busy: boolean) => void;
   setActivePlanTool: (mode: PlanToolMode) => void;
@@ -55,6 +60,7 @@ export function createDashboardPlanExecutor(options: PlanExecutionOptions): Dash
     allowQueueFallback = true, forceQueue = false }: DashboardPlanExecutionRequest) => {
     if (signal?.aborted) return "cancelled";
     const generation = options.getWorkspaceGeneration();
+    const inputFingerprint = options.getLiveInputFingerprint?.();
     const runOwner = directRunAbortRef.current;
     const isCurrent = () => options.getWorkspaceGeneration() === generation;
     const canPublish = () => isCurrent() && !signal?.aborted;
@@ -96,6 +102,18 @@ export function createDashboardPlanExecutor(options: PlanExecutionOptions): Dash
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
     try {
+      // Seal only here, after chat/inspector overrides have finished composing
+      // this request. Direct and queued fallback runs use the same snapshot.
+      requestPayload = withCanonicalCanvasSnapshot(requestPayload) as PlanRequestPayload;
+      const paused = pausedObjectSystems((requestPayload.manual_fields?.site_objects ?? []) as BuildingPlacement[]);
+      const target = String(requestPayload.meta?.requested_system ?? requestPayload.meta?.generation_target ?? "full");
+      const affected = ["roads", "parking", "grading", "drainage", "utilities"].includes(target) ? paused.filter(system => system === target) : paused;
+      if (affected.length) {
+        const message = `Fix object outlines before calculating ${affected.join(", ")}.`;
+        setStatusMessage(message);
+        updateProjectStatus({state:"blocked",area:"generate",title:"Outline needs attention",detail:message,nextAction:"Close or repair the highlighted object outline."});
+        return "blocked";
+      }
       if ((forceQueue || requestPayload.full_design_mode) && token) {
         try {
           const queued = await queueRun();
@@ -110,10 +128,38 @@ export function createDashboardPlanExecutor(options: PlanExecutionOptions): Dash
       timeoutId = setTimeout(() => { timedOut = true; liveRunController.abort(); }, timeoutMs);
       const data = await post<PlanResponse>("/api/orchestrate", requestPayload, { token, signal: liveRunController.signal });
       if (!canPublish()) return isCurrent() ? "cancelled" : "stale";
+      if (data.success !== false && data.metadata?.calculation_save_v1?.disposition === "archived") {
+        setStatusMessage("Calculation saved in history. Save the current layout and recalculate to use new results.");
+        updateProjectStatus({ state: "stale", area: "generate", title: "Calculation saved in history",
+          detail: "Project inputs changed or were not saved. Previous active results were not replaced.", nextAction: "Save the current layout, then recalculate." });
+        return "stale";
+      }
+      if (options.getLiveInputFingerprint && inputFingerprint !== options.getLiveInputFingerprint()) {
+        try {
+          await options.retainStaleResult?.(data, requestPayload, resolvedProjectId ?? projectId ?? null);
+        } catch {
+          if (canPublish()) setStatusMessage("Drawing preserved, but calculation history could not be saved. Check the connection.");
+          return "blocked";
+        }
+        if (!canPublish()) return "stale";
+        appendChatMessage("assistant", "Calculation saved in history. Recalculate for the current drawing.", "status");
+        updateProjectStatus({ state: "stale", area: "generate", title: "Calculation is out of date",
+          detail: "The current drawing was not replaced.", nextAction: "Recalculate using the current layout." });
+        return "stale";
+      }
+      if (data.success === false) {
+        const detail = data.message?.trim() || "Calculation did not complete. Review the inputs and try again.";
+        appendChatMessage("assistant", prefix(data.missing_requirements || data.metadata?.missing_requirements ? summarizePlanResponse(data, mode) : detail), "status");
+        setStatusMessage(detail);
+        updateProjectStatus({ state: "blocked", area: "generate", title: "Calculation needs attention",
+          detail, nextAction: "Review the missing inputs or calculation issues, then run again. Previous results were not replaced." });
+        return "blocked";
+      }
       applyBackendResult(data);
       appendChatMessage("assistant", prefix(summarizePlanResponse(data, mode)));
       await requestPreview({ project_id: projectId || currentProjectId || null, result: data, filename_stem: fileName || siteName || "civora-ai-plan" }, { silent: true });
       if (!canPublish()) return isCurrent() ? "cancelled" : "stale";
+      if (options.getLiveInputFingerprint && inputFingerprint !== options.getLiveInputFingerprint()) return "stale";
       const detail = mode === "fix" ? "Civora AI ran a focused fix pass." : mode === "improve" ? "Civora AI generated an improved plan." : "Plan run completed.";
       setStatusMessage(detail);
       updateProjectStatus({ state: "needs review", area: "generate", title: mode === "fix" ? "Fix pass needs review" : mode === "improve" ? "Improvement pass needs review" : "Generate needs review",

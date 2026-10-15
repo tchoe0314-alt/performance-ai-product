@@ -18,6 +18,8 @@ type DeliverPanelProps = ComponentProps<typeof DeliverPanel>;
 type DashboardReportsQuantitiesPanelProps = ComponentProps<typeof DashboardReportsQuantitiesPanel>;
 
 type UseDashboardDeliverReportsPanelPropsInput = {
+  resultIsStale?: boolean;
+  calculationReference?: string;
   sidePanelForRender: SidePanelKey | null;
   reviewPackageFlowSummary: DeliverPanelProps["reviewPackageFlowSummary"];
   planPreviewUrl: string;
@@ -40,6 +42,8 @@ type UseDashboardDeliverReportsPanelPropsInput = {
   onMakeReviewPackage: () => void;
   onPlanSheetExportPdf: () => void;
   onExportDxf: () => void;
+  onExportCurrentDrawingDxf?: () => void;
+  onExportCurrentDrawingPdf?: () => void;
   onExportReport: () => void;
   onOpenPanel: (panel: SidePanelKey) => void;
   onPlanSheetTitleBlockUpdate: DeliverPanelProps["onPlanSheetTitleBlockUpdate"];
@@ -94,6 +98,8 @@ type UseDashboardDeliverReportsPanelPropsInput = {
 };
 
 export function useDashboardDeliverReportsPanelProps({
+  resultIsStale,
+  calculationReference,
   sidePanelForRender,
   reviewPackageFlowSummary,
   planPreviewUrl,
@@ -116,6 +122,8 @@ export function useDashboardDeliverReportsPanelProps({
   onMakeReviewPackage,
   onPlanSheetExportPdf,
   onExportDxf,
+  onExportCurrentDrawingDxf,
+  onExportCurrentDrawingPdf,
   onExportReport,
   onOpenPanel,
   onPlanSheetTitleBlockUpdate,
@@ -190,6 +198,8 @@ export function useDashboardDeliverReportsPanelProps({
     onMakeReviewPackage,
     onPlanSheetExportPdf,
     onExportDxf,
+    onExportCurrentDrawingDxf,
+    onExportCurrentDrawingPdf,
     onExportReport,
     onOpenQuantities: () => onOpenPanel("quantities"),
     onOpenExportHistory: () => onOpenPanel("jobs"),
@@ -232,6 +242,8 @@ export function useDashboardDeliverReportsPanelProps({
     lotWidth,
     onCreateReviewSheet,
     onExportDxf,
+    onExportCurrentDrawingDxf,
+    onExportCurrentDrawingPdf,
     onExportReport,
     onMakeReviewPackage,
     onOpenPanel,
@@ -318,6 +330,8 @@ export function useDashboardDeliverReportsPanelProps({
     },
     quantities: {
       rows: quantityRows,
+      outdated: resultIsStale,
+      calculationReference,
       staleSystemCount,
       trustScoreLabel: sidebarTrustScore,
       onExportReport: onExportQuantityReviewReport,
@@ -325,6 +339,8 @@ export function useDashboardDeliverReportsPanelProps({
       statusLabelForQuantityReview,
     },
   }), [
+    resultIsStale,
+    calculationReference,
     analysisIssueCount,
     blockedSystemCount,
     canApplyDrainageIssue,

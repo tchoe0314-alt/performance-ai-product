@@ -157,8 +157,12 @@ import { usePreviewCadLineworkCommands } from "./usePreviewCadLineworkCommands";
 import { usePreviewCadTransformCommands } from "./usePreviewCadTransformCommands";
 import { usePreviewCadWindowSelection } from "./usePreviewCadWindowSelection";
 import { usePreviewDraftGeometry } from "./usePreviewDraftGeometry";
+import { useWorkspaceEnvironmentMemory } from "../hooks/useWorkspaceEnvironmentMemory";
+import { defaultEnvironment, environmentLayerForObject, environmentObjectVisible, type DisplayUnits, type WorkspaceEnvironment } from "../utils/workspaceEnvironment";
+import { PreviewEnvironmentControls } from "./PreviewEnvironmentControls";
 
 export default function PreviewPanel({
+  environmentScope,
   authToken,
   previewReview,
   onRefreshPreview,
@@ -298,6 +302,11 @@ export default function PreviewPanel({
   }, [drawMode, onDrawingActiveChange]);
   const [cadSnapEnabled, setCadSnapEnabled] = useState(true);
   const [cadOrthoEnabled, setCadOrthoEnabled] = useState(false);
+  const [displayUnits,setDisplayUnits]=useState<DisplayUnits>("ft");
+  const [environmentLayers,setEnvironmentLayers]=useState(defaultEnvironment().layers);
+  const [satellite,setSatellite]=useState(true);
+  const [gridEnabled,setGridEnabled]=useState(false);
+  const [gridFt,setGridFt]=useState(5);
   const [cadOffsetDistance, setCadOffsetDistance] = useState("10");
   const [cadFilletRadius, setCadFilletRadius] = useState("5");
   const [cadTransformValue, setCadTransformValue] = useState("10");
@@ -520,16 +529,6 @@ export default function PreviewPanel({
     siteFill: "bg-white/15",
   } as const;
   const legendPalette = previewQuality === "high" ? highPalette : normalPalette;
-  useEffect(() => {
-    if (geocode?.lat == null || geocode?.lng == null) return;
-    const lat = Number(geocode?.lat);
-    const lng = Number(geocode?.lng);
-    if (!mapboxToken || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    const locationKey = `${lat.toFixed(7)}:${lng.toFixed(7)}`;
-    if (autoEnabledMapLocationRef.current === locationKey) return;
-    autoEnabledMapLocationRef.current = locationKey;
-    setMapOverlayEnabled(true);
-  }, [geocode?.lat, geocode?.lng, mapboxToken]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const query = window.matchMedia("(max-width: 767px), (pointer: coarse)");
@@ -893,14 +892,58 @@ export default function PreviewPanel({
   const [sourceLayerVisibility, setSourceLayerVisibility] = useState<PreviewSourceLayerVisibility>(
     DEFAULT_PREVIEW_SOURCE_LAYER_VISIBILITY,
   );
+  const environmentSnapshot=useMemo<WorkspaceEnvironment>(()=>({version:1,mode:previewMode,quality:previewQuality,units:displayUnits,mapEnabled:mapOverlayEnabled,satellite,mapLocked,layers:environmentLayers,semantic:semanticLayerVisibility,sources:sourceLayerVisibility,snap:cadSnapEnabled,ortho:cadOrthoEnabled,grid:gridEnabled,gridFt,hiddenCadLayers}),[previewMode,previewQuality,displayUnits,mapOverlayEnabled,satellite,mapLocked,environmentLayers,semanticLayerVisibility,sourceLayerVisibility,cadSnapEnabled,cadOrthoEnabled,gridEnabled,gridFt,hiddenCadLayers]);
+  const environmentMemory=useWorkspaceEnvironmentMemory(environmentScope??{account:"demo",project:currentProjectId??"",generation:0},environmentSnapshot,value=>{
+    setDisplayUnits(value.units);setMapOverlayEnabled(value.mapEnabled);setSatellite(value.satellite);setMapLocked(value.mapLocked);
+    setEnvironmentLayers(value.layers);setSemanticLayerVisibility(value.semantic);setSourceLayerVisibility(value.sources);
+    setHiddenCadLayers(value.hiddenCadLayers);
+    setCadSnapEnabled(value.snap);setCadOrthoEnabled(value.ortho);setGridEnabled(value.grid);setGridFt(value.gridFt);
+    if (!environmentScope) {onSetPreviewMode(value.mode);onSetPreviewQuality(value.quality);}
+  });
   const toggleSemanticLayer = useCallback((layer: PreviewSemanticLayer) => {
     setSemanticLayerVisibility((current) => ({
       ...current,
       [layer]: current[layer] === false,
     }));
   }, []);
+  useEffect(() => {
+    if (!environmentMemory.ready || environmentMemory.hasStoredChoice) return;
+    const lat = Number(geocode?.lat), lng = Number(geocode?.lng);
+    if (geocode?.lat == null || geocode?.lng == null || !mapboxToken || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    const locationKey = `${environmentScope?.account}:${environmentScope?.project}:${environmentScope?.generation}:${lat}:${lng}`;
+    if (autoEnabledMapLocationRef.current === locationKey) return;
+    autoEnabledMapLocationRef.current = locationKey;
+    setMapOverlayEnabled(true);
+  }, [environmentMemory.ready, environmentMemory.hasStoredChoice, environmentScope?.account, environmentScope?.project, environmentScope?.generation, geocode?.lat, geocode?.lng, mapboxToken]);
+  const environmentCounts = useMemo(() => {
+    const counts = { topographic: 0, zoning: 0, parcels: 0, survey: surveyPoints?.length ?? 0, utilities: 0 };
+    [...buildingPlacements, ...cadEntityPreviewObjects, ...suggestedPlacements].forEach(item => {
+      const layer = environmentLayerForObject(item);
+      if (layer) counts[layer] += 1;
+    });
+    counts.topographic += surveyPoints?.filter(point => Number.isFinite(point.z)).length ?? 0;
+    if (hasSourceBackedSurfaceEvidence && hasGradingSurface) counts.topographic += 1;
+    return counts;
+  }, [buildingPlacements, cadEntityPreviewObjects, suggestedPlacements, surveyPoints, hasSourceBackedSurfaceEvidence, hasGradingSurface]);
+  const visibleSurveyPoints = useMemo(() => (surveyPoints ?? [])
+    .filter(point => environmentLayers.survey || (environmentLayers.topographic && Number.isFinite(point.z)))
+    .map(point => environmentLayers.topographic ? point : { ...point, z: undefined }),
+    [surveyPoints, environmentLayers]);
+  const applyEnvironmentPatch = (patch: Partial<WorkspaceEnvironment>) => {
+    if (patch.units !== undefined) setDisplayUnits(patch.units);
+    if (patch.mapEnabled !== undefined) setMapOverlayEnabled(patch.mapEnabled);
+    if (patch.satellite !== undefined) setSatellite(patch.satellite);
+    if (patch.layers !== undefined) setEnvironmentLayers(patch.layers);
+    if (patch.grid !== undefined) setGridEnabled(patch.grid);
+    if (patch.gridFt !== undefined) setGridFt(patch.gridFt);
+    if (patch.snap !== undefined) setCadSnapEnabled(patch.snap);
+    if (patch.ortho !== undefined) setCadOrthoEnabled(patch.ortho);
+  };
   const showAllSemanticLayers = useCallback(() => {
     setSemanticLayerVisibility({});
+    setEnvironmentLayers(defaultEnvironment().layers);
+    setSourceLayerVisibility(defaultEnvironment().sources);
+    setHiddenCadLayers([]);
   }, []);
   const toggleSourceLayer = useCallback((layer: keyof PreviewSourceLayerVisibility) => {
     setSourceLayerVisibility((current) => ({ ...current, [layer]: !current[layer] }));
@@ -920,8 +963,8 @@ export default function PreviewPanel({
         isDetectedExistingPlacementVisible(item, sourceLayerVisibility),
       ),
       ...(technicalProposedVisible ? proposedDesignObjects : []),
-    ],
-    [detectedExistingObjects, proposedDesignObjects, sourceLayerVisibility, technicalProposedVisible],
+    ].filter(item => environmentObjectVisible(item, environmentLayers)),
+    [detectedExistingObjects, proposedDesignObjects, sourceLayerVisibility, technicalProposedVisible, environmentLayers],
   );
   const selectSemanticLayer = useCallback((layer: PreviewSemanticLayer) => {
     const ids = renderedCadObjects
@@ -933,9 +976,9 @@ export default function PreviewPanel({
   const renderedSuggestedPlacements = useMemo(
     () =>
       suggestedPlacements.filter((item) =>
-        isDetectedExistingPlacementVisible(item, sourceLayerVisibility),
+        isDetectedExistingPlacementVisible(item, sourceLayerVisibility) && environmentObjectVisible(item, environmentLayers),
       ),
-    [sourceLayerVisibility, suggestedPlacements],
+    [sourceLayerVisibility, suggestedPlacements, environmentLayers],
   );
   const mapLayerPlacements = useMemo(() => {
     const byId = new Map<string, BuildingPlacement>();
@@ -959,6 +1002,9 @@ export default function PreviewPanel({
   const filteredPreview3DItems = useMemo(
     () =>
       preview3DEffectiveItems.filter((item) => {
+        if (item.layer === "TERRAIN" && !environmentLayers.topographic) return false;
+        const environmentType = semanticLayerFor3DItem(item) === "utilities" ? "utility" : semanticLayerFor3DItem(item) === "lots" ? "lot" : "custom";
+        if (!environmentObjectVisible({type: environmentType, meta: {...item.meta, cad_layer:item.layer}}, environmentLayers)) return false;
         if (!isPreviewSemanticLayerVisible(semanticLayerFor3DItem(item), semanticLayerVisibility)) return false;
         const layer = String(item.layer || "").toUpperCase();
         if (layer === "TERRAIN") return true;
@@ -970,7 +1016,7 @@ export default function PreviewPanel({
         if (semanticLayer === "lots") return sourceLayerVisibility.detectedParcels;
         return sourceLayerVisibility.detectedOther;
       }),
-    [preview3DEffectiveItems, semanticLayerVisibility, sourceLayerVisibility],
+    [preview3DEffectiveItems, semanticLayerVisibility, sourceLayerVisibility, environmentLayers],
   );
 
   const canvasCompositionSignature = useMemo(
@@ -1001,8 +1047,8 @@ export default function PreviewPanel({
   ]);
 
   const cadSegments = useMemo(
-    () => buildCadSegments({ visibleCadObjects, suggestedPlacements, getObjectGeometryPoints }),
-    [getObjectGeometryPoints, suggestedPlacements, visibleCadObjects],
+    () => buildCadSegments({ visibleCadObjects: mapLayerPlacements, suggestedPlacements: [], getObjectGeometryPoints }),
+    [getObjectGeometryPoints, mapLayerPlacements],
   );
 
   const resolveCadSnapPoint = useCallback(
@@ -1013,10 +1059,10 @@ export default function PreviewPanel({
         ortho: shouldIgnoreObjectSnap ? false : cadOrthoEnabled,
         basePoint,
         threshold: Math.max(lotWidth, lotHeight, 1) * 0.018,
-        gridSize: 5,
+        gridSize: gridFt,
       });
     },
-    [cadOrthoEnabled, cadSegments, cadSnapEnabled, drawMode, lotHeight, lotWidth],
+    [cadOrthoEnabled, cadSegments, cadSnapEnabled, drawMode, lotHeight, lotWidth, gridFt],
   );
 
   const updateCadObject = useCallback(
@@ -2175,6 +2221,7 @@ export default function PreviewPanel({
   );
 
   usePreviewMapRuntime({
+    satellite,
     mapAvailable,
     mapOverlayEnabled,
     mapContainerRef,
@@ -2272,7 +2319,9 @@ export default function PreviewPanel({
     planPreviewUrl,
     resolveVisualKind,
     showSiteBounds: showSiteBounds && !aiRealismEnabled,
-    surveyPoints,
+    surveyPoints: visibleSurveyPoints,
+    showSurveyPoints: environmentLayers.survey,
+    displayUnits,
     useLightHighQuality,
     waterFireFlow,
     siteToLatLng,
@@ -2370,6 +2419,8 @@ export default function PreviewPanel({
               semanticLayerVisibility,
               sourceLayerVisibility,
               sourceLayerCounts,
+              environmentLayerControls: <PreviewEnvironmentControls section="layers" value={environmentSnapshot} counts={environmentCounts} mapAvailable={mapAvailable} coordinateLabel="" onChange={applyEnvironmentPatch} />,
+              environmentViewControls: <PreviewEnvironmentControls section="view" value={environmentSnapshot} counts={environmentCounts} mapAvailable={mapAvailable} coordinateLabel={mapAnchor ? "WGS84 anchor · local ft (approximate)" : "Local site · ft (unreferenced)"} onChange={applyEnvironmentPatch} />,
               precisionToolsVisible: cadPrecisionToolsVisible,
               transientMenuCloseToken,
               onSetPreviewQuality,
@@ -2663,6 +2714,7 @@ export default function PreviewPanel({
                   siteRotationDeg,
                 },
                 canvasHudProps: {
+                  displayUnits,
                   scaleLengthFt: displayedScaleLengthFt,
                   zoomScale: activeCanvasView.scale,
                   zoomLabel: activeZoomLabel,
@@ -2692,6 +2744,11 @@ export default function PreviewPanel({
                   onClearHighlights,
                   beginCadWindowSelect,
                   planCanvasLayersProps: {
+                    displayUnits,
+                    gridEnabled,
+                    gridFt,
+                    showSurveyPoints: environmentLayers.survey,
+                    constraintObjects: buildingPlacements,
                     overlayBoundsResolved,
                     previewMode,
                     siteLocked: Boolean(siteLocked),
@@ -2703,8 +2760,8 @@ export default function PreviewPanel({
                     suggestedPlacements: renderedSuggestedPlacements,
                     dependencyProposal,
                     layoutDifferences: selectedLayoutAlternative?.differences ?? [],
-                    surveyPointCount: surveyPoints?.length ?? 0,
-                    surveyPoints,
+                    surveyPointCount: visibleSurveyPoints.length,
+                    surveyPoints: visibleSurveyPoints,
                     hasTerrainSurfaceEvidence: Boolean(hasSourceBackedSurfaceEvidence && hasGradingSurface),
                     showMap,
                     isHighQuality,

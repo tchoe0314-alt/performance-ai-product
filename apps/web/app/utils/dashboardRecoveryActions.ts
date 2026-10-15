@@ -11,6 +11,7 @@ type MarkSystemsStale = (systems: EngineeringSystemKey[]) => void;
 type SystemsImpactedByPlacement = (target?: Partial<BuildingPlacement> | null) => EngineeringSystemKey[];
 
 type DashboardRecoveryActions = {
+  applyWorkspaceTransaction?: (direction:"undo"|"redo", action:Extract<DraftUndoAction,{action:"workspace_transaction"}>)=>void;
   setBuildingPlacements: StateSetter<BuildingPlacement[]>;
   setSelectedObjectIds: StateSetter<string[]>;
   setActivePlacementId: StateSetter<string | null>;
@@ -64,6 +65,7 @@ export function runDashboardUndoDraftAction({
     appendChatMessage("assistant", message, "status");
     return;
   }
+  if(draftAction.action==="workspace_transaction"){actions.applyWorkspaceTransaction?.("undo",draftAction);return;}
   recordDraftRedoAction(draftAction);
   if (draftAction.action === "add") {
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== draftAction.object.id));
@@ -170,11 +172,10 @@ export function runDashboardUndoDraftAction({
     return;
   }
   if (draftAction.action === "explode") {
-    const beforeSourceById = new Map(draftAction.beforeSources.map((item) => [item.id, item]));
+    const sourceIds = new Set([...draftAction.beforeSources,...draftAction.afterSources].map(item=>item.id));
     setBuildingPlacements((prev) => [
-      ...prev
-        .filter((item) => item.id !== draftAction.object.id)
-        .map((item) => (beforeSourceById.has(item.id) ? { ...beforeSourceById.get(item.id)! } : item)),
+      ...prev.filter(item => item.id !== draftAction.object.id && !sourceIds.has(item.id)),
+      ...draftAction.beforeSources,
       { ...draftAction.object },
     ]);
     setSelectedObjectIds([draftAction.object.id]);
@@ -254,6 +255,7 @@ export function runDashboardRedoDraftAction({
     appendChatMessage("assistant", message, "status");
     return;
   }
+  if(redoAction.action==="workspace_transaction"){actions.applyWorkspaceTransaction?.("redo",redoAction);return;}
   const finishRedo = (message: string) => {
     recordDraftUndoAction(redoAction);
     setObjectManagerStatusMessage(message);
@@ -322,9 +324,11 @@ export function runDashboardRedoDraftAction({
                 ...item,
                 meta: {
                   ...(item.meta ?? {}),
-                  ui_hidden: true,
-                  combined_into_object_id: redoAction.object.id,
-                  combined_into_label: redoAction.object.label,
+                  ...(redoAction.object.type === "group" ? { group_id: redoAction.object.id } : {
+                    ui_hidden: true,
+                    combined_into_object_id: redoAction.object.id,
+                    combined_into_label: redoAction.object.label,
+                  }),
                 },
               }
             : item,
@@ -338,11 +342,9 @@ export function runDashboardRedoDraftAction({
     return;
   }
   if (redoAction.action === "explode") {
-    const afterSourceById = new Map(redoAction.afterSources.map((item) => [item.id, item]));
+    const sourceIds = new Set([...redoAction.beforeSources,...redoAction.afterSources].map(item=>item.id));
     setBuildingPlacements((prev) =>
-      prev
-        .filter((item) => item.id !== redoAction.object.id)
-        .map((item) => (afterSourceById.has(item.id) ? { ...afterSourceById.get(item.id)! } : item)),
+      [...prev.filter(item => item.id !== redoAction.object.id && !sourceIds.has(item.id)), ...redoAction.afterSources],
     );
     setSelectedObjectIds(redoAction.afterSources.map((item) => item.id));
     setActivePlacementId(redoAction.afterSources[0]?.id ?? null);
@@ -397,6 +399,7 @@ export function runDashboardUndoRecentChange({
     return;
   }
   const undo = change.undo;
+  if(undo.action==="workspace_transaction"){actions.applyWorkspaceTransaction?.("undo",undo);return;}
   recordDraftRedoAction(undo);
   if (undo.action === "add") {
     setBuildingPlacements((prev) => prev.filter((item) => item.id !== undo.object.id));
@@ -470,11 +473,10 @@ export function runDashboardUndoRecentChange({
     return;
   }
   if (undo.action === "explode") {
-    const beforeSourceById = new Map(undo.beforeSources.map((item) => [item.id, item]));
+    const sourceIds = new Set([...undo.beforeSources,...undo.afterSources].map(item=>item.id));
     setBuildingPlacements((prev) => [
-      ...prev
-        .filter((item) => item.id !== undo.object.id)
-        .map((item) => (beforeSourceById.has(item.id) ? { ...beforeSourceById.get(item.id)! } : item)),
+      ...prev.filter(item => item.id !== undo.object.id && !sourceIds.has(item.id)),
+      ...undo.beforeSources,
       { ...undo.object },
     ]);
     setSelectedObjectIds([undo.object.id]);

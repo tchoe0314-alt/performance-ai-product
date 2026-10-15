@@ -10,6 +10,7 @@ import type {
 import { uploadedImageSrc } from "./auth";
 import type { GenerateFlowSummary, ReviewPackageFlowSummary } from "./dashboardDataTypes";
 import { buildDashboardProjectInputView } from "./dashboardProjectInputView";
+import { resolveCanonicalCanvasInput } from "./canonicalCanvasProject";
 import type { SystemStatus } from "./workflowConstants";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
@@ -108,6 +109,8 @@ export function runDashboardApplyProjectInput({
   if (!projectInput || typeof projectInput !== "object") {
     return;
   }
+
+  projectInput = resolveCanonicalCanvasInput(projectInput);
 
   const projectSiteInputs =
     projectInput.meta?.site_inputs && typeof projectInput.meta.site_inputs === "object"

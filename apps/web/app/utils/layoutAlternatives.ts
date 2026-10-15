@@ -3,6 +3,8 @@ import { calculateParkingLayout, type ParkingLayoutInputs } from "./parkingLayou
 import type { ParkingParams } from "./previewGeometryTruth";
 import { assessSiteInterference } from "./siteInterference";
 import { canonicalControlState } from "./canonicalEditCommands";
+import {planDependencyGraph} from "./dependencyGraph";
+import { layoutBoundaryViolations } from "./layoutBoundaryChecks";
 
 export type LayoutAlternative = {
   id: string;
@@ -59,6 +61,9 @@ export type LayoutGoal = {
 export type LayoutAlternativeRequest = {
   goals?: LayoutGoal[];
   profile?: "balanced" | "conservative" | "aggressive" | "mixed";
+  units?: string;
+  requiredParking?: number | null;
+  setback?: number | null;
 };
 
 export type LayoutAlternativeSearch = {
@@ -101,16 +106,17 @@ export function parseLayoutGoals(message: string): LayoutAlternativeRequest {
   return { goals, profile };
 }
 
-const defaultParkingParams = (item: BuildingPlacement): ParkingLayoutInputs => {
+const defaultParkingParams = (item: BuildingPlacement, scale = 1): ParkingLayoutInputs => {
   const params = (item.meta?.parkingParams as ParkingParams | undefined) ?? {};
+  const length = (value: unknown, fallback: number) => value === undefined ? fallback : Number(value) / scale;
   return {
-    stallWidth: Number(params.stallWidth) || 9,
-    stallDepth: Number(params.stallDepth) || 18,
-    aisleWidth: Number(params.aisleWidth) || 24,
-    adaAisleWidth: Number(params.adaAisleWidth) || 8,
+    stallWidth: length(params.stallWidth, 9),
+    stallDepth: length(params.stallDepth, 18),
+    aisleWidth: length(params.aisleWidth, 24),
+    adaAisleWidth: length(params.adaAisleWidth, 8),
     adaCount: Number(params.adaCount ?? item.meta?.adaCount) || 0,
     compactCount: Number(params.compactCount) || 0,
-    compactWidth: Number(params.compactWidth) || 8,
+    compactWidth: length(params.compactWidth, 8),
     angleDeg: Number(params.angleDeg) || 90,
     loading: params.loading === "single" ? "single" : "double",
     autoResizeToFitCount: Boolean(params.autoResizeToFitCount),
@@ -142,9 +148,10 @@ const distance = (a: { x: number; y: number }, b: { x: number; y: number }) => M
 const isBuilding = (item: BuildingPlacement) => /building|office|retail|industrial|multifamily/.test(item.type ?? "");
 const isDrainage = (item: BuildingPlacement) => ["basin", "outfall", "inlet"].includes(item.type ?? "");
 
-function metricsFor(placements: BuildingPlacement[], source: BuildingPlacement[]) {
-  const parkingReports = placements.filter((item) => item.type === "parking").map((item) =>
-    calculateParkingLayout(item, defaultParkingParams(item), item.stallCount ?? 0),
+function metricsFor(placements: BuildingPlacement[], source: BuildingPlacement[], request: LayoutAlternativeRequest) {
+  const scale = request.units === "m" ? 0.3048 : 1;
+  const parkingReports = placements.filter((item) => item.type === "parking" && item.placed !== false).map((item) =>
+    calculateParkingLayout({ w: item.w / scale, d: item.d / scale }, defaultParkingParams(item, scale), item.stallCount ?? 0),
   );
   const issues = assessSiteInterference(placements);
   const site = placements.find((item) => item.type === "site");
@@ -166,14 +173,17 @@ function metricsFor(placements: BuildingPlacement[], source: BuildingPlacement[]
     const original = sourceById.get(item.id);
     return original && (Math.abs((item.x ?? 0) - (original.x ?? 0)) > 0.01 || Math.abs((item.y ?? 0) - (original.y ?? 0)) > 0.01);
   }).length;
+  const requestedStalls = Math.max(request.requiredParking ?? 0, parkingReports.reduce((sum, report) => sum + report.requestedStalls, 0));
+  const placedStalls = parkingReports.reduce((sum, report) => sum + report.generatedStalls, 0);
   return {
-    requestedStalls: parkingReports.reduce((sum, report) => sum + report.requestedStalls, 0),
+    requestedStalls,
     capacity: parkingReports.reduce((sum, report) => sum + report.maxStalls, 0),
-    shortfall: parkingReports.reduce((sum, report) => sum + report.shortfall, 0),
+    shortfall: Math.max(requestedStalls - placedStalls, parkingReports.reduce((sum, report) => sum + report.shortfall, 0)),
     conflicts: issues.filter((issue) => issue.severity === "conflict").length,
+    outsideBoundary: issues.some(issue => issue.code === "outside_site_boundary"),
     reviews: issues.filter((issue) => issue.severity === "review").length,
-    entranceDistance,
-    roadLength,
+    entranceDistance: entranceDistance / scale,
+    roadLength: roadLength / scale,
     drainageMoved,
   };
 }
@@ -242,6 +252,7 @@ function transformVariant(
   source: BuildingPlacement[],
   index: number,
   profile: "balanced" | "conservative" | "aggressive",
+  scale = 1,
 ): BuildingPlacement[] {
   const site = source.find((item) => item.type === "site");
   const siteX = site?.x ?? 0;
@@ -249,8 +260,8 @@ function transformVariant(
   const siteW = site?.w ?? 1000;
   const siteD = site?.d ?? 700;
   const clamp = (value: number, size: number, origin: number, span: number) =>
-    Math.min(Math.max(value, origin + 12), Math.max(origin + 12, origin + span - size - 12));
-  const intensity = profile === "conservative" ? 0.6 : profile === "aggressive" ? 1.4 : 1;
+    Math.min(Math.max(value, origin + 12 * scale), Math.max(origin + 12 * scale, origin + span - size - 12 * scale));
+  const intensity = (profile === "conservative" ? 0.6 : profile === "aggressive" ? 1.4 : 1) * scale;
   return source.map((original, objectIndex) => {
     const item = clonePlacement(original);
     if (item.type === "site" || !item.placed || ["fixed", "existing", "reference"].includes(canonicalControlState(item))) return item;
@@ -283,7 +294,7 @@ function transformVariant(
     const moveX = nextX - (item.x ?? 0);
     const moveY = nextY - (item.y ?? 0);
     const parkingParams = item.type === "parking" && (index === 2 || index >= VARIANTS.length)
-      ? { ...defaultParkingParams(item), angleDeg: index >= VARIANTS.length ? [45, 60, 90][index % 3] : 60, useMixedAngles: true }
+      ? { ...(item.meta?.parkingParams ?? {}), angleDeg: index >= VARIANTS.length ? [45, 60, 90][index % 3] : 60, useMixedAngles: true }
       : null;
     return {
       ...item,
@@ -312,12 +323,26 @@ const VARIANTS = [
 export function searchLayoutAlternatives(source: BuildingPlacement[], requestedCount: number, request: LayoutAlternativeRequest = {}): LayoutAlternativeSearch {
   const count = Math.max(2, Math.min(10, Math.floor(requestedCount) || 5));
   const invalidInputs: string[] = [];
+  if (request.units !== undefined && !["ft", "m"].includes(request.units)) invalidInputs.push("set project units to ft or m");
+  if (request.requiredParking != null && (!Number.isSafeInteger(request.requiredParking) || request.requiredParking < 0)) invalidInputs.push("invalid parking requirement");
+  if (request.setback != null && (!Number.isFinite(request.setback) || request.setback < 0)) invalidInputs.push("invalid building setback");
+  if (source.length > 200 || source.reduce((total, item) => total + (item.geometry?.length ?? 0), 0) > 2000) invalidInputs.push("layout search limit: 200 objects / 2000 vertices");
+  if (source.filter(item => item.type === "site" && item.placed).length > 1) invalidInputs.push("select one primary parcel before comparing layouts");
   if (!source.some(item => item.type === "site" && item.placed)) invalidInputs.push("missing site boundary");
   const ids = new Set<string>();
   source.forEach(item => {
     if (!item.id || ids.has(item.id)) invalidInputs.push("missing or duplicate object identity");
     ids.add(item.id);
     if (!item.placed) return;
+    if (item.type === "parking") {
+      if (item.geometryType && item.geometryType !== "rect") invalidInputs.push("parking search supports rectangular fields only");
+      const params = item.meta?.parkingParams as ParkingParams | undefined;
+      const scale = request.units === "m" ? 0.3048 : 1;
+      for (const [key, minimum] of [["stallWidth", 6], ["stallDepth", 12], ["aisleWidth", 10]] as const) {
+        if (params?.[key] !== undefined && (!Number.isFinite(Number(params[key])) || Number(params[key]) / scale < minimum)) invalidInputs.push(`parking parameter outside supported model: ${key}`);
+      }
+      if (params?.angleDeg !== undefined && (!Number.isFinite(Number(params.angleDeg)) || Number(params.angleDeg) < 30 || Number(params.angleDeg) > 90)) invalidInputs.push("parking parameter outside supported model: angleDeg");
+    }
     if (![item.x ?? 0, item.y ?? 0, item.w, item.d, item.rotation ?? 0].every(Number.isFinite) || item.w <= 0 || item.d <= 0) invalidInputs.push(`invalid dimensions: ${item.id}`);
     if ((item.geometryType === "polygon" || item.geometryType === "polyline") && (!Array.isArray(item.geometry) || item.geometry.length < (item.geometryType === "polygon" ? 3 : 2) || item.geometry.some(point => !Array.isArray(point) || point.length < 2 || !point.slice(0, 2).every(Number.isFinite)))) invalidInputs.push(`invalid geometry: ${item.id}`);
   });
@@ -331,14 +356,16 @@ export function searchLayoutAlternatives(source: BuildingPlacement[], requestedC
   const fixedObjectCount = source.filter((item) => ["fixed", "existing", "reference"].includes(canonicalControlState(item))).length;
   const candidates = Array.from({ length: candidateCount }, (_, index) => {
     const profile = requestProfile === "mixed" ? (index === 0 ? "conservative" : "aggressive") : requestProfile;
-    const placements = transformVariant(source, index, profile);
+    const graph=planDependencyGraph(source,transformVariant(source,index,profile,request.units === "m" ? 0.3048 : 1),null,"Layout preview");
+    const placements = graph.placements;
     const preset = VARIANTS[index];
     return {
       id: `layout-alternative-${index + 1}`,
       label: preset?.[0] ?? `Search ${String(index - VARIANTS.length + 1).padStart(2, "0")}`,
       description: preset?.[1] ?? "A constraint-aware candidate explored by the feasibility search.",
       placements,
-      metrics: metricsFor(placements, source),
+      dependencyBlocker:graph.status==="blocked"?graph.reason:null,
+      metrics: metricsFor(placements, source, request),
       goalLabels: goals.map((goal) => goal.label),
       profile,
       differences: buildLayoutDifferences(source, placements),
@@ -349,6 +376,9 @@ export function searchLayoutAlternatives(source: BuildingPlacement[], requestedC
   const rejectionCounts = new Map<string, number>();
   const acceptable = candidates.filter((candidate) => {
     const reasons: string[] = [];
+    if(candidate.dependencyBlocker)reasons.push(candidate.dependencyBlocker);
+    reasons.push(...layoutBoundaryViolations(candidate.placements, request.setback));
+    if (candidate.metrics.outsideBoundary) reasons.push("outside current site boundary");
     if (candidate.placements.some((item) => item.meta?.alternative_was_clamped === true)) reasons.push("outside-site movement");
     if (candidate.metrics.conflicts > 0) reasons.push("modeled hard geometry conflicts");
     if (candidate.metrics.shortfall > 0) reasons.push(`required parking shortfall (${candidate.metrics.shortfall} stalls)`);

@@ -7,11 +7,16 @@ import {
   Undo2,
 } from "lucide-react";
 import CivoraLogo from "./CivoraLogo";
+import ProjectHeaderDetails, { type ProjectHeaderDetailsProps } from "./ProjectHeaderDetails";
+import { WorkspaceStateBadge } from "./WorkspaceStateBadge";
+import { WorkspaceProjectActions } from "./WorkspaceProjectActions";
 
 type AppHeaderProps = {
   userEmail: string;
   projectName: string;
   saveStatus: string;
+  details?:ProjectHeaderDetailsProps;
+  actions?:React.ComponentProps<typeof WorkspaceProjectActions>;
   canUndo: boolean;
   canRedo: boolean;
   onOpenProjects: () => void;
@@ -26,6 +31,8 @@ export default function AppHeader({
   userEmail,
   projectName,
   saveStatus,
+  details,
+  actions,
   canUndo,
   canRedo,
   onOpenProjects,
@@ -35,16 +42,12 @@ export default function AppHeader({
   onRedo,
   onLogout,
 }: AppHeaderProps) {
-  const normalizedSaveStatus = /saved|reloadable|restored/i.test(saveStatus)
-    ? "Saved"
-    : /saving/i.test(saveStatus)
-      ? "Saving"
-      : "Unsaved";
+  const normalizedSaveStatus = details?.saveStatus ?? (/^saved$|reloadable|restored/i.test(saveStatus) ? "Saved" : /^saving/i.test(saveStatus) ? "Saving" : "Unsaved");
 
   return (
     <header className="civora-app-header sticky top-0 z-[1000] w-full border-b border-slate-200/80 bg-white/97 backdrop-blur-xl">
-      <div className="flex h-[52px] w-full items-center justify-between gap-3 px-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex h-[52px] w-full items-center justify-between gap-1 px-2 sm:gap-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-1 sm:gap-3">
           <CivoraLogo
             priority
             className="shrink-0"
@@ -62,6 +65,7 @@ export default function AppHeader({
           >
             {projectName || "Untitled Project"}
           </button>
+          {details&&<ProjectHeaderDetails {...details} />}
           <span
             className="hidden shrink-0 items-center gap-1.5 text-xs font-medium text-slate-500 md:inline-flex"
             data-testid="header-save-status"
@@ -69,9 +73,11 @@ export default function AppHeader({
             <span className={`h-2 w-2 rounded-full ${normalizedSaveStatus === "Saved" ? "bg-emerald-500" : normalizedSaveStatus === "Saving" ? "bg-blue-500" : "bg-amber-500"}`} />
             {normalizedSaveStatus}
           </span>
+          {details&&<span data-testid="header-project-health" aria-label={`Project health: ${details.health}. Connection: ${details.connection}`} className="hidden shrink-0 xl:inline-flex"><WorkspaceStateBadge state={details.health==="Blocked"?"blocked":details.health==="Stale"?"stale":details.health==="Updating"?"updating":"unverified"} label={details.health} title={`${details.healthDetail} ${details.connection}`} /></span>}
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
+          {actions&&<WorkspaceProjectActions key={actions.projectId??"new"} {...actions} />}
           <button
             type="button"
             onClick={onUndo}

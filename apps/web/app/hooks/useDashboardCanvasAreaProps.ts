@@ -16,6 +16,7 @@ type SelectedAccessIssue = {
 
 type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectName" | "previewPanelProps"> & {
   authToken?: string | null;
+  environmentScope?: PreviewPanelProps["environmentScope"];
   currentProject: ProjectRecord | null;
   previewReview: PreviewPanelProps["previewReview"];
   onRefreshPreview: PreviewPanelProps["onRefreshPreview"];
@@ -126,6 +127,7 @@ type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectN
 };
 
 export function useDashboardCanvasAreaProps({
+  environmentScope,
   authToken,
   currentProject,
   previewReview,
@@ -254,6 +256,7 @@ export function useDashboardCanvasAreaProps({
   return {
     ...canvasAreaProps,
     previewPanelProps: {
+      environmentScope,
       authToken,
       previewReview,
       onRefreshPreview,

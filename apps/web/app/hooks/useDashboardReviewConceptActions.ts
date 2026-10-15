@@ -32,7 +32,7 @@ type UseDashboardReviewConceptActionsInput = {
   parkingLoading: "single" | "double";
   parkingStallDepth: string;
   parkingStallWidth: string;
-  recordDraftUndoAction: (action: { action: "add"; object: BuildingPlacement }) => void;
+  recordDraftUndoAction: (action: import("../utils/dashboardTypes").DraftUndoAction) => void;
   recordRecentChange: (change: Omit<RecentChange, "id" | "createdAt">) => void;
   resolveLotBounds: () => { w: number; h: number };
   setActivePlacementId: StateSetter<string | null>;
@@ -95,7 +95,7 @@ export function useDashboardReviewConceptActions({
       const lot = resolveLotBounds();
       const additions = buildGradingDrainageReviewContextPlacements({ lot, mode });
       setBuildingPlacements((prev) => [...prev, ...additions]);
-      additions.forEach((item) => recordDraftUndoAction({ action: "add", object: item }));
+      recordDraftUndoAction({action:"add_many",objects:additions,label:message});
       markSystemsStale(["grading", "drainage"]);
       setActivePlacementId(null);
       setPlacementModeEnabled(false);

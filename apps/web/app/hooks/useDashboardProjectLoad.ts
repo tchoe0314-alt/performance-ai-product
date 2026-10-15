@@ -6,6 +6,8 @@ import type { Issue, JobSummary, PlanResponse, PreviewResponse, ProjectInput, Pr
 import { markCivoraInteraction, measureCivoraInteractionAfterPaint } from "../utils/performanceProbes";
 import { ACTIVE_PROJECT_STORAGE_KEY } from "../utils/workflowConstants";
 import type { ProjectStatusSummary } from "../utils/workspaceShell";
+import { resolveCanonicalCanvasInput } from "../utils/canonicalCanvasProject";
+import {validateLedger} from "../utils/editTransactions";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type UpdateProjectStatus = (updates: Omit<ProjectStatusSummary, "updatedAt">) => void;
@@ -90,7 +92,6 @@ export function useDashboardProjectLoad({
     projectLoadRequestRef.current = requestId;
     cancelPendingRun();
     try {
-      resetWorkspaceStateRef.current?.();
       updateProjectStatus({
         state: "working",
         area: "projects",
@@ -105,7 +106,9 @@ export function useDashboardProjectLoad({
       if (projectLoadRequestRef.current !== requestId) {
         return;
       }
-      const project = data.project;
+      const project = { ...data.project, project_input: resolveCanonicalCanvasInput(data.project.project_input ?? {}) };
+      if(project.project_input.meta?.edit_history_v1)validateLedger(project.project_input.meta.edit_history_v1);
+      resetWorkspaceStateRef.current?.();
       resolvedProjectIdRef.current = project.project_id;
       setCurrentProject(project);
       setProjectId(project.project_id);
@@ -133,6 +136,7 @@ export function useDashboardProjectLoad({
       });
       if (typeof window !== "undefined") {
         window.localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, project.project_id);
+        window.sessionStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, project.project_id);
       }
       loadProjectResultInBackgroundRef.current?.(project);
       if (activeJobId && (!projectId || currentProjectActiveJob?.project_id === id || activeJob?.project_id === id)) {
@@ -150,6 +154,7 @@ export function useDashboardProjectLoad({
       if (missingProject) {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
+          window.sessionStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY);
         }
         resolvedProjectIdRef.current = "";
         setCurrentProject(null);
@@ -225,7 +230,7 @@ export function useDashboardProjectLoad({
     // mistake that acknowledgement for a saved project from a previous session.
     if (currentProject?.project_id || projectId || resolvedProjectIdRef.current) return;
     if (typeof window === "undefined") return;
-    const savedProjectId = window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+    const savedProjectId = window.sessionStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || window.localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
     if (!savedProjectId) return;
     restoredActiveProjectRef.current = true;
     void loadProject(savedProjectId);

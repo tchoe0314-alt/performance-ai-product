@@ -1,6 +1,7 @@
 import { Navigation, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 
 import type { CadSnapKind } from "../utils/cadGeometryKernel";
+import { displayLength, type DisplayUnits } from "../utils/workspaceEnvironment";
 
 type DraftPrecisionReadout = {
   currentPoint: [number, number] | null;
@@ -12,6 +13,7 @@ type DraftPrecisionReadout = {
 } | null;
 
 type PreviewCanvasHudProps = {
+  displayUnits?: DisplayUnits;
   scaleLengthFt: number;
   zoomScale: number;
   zoomLabel?: string;
@@ -28,6 +30,7 @@ type PreviewCanvasHudProps = {
 };
 
 export function PreviewCanvasHud({
+  displayUnits = "ft",
   scaleLengthFt,
   zoomScale,
   zoomLabel,
@@ -61,7 +64,7 @@ export function PreviewCanvasHud({
         >
           <div className="mb-1 flex items-center justify-between gap-4">
             <span>Scale</span>
-            <span>{scaleLengthFt} ft</span>
+            <span>{displayLength(scaleLengthFt, displayUnits)}</span>
           </div>
           <div className="flex h-3 w-28 overflow-hidden rounded-sm border border-slate-800 bg-white">
             {[0, 1, 2, 3].map((segment) => (
@@ -113,14 +116,14 @@ export function PreviewCanvasHud({
       >
         <div>{zoomLabel ?? `ZOOM ${Math.round(zoomScale * 100)}%`}</div>
         <div>
-          SITE {Math.round(lotWidth)} ft x {Math.round(lotHeight)} ft
+          SITE {displayLength(lotWidth, displayUnits)} x {displayLength(lotHeight, displayUnits)}
         </div>
         <div>
           <span data-testid="canvas-scale-source">{scaleTruthLabel}</span>
         </div>
         <div>
-          X {cursorSitePoint ? cursorSitePoint.x.toFixed(1) : "--"} ft / Y{" "}
-          {cursorSitePoint ? cursorSitePoint.y.toFixed(1) : "--"} ft
+          X {cursorSitePoint ? displayLength(cursorSitePoint.x, displayUnits, 1, true) : "--"} / Y{" "}
+          {cursorSitePoint ? displayLength(cursorSitePoint.y, displayUnits, 1, true) : "--"}
         </div>
       </div>
       {draftPrecisionReadout ? (
@@ -133,21 +136,21 @@ export function PreviewCanvasHud({
             <span>{activeDrawToolLabel}</span>
             <span>PTS {draftPrecisionReadout.pointCount}</span>
             <span>
-              X {draftPrecisionReadout.currentPoint ? draftPrecisionReadout.currentPoint[0].toFixed(1) : "--"} / Y{" "}
-              {draftPrecisionReadout.currentPoint ? draftPrecisionReadout.currentPoint[1].toFixed(1) : "--"}
+              X {draftPrecisionReadout.currentPoint ? displayLength(draftPrecisionReadout.currentPoint[0], displayUnits, 1, true) : "--"} / Y{" "}
+              {draftPrecisionReadout.currentPoint ? displayLength(draftPrecisionReadout.currentPoint[1], displayUnits, 1, true) : "--"}
             </span>
           </div>
           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-slate-200">
             <span>
               SEG{" "}
               {draftPrecisionReadout.lastSegment
-                ? `${draftPrecisionReadout.lastSegment.length.toFixed(1)} ft @ ${draftPrecisionReadout.lastSegment.angle.toFixed(1)} deg`
+                ? `${displayLength(draftPrecisionReadout.lastSegment.length, displayUnits, 1, true)} @ ${draftPrecisionReadout.lastSegment.angle.toFixed(1)} deg`
                 : "--"}
             </span>
             {draftPrecisionReadout.polygonArea !== null ? (
-              <span>AREA {draftPrecisionReadout.polygonArea.toFixed(0)} sf</span>
+              <span>AREA {(draftPrecisionReadout.polygonArea * (displayUnits === "m" ? 0.09290304 : 1)).toFixed(0)} {displayUnits === "m" ? "m²" : "sf"}</span>
             ) : (
-              <span>TOTAL {draftPrecisionReadout.totalLength.toFixed(1)} ft</span>
+              <span>TOTAL {displayLength(draftPrecisionReadout.totalLength, displayUnits, 1, true)}</span>
             )}
             <span>SNAP {activeSnapKind || "none"}</span>
           </div>

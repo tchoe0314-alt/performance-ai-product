@@ -35,6 +35,8 @@ export function QuantitiesPanel({
   onExportReport,
   formatMetric,
   statusLabelForQuantityReview,
+  outdated = false,
+  calculationReference,
 }: {
   rows: QuantityReviewRowView[];
   staleSystemCount: number;
@@ -42,15 +44,18 @@ export function QuantitiesPanel({
   onExportReport: () => void;
   formatMetric: (value: number | null, unit: string) => string;
   statusLabelForQuantityReview: (status: QuantityReviewStatusView) => string;
+  outdated?: boolean;
+  calculationReference?: string;
 }) {
+  const isOutdated = outdated || staleSystemCount > 0 || rows.some(row => row.status === "stale");
   const hasMissingCost = rows.some((row) => row.missingCost);
   const hasMissingTrace = rows.some((row) => row.status === "untraced");
   const hasDelta = rows.some((row) => row.delta !== null);
-  const statusLabel = hasMissingCost ? "Cost gaps" : staleSystemCount ? "Stale" : trustScoreLabel;
+  const statusLabel = isOutdated ? "Out of date" : hasMissingCost ? "Cost gaps" : trustScoreLabel;
   const statusClass =
     hasMissingCost || hasMissingTrace
       ? "bg-red-50 text-red-600"
-      : staleSystemCount || hasDelta
+      : isOutdated || hasDelta
         ? "bg-amber-50 text-amber-700"
         : "bg-slate-100 text-slate-600";
 
@@ -59,7 +64,7 @@ export function QuantitiesPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Quantity takeoff</p>
-          <p className="mt-1 text-xs text-slate-500">Traceable canonical quantities with cost mapping, edit deltas, and source IDs.</p>
+          <p data-testid="quantity-calculation-source" className="mt-1 text-xs text-slate-500">{isOutdated ? "Previous calculation. Recalculate for current totals." : calculationReference ? `Calculation: ${calculationReference}` : "Calculation version unverified."}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${statusClass}`}>
@@ -68,7 +73,7 @@ export function QuantitiesPanel({
           <button
             type="button"
             onClick={onExportReport}
-            disabled={!rows.length}
+            disabled={!rows.length || isOutdated}
             className="rounded-xl border border-slate-900 bg-slate-950 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
           >
             Export report

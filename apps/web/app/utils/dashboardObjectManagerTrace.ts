@@ -1,6 +1,7 @@
 import type { BuildingPlacement } from "../types";
 import type { DraftUndoAction } from "./dashboardTypes";
 import { getGeometryBounds, normalizeGeometryPoints } from "./objectGeometry";
+import { groupDescendantIds } from "./objectGroups";
 
 export type ObjectManagerBounds = {
   minX: number;
@@ -465,7 +466,7 @@ export function buildSyncedCombinedSourceTraces({
   updates: Partial<BuildingPlacement>;
   buildingPlacements: BuildingPlacement[];
 }): BuildingPlacement[] {
-  const combinedSourceIds = Array.isArray(target.meta?.combined_from_object_ids)
+  const combinedSourceIds = target.type === "group" ? groupDescendantIds(target.id, buildingPlacements) : Array.isArray(target.meta?.combined_from_object_ids)
     ? target.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
     : [];
   if (!combinedSourceIds.length) return [];
@@ -531,9 +532,9 @@ export function buildSyncedCombinedSourceTraces({
       locked: typeof updates.locked === "boolean" ? updates.locked : sourceItem.locked,
       meta: {
         ...(sourceItem.meta ?? {}),
-        combined_into_object_id: target.id,
-        combined_into_label: nextGroupLabel,
-        combined_into_type: nextGroupType,
+        ...(target.type === "group" && typeof updates.meta?.ui_hidden === "boolean" ? {ui_hidden:updates.meta.ui_hidden} : {}),
+        ...(target.type === "group" ? {} : { combined_into_object_id: target.id,
+          combined_into_label: nextGroupLabel, combined_into_type: nextGroupType }),
         combined_trace_synced_at: new Date().toISOString(),
         ...(typeof updates.locked === "boolean" ? { combined_into_locked: updates.locked } : {}),
         ...(groupGeometryChanged ? { combined_transform_synced: true } : {}),
@@ -558,7 +559,7 @@ export function createTraceAwareBulkUpdate({
     const nextObject = cloneBuildingPlacementWithUpdatesForUndo(item, updates);
     beforeById.set(item.id, cloneBuildingPlacementForUndo(item));
     afterById.set(item.id, nextObject);
-    const sourceIds = Array.isArray(item.meta?.combined_from_object_ids)
+    const sourceIds = item.type === "group" ? groupDescendantIds(item.id, buildingPlacements) : Array.isArray(item.meta?.combined_from_object_ids)
       ? item.meta.combined_from_object_ids.map((sourceId) => String(sourceId)).filter(Boolean)
       : [];
     sourceIds.forEach((sourceId) => {
