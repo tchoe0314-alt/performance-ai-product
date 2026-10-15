@@ -1,0 +1,218 @@
+[
+  {
+    "expected": "6.4512 cfs",
+    "id": "A01",
+    "input": "2 ac, C=.8, I=4 in/hr",
+    "issue": "ENG-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "0 cfs",
+    "id": "A02",
+    "input": "empty catchment list",
+    "issue": "ENG-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "reject invalid input or return success=False",
+    "id": "A03",
+    "input": "-2 ac, C=.8, I=4",
+    "issue": "ENG-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  },
+  {
+    "expected": "reject invalid input or return success=False",
+    "id": "A04",
+    "input": "2 ac, C=1.5, I=4",
+    "issue": "ENG-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  },
+  {
+    "expected": "reject invalid input or return success=False",
+    "id": "A05",
+    "input": "2 ac, C=.8, I=NaN",
+    "issue": "ENG-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  },
+  {
+    "expected": "14400 ft3",
+    "id": "A06",
+    "input": "inflow10, release2 cfs, .5 hr",
+    "issue": "ENG-03",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "2 hr",
+    "id": "A07",
+    "input": "14400 ft3, release2 cfs",
+    "issue": "ENG-03",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "72666.666666667 ft3",
+    "id": "A08",
+    "input": "100x100 ft bottom, 5 ft depth, 4H:1V",
+    "issue": "ENG-03",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "24666.666666667 ft3",
+    "id": "A09",
+    "input": "100x20 ft bottom, 5 ft depth, 4H:1V",
+    "issue": "ENG-03",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  },
+  {
+    "expected": "consistent storage; separate analytical oracle 24666.666666667 ft3",
+    "id": "A10",
+    "input": "same rectangular basin direct vs stage-curve endpoint",
+    "issue": "ENG-03",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  },
+  {
+    "expected": "2.52 cfs",
+    "id": "A11",
+    "input": "208.710325571113 ft square, 21780 ft2 impervious, I=4",
+    "issue": "ENG-01",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  },
+  {
+    "expected": "identical valid result",
+    "id": "A12",
+    "input": "repeat A01",
+    "issue": "ENG-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "exact JSON roundtrip",
+    "id": "A13",
+    "input": "new canonical synthetic project",
+    "issue": "CAN-01",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "reject",
+    "id": "A14",
+    "input": "extra top-level canonical field",
+    "issue": "CAN-01",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "reject",
+    "id": "A15",
+    "input": "canonical project.x=NaN",
+    "issue": "CAN-01",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "reject",
+    "id": "A16",
+    "input": "missing units section",
+    "issue": "CAN-01",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "accept supported dependency",
+    "id": "A17",
+    "input": "road a follows cul-de-sac road b",
+    "issue": "CAN-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "reject",
+    "id": "A18",
+    "input": "dependency target missing",
+    "issue": "CAN-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "reject",
+    "id": "A19",
+    "input": "a->b->a cycle",
+    "issue": "CAN-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "reject",
+    "id": "A20",
+    "input": "a and b both drive c",
+    "issue": "CAN-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "PASS"
+  },
+  {
+    "expected": "zero outbound transport attempts",
+    "id": "A21",
+    "input": "loopback provider URL with recording fake session",
+    "issue": "SEC-01",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  },
+  {
+    "expected": "400 ft3 fill",
+    "id": "A22",
+    "input": "3x3 nodes,10ft spacing,20x20ft bounds,+1ft",
+    "issue": "ENG-04",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  },
+  {
+    "expected": "incompatible",
+    "id": "A23",
+    "input": "same grids shifted1000ft",
+    "issue": "ENG-05",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  },
+  {
+    "expected": "stable auth throttle identity",
+    "id": "A24",
+    "input": "same IP, arbitrary bearer A vs B",
+    "issue": "SEC-02",
+    "original_source_recovered": false,
+    "provenance": "reconstructed_from_transcript_and_plan",
+    "reported_original_outcome": "FAIL"
+  }
+]

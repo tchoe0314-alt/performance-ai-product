@@ -1,0 +1,1116 @@
+[
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Project creation, address, templates, settings, save/load, duplicate, archive/restore, units",
+    "id": "projects",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "CAN-01",
+      "CAN-03",
+      "TEST-03"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Local synthetic database only in later authorized tests; writes; real storage forbidden",
+    "source": "backend/services/project_store.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Drawing, object typing/naming, group/uncombine, snapping, dimensions, layers, undo/redo",
+    "id": "editing",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "CAN-01",
+      "CAN-02",
+      "UX-01"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Synthetic browser project later; geometry/history writes; no runtime claim",
+    "source": "apps/web/app/PerformanceAIDashboardView.tsx",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "First-edit branch/copy/replace, concurrent tabs and recovery",
+    "id": "multi_tab",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "CAN-03",
+      "SEC-10"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Separate synthetic sessions later; no customer records",
+    "source": "apps/web/app/hooks/useProjectTabBranch.ts",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Canonical aggregate, compatibility adapters, geometry, results, signatures and stale state",
+    "id": "canonical",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "CAN-01",
+      "CAN-02",
+      "CAN-04"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Pure document checks A13-A20 only; model-wide propagation NOT TESTED",
+    "source": "backend/services/canonical_project.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Stage orchestration, cancellation, retry, recovery, progress and queue workers",
+    "id": "jobs",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "CAN-03",
+      "CAN-04",
+      "TEST-05",
+      "TEST-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Fake isolated queue later; writes, CPU, memory and possible providers",
+    "source": "backend/application/job_workflows.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Address geocoding, parcel discovery and context coverage",
+    "id": "geocoding",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-01",
+      "ENG-06",
+      "TEST-08"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Fake transports only; GIS outbound/quotas/terms not exercised",
+    "source": "backend/planning/gis_provider_registry.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Parcels, terrain, roads/ROW, utilities, sewer/drainage layers and source gaps",
+    "id": "gis_sources",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06",
+      "TEST-08"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Synthetic attributed layers later; source rights/accuracy NOT VERIFIED",
+    "source": "backend/planning/existing_conditions_importers.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Survey CSV, GIS, GeoJSON, GeoTIFF, LAS, LandXML, CAD and PDF imports",
+    "id": "imports",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06",
+      "SEC-08",
+      "TEST-03"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Small synthetic files later; filesystem writes/parsers, optional dependencies UNKNOWN",
+    "source": "backend/planning/existing_conditions_importers.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Horizontal CRS, elevation datums, transforms, metric/imperial support",
+    "id": "crs_datum",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-04",
+      "ENG-05",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Independent control points required; no survey accuracy claim",
+    "source": "engines/surface_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Source rights/confidence, accepted candidates, missing/stale information",
+    "id": "provenance",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06",
+      "TEST-03"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Synthetic source records later; source provenance preserved",
+    "source": "backend/services/brief_sources.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Rational method and planner adapter",
+    "id": "hydrology",
+    "implementation_status": "KNOWN_DEFECT_OR_MISSING_CAPABILITY",
+    "issues": [
+      "ENG-01",
+      "ENG-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Pure A01-A05,A11,A12; no rainfall API",
+    "source": "engines/hydrology_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "FAIL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Basin storage, stage curves, discharge/routing/overflow/drawdown",
+    "id": "detention",
+    "implementation_status": "KNOWN_DEFECT_OR_MISSING_CAPABILITY",
+    "issues": [
+      "ENG-03"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Pure A06-A10; routing NOT TESTED; PE required",
+    "source": "engines/detention_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "FAIL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "TIN/grid/interpolation/breaklines/contours",
+    "id": "surface",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-04",
+      "ENG-05",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Pure synthetic surfaces only; independent numerical review later",
+    "source": "engines/surface_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Grade elements, slopes, grading concepts and surfaces",
+    "id": "grading",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-04",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static now; analytical fixtures later; no engine repair",
+    "source": "engines/grading_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Cut/fill, stripping, shrink/swell, haul and quantity summaries",
+    "id": "earthwork",
+    "implementation_status": "KNOWN_DEFECT_OR_MISSING_CAPABILITY",
+    "issues": [
+      "ENG-04",
+      "ENG-05"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "A22-A23 pure synthetic grids only",
+    "source": "engines/earthwork_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "FAIL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Catchments, inlets, drainage paths, basin connections, storm network and hydraulics",
+    "id": "storm",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static now; per-engine inventory includes all discovered engine modules; PE benchmarks later",
+    "source": "engines/drainage_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Sanitary fixture demand, network, capacity/slope and cover",
+    "id": "sanitary",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; synthetic isolated engineering benchmarks later",
+    "source": "engines/sanitary_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Water sizing, pressure/fire flow and vent sizing",
+    "id": "water",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; module presence separately cataloged; no hydraulic verification",
+    "source": "engines/water_sizing_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Utility routing, horizontal/vertical separation and conflict resolution",
+    "id": "utilities",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06",
+      "CAN-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; unknown depths never inferred verified; fixture tests later",
+    "source": "engines/utility_engine.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Corridors, station/profile, roadway sections and parametric cul-de-sac",
+    "id": "roads",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06",
+      "CAN-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; no swept-path/roadway-code approval; pure geometry checks later",
+    "source": "apps/web/app/utils/parametricRoad.ts",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Building/subdivision/bridge/structural-grid geometry and sketch-to-plan",
+    "id": "layouts",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Geometry generation not structural/legal engineering analysis; no activation",
+    "source": "planner.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Geometry/discipline quantity takeoff and cost price-book estimates",
+    "id": "quantities",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06",
+      "CAN-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; independent unit/quantity oracles and approved price book required",
+    "source": "planner.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Rule checks, coordination, candidate autofix/optimization and review summaries",
+    "id": "compliance",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; cannot certify legal/jurisdiction compliance or global optimality",
+    "source": "planner.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Natural-language actions, drafting, context, ambiguity handling and deterministic fallback",
+    "id": "ai_commands",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06",
+      "CAN-03",
+      "SEC-05"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Fake provider later; real OpenAI/Ollama requests disabled in P01; cost/write risks",
+    "source": "parsers/ai_parser.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "OpenAI, Ollama and disabled-provider adapters",
+    "id": "ai_providers",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-05",
+      "TEST-08"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static only; optional availability/config UNKNOWN; no paid requests",
+    "source": "backend/ai/provider.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "High-quality AI imagery/rendering, preliminary visualization and mock demos",
+    "id": "imagery",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "TEST-08",
+      "SEC-08"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Fake imagery only in later tests; mock != real-provider proof; provider charges forbidden",
+    "source": "backend/application/ai_visualization_workflows.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Consent-controlled memory, chat summaries, learning logs, eval/shadow/promotion",
+    "id": "learning",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-05",
+      "CAN-03"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Default/config conditions read statically; effective state UNKNOWN; no data collection enabled",
+    "source": "backend/services/chat_learning_store.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Current geometry DXF/PDF drawing-only exports",
+    "id": "current_export",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "TEST-03",
+      "TEST-07"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Synthetic artifacts later; current-drawing != calculated engineering package",
+    "source": "backend/application/current_geometry_export.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Calculated DXF/PDF/report/JSON, print sheets, quantity/cost schedules",
+    "id": "calculated_exports",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "ENG-06",
+      "TEST-03"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Later isolated output directory and independent CAD/PE acceptance; no production writes",
+    "source": "backend/application/artifact_workflows.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "LandXML review interchange and feet-only supported scope",
+    "id": "landxml",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "TEST-03",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Synthetic file roundtrip later; external-tool compatibility NOT TESTED",
+    "source": "backend/planning/landxml_io.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Native DWG and Civil3D compatibility declarations/conversion hooks",
+    "id": "dwg",
+    "implementation_status": "KNOWN_DEFECT_OR_MISSING_CAPABILITY",
+    "issues": [
+      "TEST-08"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Native writer unsupported; external converter hook not implementation; do not enable",
+    "source": "backend/planning/dwg_compatibility.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "FAIL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Account registration/login/logout, verified identity and session lifecycle",
+    "id": "auth",
+    "implementation_status": "KNOWN_DEFECT_OR_MISSING_CAPABILITY",
+    "issues": [
+      "SEC-02",
+      "SEC-03",
+      "SEC-04",
+      "SEC-06",
+      "SEC-09"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "AST identity A24 only; no account/database startup; isolated auth fixtures later",
+    "source": "backend/services/auth_store.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "FAIL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Organizations, owner/editor/reviewer/viewer roles, invites and team access",
+    "id": "teams",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-03",
+      "SEC-10"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; synthetic multi-tenant fixtures later; no real invitations/customer access",
+    "source": "backend/services/project_store.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Presence, comments, review history/requests and sharing",
+    "id": "collaboration",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "CAN-03",
+      "TEST-03"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; HTTP polling != general real-time collaborative editor; isolated sessions later",
+    "source": "backend/services/project_store.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Manual pilot plan, proposed Pro79/Engineer199/Teams149/Enterprise, Stripe lifecycle",
+    "id": "billing",
+    "implementation_status": "KNOWN_DEFECT_OR_MISSING_CAPABILITY",
+    "issues": [
+      "COM-01",
+      "COM-02",
+      "TEST-08"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Placeholder/status hooks; no real checkout/charges; sandbox only after separate approval",
+    "source": "backend/services/billing.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "FAIL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Plan enforcement, usage/quotas and seats",
+    "id": "entitlements",
+    "implementation_status": "KNOWN_DEFECT_OR_MISSING_CAPABILITY",
+    "issues": [
+      "COM-01",
+      "COM-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "hook_only allowed=True is not enforcement; no changes in P01",
+    "source": "backend/services/billing.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "FAIL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Help/pilot onboarding, support intake and administration",
+    "id": "support_onboarding",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "UX-01",
+      "COM-03"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; operator staffing and independent usability UNKNOWN; do not send messages",
+    "source": "backend/services/project_store.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Account export/deletion, retention and source/data controls",
+    "id": "privacy_lifecycle",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-05",
+      "COM-03"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; lifecycle deletion forbidden now; isolated fixtures later",
+    "source": "backend/services/data_lifecycle.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Diagnostics, readiness/metrics, database/artifact backups and recovery",
+    "id": "operations",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-07",
+      "TEST-05",
+      "TEST-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; historical drill != current restore proof; no live canary/backup/restore",
+    "source": "backend/services/backup_restore.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Headers, CSP/token storage, third-party rendering",
+    "id": "browser_security",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-09"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static configuration fingerprint only; current hosted edge UNKNOWN",
+    "source": "apps/web/next.config.ts",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Source uploads, parser validation, immutable identity and collision behavior",
+    "id": "uploads",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-08"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; no uploads or existing files touched; temp-only fixtures later",
+    "source": "backend/application/file_workflows.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Docker/Railway/Vercel, process roles, migrations and release identity",
+    "id": "deployment",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "TEST-05",
+      "TEST-07"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static fingerprints; no deployment/migration/environment change or external calls",
+    "source": "Dockerfile",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Runtime/queue observability, hosted canary and optional analytics",
+    "id": "monitoring_analytics",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-07",
+      "TEST-05",
+      "TEST-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Static; alert delivery, analytics collection and production configuration UNKNOWN",
+    "source": "backend/api/app.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "provider_openai",
+    "id": "provider_openai",
+    "implementation_status": "IMPLEMENTED_NOT_VERIFIED",
+    "issues": [
+      "AI-01",
+      "AI-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Real paid provider blocked; fake only",
+    "source": "backend/ai/provider.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "provider_ollama",
+    "id": "provider_ollama",
+    "implementation_status": "IMPLEMENTED_NOT_VERIFIED",
+    "issues": [
+      "AI-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Optional local service not started",
+    "source": "backend/ai/provider.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "provider_disabled",
+    "id": "provider_disabled",
+    "implementation_status": "IMPLEMENTED_NOT_VERIFIED",
+    "issues": [
+      "AI-01"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Fallback path not executed by P01",
+    "source": "backend/ai/provider.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "provider_mapbox",
+    "id": "provider_mapbox",
+    "implementation_status": "IMPLEMENTED_NOT_VERIFIED",
+    "issues": [
+      "GOV-01"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "No map/token/API calls; current subscription/config UNKNOWN",
+    "source": "apps/web/package.json",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "provider_arcgis",
+    "id": "provider_arcgis",
+    "implementation_status": "PARTIAL_IMPLEMENTATION",
+    "issues": [
+      "SEC-01",
+      "GOV-01"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "A21 fake loopback transport only",
+    "source": "backend/planning/gis_provider_registry.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "provider_stripe",
+    "id": "provider_stripe",
+    "implementation_status": "PLACEHOLDER_STUB",
+    "issues": [
+      "COM-01",
+      "COM-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Charging disabled/status hooks; no sandbox or real payments",
+    "source": "backend/services/billing.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "imagery_mock",
+    "id": "imagery_mock",
+    "implementation_status": "MOCK_MODE_NOT_REAL_PROVIDER_VERIFICATION",
+    "issues": [
+      "AI-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Do not equate mock result with image quality",
+    "source": "backend/application/ai_visualization_workflows.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "native_dwg",
+    "id": "native_dwg",
+    "implementation_status": "MISSING_IMPLEMENTATION",
+    "issues": [
+      "EXP-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "External converter hooks not native writer",
+    "source": "backend/planning/dwg_compatibility.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "native_civil3d",
+    "id": "native_civil3d",
+    "implementation_status": "MISSING_IMPLEMENTATION",
+    "issues": [
+      "EXP-02"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "Unsupported native object package",
+    "source": "backend/planning/dwg_compatibility.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "PARTIAL"
+  },
+  {
+    "additional_source_evidence": [],
+    "direction_and_scope": "Survey-point CSV import; not general spreadsheet analysis",
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Import/export format csv (direction/scope requires source review)",
+    "id": "format_csv",
+    "implementation_status": "SOURCE_PRESENT_RUNTIME_UNVERIFIED",
+    "issues": [
+      "TEST-03",
+      "EXP-01",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "No files imported/exported; synthetic isolated fixtures later; units/compatibility NOT VERIFIED",
+    "source": "backend/planning/existing_conditions_importers.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "additional_source_evidence": [],
+    "direction_and_scope": "GIS feature import; JSON extension may represent GeoJSON rather than canonical project",
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Import/export format geojson (direction/scope requires source review)",
+    "id": "format_geojson",
+    "implementation_status": "SOURCE_PRESENT_RUNTIME_UNVERIFIED",
+    "issues": [
+      "TEST-03",
+      "EXP-01",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "No files imported/exported; synthetic isolated fixtures later; units/compatibility NOT VERIFIED",
+    "source": "backend/planning/existing_conditions_importers.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "additional_source_evidence": [],
+    "direction_and_scope": "Raster terrain import with optional rasterio/GDAL dependency",
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Import/export format geotiff (direction/scope requires source review)",
+    "id": "format_geotiff",
+    "implementation_status": "SOURCE_PRESENT_RUNTIME_UNVERIFIED",
+    "issues": [
+      "TEST-03",
+      "EXP-01",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "No files imported/exported; synthetic isolated fixtures later; units/compatibility NOT VERIFIED",
+    "source": "backend/planning/existing_conditions_importers.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "additional_source_evidence": [],
+    "direction_and_scope": "Point-cloud import with optional laspy/coordinate metadata requirements; LAZ dependency must be checked",
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Import/export format las (direction/scope requires source review)",
+    "id": "format_las",
+    "implementation_status": "SOURCE_PRESENT_RUNTIME_UNVERIFIED",
+    "issues": [
+      "TEST-03",
+      "EXP-01",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "No files imported/exported; synthetic isolated fixtures later; units/compatibility NOT VERIFIED",
+    "source": "backend/planning/existing_conditions_importers.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "additional_source_evidence": [],
+    "direction_and_scope": "Import and review export; advertised units/content limited; see EXP-03",
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Import/export format landxml (direction/scope requires source review)",
+    "id": "format_landxml",
+    "implementation_status": "SOURCE_PRESENT_RUNTIME_UNVERIFIED",
+    "issues": [
+      "TEST-03",
+      "EXP-01",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "No files imported/exported; synthetic isolated fixtures later; units/compatibility NOT VERIFIED",
+    "source": "backend/planning/landxml_io.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "additional_source_evidence": [
+      "backend/services/artifact_service.py",
+      "backend/application/file_workflows.py"
+    ],
+    "direction_and_scope": "Document extraction/context import and drawing/report export; not native editable CAD model",
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Import/export format pdf (direction/scope requires source review)",
+    "id": "format_pdf",
+    "implementation_status": "SOURCE_PRESENT_RUNTIME_UNVERIFIED",
+    "issues": [
+      "TEST-03",
+      "EXP-01",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "No files imported/exported; synthetic isolated fixtures later; units/compatibility NOT VERIFIED",
+    "source": "backend/planning/existing_conditions_importers.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "additional_source_evidence": [
+      "output/dxf_exporter.py",
+      "backend/application/current_geometry_export.py"
+    ],
+    "direction_and_scope": "Existing-condition geometry import and drawing/calculated exports; external CAD acceptance pending",
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Import/export format dxf (direction/scope requires source review)",
+    "id": "format_dxf",
+    "implementation_status": "SOURCE_PRESENT_RUNTIME_UNVERIFIED",
+    "issues": [
+      "TEST-03",
+      "EXP-01",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "No files imported/exported; synthetic isolated fixtures later; units/compatibility NOT VERIFIED",
+    "source": "backend/planning/existing_conditions_importers.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  },
+  {
+    "additional_source_evidence": [
+      "backend/services/data_lifecycle.py",
+      "backend/services/canonical_project.py"
+    ],
+    "direction_and_scope": "Structured project/report/account export and GIS JSON imports are distinct contracts",
+    "enablement_conditions": "Inspect referenced source and configuration-reference records; effective state UNKNOWN; not enabled by P01",
+    "expected": "Functioning scope without false engineering/provider claims",
+    "feature": "Import/export format json (direction/scope requires source review)",
+    "id": "format_json",
+    "implementation_status": "SOURCE_PRESENT_RUNTIME_UNVERIFIED",
+    "issues": [
+      "TEST-03",
+      "EXP-01",
+      "ENG-06"
+    ],
+    "observed": "Code inspection and limited linked A-series assertions only; no full runtime verification",
+    "permissions": "Project ownership/role and provider/operator conditions must be separately verified",
+    "side_effects_and_safe_mode": "No files imported/exported; synthetic isolated fixtures later; units/compatibility NOT VERIFIED",
+    "source": "backend/planning/existing_conditions_importers.py",
+    "source_exists": true,
+    "units_and_sources": "Engine/source-specific; see engineering validation plan; UNKNOWN unless explicitly provided",
+    "verification_status": "NOT TESTED"
+  }
+]

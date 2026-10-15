@@ -1,0 +1,10 @@
+[
+  "Original complete October15 executable and raw stdout are not available as standalone recovered artifacts",
+  "October15 audit supplied in conversation; not a recovered signed/immutable source document",
+  "A21 reconstructs check_provider_health with minimal provider record, not full builder/API path",
+  "A11 uses synthetic configured intensity4; effective hosted/environment values not accessed",
+  "Numeric diagnostic tolerances are reconstruction precision, NOT PE-approved design tolerances",
+  "Historical browser XML has701/23fail/0error/15skip versus pasted700/21fail/1error/16skip; cause unknown",
+  "External QA/release-engineer acceptance and PE review pending; no release gate passes",
+  "Local append-only-by-tool bundles and hashes are not independently protected immutable storage"
+]

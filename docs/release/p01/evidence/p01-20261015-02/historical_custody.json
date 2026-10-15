@@ -1,0 +1,63 @@
+{
+  "artifacts": [
+    {
+      "available": true,
+      "bytes": 364080,
+      "expected_sha256_from_preflight": "cc1b82d9d336cb085c005bbf5da1c8811d79de329d6035149481d5ce9ace13f6",
+      "hash_matches_preflight": true,
+      "sha256": "cc1b82d9d336cb085c005bbf5da1c8811d79de329d6035149481d5ce9ace13f6",
+      "source": "/tmp/civora-requested-clean-backend-20261014.xml",
+      "testcase_counts": {
+        "errors": 0,
+        "failures": 0,
+        "skipped": 0,
+        "tests": 2239
+      },
+      "xml_root_attributes": {
+        "name": "pytest tests"
+      }
+    },
+    {
+      "available": true,
+      "bytes": 213801,
+      "expected_sha256_from_preflight": "be9bf0d3912af0ff7c3e51934807c19de213b3cc3e310d23e1bf6addcd5df99c",
+      "hash_matches_preflight": true,
+      "sha256": "be9bf0d3912af0ff7c3e51934807c19de213b3cc3e310d23e1bf6addcd5df99c",
+      "source": "/tmp/civora-full-browser-20261014.xml",
+      "testcase_counts": {
+        "errors": 0,
+        "failures": 23,
+        "skipped": 15,
+        "tests": 701
+      },
+      "xml_root_attributes": {
+        "errors": "0",
+        "failures": "23",
+        "id": "",
+        "name": "",
+        "skipped": "15",
+        "tests": "701",
+        "time": "524.200247"
+      }
+    },
+    {
+      "available": true,
+      "bytes": 69929,
+      "expected_sha256_from_preflight": "d114accc59528f3ed7c55dbb483a287afb0e88d1431b8757873153781b1fe6d0",
+      "hash_matches_preflight": true,
+      "sha256": "d114accc59528f3ed7c55dbb483a287afb0e88d1431b8757873153781b1fe6d0",
+      "source": "/tmp/civora-backend-bandit-20261014.json"
+    },
+    {
+      "available": true,
+      "bytes": 3732,
+      "expected_sha256_from_preflight": "2578926764c6e8f9f99d0f41c494d1237cdb5976a7295467e3decdb7658cb7a6",
+      "hash_matches_preflight": true,
+      "sha256": "2578926764c6e8f9f99d0f41c494d1237cdb5976a7295467e3decdb7658cb7a6",
+      "source": "/tmp/civora-python-dependency-audit-20261014.json"
+    }
+  ],
+  "private_archive": "/Users/tommychoe/Documents/Playground/.civora-p01-evidence/original-evidence-gs3bf2ps",
+  "raw_reports_committed": false,
+  "reason": "Raw logs can contain identifiers; preserve privately, publish hashes/counts only"
+}

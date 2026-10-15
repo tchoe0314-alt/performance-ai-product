@@ -1,0 +1,175 @@
+{
+  "application_revision": "ab7db888e85fb9b6125551ecff769d08e0ca7322",
+  "configuration_and_dependencies": [
+    {
+      "bytes": 5304,
+      "path": ".env.example",
+      "sha256": "e2beca6770e22a617129351cb54e0df4a1182eb267ca1d7699fcf57e7b5adadd"
+    },
+    {
+      "bytes": 4065,
+      "path": ".github/workflows/backend-container-runtime.yml",
+      "sha256": "6246d2348cc830e7636c985f794b6c080b4651948c1de4f080b638eb2d4b549a"
+    },
+    {
+      "bytes": 2683,
+      "path": ".github/workflows/hosted-canary.yml",
+      "sha256": "4e8cc521b601d583cf563c6f8dca77ac2f9200089263a4b81bd96dec5306c266"
+    },
+    {
+      "bytes": 2593,
+      "path": ".github/workflows/rc1-firefox-accessibility.yml",
+      "sha256": "db379bf6c111617dd499ecb52de76b270655d6b622664f9216fbb26beaff2086"
+    },
+    {
+      "bytes": 874,
+      "path": "Dockerfile",
+      "sha256": "c48e98793617def44a703ef8be2ddb6de41525b912f9d0d948e6b7b88464a931"
+    },
+    {
+      "bytes": 1204,
+      "path": "Dockerfile.ai-renderer",
+      "sha256": "ccd07accf4899f4c8ed6671f469f281d8398dbb1a012b73439827840e4859c9b"
+    },
+    {
+      "bytes": 561,
+      "path": "Dockerfile.backend",
+      "sha256": "8af17648b978e14ec300d745a8b432eaad770f4d5daed11708da6bbab4d99156"
+    },
+    {
+      "bytes": 1215,
+      "path": "Dockerfile.imagery-gateway",
+      "sha256": "a6f92506f6f661dfa5669b20dee5f675a363e65d46f7022e8a472e0b72d11414"
+    },
+    {
+      "bytes": 1142,
+      "path": "apps/web/next.config.ts",
+      "sha256": "0fd9823e3b085ecc837615393cbed9080190a0b552be8f282759b86f00495113"
+    },
+    {
+      "bytes": 250939,
+      "path": "apps/web/package-lock.json",
+      "sha256": "6e85298a3b86d2fda7cb834773aae696993aac174117a347d36f7c216c42c0c4"
+    },
+    {
+      "bytes": 2199,
+      "path": "apps/web/package.json",
+      "sha256": "94569ad7f4d2d7e0ff92578a8e822d521ab2e8615d3e5519aa443584a7f5e349"
+    },
+    {
+      "bytes": 900,
+      "path": "compose.ai-renderer.yaml",
+      "sha256": "592bcdffea619b0f8978cf576800d3255dd19123a3a14c25898b3d91c4c79651"
+    },
+    {
+      "bytes": 202,
+      "path": "railway.imagery-gateway.toml",
+      "sha256": "b75c26df2d139c4799d989bf74ad287e3492c6477fc1bb4bd2117f042b88592c"
+    },
+    {
+      "bytes": 190,
+      "path": "railway.toml",
+      "sha256": "693331ad8fe49a1e79f15c61c2d58de9797011bda1b22d2b005b198d36804d42"
+    },
+    {
+      "bytes": 142,
+      "path": "requirements_ai_renderer.txt",
+      "sha256": "add3342e5325f252feef4c51d480be31f12498de8dbeeeb357613c4825467221"
+    },
+    {
+      "bytes": 31,
+      "path": "requirements_audit.txt",
+      "sha256": "89803273f474c96fcd9c1885ea1758eadfc2afc871fce42eb137f55571e391d6"
+    },
+    {
+      "bytes": 1009,
+      "path": "requirements_backend.txt",
+      "sha256": "6350285eb9232e346de594c2d9285800d899a434f280dd7cca1be1276f30f079"
+    },
+    {
+      "bytes": 48,
+      "path": "requirements_imagery_gateway.txt",
+      "sha256": "bf61db363e11dbb00e629059a0119cf2083f9f4170fb6ebc6a3932131f57170e"
+    },
+    {
+      "bytes": 42,
+      "path": "requirements_test.txt",
+      "sha256": "6f8766263226f85b907d01a75955caf22247aaae44e77d62159eacb9761b4541"
+    },
+    {
+      "bytes": 75,
+      "path": "requirements_vision_training.txt",
+      "sha256": "259951ed7118201c9ee67114621afd934b924e869aec1ff087a7e04269f641b3"
+    },
+    {
+      "bytes": 104,
+      "path": "vercel.json",
+      "sha256": "c52587c01cadf1ab275d880e712c4853ee514f373a21dec8e0b23453fa6359c8"
+    }
+  ],
+  "harness": [
+    {
+      "path": "tests/remediation/p01_evidence.py",
+      "sha256": "7ebae374e3e850dda05def9e08bbdcb99afda667bdd24a58389313a23704e070"
+    },
+    {
+      "path": "tests/remediation/p01_feature_families.json",
+      "sha256": "201394da896ec10a7c7bb6dbf03d01cdcd98b3aff1d654d934cd6041bbd0f302"
+    },
+    {
+      "path": "tests/remediation/run_p01.py",
+      "sha256": "3bc0710e4c0e9bf88e0173f87e8a549091c882d51813b787b5e217191bf28b2f"
+    },
+    {
+      "path": "tests/remediation/test_oct15_audit.py",
+      "sha256": "915e0da09e8924f7b6920956370c5ca651436122bdb94665f7f9ca05469a8fba"
+    },
+    {
+      "path": "tests/remediation/test_p01_evidence.py",
+      "sha256": "8934c065deb128a54ef65858af6c58f8576fab822a37652753cfea73939749cb"
+    }
+  ],
+  "planning_documents_preserved": [
+    {
+      "bytes": 16279,
+      "path": "docs/remediation/CIVORA_CANONICAL_MODEL_PLAN.md",
+      "sha256": "14ca1e3c7e4e321858c9b65d9280c9d67c2f3be69aa86f6b5574a10ac9d2c432"
+    },
+    {
+      "bytes": 25390,
+      "path": "docs/remediation/CIVORA_ENGINEERING_VALIDATION_PLAN.md",
+      "sha256": "848d6bec2a359b44b46e31f94b0f39b0df1edf073b2e9da647990bf203580306"
+    },
+    {
+      "bytes": 14733,
+      "path": "docs/remediation/CIVORA_FINAL_REAUDIT_PROTOCOL.md",
+      "sha256": "a6b0d8b1b8e59fb29f960b84acb0b58c1100076e54e103cf35f6ac47d4e8fd0e"
+    },
+    {
+      "bytes": 126818,
+      "path": "docs/remediation/CIVORA_IMPLEMENTATION_BACKLOG.md",
+      "sha256": "01ccb27e2afe9c9d1be2d06f0fd80f10f144aba54898607eb6099809b4fbea8d"
+    },
+    {
+      "bytes": 52259,
+      "path": "docs/remediation/CIVORA_ISSUE_REGISTER.md",
+      "sha256": "e9c0215ecaa61c1b44977cfc84d7d8507fd12d7d4c0e6505924928725e916ddf"
+    },
+    {
+      "bytes": 17720,
+      "path": "docs/remediation/CIVORA_MASTER_REMEDIATION_PLAN.md",
+      "sha256": "915bbeb4a91e5290925d9d8490656a8448ef93f1dc097d6be8219b4a58e353aa"
+    },
+    {
+      "bytes": 13717,
+      "path": "docs/remediation/CIVORA_SECURITY_REMEDIATION_PLAN.md",
+      "sha256": "fe69d59e489e9af7ab34c69dbc2ba7f630b47301bde91a6c7ce544638000eea5"
+    },
+    {
+      "bytes": 25548,
+      "path": "docs/remediation/CIVORA_TESTING_AND_RELEASE_GATES.md",
+      "sha256": "67870b5b268e3f309156fb6d562ca8872b573aad11518716c54074f4b9349fdd"
+    }
+  ],
+  "working_tree_before": "?? docs/release/p01/README.md\n?? docs/release/p01/evidence/p01-20261015-01/audit_results.json\n?? docs/release/p01/evidence/p01-20261015-01/audit_results.xml\n?? docs/release/p01/evidence/p01-20261015-01/case_catalog.json\n?? docs/release/p01/evidence/p01-20261015-01/evidence_gaps.json\n?? docs/release/p01/evidence/p01-20261015-01/feature_families.json\n?? docs/release/p01/evidence/p01-20261015-01/harness_integrity.json\n?? docs/release/p01/evidence/p01-20261015-01/historical_custody.json\n?? docs/release/p01/evidence/p01-20261015-01/manifest.json\n?? docs/release/p01/evidence/p01-20261015-01/manifest.sha256\n?? docs/release/p01/evidence/p01-20261015-01/source_and_configuration.json\n?? docs/release/p01/evidence/p01-20261015-01/source_inventory.json\n?? docs/release/p01/evidence/p01-20261015-01/verification.log\n?? docs/release/p01/evidence/p01-20261015-02/audit_results.json\n?? docs/release/p01/evidence/p01-20261015-02/audit_results.xml\n?? docs/release/p01/evidence/p01-20261015-02/case_catalog.json\n?? docs/release/p01/evidence/p01-20261015-02/evidence_gaps.json\n?? docs/release/p01/evidence/p01-20261015-02/feature_families.json\n?? docs/release/p01/evidence/p01-20261015-02/harness_integrity.json\n?? docs/release/p01/evidence/p01-20261015-02/historical_custody.json\n?? docs/release/p01/evidence/p01-20261015-02/manifest.json\n?? docs/release/p01/evidence/p01-20261015-02/manifest.sha256\n?? docs/release/p01/evidence/p01-20261015-02/source_and_configuration.json\n?? docs/release/p01/evidence/p01-20261015-02/source_inventory.json\n?? docs/release/p01/evidence/p01-20261015-02/verification.log\n?? docs/remediation/CIVORA_CANONICAL_MODEL_PLAN.md\n?? docs/remediation/CIVORA_ENGINEERING_VALIDATION_PLAN.md\n?? docs/remediation/CIVORA_FINAL_REAUDIT_PROTOCOL.md\n?? docs/remediation/CIVORA_IMPLEMENTATION_BACKLOG.md\n?? docs/remediation/CIVORA_ISSUE_REGISTER.md\n?? docs/remediation/CIVORA_MASTER_REMEDIATION_PLAN.md\n?? docs/remediation/CIVORA_SECURITY_REMEDIATION_PLAN.md\n?? docs/remediation/CIVORA_TESTING_AND_RELEASE_GATES.md\n?? tests/remediation/p01_evidence.py\n?? tests/remediation/p01_feature_families.json\n?? tests/remediation/run_p01.py\n?? tests/remediation/test_oct15_audit.py\n?? tests/remediation/test_p01_evidence.py"
+}

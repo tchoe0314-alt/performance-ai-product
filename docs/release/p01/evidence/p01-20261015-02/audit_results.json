@@ -1,0 +1,258 @@
+{
+  "cases": [
+    {
+      "detail": "Assertion passed",
+      "expected": "6.4512 cfs",
+      "historical_outcome_reported": "PASS",
+      "id": "A01",
+      "input": "2 ac, C=.8, I=4 in/hr",
+      "issue": "ENG-02",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "0 cfs",
+      "historical_outcome_reported": "PASS",
+      "id": "A02",
+      "input": "empty catchment list",
+      "issue": "ENG-02",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 73, in test_A03\n    def test_A03(self): self.invalid_hydro(area=-2)\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 71, in invalid_hydro\n    self.assertFalse(result.success, f\"invalid input accepted: {result}\")\nAssertionError: True is not false : invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=-6.4512, area_rows=[{'name': 'SYNTHETIC', 'area_ac': -2, 'runoff_c': 0.8, 'intensity_in_hr': 4, 'flow_cfs': -6.4512}])\n",
+      "expected": "reject invalid input or return success=False",
+      "historical_outcome_reported": "FAIL",
+      "id": "A03",
+      "input": "-2 ac, C=.8, I=4",
+      "issue": "ENG-02",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 74, in test_A04\n    def test_A04(self): self.invalid_hydro(c=1.5)\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 71, in invalid_hydro\n    self.assertFalse(result.success, f\"invalid input accepted: {result}\")\nAssertionError: True is not false : invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=12.096, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 1.5, 'intensity_in_hr': 4, 'flow_cfs': 12.096}])\n",
+      "expected": "reject invalid input or return success=False",
+      "historical_outcome_reported": "FAIL",
+      "id": "A04",
+      "input": "2 ac, C=1.5, I=4",
+      "issue": "ENG-02",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 75, in test_A05\n    def test_A05(self): self.invalid_hydro(intensity=float(\"nan\"))\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 71, in invalid_hydro\n    self.assertFalse(result.success, f\"invalid input accepted: {result}\")\nAssertionError: True is not false : invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=nan, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 0.8, 'intensity_in_hr': nan, 'flow_cfs': nan}])\n",
+      "expected": "reject invalid input or return success=False",
+      "historical_outcome_reported": "FAIL",
+      "id": "A05",
+      "input": "2 ac, C=.8, I=NaN",
+      "issue": "ENG-02",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "14400 ft3",
+      "historical_outcome_reported": "PASS",
+      "id": "A06",
+      "input": "inflow10, release2 cfs, .5 hr",
+      "issue": "ENG-03",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "2 hr",
+      "historical_outcome_reported": "PASS",
+      "id": "A07",
+      "input": "14400 ft3, release2 cfs",
+      "issue": "ENG-03",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "72666.666666667 ft3",
+      "historical_outcome_reported": "PASS",
+      "id": "A08",
+      "input": "100x100 ft bottom, 5 ft depth, 4H:1V",
+      "issue": "ENG-03",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 87, in test_A09\n    self.assertAlmostEqual(basin_storage_cf(100, 20, 5, 4), 24666.666666667, places=6)\nAssertionError: 24164.633843973068 != 24666.666666667 within 6 places (502.03282269393094 difference)\n",
+      "expected": "24666.666666667 ft3",
+      "historical_outcome_reported": "FAIL",
+      "id": "A09",
+      "input": "100x20 ft bottom, 5 ft depth, 4H:1V",
+      "issue": "ENG-03",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 91, in test_A10\n    self.assertAlmostEqual(basin_storage_cf(100, 20, 5, 4), curve[-1].storage_cf, places=6)\nAssertionError: 24164.633843973068 != 24661.58671028823 within 6 places (496.9528663151614 difference)\n",
+      "expected": "consistent storage; separate analytical oracle 24666.666666667 ft3",
+      "historical_outcome_reported": "FAIL",
+      "id": "A10",
+      "input": "same rectangular basin direct vs stage-curve endpoint",
+      "issue": "ENG-03",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 100, in test_A11\n    self.assertAlmostEqual(result[\"peak_runoff_cfs\"], 2.52, places=3)\nAssertionError: 0.0 != 2.52 within 3 places (2.52 difference)\n",
+      "expected": "2.52 cfs",
+      "historical_outcome_reported": "FAIL",
+      "id": "A11",
+      "input": "208.710325571113 ft square, 21780 ft2 impervious, I=4",
+      "issue": "ENG-01",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "identical valid result",
+      "historical_outcome_reported": "PASS",
+      "id": "A12",
+      "input": "repeat A01",
+      "issue": "ENG-02",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "exact JSON roundtrip",
+      "historical_outcome_reported": "PASS",
+      "id": "A13",
+      "input": "new canonical synthetic project",
+      "issue": "CAN-01",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "reject",
+      "historical_outcome_reported": "PASS",
+      "id": "A14",
+      "input": "extra top-level canonical field",
+      "issue": "CAN-01",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "reject",
+      "historical_outcome_reported": "PASS",
+      "id": "A15",
+      "input": "canonical project.x=NaN",
+      "issue": "CAN-01",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "reject",
+      "historical_outcome_reported": "PASS",
+      "id": "A16",
+      "input": "missing units section",
+      "issue": "CAN-01",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "accept supported dependency",
+      "historical_outcome_reported": "PASS",
+      "id": "A17",
+      "input": "road a follows cul-de-sac road b",
+      "issue": "CAN-02",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "reject",
+      "historical_outcome_reported": "PASS",
+      "id": "A18",
+      "input": "dependency target missing",
+      "issue": "CAN-02",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "reject",
+      "historical_outcome_reported": "PASS",
+      "id": "A19",
+      "input": "a->b->a cycle",
+      "issue": "CAN-02",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Assertion passed",
+      "expected": "reject",
+      "historical_outcome_reported": "PASS",
+      "id": "A20",
+      "input": "a and b both drive c",
+      "issue": "CAN-02",
+      "outcome": "PASS",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 150, in test_A21\n    self.assertEqual(len(attempts), 0, \"loopback reached recording transport (no network performed)\")\nAssertionError: 1 != 0 : loopback reached recording transport (no network performed)\n",
+      "expected": "zero outbound transport attempts",
+      "historical_outcome_reported": "FAIL",
+      "id": "A21",
+      "input": "loopback provider URL with recording fake session",
+      "issue": "SEC-01",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 159, in test_A22\n    self.assertAlmostEqual(result[\"results\"][\"fill_cf\"], 400, places=6)\nAssertionError: 900.0 != 400 within 6 places (500.0 difference)\n",
+      "expected": "400 ft3 fill",
+      "historical_outcome_reported": "FAIL",
+      "id": "A22",
+      "input": "3x3 nodes,10ft spacing,20x20ft bounds,+1ft",
+      "issue": "ENG-04",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 162, in test_A23\n    self.assertFalse(validate_compatible_surfaces(*self.surfaces(1000))[\"success\"])\nAssertionError: True is not false\n",
+      "expected": "incompatible",
+      "historical_outcome_reported": "FAIL",
+      "id": "A23",
+      "input": "same grids shifted1000ft",
+      "issue": "ENG-05",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py\", line 167, in test_A24\n    self.assertEqual(ns[\"_request_rate_limit_key\"](request, \"Bearer unvalidated-token-A\"),\nAssertionError: 'token:da35cb8c1feb5ea2:198.51.100.9' != 'token:93d0a9f30316ce51:198.51.100.9'\n- token:da35cb8c1feb5ea2:198.51.100.9\n+ token:93d0a9f30316ce51:198.51.100.9\n\n",
+      "expected": "stable auth throttle identity",
+      "historical_outcome_reported": "FAIL",
+      "id": "A24",
+      "input": "same IP, arbitrary bearer A vs B",
+      "issue": "SEC-02",
+      "outcome": "FAIL",
+      "provenance": "Reconstructed from pasted audit + remediation plan; original executable unavailable"
+    }
+  ],
+  "errors": 0,
+  "exit_code": 1,
+  "failed": 10,
+  "format": "p01_reconstructed_assertions_v1",
+  "oracles": {
+    "basin": "L*W*d+s*(L+W)*d^2+(4/3)*s^2*d^3",
+    "earthwork": "20*20*1 ft3",
+    "rational": "1.008*C*I*A"
+  },
+  "passed": 14,
+  "provenance_limit": "24-case mapping reconstructed, not recovered original harness; A21 minimal provider record; A11 fixed synthetic intensity",
+  "skipped": 0,
+  "tests": 24,
+  "timestamp_utc": "2026-10-15T06:38:14.174765+00:00"
+}

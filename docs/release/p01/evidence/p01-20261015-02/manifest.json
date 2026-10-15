@@ -1,0 +1,60 @@
+{
+  "files": {
+    "audit_results.json": {
+      "bytes": 13348,
+      "sha256": "8fa94bb37059037cda24f5f55e4c77258cb6ec15897eb818b3688f62ccb8823d"
+    },
+    "audit_results.xml": {
+      "bytes": 6595,
+      "sha256": "6782a4ed236393374d6191898f67537474f14e8995a71487f83e1297a4a12566"
+    },
+    "case_catalog.json": {
+      "bytes": 15586,
+      "sha256": "f5b52489cf444961685c448ae018439802657aa3917e7238cfd956b6bb59c5dd"
+    },
+    "evidence_gaps.json": {
+      "bytes": 805,
+      "sha256": "d49d1b12abd48889d837cb311cd7e4ed8ca7e36b33f407704804ae55014d84d2"
+    },
+    "feature_families.json": {
+      "bytes": 60115,
+      "sha256": "8fcf05d9efab5a474316769b433c0af974c14695d9ddcc295d634213a8b0f8b3"
+    },
+    "harness_integrity.json": {
+      "bytes": 109,
+      "sha256": "8b7c324bb5cd351f328418cf396347f826569861bede8a636bc60e91372b0cb9"
+    },
+    "historical_custody.json": {
+      "bytes": 2200,
+      "sha256": "dcf914764252d4e29eaa69c4d2830795d7b7694e05645b57da49df78f8505b90"
+    },
+    "source_and_configuration.json": {
+      "bytes": 7208,
+      "sha256": "b39e86bc1cd0f1577b235e3ad53546ce0a9ef7a248d2206ddba7e30d30b0734a"
+    },
+    "source_inventory.json": {
+      "bytes": 1701689,
+      "sha256": "4e64262bee9fd6119eae1b5115dc51fcf8e01c4de59eb722ed67dbeea374c96b"
+    },
+    "verification.log": {
+      "bytes": 9425,
+      "sha256": "05793cdef4d2924d70863c870f86d80783e14ead81412a794912f23f13a5083e"
+    }
+  },
+  "format": "p01_evidence_v1",
+  "metadata": {
+    "application_revision": "ab7db888e85fb9b6125551ecff769d08e0ca7322",
+    "branch": "codex/remediation-p01-evidence-inventory",
+    "checkout_head_at_execution": "ab7db888e85fb9b6125551ecff769d08e0ca7322",
+    "configuration": "Static declared source fingerprints only; effective/local/production environment not read",
+    "gate_disposition": "NO GATE PASSED",
+    "paid_apis": "NOT CALLED",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "private_archive": "/Users/tommychoe/Documents/Playground/.civora-p01-evidence/original-evidence-gs3bf2ps",
+    "production_customer_storage": "NOT ACCESSED",
+    "python": "3.11.15",
+    "python_executable": "/tmp/civora-connected-runtime.L1svVb/runtime/bin/python",
+    "timestamp_utc": "2026-10-15T06:38:14.205941+00:00"
+  },
+  "run_id": "p01-20261015-02"
+}

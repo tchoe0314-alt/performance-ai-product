@@ -1,0 +1,54 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="P01 reconstructed October15 product assertions" tests="24" failures="10" errors="0" skipped="0"><testcase classname="P01.ReconstructedAudit" name="A01" /><testcase classname="P01.ReconstructedAudit" name="A02" /><testcase classname="P01.ReconstructedAudit" name="A03"><failure message="reject invalid input or return success=False">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 73, in test_A03
+    def test_A03(self): self.invalid_hydro(area=-2)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 71, in invalid_hydro
+    self.assertFalse(result.success, f"invalid input accepted: {result}")
+AssertionError: True is not false : invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=-6.4512, area_rows=[{'name': 'SYNTHETIC', 'area_ac': -2, 'runoff_c': 0.8, 'intensity_in_hr': 4, 'flow_cfs': -6.4512}])
+</failure></testcase><testcase classname="P01.ReconstructedAudit" name="A04"><failure message="reject invalid input or return success=False">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 74, in test_A04
+    def test_A04(self): self.invalid_hydro(c=1.5)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 71, in invalid_hydro
+    self.assertFalse(result.success, f"invalid input accepted: {result}")
+AssertionError: True is not false : invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=12.096, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 1.5, 'intensity_in_hr': 4, 'flow_cfs': 12.096}])
+</failure></testcase><testcase classname="P01.ReconstructedAudit" name="A05"><failure message="reject invalid input or return success=False">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 75, in test_A05
+    def test_A05(self): self.invalid_hydro(intensity=float("nan"))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 71, in invalid_hydro
+    self.assertFalse(result.success, f"invalid input accepted: {result}")
+AssertionError: True is not false : invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=nan, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 0.8, 'intensity_in_hr': nan, 'flow_cfs': nan}])
+</failure></testcase><testcase classname="P01.ReconstructedAudit" name="A06" /><testcase classname="P01.ReconstructedAudit" name="A07" /><testcase classname="P01.ReconstructedAudit" name="A08" /><testcase classname="P01.ReconstructedAudit" name="A09"><failure message="24666.666666667 ft3">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 87, in test_A09
+    self.assertAlmostEqual(basin_storage_cf(100, 20, 5, 4), 24666.666666667, places=6)
+AssertionError: 24164.633843973068 != 24666.666666667 within 6 places (502.03282269393094 difference)
+</failure></testcase><testcase classname="P01.ReconstructedAudit" name="A10"><failure message="consistent storage; separate analytical oracle 24666.666666667 ft3">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 91, in test_A10
+    self.assertAlmostEqual(basin_storage_cf(100, 20, 5, 4), curve[-1].storage_cf, places=6)
+AssertionError: 24164.633843973068 != 24661.58671028823 within 6 places (496.9528663151614 difference)
+</failure></testcase><testcase classname="P01.ReconstructedAudit" name="A11"><failure message="2.52 cfs">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 100, in test_A11
+    self.assertAlmostEqual(result["peak_runoff_cfs"], 2.52, places=3)
+AssertionError: 0.0 != 2.52 within 3 places (2.52 difference)
+</failure></testcase><testcase classname="P01.ReconstructedAudit" name="A12" /><testcase classname="P01.ReconstructedAudit" name="A13" /><testcase classname="P01.ReconstructedAudit" name="A14" /><testcase classname="P01.ReconstructedAudit" name="A15" /><testcase classname="P01.ReconstructedAudit" name="A16" /><testcase classname="P01.ReconstructedAudit" name="A17" /><testcase classname="P01.ReconstructedAudit" name="A18" /><testcase classname="P01.ReconstructedAudit" name="A19" /><testcase classname="P01.ReconstructedAudit" name="A20" /><testcase classname="P01.ReconstructedAudit" name="A21"><failure message="zero outbound transport attempts">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 150, in test_A21
+    self.assertEqual(len(attempts), 0, "loopback reached recording transport (no network performed)")
+AssertionError: 1 != 0 : loopback reached recording transport (no network performed)
+</failure></testcase><testcase classname="P01.ReconstructedAudit" name="A22"><failure message="400 ft3 fill">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 159, in test_A22
+    self.assertAlmostEqual(result["results"]["fill_cf"], 400, places=6)
+AssertionError: 900.0 != 400 within 6 places (500.0 difference)
+</failure></testcase><testcase classname="P01.ReconstructedAudit" name="A23"><failure message="incompatible">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 162, in test_A23
+    self.assertFalse(validate_compatible_surfaces(*self.surfaces(1000))["success"])
+AssertionError: True is not false
+</failure></testcase><testcase classname="P01.ReconstructedAudit" name="A24"><failure message="stable auth throttle identity">Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 167, in test_A24
+    self.assertEqual(ns["_request_rate_limit_key"](request, "Bearer unvalidated-token-A"),
+AssertionError: 'token:da35cb8c1feb5ea2:198.51.100.9' != 'token:93d0a9f30316ce51:198.51.100.9'
+- token:da35cb8c1feb5ea2:198.51.100.9
++ token:93d0a9f30316ce51:198.51.100.9
+
+</failure></testcase></testsuite>

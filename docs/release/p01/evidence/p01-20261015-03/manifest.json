@@ -1,0 +1,65 @@
+{
+  "files": {
+    "audit_results.json": {
+      "bytes": 13348,
+      "sha256": "443824dfebde9ae866c52e7c1c77dc5ceff24ac05584fed2019291f2817a761c"
+    },
+    "audit_results.xml": {
+      "bytes": 6595,
+      "sha256": "6782a4ed236393374d6191898f67537474f14e8995a71487f83e1297a4a12566"
+    },
+    "case_catalog.json": {
+      "bytes": 15586,
+      "sha256": "f5b52489cf444961685c448ae018439802657aa3917e7238cfd956b6bb59c5dd"
+    },
+    "evidence_gaps.json": {
+      "bytes": 805,
+      "sha256": "d49d1b12abd48889d837cb311cd7e4ed8ca7e36b33f407704804ae55014d84d2"
+    },
+    "feature_families.json": {
+      "bytes": 61600,
+      "sha256": "f1c488ffda148302d82239d4af329437f91a77ebf882e6dcc311747e7fba46aa"
+    },
+    "feature_inventory.md": {
+      "bytes": 10952,
+      "sha256": "00d3c563316c366c08c0abb29200e32e4d94071b789e445e0454f40b37c27807"
+    },
+    "harness_integrity.json": {
+      "bytes": 109,
+      "sha256": "8b7c324bb5cd351f328418cf396347f826569861bede8a636bc60e91372b0cb9"
+    },
+    "historical_custody.json": {
+      "bytes": 2200,
+      "sha256": "db2c396eb9e352ff7185db8c9b0bc60dd818595c4f2dd920b5be0fad75ec5a8d"
+    },
+    "source_and_configuration.json": {
+      "bytes": 8033,
+      "sha256": "3b6813f6ecfe5bd39cc7c895a8ba64452c97c134e390d9b3f32e4e0b57cf19b1"
+    },
+    "source_inventory.json": {
+      "bytes": 1701689,
+      "sha256": "4e64262bee9fd6119eae1b5115dc51fcf8e01c4de59eb722ed67dbeea374c96b"
+    },
+    "verification.log": {
+      "bytes": 9425,
+      "sha256": "293e78179bddc878638639d44f0d5b201d6e74706dcfc5457a0abbf6333350d7"
+    }
+  },
+  "format": "p01_evidence_v1",
+  "metadata": {
+    "application_baseline_tree": "4df212cec657791c03ce21fbd6738bfdd4cd7d9c",
+    "application_revision": "ab7db888e85fb9b6125551ecff769d08e0ca7322",
+    "branch": "codex/remediation-p01-evidence-inventory",
+    "checkout_head_at_execution": "ab7db888e85fb9b6125551ecff769d08e0ca7322",
+    "configuration": "Static declared source fingerprints only; effective/local/production environment not read",
+    "gate_disposition": "NO GATE PASSED",
+    "paid_apis": "NOT CALLED",
+    "platform": "macOS-27.0-arm64-arm-64bit",
+    "private_archive": "/Users/tommychoe/Documents/Playground/.civora-p01-evidence/original-evidence-71fmvwhv",
+    "production_customer_storage": "NOT ACCESSED",
+    "python": "3.11.15",
+    "python_executable": "/tmp/civora-connected-runtime.L1svVb/runtime/bin/python",
+    "timestamp_utc": "2026-10-15T06:39:24.745129+00:00"
+  },
+  "run_id": "p01-20261015-03"
+}
