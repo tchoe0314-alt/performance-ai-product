@@ -95,7 +95,7 @@ def test_server_snapshot_workflow_cannot_restore_old_geometry(setup):
     edited = deepcopy(project["project_input"])
     edited["manual_fields"]["site_objects"][0]["x"] = 250
     edited = with_canvas_snapshot(edited)
-    store.save_project_shell(user_id=user, project_id=project["project_id"], name="New geometry", project_input=edited)
+    store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project["project_id"])["revision_token"], user_id=user, project_id=project["project_id"], name="New geometry", project_input=edited)
     before = store.get_project(user_id=user, project_id=project["project_id"])
     with pytest.raises(HTTPException) as exc:
         save_project_snapshot(store, project, user_id=user, project_id=project["project_id"],
@@ -149,11 +149,12 @@ def test_metadata_patch_cannot_drop_or_forge_design_generation(setup):
         assert current["revision_token"] == project["revision_token"]
 
 
-def test_low_level_full_save_requires_revision_and_preserves_record(setup):
+@pytest.mark.parametrize("method", ["save_project", "save_project_shell"])
+def test_low_level_full_save_requires_revision_and_preserves_record(setup, method):
     store,_,user,project=setup
     before=store.get_project(user_id=user,project_id=project["project_id"])
     with pytest.raises(ProjectRevisionConflict):
-        store.save_project(user_id=user,project_id=project["project_id"],name="Unchecked overwrite")
+        getattr(store, method)(user_id=user,project_id=project["project_id"],name="Unchecked overwrite")
     assert store.get_project(user_id=user,project_id=project["project_id"]) == before
 
 
@@ -181,7 +182,7 @@ def test_delayed_chat_save_returns_conflict_without_overwriting_new_design(setup
     snapshot.pop("revision_token", None)
     monkeypatch.setattr(chat,"attach_cad_entity_model_to_result",lambda result,**kwargs:result)
     monkeypatch.setattr(chat,"attach_source_confidence_map",lambda result,**kwargs:result)
-    store.save_project_shell(user_id=user,project_id=snapshot["project_id"],name="Newer edit")
+    store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=snapshot["project_id"])["revision_token"], user_id=user,project_id=snapshot["project_id"],name="Newer edit")
     before=store.get_project(user_id=user,project_id=snapshot["project_id"])
     with pytest.raises(HTTPException) as error:
         chat._save_project_record(store,snapshot,project_input=snapshot["project_input"],latest_result={})

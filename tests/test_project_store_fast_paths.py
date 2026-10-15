@@ -119,7 +119,7 @@ class ProjectStoreFastPathTests(unittest.TestCase):
             self.assertCanonicalContentPreserved(persisted["project_input"][PROJECT_DOCUMENT_KEY], expected)
             if full_save:
                 document["utilities"] = [{"id": "pipe-2"}]
-                self.store.save_project_shell(user_id=self.user_id, project_id=saved["project_id"], name="Pilot",
+                self.store.save_project_shell(expected_revision=self.store.get_project(user_id=self.user_id, project_id=saved["project_id"])["revision_token"], user_id=self.user_id, project_id=saved["project_id"], name="Pilot",
                                               project_input={PROJECT_DOCUMENT_KEY: document})
 
     @staticmethod
@@ -251,6 +251,7 @@ class ProjectStoreFastPathTests(unittest.TestCase):
                     "name": "Untitled Project",
                     "project_input": {"manual_fields": {"project_name": "Denver Review"}},
                     "metadata": {"source": "autosave"},
+                    "expected_revision": saved["revision_token"],
                 },
             )
 
@@ -287,16 +288,20 @@ class ProjectStoreFastPathTests(unittest.TestCase):
             reviewer_id=self.user_id,
         )
 
-        save_project_record(
-            project_store=self.store,
-            user_id=self.user_id,
-            payload_data={
-                "project_id": saved["project_id"],
-                "name": "Untitled Project",
-                "project_input": stale_project_input,
-                "metadata": {"source": "late_autosave"},
-            },
-        )
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as conflict:
+            save_project_record(
+                project_store=self.store,
+                user_id=self.user_id,
+                payload_data={
+                    "project_id": saved["project_id"],
+                    "name": "Untitled Project",
+                    "project_input": stale_project_input,
+                    "metadata": {"source": "late_autosave"},
+                    "expected_revision": saved["revision_token"],
+                },
+            )
+        self.assertEqual(conflict.exception.status_code, 409)
 
         shell = self.store.get_project_shell(
             user_id=self.user_id,
@@ -322,7 +327,7 @@ class ProjectStoreFastPathTests(unittest.TestCase):
         new_site_inputs = self._site_inputs()
         new_site_inputs["address"] = "20525 Margo St, Gretna, NE 68028"
 
-        self.store.save_project_shell(
+        self.store.save_project_shell(expected_revision=self.store.get_project(user_id=self.user_id, project_id=saved["project_id"])["revision_token"],
             user_id=self.user_id,
             project_id=saved["project_id"],
             name="Untitled Project",

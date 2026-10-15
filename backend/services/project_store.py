@@ -795,6 +795,9 @@ class ProjectStore:
                 raise ValueError(f"You do not have {minimum_role} access to that project.")
 
             existing_record = self._shell_row_to_record(row)
+            if expected_revision is None:
+                from .project_revision import ProjectRevisionConflict
+                raise ProjectRevisionConflict(project_revision(existing_record))
             check_revision(existing_record, expected_revision)
             if replace_original:
                 if expected_revision is None:

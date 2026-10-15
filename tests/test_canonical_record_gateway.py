@@ -71,14 +71,14 @@ def test_canonical_site_and_controls_override_stale_compatibility_shadows(setup)
     incoming = deepcopy(project["project_input"])
     incoming["canonical_project_v1"]["site"]["site_inputs_v1"]["address"] = "Canonical edit"
     incoming["canonical_project_v1"]["extensions"][OWNER]["input_controls"]["input_mode"] = "ai"
-    saved = store.save_project_shell(user_id=user, project_id=project["project_id"], name="Fixture", project_input=incoming)
+    saved = store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project["project_id"])["revision_token"], user_id=user, project_id=project["project_id"], name="Fixture", project_input=incoming)
     assert saved["project_input"]["meta"]["site_inputs"]["address"] == "Canonical edit"
     assert saved["project_input"]["input_mode"] == "ai"
 
 
 def test_existing_legacy_input_writer_refreshes_the_canonical_adapter(setup):
     _, store, user, project, _ = setup
-    saved = store.save_project_shell(user_id=user, project_id=project["project_id"], name="Fixture", project_input={
+    saved = store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project["project_id"])["revision_token"], user_id=user, project_id=project["project_id"], name="Fixture", project_input={
         "meta": {"site_inputs": {"address": "Legacy writer edit"}}, "input_mode": "ai",
     })
     doc = saved["project_input"]["canonical_project_v1"]
@@ -91,7 +91,7 @@ def test_invalid_result_reference_is_rejected_without_overwriting_project(setup)
     incoming = deepcopy(project["project_input"])
     incoming["canonical_project_v1"]["extensions"][OWNER]["active_result_id"] = "missing"
     with pytest.raises(ProjectDocumentError):
-        store.save_project_shell(user_id=user, project_id=project["project_id"], name="Bad", project_input=incoming)
+        store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project["project_id"])["revision_token"], user_id=user, project_id=project["project_id"], name="Bad", project_input=incoming)
     assert store.get_project(user_id=user, project_id=project["project_id"])["revision_token"] == project["revision_token"]
 
 
@@ -121,7 +121,7 @@ def test_legacy_metadata_update_does_not_migrate_or_hide_results_and_save_keeps_
     legacy = store.get_project(user_id=user, project_id=project["project_id"])
     assert legacy["project_input"] == legacy_input
     assert legacy["latest_result"] == result
-    store.save_project_shell(user_id=user, project_id=project["project_id"], name="Migrated", project_input=legacy_input)
+    store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project["project_id"])["revision_token"], user_id=user, project_id=project["project_id"], name="Migrated", project_input=legacy_input)
     migrated = store.get_project(user_id=user, project_id=project["project_id"])
     assert migrated["latest_result"] == result
     backup = migrated["metadata"]["legacy_project_backup_v1"]
@@ -135,10 +135,10 @@ def test_program_only_units_use_the_model_and_explicit_unknown_does_not_retain_f
     program = store.save_project(user_id=user, project_id=None, name="Program", project_input={"manual_fields": {"units": "ft", "building_width": 30}})
     incoming = deepcopy(program["project_input"])
     incoming["canonical_project_v1"]["units"]["length"] = "m"
-    metric = store.save_project_shell(user_id=user, project_id=program["project_id"], name="Program", project_input=incoming)
+    metric = store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=program["project_id"])["revision_token"], user_id=user, project_id=program["project_id"], name="Program", project_input=incoming)
     assert metric["project_input"]["manual_fields"]["units"] == "m"
     incoming = deepcopy(metric["project_input"])
     incoming["canonical_project_v1"]["units"]["length"] = None
-    unknown = store.save_project_shell(user_id=user, project_id=program["project_id"], name="Program", project_input=incoming)
+    unknown = store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=program["project_id"])["revision_token"], user_id=user, project_id=program["project_id"], name="Program", project_input=incoming)
     assert unknown["project_input"]["manual_fields"]["units"] is None
     assert unknown["project_input"]["canonical_project_v1"]["units"]["length"] is None

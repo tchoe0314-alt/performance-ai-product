@@ -42,7 +42,7 @@ def test_direct_late_result_archives_without_overwriting_an_edit(direct, monkeyp
     changed["manual_fields"]["site_objects"][0]["x"] = 100
     changed = with_canvas_snapshot(changed)
     def run(*_args, **_kwargs):
-        store.save_project_shell(user_id=owner["user_id"], project_id=project["project_id"], name="Changed", project_input=changed)
+        store.save_project_shell(expected_revision=store.get_project(user_id=owner["user_id"], project_id=project["project_id"])["revision_token"], user_id=owner["user_id"], project_id=project["project_id"], name="Changed", project_input=changed)
         return {"success": True, "metadata":{"calculation_engine_revision":ENGINE_REVISION}, "final_plan": {"actions": [], "meta": {}}}
     monkeypatch.setattr(api, "_run_orchestration", run)
     response = api.orchestrate(request, current_user=owner, _rate_limit=None)

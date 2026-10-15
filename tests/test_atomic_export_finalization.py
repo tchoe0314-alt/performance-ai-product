@@ -38,7 +38,7 @@ def edit(store, user, project_id, source):
     changed = deepcopy(source)
     changed["manual_fields"]["site_objects"][0]["x"] = 200
     changed = with_canvas_snapshot(changed)
-    store.save_project_shell(user_id=user, project_id=project_id, name="New name", project_input=changed,
+    store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project_id)["revision_token"], user_id=user, project_id=project_id, name="New name", project_input=changed,
                              session_state={"note": "new session"}, metadata={"note": "new note"})
     result = store.save_calculation_result(user_id=user, project_id=project_id, source_input=changed,
         result={"success": True, "message": "new calculation", "metadata": {"calculation_engine_revision": ENGINE_REVISION}, "final_plan": {"meta": {}}})

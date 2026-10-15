@@ -69,7 +69,7 @@ def moved(source):
 def test_changed_layout_archives_late_result_without_overwriting_any_project_state(setup):
     db, store, user, project_id, source = setup
     edited = moved(source)
-    store.save_project_shell(user_id=user, project_id=project_id, name="Renamed", project_input=edited, metadata={"keep": "new"})
+    store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project_id)["revision_token"], user_id=user, project_id=project_id, name="Renamed", project_input=edited, metadata={"keep": "new"})
     before = store.get_project(user_id=user, project_id=project_id)
     saved = store.save_calculation_result(user_id=user, project_id=project_id, source_input=source, result=result("old"))
     assert saved["metadata"]["calculation_save_v1"]["disposition"] == "archived"
@@ -85,7 +85,7 @@ def test_changed_layout_archives_late_result_without_overwriting_any_project_sta
 def test_current_result_activates_but_late_old_result_preserves_it(setup):
     _, store, user, project_id, source = setup
     edited = moved(source)
-    store.save_project_shell(user_id=user, project_id=project_id, name="Pilot", project_input=edited)
+    store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project_id)["revision_token"], user_id=user, project_id=project_id, name="Pilot", project_input=edited)
     active = store.save_calculation_result(user_id=user, project_id=project_id, source_input=edited, result=result("new"))
     store.save_calculation_result(user_id=user, project_id=project_id, source_input=source, result=result("late old"))
     current = store.get_project(user_id=user, project_id=project_id)
@@ -111,7 +111,7 @@ def test_editing_after_activation_makes_retained_history_inactive(setup):
     _, store, user, project_id, source = setup
     store.save_calculation_result(user_id=user, project_id=project_id, source_input=source, result=result("current"))
     assert store.list_calculation_history(user_id=user, project_id=project_id)[0]["is_active"] is True
-    store.save_project_shell(user_id=user, project_id=project_id, name="Pilot", project_input=moved(source))
+    store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project_id)["revision_token"], user_id=user, project_id=project_id, name="Pilot", project_input=moved(source))
     entries = store.list_calculation_history(user_id=user, project_id=project_id)
     assert len(entries) == 1
     assert entries[0]["is_active"] is False
@@ -137,7 +137,7 @@ def test_archive_api_never_activates_result_against_matching_saved_inputs(setup,
 
 def test_job_save_uses_result_only_path_and_marks_returned_job_result_archived(setup):
     _, store, user, project_id, source = setup
-    store.save_project_shell(user_id=user, project_id=project_id, name="New name", project_input=moved(source))
+    store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project_id)["revision_token"], user_id=user, project_id=project_id, name="New name", project_input=moved(source))
     generated = result("old checkpoint")
     _save_generated_calculation(store, user_id=user, project_id=project_id, name="Old name", project_input=source, latest_result=generated)
     assert generated["metadata"]["calculation_save_v1"]["disposition"] == "archived"
@@ -148,7 +148,7 @@ def test_actual_job_runner_archives_when_user_edits_during_engine_execution(setu
     from backend.application.job_workflows import build_orchestrate_job_runner
     _, store, user, project_id, source = setup
     def engine(payload):
-        store.save_project_shell(user_id=user, project_id=project_id, name="Changed during run", project_input=moved(source))
+        store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project_id)["revision_token"], user_id=user, project_id=project_id, name="Changed during run", project_input=moved(source))
         return result("Late engine result")
     runner = build_orchestrate_job_runner(
         project_store=store, update_job_progress=lambda *_, **__: None, run_orchestration=engine,
@@ -221,7 +221,7 @@ def test_api_history_and_job_freshness_use_authorized_current_project(setup, mon
     }))
     assert api.list_project_calculations(project_id, {"user_id": user})["calculations"][0]["is_active"] is True
     assert api.get_project_calculation(project_id, calculation_id, {"user_id": user})["calculation"]["result"] == saved
-    store.save_project_shell(user_id=user, project_id=project_id, name="Pilot", project_input=moved(source))
+    store.save_project_shell(expected_revision=store.get_project(user_id=user, project_id=project_id)["revision_token"], user_id=user, project_id=project_id, name="Pilot", project_input=moved(source))
     assert api.get_job("job-1", {"user_id": user})["job"]["result_freshness_v1"]["status"] == "stale"
     with pytest.raises(HTTPException) as caught:
         api.get_project_calculation(project_id, calculation_id, {"user_id": "stranger"})
