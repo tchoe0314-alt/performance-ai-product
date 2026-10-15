@@ -2598,6 +2598,8 @@ def list_deleted_projects(current_user: Dict[str, Any] = Depends(get_current_use
 
 @app.post("/api/projects")
 def save_project(payload: SaveProjectPayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    if payload.project_id and not payload.expected_revision:
+        raise HTTPException(status_code=409, detail="A current project revision is required. Save a copy or reopen the original before saving.")
     return application_save_project_record(
         project_store=PROJECT_STORE,
         user_id=current_user["user_id"],

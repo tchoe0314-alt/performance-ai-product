@@ -645,6 +645,7 @@ def _truthful_decision_update(
 
 
 def _save_project_record(project_store: Any, record: Dict[str, Any], *, project_input: Dict[str, Any], latest_result: Dict[str, Any]) -> None:
+    from backend.application.project_snapshot import save_project_snapshot
     final_plan = _safe_dict(latest_result.get("final_plan"))
     if final_plan:
         meta = _safe_dict(final_plan.get("meta"))
@@ -660,7 +661,7 @@ def _save_project_record(project_store: Any, record: Dict[str, Any], *, project_
         latest_result["final_plan"] = final_plan
     latest_result = attach_cad_entity_model_to_result(latest_result, project_input=project_input)
     latest_result = attach_source_confidence_map(latest_result, project_input=project_input)
-    project_store.save_project(
+    save_project_snapshot(project_store, record,
         user_id=record.get("_user_id"),
         project_id=record.get("project_id"),
         name=record.get("name") or "Untitled Project",
@@ -5598,6 +5599,7 @@ def decide_chat(
     if chat_thread:
         memory_summary = build_chat_memory_summary(chat_thread)
     if chat_thread and project_store and user_id and project_id:
+        from backend.services.project_revision import project_revision, result_revision, ProjectRevisionConflict
         try:
             if record:
                 project_input = dict(record.get("project_input") or {})
@@ -5615,9 +5617,13 @@ def decide_chat(
                     latest_result=record.get("latest_result") or {},
                     session_state=record.get("session_state") or {},
                     metadata=record.get("metadata") or {},
+                    expected_revision=record.get("revision_token") or project_revision(record),
+                    expected_result_revision=result_revision(record),
                 )
+        except ProjectRevisionConflict:
+            decision.setdefault("response_metadata", {})["memory_save_status"] = "conflict_not_saved"
         except Exception:
-            pass
+            decision.setdefault("response_metadata", {})["memory_save_status"] = "not_saved"
         append_chat_learning_event(
             {
                 "project_id": project_id,

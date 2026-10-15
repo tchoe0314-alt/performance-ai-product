@@ -813,7 +813,8 @@ def save_project_workflow_update(
     if existing is None:
         return None
     metadata = update_metadata(existing)
-    return project_store.save_project(
+    from backend.application.project_snapshot import save_project_snapshot
+    return save_project_snapshot(project_store, existing,
         user_id=user_id,
         project_id=project_id,
         name=existing.get("name", "Untitled Project"),

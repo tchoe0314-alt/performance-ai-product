@@ -92,7 +92,8 @@ def _save_project_with_meta(
     final_plan["meta"] = meta
     latest_result["final_plan"] = final_plan
     latest_result = attach_source_confidence_map(latest_result, project_input=dict(record.get("project_input") or {}))
-    return project_store.save_project(
+    from backend.application.project_snapshot import save_project_snapshot
+    return save_project_snapshot(project_store, record,
         user_id=str(record.get("user_id") or record.get("_user_id")),
         project_id=str(record.get("project_id")),
         name=str(record.get("name") or "Untitled Project"),

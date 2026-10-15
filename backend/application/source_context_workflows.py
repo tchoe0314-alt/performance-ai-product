@@ -351,7 +351,8 @@ def build_source_context_job_runner(
                 final_meta.update(meta_patch)
                 final_plan["meta"] = final_meta
                 latest_result["final_plan"] = final_plan
-            project_store.save_project(
+            from backend.application.project_snapshot import save_project_snapshot
+            save_project_snapshot(project_store, project,
                 user_id=user_id,
                 project_id=project_id,
                 name=safe_str(project.get("name"), "Untitled Project"),

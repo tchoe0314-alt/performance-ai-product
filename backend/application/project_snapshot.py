@@ -1,12 +1,11 @@
 """Revision-aware boundary for existing server read/modify/save workflows."""
 from fastapi import HTTPException
-from backend.services.project_revision import ProjectRevisionConflict, result_revision
+from backend.services.project_revision import ProjectRevisionConflict, project_revision, result_revision
 
 
 def save_project_snapshot(store, snapshot: dict, **kwargs):
-    if snapshot.get("revision_token"):
-        kwargs["expected_revision"] = snapshot["revision_token"]
-        kwargs["expected_result_revision"] = result_revision(snapshot)
+    kwargs["expected_revision"] = snapshot.get("revision_token") or project_revision(snapshot)
+    kwargs["expected_result_revision"] = result_revision(snapshot)
     try:
         return store.save_project(**kwargs)
     except ProjectRevisionConflict as exc:

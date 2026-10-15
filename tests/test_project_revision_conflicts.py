@@ -11,6 +11,7 @@ from backend.services.canonical_canvas import with_canvas_snapshot
 from backend.services.database import Database
 from backend.services.project_revision import ProjectRevisionConflict
 from backend.services.project_store import ProjectStore
+from backend.services.canonical_results import ENGINE_REVISION
 
 
 @pytest.fixture
@@ -106,11 +107,29 @@ def test_server_snapshot_cannot_overwrite_a_new_calculation_with_no_geometry_edi
     from backend.application.project_snapshot import save_project_snapshot
     store, _, user, project = setup
     store.save_calculation_result(user_id=user, project_id=project["project_id"], source_input=project["project_input"],
-                                 result={"success": True, "message": "New calculation"})
+                                 result={"success": True, "message": "New calculation", "metadata": {"calculation_engine_revision": ENGINE_REVISION}})
     before = store.get_project(user_id=user, project_id=project["project_id"])
+    assert before["latest_result"]["message"] == "New calculation"
     assert before["revision_token"] == project["revision_token"]
     with pytest.raises(HTTPException) as exc:
         save_project_snapshot(store, project, user_id=user, project_id=project["project_id"],
                               name="Pilot", project_input=project["project_input"], latest_result={"message": "Old"})
     assert exc.value.status_code == 409
     assert store.get_project(user_id=user, project_id=project["project_id"]) == before
+
+
+def test_delayed_chat_save_returns_conflict_without_overwriting_new_design(setup, monkeypatch):
+    from backend.application import chat_workflows as chat
+    store, _, user, snapshot = setup
+    snapshot = deepcopy(snapshot)
+    snapshot["_user_id"] = user
+    # Legacy snapshot without an explicit token still has a derived precondition.
+    snapshot.pop("revision_token", None)
+    monkeypatch.setattr(chat,"attach_cad_entity_model_to_result",lambda result,**kwargs:result)
+    monkeypatch.setattr(chat,"attach_source_confidence_map",lambda result,**kwargs:result)
+    store.save_project_shell(user_id=user,project_id=snapshot["project_id"],name="Newer edit")
+    before=store.get_project(user_id=user,project_id=snapshot["project_id"])
+    with pytest.raises(HTTPException) as error:
+        chat._save_project_record(store,snapshot,project_input=snapshot["project_input"],latest_result={})
+    assert error.value.status_code == 409
+    assert store.get_project(user_id=user,project_id=snapshot["project_id"]) == before
