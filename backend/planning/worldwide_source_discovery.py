@@ -9,6 +9,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+from backend.services.outbound_http import safe_get
 
 from .common import safe_dict, safe_float, safe_int, safe_list, safe_str
 
@@ -96,10 +97,10 @@ def _get_json(
     timeout: float,
     headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    try:
-        response = session.get(url, params=params, timeout=timeout, headers=headers or {})
-    except TypeError:
-        response = session.get(url, params=params, timeout=timeout)
+    # Public context endpoints may be configurable. Neither configuration nor
+    # the dataset's reputation makes redirect/DNS destinations safe.
+    response = safe_get(url, params=params, timeout=timeout,
+                        session=None if session is requests else session)
     response.raise_for_status()
     return safe_dict(response.json())
 
