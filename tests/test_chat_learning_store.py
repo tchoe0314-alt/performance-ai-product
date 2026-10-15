@@ -19,7 +19,7 @@ class ChatLearningStoreTest(unittest.TestCase):
             }
             with patch.dict(os.environ, env, clear=False):
                 self.assertTrue(chat_learning_enabled())
-                append_chat_interaction_event({"message": "hello"})
+                append_chat_interaction_event({"message": "hello"}, consent={"global_learning_enabled":True})
 
             rows = [json.loads(line) for line in path.read_text().splitlines()]
 
@@ -27,6 +27,14 @@ class ChatLearningStoreTest(unittest.TestCase):
         self.assertEqual(rows[0]["event_type"], "interaction")
         self.assertEqual(rows[0]["message"], "hello")
         self.assertIn("ts", rows[0])
+
+    def test_global_enable_does_not_substitute_for_collection_consent(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "learning.jsonl"
+            with patch.dict(os.environ, {"CIVORA_CHAT_LEARNING_PATH":str(path), "CIVORA_ENABLE_CHAT_LEARNING":"1", "CIVORA_DISABLE_CHAT_LEARNING":""}):
+                append_chat_interaction_event({"message":"private", "global_learning_enabled":True})
+                append_chat_interaction_event({"message":"private"},consent={"global_learning_enabled":False})
+                self.assertFalse(path.exists())
 
     def test_append_is_disabled_by_default(self):
         with tempfile.TemporaryDirectory() as tmpdir:

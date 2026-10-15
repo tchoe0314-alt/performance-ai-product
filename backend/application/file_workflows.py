@@ -4,6 +4,9 @@ import csv
 import math
 import mimetypes
 import os
+import hashlib
+import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Protocol
 
@@ -129,8 +132,10 @@ def _validate_upload_metadata(
 
 def _copy_upload_with_limit(*, file: UploadFile, target: Path, max_bytes: int) -> int:
     total = 0
+    staged = None
     try:
-        with target.open("wb") as buffer:
+        with tempfile.NamedTemporaryFile(dir=target.parent, prefix=".upload-", delete=False) as buffer:
+            staged = Path(buffer.name)
             while True:
                 chunk = file.file.read(1024 * 1024)
                 if not chunk:
@@ -142,18 +147,30 @@ def _copy_upload_with_limit(*, file: UploadFile, target: Path, max_bytes: int) -
                         detail=f"Uploaded file is too large. Maximum allowed size is {_format_bytes(max_bytes)}.",
                     )
                 buffer.write(chunk)
-    except HTTPException:
+            buffer.flush()
+            os.fsync(buffer.fileno())
+        # Publish complete bytes only, with no-replace semantics. A failed upload
+        # cannot truncate/delete an existing source, even on a name collision.
         try:
-            target.unlink(missing_ok=True)
-        except Exception:
-            pass
-        raise
+            os.link(staged, target)
+        except FileExistsError as exc:
+            raise HTTPException(status_code=409, detail="Upload source already exists; choose a new source identity.") from exc
     finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
         try:
             file.file.seek(0)
         except Exception:
             pass
     return total
+
+
+def _source_sha256(target: Path) -> str:
+    digest = hashlib.sha256()
+    with target.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024*1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def upload_image_file(
@@ -171,7 +188,7 @@ def upload_image_file(
         allowed_extensions=IMAGE_ALLOWED_EXTENSIONS,
         allowed_content_types=IMAGE_ALLOWED_CONTENT_TYPES,
     )
-    stored_name = f"{safe_prefix}_{safe_name}"
+    stored_name = f"{safe_prefix}_{uuid.uuid4().hex}_{safe_name}"
     target = upload_dir / stored_name
 
     _copy_upload_with_limit(file=file, target=target, max_bytes=_upload_limit_bytes("image"))
@@ -182,6 +199,7 @@ def upload_image_file(
         "image_path": str(target),
         "filename": safe_name,
         "stored_filename": stored_name,
+        "source_sha256": _source_sha256(target),
         "image_url": f"/api/uploads/{stored_name}",
     }
 
@@ -201,7 +219,7 @@ def upload_survey_file(
         allowed_extensions=SURVEY_ALLOWED_EXTENSIONS,
         allowed_content_types=SURVEY_ALLOWED_CONTENT_TYPES,
     )
-    stored_name = f"{safe_prefix}_{safe_name}"
+    stored_name = f"{safe_prefix}_{uuid.uuid4().hex}_{safe_name}"
     target = upload_dir / stored_name
 
     _copy_upload_with_limit(file=file, target=target, max_bytes=_upload_limit_bytes("survey"))
@@ -242,6 +260,7 @@ def upload_survey_file(
         "message": "Survey uploaded.",
         "filename": safe_name,
         "stored_filename": stored_name,
+        "source_sha256": _source_sha256(target),
         "survey_url": f"/api/uploads/{stored_name}",
         "file_type": file_type,
         "parse_success": parse_success,
@@ -270,7 +289,7 @@ def upload_existing_conditions_file(
         allowed_extensions=EXISTING_CONDITIONS_ALLOWED_EXTENSIONS,
         allowed_content_types=EXISTING_CONDITIONS_ALLOWED_CONTENT_TYPES,
     )
-    stored_name = f"{safe_prefix}_{safe_name}"
+    stored_name = f"{safe_prefix}_{uuid.uuid4().hex}_{safe_name}"
     target = upload_dir / stored_name
 
     _copy_upload_with_limit(file=file, target=target, max_bytes=_upload_limit_bytes("existing_conditions"))
@@ -349,6 +368,7 @@ def upload_existing_conditions_file(
         "message": "Existing conditions uploaded." if merged.get("success") else "Existing conditions stored, but no supported import data was recognized.",
         "filename": safe_name,
         "stored_filename": stored_name,
+        "source_sha256": _source_sha256(target),
         "file_url": f"/api/uploads/{stored_name}",
         "file_type": suffix.lstrip("."),
         "format_classification": classification,

@@ -27,6 +27,18 @@ class FakeAuthStore:
 
 
 class ApplicationFileWorkflowsTest(unittest.TestCase):
+    def test_same_filename_uploads_preserve_distinct_immutable_sources(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            first = upload_image_file(upload_dir=root, file=UploadFile(filename="site.png", file=BytesIO(b"original")), current_user={"user_id":"u1"})
+            second = upload_image_file(upload_dir=root, file=UploadFile(filename="site.png", file=BytesIO(b"replacement")), current_user={"user_id":"u1"})
+            self.assertNotEqual(first["stored_filename"],second["stored_filename"])
+            self.assertEqual((root/first["stored_filename"]).read_bytes(),b"original")
+            self.assertEqual((root/second["stored_filename"]).read_bytes(),b"replacement")
+            self.assertEqual(first["source_sha256"],hashlib.sha256(b"original").hexdigest())
+            self.assertEqual(second["source_sha256"],hashlib.sha256(b"replacement").hexdigest())
+
     def test_upload_image_file_stores_prefixed_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             upload = UploadFile(filename="site.png", file=BytesIO(b"abc"))
@@ -51,6 +63,7 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
 
             self.assertEqual(ctx.exception.status_code, 413)
             self.assertFalse((Path(tmpdir) / "u1_site.png").exists())
+            self.assertEqual(list(Path(tmpdir).iterdir()), [])
 
     def test_upload_image_file_rejects_unsupported_extension(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -32,8 +32,10 @@ def _learning_path() -> Path:
     return _DEFAULT_LEARNING_PATH
 
 
-def _append_jsonl(record: Dict[str, Any]) -> None:
-    if _chat_learning_disabled():
+def _append_jsonl(record: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:
+    # Consent is supplied by the server's account-consent lookup, never a flag
+    # copied out of the message/training payload. Missing consent fails closed.
+    if _chat_learning_disabled() or not isinstance(consent, dict) or consent.get("global_learning_enabled") is not True:
         return
     path = _learning_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -41,31 +43,31 @@ def _append_jsonl(record: Dict[str, Any]) -> None:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def append_chat_learning_event(payload: Dict[str, Any]) -> None:
+def append_chat_learning_event(payload: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:
     try:
         event = dict(payload)
         event["ts"] = time.time()
-        _append_jsonl(event)
+        _append_jsonl(event, consent=consent)
     except Exception:
         # Learning log failures should never break the user flow.
         return
 
 
-def append_chat_interaction_event(payload: Dict[str, Any]) -> None:
+def append_chat_interaction_event(payload: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:
     try:
         event = dict(payload)
         event["ts"] = time.time()
         event.setdefault("event_type", "interaction")
-        _append_jsonl(event)
+        _append_jsonl(event, consent=consent)
     except Exception:
         return
 
 
-def append_chat_training_example(example: Dict[str, Any]) -> None:
+def append_chat_training_example(example: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:
     try:
         record = dict(example)
         record["ts"] = time.time()
         record["event_type"] = "training_example"
-        _append_jsonl(record)
+        _append_jsonl(record, consent=consent)
     except Exception:
         return
