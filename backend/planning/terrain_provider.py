@@ -150,9 +150,9 @@ def build_terrain_surface(
             tile_x, tile_y, px, py = _lat_lng_to_tile(lat, lng, 14, 512)
             image = _fetch_tile(token, tile_x, tile_y, 14, cache)
             if image is None:
-                row_vals.append(float("nan"))
-                missing_count += 1
-                continue
+                # This surface is already unusable. Do not retry the same
+                # failing tile for thousands of remaining grid samples.
+                return None
             r, g, b = image.getpixel((px, py))
             row_vals.append(_elevation_from_rgb(r, g, b))
             sample_count += 1
