@@ -19,6 +19,7 @@ from vision.model_runtime import RuntimeDetectionResult, VisionModelRuntimeError
 
 
 class _Response:
+    status_code = 200
     def __init__(self, payload, *, content=b"", headers=None):
         self.payload = payload
         self.content = content
@@ -35,7 +36,8 @@ class _GenericSession:
     def __init__(self):
         self.calls = []
 
-    def post(self, url, json=None, headers=None, timeout=None):
+    def post(self, url, json=None, headers=None, timeout=None, allow_redirects=None):
+        assert allow_redirects is False
         self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
         return _Response(
             {
@@ -70,7 +72,8 @@ class _RoboflowSession:
     def __init__(self):
         self.calls = []
 
-    def post(self, url, json=None, headers=None, timeout=None):
+    def post(self, url, json=None, headers=None, timeout=None, allow_redirects=None):
+        assert allow_redirects is False
         self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
         return _Response(
             {

@@ -472,6 +472,14 @@ def create_app() -> Any:
     return app
 
 
+def _require_provider_success(response: Any) -> None:
+    # requests.raise_for_status does not reject3xx. Never parse a redirected
+    # provider response or forward its credential-bearing body to another URL.
+    status = getattr(response, "status_code", None)
+    if type(status) is not int or not 200 <= status < 300:
+        raise ValueError("Detector provider returned a non-success response; redirects are not allowed.")
+
+
 def _call_roboflow(*, image_url: str, session: Any) -> Dict[str, Any]:
     endpoint = os.getenv("ROBOFLOW_API_URL", "").strip()
     api_key = os.getenv("ROBOFLOW_API_KEY", "").strip()
@@ -479,11 +487,11 @@ def _call_roboflow(*, image_url: str, session: Any) -> Dict[str, Any]:
         raise ValueError("ROBOFLOW_API_URL and ROBOFLOW_API_KEY are required for Roboflow detection.")
     mode = os.getenv("ROBOFLOW_IMAGE_MODE", "url_param").strip().lower()
     if mode == "json":
-        response = session.post(endpoint, json={"image": image_url, "api_key": api_key}, timeout=60)
+        response = session.post(endpoint, json={"image": image_url, "api_key": api_key}, timeout=60, allow_redirects=False)
     else:
         sep = "&" if "?" in endpoint else "?"
-        response = session.post(f"{endpoint}{sep}{urlencode({'api_key': api_key, 'image': image_url})}", timeout=60)
-    response.raise_for_status()
+        response = session.post(f"{endpoint}{sep}{urlencode({'api_key': api_key, 'image': image_url})}", timeout=60, allow_redirects=False)
+    _require_provider_success(response)
     return _dict(response.json())
 
 
@@ -1215,8 +1223,8 @@ def _call_generic_detector(*, payload: Dict[str, Any], image_url: str, session: 
     if not endpoint:
         raise ValueError("CIVORA_GATEWAY_GENERIC_DETECTOR_URL is required for generic detection.")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    response = session.post(endpoint, json={**payload, "image_url": image_url}, headers=headers, timeout=60)
-    response.raise_for_status()
+    response = session.post(endpoint, json={**payload, "image_url": image_url}, headers=headers, timeout=60, allow_redirects=False)
+    _require_provider_success(response)
     return _dict(response.json())
 
 
