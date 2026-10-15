@@ -945,19 +945,35 @@ def _lot_area(parsed: Dict[str, Any]) -> float:
 
 
 def _compute_hydrology_metrics(parsed: Dict[str, Any], stats: Dict[str, Any]) -> Dict[str, Any]:
-    area_sf = max(_lot_area(parsed), 1.0)
-    impervious_sf = max(0.0, safe_float(stats.get("estimated_impervious_area_sf"), 0.0))
+    import math
+    from engines.hydrology_engine import EngineeringInputError, EngineeringComputationError
+
+    lot = safe_dict(parsed.get("lot"))
+    for field_name in ("w", "h"):
+        value = lot.get(field_name)
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            raise EngineeringInputError(f"lot.{field_name} must be a positive finite dimension for runoff calculation.")
+    area_sf = _lot_area(parsed)
+    impervious_sf = stats.get("estimated_impervious_area_sf", 0.0)
+    if type(impervious_sf) not in (int, float) or not math.isfinite(impervious_sf) or impervious_sf < 0:
+        raise EngineeringInputError("estimated_impervious_area_sf must be finite and nonnegative.")
     impervious_ratio = clamp(impervious_sf / area_sf, 0.0, 1.0)
     tc = max(5.0, 5.0 + (area_sf / 25000.0) ** 0.5 * 6.0)
     runoff_c = clamp(0.35 + impervious_ratio * 0.55, 0.35, 0.95)
-    intensity = max(2.0, PIPE_INTENSITY_IN_HR)
+    intensity = PIPE_INTENSITY_IN_HR
+    if type(intensity) not in (int, float) or not math.isfinite(intensity) or intensity < 0:
+        raise EngineeringInputError("Rainfall intensity must be finite and nonnegative.")
+    hydrology = compute_rational_method([
+        RationalArea(name="SITE", area_ac=area_sf / 43560.0, runoff_c=runoff_c, intensity_in_hr=intensity)
+    ])
+    if not hydrology.success:
+        raise EngineeringComputationError("Runoff calculation did not complete successfully.")
     try:
-        hydrology = compute_rational_method([
-            RationalArea(name="SITE", area_ac=area_sf / 43560.0, runoff_c=runoff_c, intensity_in_hr=intensity)
-        ])
-        peak = safe_float(getattr(hydrology, "total_flow_cfs", 0.0), 0.0)
-    except Exception:
-        peak = 1.008 * (area_sf / 43560.0) * runoff_c * intensity
+        peak = hydrology.total_runoff_cfs
+    except AttributeError as exc:
+        raise EngineeringComputationError("Hydrology result is missing total_runoff_cfs.") from exc
+    if type(peak) not in (int, float) or not math.isfinite(peak) or peak < 0:
+        raise EngineeringComputationError("Hydrology result contains invalid runoff.")
     return {
         "lot_area_sf": area_sf,
         "impervious_ratio": impervious_ratio,
@@ -965,6 +981,10 @@ def _compute_hydrology_metrics(parsed: Dict[str, Any], stats: Dict[str, Any]) ->
         "runoff_c": round(runoff_c, 4),
         "intensity_in_hr": round(intensity, 3),
         "peak_runoff_cfs": round(peak, 3),
+        "method_version": "rational_peak_v2",
+        "basis": "concept_estimate",
+        "engineering_verified": False,
+        "assumptions": ["Runoff coefficient, rainfall intensity and time of concentration require project-specific verification."],
     }
 
 

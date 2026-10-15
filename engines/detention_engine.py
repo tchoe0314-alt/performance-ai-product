@@ -123,6 +123,9 @@ class DetentionRoutingPoint:
     outflow_cfs: float
     storage_cf: float
     water_surface_elev_ft: float
+    interval_inflow_volume_cf: float = 0.0
+    interval_outflow_volume_cf: float = 0.0
+    continuity_residual_cf: float = 0.0
 
 
 # =============================================================================
@@ -179,14 +182,19 @@ def basin_storage_cf(
     depth_ft: float,
     side_slope_h_to_1v: float = DEFAULT_SIDE_SLOPE_H,
 ) -> float:
-    bottom_length_ft = max(DEFAULT_MIN_BOTTOM_DIM_FT, _safe_float(bottom_length_ft, DEFAULT_MIN_BOTTOM_DIM_FT))
-    bottom_width_ft = max(DEFAULT_MIN_BOTTOM_DIM_FT, _safe_float(bottom_width_ft, DEFAULT_MIN_BOTTOM_DIM_FT))
-    depth_ft = max(0.0, _safe_float(depth_ft, 0.0))
-    side_slope_h_to_1v = max(1.0, _safe_float(side_slope_h_to_1v, DEFAULT_SIDE_SLOPE_H))
-
-    bottom_area = bottom_length_ft * bottom_width_ft
-    top_area = _basin_area_at_depth(bottom_length_ft, bottom_width_ft, side_slope_h_to_1v, depth_ft)
-    return _frustum_volume_cf(bottom_area, top_area, depth_ft)
+    # Integral of (L+2*s*z)*(W+2*s*z), not a similar-frustum approximation.
+    values = (bottom_length_ft, bottom_width_ft, depth_ft, side_slope_h_to_1v)
+    if any(type(v) not in (int, float) or not math.isfinite(v) or v < 0 for v in values):
+        raise ValueError("Basin dimensions, depth and side slope must be finite and nonnegative.")
+    if bottom_length_ft <= 0 or bottom_width_ft <= 0:
+        raise ValueError("Basin bottom dimensions must be positive.")
+    length, width, depth, slope = values
+    if max(length + 2*slope*depth, width + 2*slope*depth) > DEFAULT_MAX_BASIN_DIM_FT:
+        raise ValueError("Basin dimensions exceed supported geometry bounds.")
+    volume = length*width*depth + slope*(length+width)*depth**2 + (4.0/3.0)*slope**2*depth**3
+    if not math.isfinite(volume):
+        raise ValueError("Basin storage exceeds finite numeric range.")
+    return volume
 
 
 def generate_stage_storage_curve(
@@ -195,58 +203,23 @@ def generate_stage_storage_curve(
     base_elevation: float = 100.0,
     stage_increment_ft: float = DEFAULT_STAGE_INCREMENT_FT,
 ) -> List[StageStoragePoint]:
-    stage_increment_ft = max(0.1, _safe_float(stage_increment_ft, DEFAULT_STAGE_INCREMENT_FT))
-    curve: List[StageStoragePoint] = []
-    running = 0.0
-    previous_area = geometry.bottom_area_sf
-    d = 0.0
-    while d <= geometry.depth_ft + 1e-9:
-        area = _basin_area_at_depth(
-            geometry.bottom_length_ft,
-            geometry.bottom_width_ft,
-            geometry.side_slope_h_to_1v,
-            d,
-        )
-        if d == 0.0:
-            running = 0.0
-        else:
-            increment = _frustum_volume_cf(previous_area, area, stage_increment_ft)
-            running += increment
-        curve.append(
-            StageStoragePoint(
-                elevation=base_elevation + d,
-                storage_cf=running,
-                water_surface_area_sf=area,
-                bottom_area_sf=geometry.bottom_area_sf,
-                average_area_sf=(geometry.bottom_area_sf + area) / 2.0,
-            )
-        )
-        previous_area = area
-        d += stage_increment_ft
-    if curve and curve[-1].elevation < base_elevation + geometry.depth_ft:
-        d = geometry.depth_ft
-        area = _basin_area_at_depth(
-            geometry.bottom_length_ft,
-            geometry.bottom_width_ft,
-            geometry.side_slope_h_to_1v,
-            d,
-        )
-        running = basin_storage_cf(
-            geometry.bottom_length_ft,
-            geometry.bottom_width_ft,
-            geometry.depth_ft,
-            geometry.side_slope_h_to_1v,
-        )
-        curve.append(
-            StageStoragePoint(
-                elevation=base_elevation + d,
-                storage_cf=running,
-                water_surface_area_sf=area,
-                bottom_area_sf=geometry.bottom_area_sf,
-                average_area_sf=(geometry.bottom_area_sf + area) / 2.0,
-            )
-        )
-    return curve
+    if type(stage_increment_ft) not in (int, float) or not math.isfinite(stage_increment_ft) or stage_increment_ft <= 0:
+        raise ValueError("Stage increment must be positive and finite.")
+    if type(base_elevation) not in (int, float) or not math.isfinite(base_elevation):
+        raise ValueError("Base elevation must be finite.")
+    basin_storage_cf(geometry.bottom_length_ft, geometry.bottom_width_ft, geometry.depth_ft, geometry.side_slope_h_to_1v)
+    intervals = geometry.depth_ft / stage_increment_ft
+    if not math.isfinite(intervals) or intervals > 100000:
+        raise ValueError("Stage curve exceeds supported sample count.")
+    count = math.ceil(intervals)
+    # Every stage, including a fractional terminal interval, uses the same integral.
+    return [StageStoragePoint(
+        elevation=base_elevation + depth,
+        storage_cf=basin_storage_cf(geometry.bottom_length_ft, geometry.bottom_width_ft, depth, geometry.side_slope_h_to_1v),
+        water_surface_area_sf=_basin_area_at_depth(geometry.bottom_length_ft, geometry.bottom_width_ft, geometry.side_slope_h_to_1v, depth),
+        bottom_area_sf=geometry.bottom_area_sf,
+        average_area_sf=(geometry.bottom_area_sf + _basin_area_at_depth(geometry.bottom_length_ft, geometry.bottom_width_ft, geometry.side_slope_h_to_1v, depth))/2.0,
+    ) for depth in [min(i*stage_increment_ft, geometry.depth_ft) for i in range(count+1)]]
 
 
 def estimate_drawdown_hours(storage_cf: float, release_cfs: float) -> float:
@@ -265,10 +238,31 @@ def route_detention_level_pool(
     outlet_area_sf: float = 1.0,
     outlet_invert_elev: Optional[float] = None,
 ) -> List[DetentionRoutingPoint]:
-    if len(inflow_hydrograph) < 2 or not stage_storage_curve:
-        return []
-    curve = sorted(stage_storage_curve, key=lambda row: row.storage_cf)
+    """Bounded backward-Euler continuity routing, seconds internally.
+
+    Piecewise-linear inflow and storage/stage interpolation; one orifice outlet,
+    no tailwater/backwater/overflow solver. Exceeding the supplied curve fails
+    explicitly, never a capped elevation with hidden excess storage. Each output
+    includes interval water volumes for independent continuity checking.
+    """
+    if len(inflow_hydrograph) < 2 or len(stage_storage_curve) < 2:
+        raise ValueError("Routing needs at least two hydrograph and storage-curve samples.")
+    curve = list(stage_storage_curve)
+    def finite(value):
+        return type(value) in (int, float) and math.isfinite(value)
+    if any(not finite(v) or v < 0 for v in (outlet_coefficient, outlet_area_sf)):
+        raise ValueError("Outlet coefficient and area must be finite and nonnegative.")
+    if any(not finite(p.storage_cf) or p.storage_cf < 0 or not finite(p.elevation) for p in curve):
+        raise ValueError("Storage curve must be finite and nonnegative.")
+    if curve[0].storage_cf != 0 or any(b.storage_cf <= a.storage_cf or b.elevation <= a.elevation for a,b in zip(curve,curve[1:])):
+        raise ValueError("Storage curve must start dry and increase strictly in stage and storage.")
+    if any(len(row) != 2 or not finite(row[0]) or not finite(row[1]) or row[0] < 0 or row[1] < 0 for row in inflow_hydrograph):
+        raise ValueError("Hydrograph times and flows must be finite and nonnegative.")
+    if any(b[0] <= a[0] for a,b in zip(inflow_hydrograph,inflow_hydrograph[1:])):
+        raise ValueError("Hydrograph time must increase strictly.")
     invert = outlet_invert_elev if outlet_invert_elev is not None else curve[0].elevation
+    if not finite(invert) or invert < curve[0].elevation:
+        raise ValueError("Outlet invert must be finite and at or above the dry basin elevation.")
 
     def elevation_for_storage(storage: float) -> float:
         if storage <= curve[0].storage_cf:
@@ -279,27 +273,54 @@ def route_detention_level_pool(
             if storage <= b.storage_cf:
                 frac = (storage - a.storage_cf) / max(b.storage_cf - a.storage_cf, 1e-9)
                 return a.elevation + frac * (b.elevation - a.elevation)
-        return curve[-1].elevation
+        raise ValueError("Routing exceeds supported stage/storage curve; overflow analysis required.")
 
     def outflow(storage: float) -> float:
         elev = elevation_for_storage(storage)
         head = max(0.0, elev - invert)
-        return max(0.0, outlet_coefficient * outlet_area_sf * math.sqrt(2.0 * 32.2 * head))
+        flow = outlet_coefficient * outlet_area_sf * math.sqrt(2.0 * 32.2 * head)
+        if not math.isfinite(flow):
+            raise ValueError("Outlet calculation exceeds finite numeric range.")
+        return max(0.0, flow)
 
     routed: List[DetentionRoutingPoint] = []
     storage = 0.0
     first_time, first_inflow = inflow_hydrograph[0]
     routed.append(DetentionRoutingPoint(first_time, max(0.0, first_inflow), outflow(storage), storage, elevation_for_storage(storage)))
+    total_steps = 0
     for idx in range(1, len(inflow_hydrograph)):
         t0, q0 = inflow_hydrograph[idx - 1]
         t1, q1 = inflow_hydrograph[idx]
-        dt_seconds = max(0.0, (t1 - t0) * 3600.0)
-        avg_inflow = (max(0.0, q0) + max(0.0, q1)) / 2.0
-        qout0 = outflow(storage)
-        trial_storage = max(0.0, storage + (avg_inflow - qout0) * dt_seconds)
-        qout1 = outflow(trial_storage)
-        storage = max(0.0, storage + (avg_inflow - (qout0 + qout1) / 2.0) * dt_seconds)
-        routed.append(DetentionRoutingPoint(t1, max(0.0, q1), outflow(storage), storage, elevation_for_storage(storage)))
+        seconds = (t1-t0)*3600.0
+        if not math.isfinite(seconds) or seconds > 60.0*(100000-total_steps):
+            raise ValueError("Routing exceeds supported timestep budget.")
+        count = max(1, math.ceil(seconds/60.0))
+        total_steps += count
+        if total_steps > 100000:
+            raise ValueError("Routing exceeds supported timestep budget.")
+        dt = seconds/count
+        start_storage = storage
+        inflow_volume = outflow_volume = 0.0
+        for step in range(count):
+            average = q0 + (q1-q0)*(step+.5)/count
+            available = storage + average*dt
+            if not math.isfinite(available):
+                raise ValueError("Routing inflow volume exceeds finite numeric range.")
+            maximum = curve[-1].storage_cf
+            if available > maximum + dt*outflow(maximum) + 1e-7:
+                raise ValueError("Routing exceeds supported storage; explicit overflow analysis required.")
+            lo, hi = 0.0, min(available, maximum)
+            for _ in range(70):
+                mid = (lo+hi)/2.0
+                if mid + dt*outflow(mid) > available: hi = mid
+                else: lo = mid
+            new_storage = (lo+hi)/2.0
+            discharged = available-new_storage
+            inflow_volume += average*dt
+            outflow_volume += discharged
+            storage = new_storage
+        residual = start_storage+inflow_volume-outflow_volume-storage
+        routed.append(DetentionRoutingPoint(t1,q1,outflow(storage),storage,elevation_for_storage(storage),inflow_volume,outflow_volume,residual))
     return routed
 
 

@@ -53,7 +53,9 @@ class RealMathBigPassTests(unittest.TestCase):
         self.assertLessEqual(capture.intercepted_cfs, 2.0)
 
     def test_detention_level_pool_routes_storage_and_outflow(self) -> None:
-        geometry = BasinGeometry(bottom_length_ft=40.0, bottom_width_ft=20.0, depth_ft=3.0, side_slope_h_to_1v=3.0)
+        # Positive routing fixture must have enough storage for this hydrograph.
+        # The former smaller basin's out-of-range behavior is tested separately.
+        geometry = BasinGeometry(bottom_length_ft=100.0, bottom_width_ft=40.0, depth_ft=5.0, side_slope_h_to_1v=3.0)
         curve = generate_stage_storage_curve(geometry, base_elevation=90.0, stage_increment_ft=1.0)
         routed = route_detention_level_pool(
             [(0.0, 0.0), (0.5, 10.0), (1.0, 0.0), (2.0, 0.0)],
@@ -116,8 +118,9 @@ class RealMathBigPassTests(unittest.TestCase):
         self.assertAlmostEqual(repaired[1].adjusted_ft, -1.5, places=4)
 
     def test_earthwork_reports_adjusted_mass_balance_validation(self) -> None:
-        existing = GridSurface(0.0, 0.0, 20.0, 20.0, 10.0, 2, 2, [[100.0, 100.0], [100.0, 100.0]])
-        proposed = GridSurface(0.0, 0.0, 20.0, 20.0, 10.0, 2, 2, [[101.0, 101.0], [99.0, 99.0]])
+        # These fixtures describe FOUR constant-value cells, not four nodes.
+        existing = GridSurface(0.0, 0.0, 20.0, 20.0, 10.0, 2, 2, [[100.0, 100.0], [100.0, 100.0]], sampling="cells")
+        proposed = GridSurface(0.0, 0.0, 20.0, 20.0, 10.0, 2, 2, [[101.0, 101.0], [99.0, 99.0]], sampling="cells")
 
         result = compute_cut_fill_detailed(
             existing,
@@ -136,8 +139,8 @@ class RealMathBigPassTests(unittest.TestCase):
         self.assertTrue(result["results"]["surface_traceability"]["valid"])
 
     def test_earthwork_reports_haul_balance_import_warning_and_expected_volumes(self) -> None:
-        existing = GridSurface(0.0, 0.0, 20.0, 20.0, 10.0, 2, 2, [[100.0, 100.0], [100.0, 100.0]])
-        proposed = GridSurface(0.0, 0.0, 20.0, 20.0, 10.0, 2, 2, [[101.0, 101.0], [101.0, 101.0]])
+        existing = GridSurface(0.0, 0.0, 20.0, 20.0, 10.0, 2, 2, [[100.0, 100.0], [100.0, 100.0]], sampling="cells")
+        proposed = GridSurface(0.0, 0.0, 20.0, 20.0, 10.0, 2, 2, [[101.0, 101.0], [101.0, 101.0]], sampling="cells")
 
         result = compute_cut_fill_detailed(
             existing,
@@ -161,8 +164,8 @@ class RealMathBigPassTests(unittest.TestCase):
         self.assertTrue(any("borrow_required" in warning for warning in result["warnings"]))
 
     def test_earthwork_blocks_unaccepted_surfaces_and_triggers_wall_review(self) -> None:
-        existing = GridSurface(0.0, 0.0, 10.0, 10.0, 10.0, 1, 1, [[100.0]])
-        proposed = GridSurface(0.0, 0.0, 10.0, 10.0, 10.0, 1, 1, [[106.0]])
+        existing = GridSurface(0.0, 0.0, 10.0, 10.0, 10.0, 1, 1, [[100.0]], sampling="cells")
+        proposed = GridSurface(0.0, 0.0, 10.0, 10.0, 10.0, 1, 1, [[106.0]], sampling="cells")
 
         result = compute_cut_fill_detailed(existing, proposed, include_cell_maps=False)
 

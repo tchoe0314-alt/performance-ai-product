@@ -69,9 +69,11 @@ class TinSurfaceEngineTests(unittest.TestCase):
 
         comparison = compare_surfaces(existing, proposed)
 
-        self.assertEqual(comparison["fill_cf"], 300.0)
-        self.assertEqual(comparison["cut_cf"], 100.0)
-        self.assertEqual(comparison["net_cf"], 200.0)
+        # Two 50-sf linear triangles on the declared 10x10 node domain:
+        # signed net=250/3, clipped negative corner=25/9, fill=775/9 ft3.
+        self.assertEqual(comparison["fill_cf"], round(775/9, 3))
+        self.assertEqual(comparison["cut_cf"], round(25/9, 3))
+        self.assertEqual(comparison["net_cf"], round(250/3, 3))
         self.assertEqual({cell["mode"] for cell in comparison["cells"]}, {"cut", "fill", "balanced"})
 
     def test_grading_payload_carries_tin_and_unverified_control_label(self) -> None:

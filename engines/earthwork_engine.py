@@ -21,6 +21,10 @@ class EarthworkCellResult:
     cell_area: float
     raw_volume_cf: float
     classification: str  # "cut" | "fill" | "neutral"
+    cut_volume_cf: Optional[float] = None
+    fill_volume_cf: Optional[float] = None
+    max_cut_depth_ft: float = 0.0
+    max_fill_depth_ft: float = 0.0
 
 
 @dataclass
@@ -143,6 +147,8 @@ def _validate_compatible_surfaces(
     *,
     tolerance: float = 1e-9,
 ) -> None:
+    from .surface_integration import validate_pair
+    validate_pair(existing, proposed)
     if existing.nrows != proposed.nrows:
         raise ValueError("Existing and proposed surfaces must have the same number of rows.")
 
@@ -161,6 +167,13 @@ def validate_compatible_surfaces(
     tolerance: float = 1e-9,
 ) -> Dict[str, Any]:
     result = _new_result()
+    from .surface_integration import validate_pair
+    try:
+        validate_pair(existing, proposed)
+    except (ValueError, TypeError, AttributeError) as exc:
+        result.errors.append(str(exc))
+        result.message = "Surface compatibility validation failed."
+        return result.to_dict()
     normalized_mode = _normalize_mode(mode, result)
     if normalized_mode is None:
         result.message = "Surface compatibility validation failed."
@@ -281,41 +294,12 @@ def _build_cell_results(
     strip_depth_ft: float,
     neutral_tolerance_ft: float,
 ) -> List[EarthworkCellResult]:
-    nrows = int(existing.nrows)
-    ncols = int(existing.ncols)
-    cell_area = float(existing.cell_size) * float(existing.cell_size)
-
-    cells: List[EarthworkCellResult] = []
-
-    for row in range(nrows):
-        for col in range(ncols):
-            ex = float(existing.values[row][col])
-            pr = float(proposed.values[row][col])
-
-            adjusted_existing = ex - strip_depth_ft
-            delta_z = pr - adjusted_existing
-            raw_volume_cf = delta_z * cell_area
-
-            if abs(delta_z) <= neutral_tolerance_ft:
-                classification = "neutral"
-            elif raw_volume_cf > 0.0:
-                classification = "fill"
-            else:
-                classification = "cut"
-
-            cells.append(
-                EarthworkCellResult(
-                    row=row,
-                    col=col,
-                    existing_elev=ex,
-                    proposed_elev=pr,
-                    delta_z=delta_z,
-                    cell_area=cell_area,
-                    raw_volume_cf=raw_volume_cf,
-                    classification=classification,
-                )
-            )
-
+    from .surface_integration import integrated_cells
+    cells = []
+    for item in integrated_cells(existing, proposed, strip_depth=strip_depth_ft):
+        cut, fill = item["cut"], item["fill"]
+        classification = "mixed" if cut > 0 and fill > 0 else "cut" if cut > 0 else "fill" if fill > 0 else "neutral"
+        cells.append(EarthworkCellResult(item["row"],item["col"],item["existing"],item["proposed"],item["delta"],item["area"],fill-cut,classification,cut,fill,item["max_cut_depth"],item["max_fill_depth"]))
     return cells
 
 
@@ -340,6 +324,16 @@ def _summarize_cells(
 
     for cell in cells:
         stripped_volume_cf += strip_depth_ft * cell.cell_area
+
+        if cell.cut_volume_cf is not None:
+            cut_cf += cell.cut_volume_cf
+            fill_cf += cell.fill_volume_cf
+            cut_cells += int(cell.cut_volume_cf > 0)
+            fill_cells += int(cell.fill_volume_cf > 0)
+            neutral_cells += int(cell.cut_volume_cf == 0 and cell.fill_volume_cf == 0)
+            max_cut_depth_ft = max(max_cut_depth_ft, cell.max_cut_depth_ft)
+            max_fill_depth_ft = max(max_fill_depth_ft, cell.max_fill_depth_ft)
+            continue
 
         if cell.classification == "cut":
             cell_cut = -cell.raw_volume_cf
@@ -552,6 +546,17 @@ def compute_earthwork(
     Returns a structured result with validation, warnings, issues, assumptions, metadata, and results.
     """
     result = _new_result()
+    from .surface_integration import validate_pair, METHOD_VERSION
+    result.metadata["method_version"] = METHOD_VERSION
+    try:
+        validate_pair(existing, proposed)
+        for key in ("horizontal_units", "vertical_units"):
+            if getattr(existing, "registration", {}).get(key) not in (None, "ft", "international_foot"):
+                raise ValueError("Earthwork feet/cubic-feet interface requires explicit conversion from non-foot surface units.")
+    except (ValueError, TypeError, AttributeError) as exc:
+        result.errors.append(str(exc))
+        result.message = "Earthwork blocked by surface domain/registration validation."
+        return result.to_dict()
     normalized_mode = _normalize_mode(mode, result)
     if normalized_mode is None:
         result.message = "Earthwork computation failed."
@@ -799,11 +804,14 @@ def compute_earthwork(
     result.metadata = {
         "mode": normalized_mode,
         "engine": "earthwork_engine",
-        "method": "grid_surface_cell_comparison",
+        "method": "piecewise_linear_node_or_explicit_cell_integration",
+        "method_version": METHOD_VERSION,
+        "sampling": getattr(existing, "sampling", "nodes"),
+        "registration_verified": bool(getattr(existing, "registration", {}).get("verified") and getattr(proposed, "registration", {}).get("verified")),
         "shape": [nrows, ncols],
         "cell_size": float(existing.cell_size),
         "cell_area": cell_area,
-        "cell_count": nrows * ncols,
+        "cell_count": len(cells),
         "units": {
             "horizontal": "ft",
             "vertical": "ft",

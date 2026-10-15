@@ -687,21 +687,8 @@ class GradingEngine:
         return min_z, max_z
 
     def _compute_earthwork(self, proposed: GridSurface) -> Tuple[float, float, float]:
-        cell_area = self.existing_surface.cell_size * self.existing_surface.cell_size
-        cut_cf = 0.0
-        fill_cf = 0.0
-
-        for r in range(self.existing_surface.nrows):
-            for c in range(self.existing_surface.ncols):
-                dz = proposed.values[r][c] - self.existing_surface.values[r][c]
-                vol = dz * cell_area
-                if vol > 0.0:
-                    fill_cf += vol
-                elif vol < 0.0:
-                    cut_cf += -vol
-
-        net_cf = fill_cf - cut_cf
-        return cut_cf, fill_cf, net_cf
+        from .surface_integration import cut_fill
+        return cut_fill(self.existing_surface, proposed)
 
     def _high_level_checks(
         self,

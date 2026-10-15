@@ -148,6 +148,11 @@ class TinSurface:
 @dataclass
 
 class GridSurface:
+    """Node-inclusive lattice, or explicitly declared constant-value cells.
+
+    Legacy instances remain loadable; inconsistent/unknown support is rejected
+    at comparison/integration, never silently assigned a different area.
+    """
 
     x_min: float
 
@@ -164,6 +169,8 @@ class GridSurface:
     nrows: int
 
     values: List[List[float]]
+    sampling: str = "nodes"
+    registration: Dict[str, Any] = field(default_factory=dict)
 
 
 
@@ -173,13 +180,13 @@ class GridSurface:
 
     def x_at(self, col: int) -> float:
 
-        return self.x_min + col * self.cell_size
+        return self.x_min + (col + (0.5 if self.sampling == "cells" else 0)) * self.cell_size
 
 
 
     def y_at(self, row: int) -> float:
 
-        return self.y_min + row * self.cell_size
+        return self.y_min + (row + (0.5 if self.sampling == "cells" else 0)) * self.cell_size
 
 
 
@@ -208,7 +215,7 @@ class GridSurface:
         return self.x_min, self.y_min, self.x_max, self.y_max
 
     def copy(self) -> "GridSurface":
-
+        from copy import deepcopy
         return GridSurface(
             x_min=self.x_min,
             y_min=self.y_min,
@@ -218,6 +225,8 @@ class GridSurface:
             ncols=self.ncols,
             nrows=self.nrows,
             values=[list(row) for row in self.values],
+            sampling=self.sampling,
+            registration=deepcopy(self.registration),
         )
 
 
@@ -938,21 +947,19 @@ def serialize_tin_surface(
 
 
 def compare_surfaces(existing: GridSurface, proposed: GridSurface, *, max_cells: int = 120) -> Dict[str, Any]:
+    from .surface_integration import integrated_cells, METHOD_VERSION
+    integrated = list(integrated_cells(existing, proposed))
     nrows = min(int(existing.nrows), int(proposed.nrows))
     ncols = min(int(existing.ncols), int(proposed.ncols))
     cells: List[Dict[str, Any]] = []
-    cut_cf = 0.0
-    fill_cf = 0.0
-    cell_area = min(float(existing.cell_size), float(proposed.cell_size)) ** 2
+    cut_cf = math.fsum(item["cut"] for item in integrated)
+    fill_cf = math.fsum(item["fill"] for item in integrated)
     stride = max(1, int(math.sqrt(max(nrows * ncols / max(max_cells, 1), 1))))
+    # Preserve the existing nodal preview locations; volumes above integrate
+    # physical support cells rather than assigning area to each preview point.
     for row in range(nrows):
         for col in range(ncols):
-            delta = float(proposed.values[row][col]) - float(existing.values[row][col])
-            volume = delta * cell_area
-            if volume < 0:
-                cut_cf += -volume
-            elif volume > 0:
-                fill_cf += volume
+            delta = float(proposed.values[row][col])-float(existing.values[row][col])
             if row % stride == 0 and col % stride == 0 and len(cells) < max_cells:
                 cells.append(
                     {
@@ -968,5 +975,6 @@ def compare_surfaces(existing: GridSurface, proposed: GridSurface, *, max_cells:
         "net_cf": round(fill_cf - cut_cf, 3),
         "cells": cells,
         "truth_label": "Cut/fill comparison is sampled from existing and proposed surface elevations.",
+        "method_version": METHOD_VERSION,
     }
 
