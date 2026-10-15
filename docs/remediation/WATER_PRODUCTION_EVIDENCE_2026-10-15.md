@@ -17,7 +17,7 @@ explicit0psi could select an unrelated72psi fallback. Selection now uses the
 first non-missing finite value, preserving0. Failed/unsupported pressure graphs
 now project min pressure/margin as None, not a fabricated computed0psi.
 
-Fresh focused report production-79 (same isolated root/results) records17 tests
+Fresh focused report production-79 (same isolated root/results) records23 tests
 passed: zero-pressure precedence, unknown loop pressure projection, fire-flow
 validation and existing hydraulic math. All reports live under
 `/tmp/civora-repair-verification.NBAOtD/results/`. No provider, production/customer
