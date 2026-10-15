@@ -5,8 +5,8 @@ import math
 import os
 from typing import Any, Dict, Optional, Tuple
 
-import requests
 from PIL import Image
+from backend.services.outbound_http import safe_get
 
 from engines.surface_engine import GridSurface
 
@@ -47,13 +47,19 @@ def _fetch_tile(
         return cached
     url = _tile_url(tile_x, tile_y, zoom, token)
     try:
-        response = requests.get(url, timeout=10)
-    except requests.RequestException:
+        response = safe_get(url, timeout=10, response_kind="binary")
+        response.raise_for_status()
+        with Image.open(io.BytesIO(response.content)) as source:
+            # This URL requests a512px Terrain-RGB tile, not arbitrary imagery.
+            # Inspect dimensions before pixel decode to bound image memory.
+            if source.format != "PNG" or source.size != (512, 512) or source.mode not in ("RGB", "RGBA"):
+                return None
+            source.load()
+            if source.mode == "RGBA" and source.getextrema()[3] != (255, 255):
+                return None
+            image = source.convert("RGB")
+    except (OSError, ValueError, Image.DecompressionBombError):
         return None
-    if response.status_code != 200:
-        return None
-    image = Image.open(io.BytesIO(response.content))
-    image = image.convert("RGB")
     cache[key] = image
     return image
 

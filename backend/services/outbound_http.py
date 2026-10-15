@@ -124,7 +124,7 @@ def safe_get(url, *, params=None, timeout=10, session=None, resolver=None, respo
     `session` is solely a fake-transport seam for offline tests. It must not be
     a real requests module/session (which would re-resolve and allow rebinding).
     """
-    if response_kind not in ("json", "text"):
+    if response_kind not in ("json", "text", "binary"):
         raise ValueError("Unsupported response kind.")
     if session is not None and (getattr(session,"__name__","")=="requests" or type(session).__module__.startswith("requests")):
         raise UnsafeDestination("Real requests transports are not permitted; use the pinned transport.")
@@ -154,8 +154,9 @@ def safe_get(url, *, params=None, timeout=10, session=None, resolver=None, respo
             response=session.get(fake_url,**kwargs)
             response.raise_for_status()
             # A fake JSON response is bounded too; no external session is used.
-            payload = (str(response.text).encode("utf-8") if response_kind == "text"
-                       else json.dumps(response.json(),allow_nan=False).encode())
+            payload = (bytes(response.content) if response_kind == "binary" else
+                       str(response.text).encode("utf-8") if response_kind == "text" else
+                       json.dumps(response.json(),allow_nan=False).encode())
             if len(payload)>MAX_BYTES:raise ValueError("Upstream response is too large.")
             headers = dict(getattr(response, "headers", {}) or {}) if response_kind == "text" else {}
             if response_kind == "text":
@@ -169,7 +170,8 @@ def safe_get(url, *, params=None, timeout=10, session=None, resolver=None, respo
         connection._create_connection=lambda address,timeout=None,source_address=None: socket.create_connection((addresses[0],443),timeout,source_address)
         try:
             path=urlunsplit(("","",parsed.path or "/",parsed.query,""))
-            connection.request("GET",path,headers={"Accept":"text/html,text/plain;q=0.9,*/*;q=0.1" if response_kind == "text" else "application/json","Accept-Encoding":"identity","User-Agent":"Civora-GIS/1"})
+            accept = "image/png" if response_kind == "binary" else "text/html,text/plain;q=0.9,*/*;q=0.1" if response_kind == "text" else "application/json"
+            connection.request("GET",path,headers={"Accept":accept,"Accept-Encoding":"identity","User-Agent":"Civora-GIS/1"})
             response=connection.getresponse()
             if response.status in (301,302,303,307,308):
                 location=response.getheader("Location")
