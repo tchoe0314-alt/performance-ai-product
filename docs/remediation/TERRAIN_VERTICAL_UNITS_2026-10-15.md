@@ -20,7 +20,7 @@ commit does not recertify them or stamp a global engine qualification.
 
 Fresh isolated evidence:
 `/tmp/civora-repair-verification.NBAOtD/results/units-53.xml`.
-29 tests passed across independent RGB100metre/328.0839895013123ft oracle, tile
+25 tests passed across independent RGB100metre/328.0839895013123ft oracle, tile
 safety, budgets, missing-data provenance and GeoTIFF spatial contracts. Expected
 conversion is independently specified, not copied from provider output. No live
 tiles, actual tokens, production/customer data, paid API or deployment used.
