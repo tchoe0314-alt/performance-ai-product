@@ -279,14 +279,17 @@ class ProjectStore:
         self, *, user_id: str, project_id: str, source_input: Dict[str, Any], result: Dict[str, Any],
         force_archive: bool = False,
     ) -> Optional[Dict[str, Any]]:
-        """Archive every canvas calculation; activate only against locked current inputs.
+        """Archive calculations; activate only against verified locked inputs.
 
-        None means a legacy input without a canonical canvas, whose existing
-        workflow remains responsible for saving. Never write job inputs over edits.
+        Unbound legacy executions remain recoverable history, never a reason to
+        fall back to writing an old job payload over the current project design.
         """
         signature = canvas_input_signature(source_input)
-        if signature is None:
-            return None
+        input_bound = signature is not None
+        if not input_bound:
+            from hashlib import sha256
+            signature = "unbound_v1_" + sha256(json.dumps(source_input, sort_keys=True,
+                separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
         if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="editor"):
             raise ValueError("You do not have editor access to that project.")
         connection = self.db.connect()
@@ -308,12 +311,12 @@ class ProjectStore:
             successful = result.get("success") is True
             from .canonical_results import has_current_engine_revision
             current_method = has_current_engine_revision(result)
-            active = successful and current_method and not force_archive and canvas_input_signature(current_input) == signature
+            active = input_bound and successful and current_method and not force_archive and canvas_input_signature(current_input) == signature
             calculation_id = _new_id("calculation")
             stored_result = bind_canvas_result(result, source_input)
             stored_result.setdefault("metadata", {})["calculation_save_v1"] = {
                 "calculation_id": calculation_id, "disposition": "active" if active else "archived",
-                "reason": "matching_inputs" if active else "calculation_not_successful" if not successful else "engine_revision_unverified" if not current_method else "project_inputs_changed",
+                "reason": "matching_inputs" if active else "input_binding_unverified" if not input_bound else "calculation_not_successful" if not successful else "engine_revision_unverified" if not current_method else "project_inputs_changed",
             }
             created_at = _now()
             connection.execute(

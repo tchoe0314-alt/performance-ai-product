@@ -164,10 +164,15 @@ def test_actual_job_runner_archives_when_user_edits_during_engine_execution(setu
     assert current["project_input"]["manual_fields"] == moved(source)["manual_fields"]
 
 
-def test_legacy_inputs_do_not_take_new_save_path(setup):
+def test_legacy_inputs_are_archived_without_unsafe_full_save(setup):
     _, store, user, project_id, _ = setup
-    assert store.save_calculation_result(user_id=user, project_id=project_id, source_input={}, result=result("legacy")) is None
-    assert store.list_calculation_history(user_id=user, project_id=project_id) == []
+    before = store.get_project(user_id=user, project_id=project_id)
+    saved = store.save_calculation_result(user_id=user, project_id=project_id, source_input={}, result=result("legacy"))
+    assert saved["metadata"]["calculation_save_v1"]["reason"] == "input_binding_unverified"
+    assert saved["metadata"]["calculation_save_v1"]["disposition"] == "archived"
+    assert store.get_project(user_id=user, project_id=project_id) == before
+    history = store.list_calculation_history(user_id=user, project_id=project_id)
+    assert len(history) == 1 and history[0]["is_active"] is False
 
 
 def test_history_access_scoped_to_project_and_authorized_user(setup):
