@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import heapq
+import math
 from typing import Any, Dict, List, Optional, Sequence
+
+
+def _water_number(value: Any, name: str, *, positive: bool = False, signed: bool = False) -> float:
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise ValueError(f"{name} must be finite numeric input.")
+    if not signed and (value <= 0 if positive else value < 0):
+        raise ValueError(f"{name} must be {'positive' if positive else 'nonnegative'}.")
+    return float(value)
 
 
 @dataclass
@@ -95,6 +104,21 @@ class WaterSizingEngine:
     }
 
     def size(self, request: WaterSizingRequest) -> WaterSizingResult:
+        try:
+            for key in ("available_pressure_psi", "meter_loss_psi", "backflow_loss_psi", "heater_loss_psi"):
+                _water_number(getattr(request, key), key)
+            for key in ("static_loss_per_ft_psi", "hazen_williams_c"):
+                _water_number(getattr(request, key), key, positive=True)
+            for fixture in request.fixtures:
+                for key in ("demand_fu", "branch_length", "required_pressure"):
+                    _water_number(getattr(fixture, key), key)
+            for segment in request.segments:
+                _water_number(segment.length, "length")
+                _water_number(segment.elevation_gain, "elevation_gain", signed=True)
+                for key in ("min_size_in", "max_velocity_fps", "target_pressure_loss_per_100ft"):
+                    _water_number(getattr(segment, key), key, positive=True)
+        except ValueError as exc:
+            return WaterSizingResult(False, message=str(exc))
         if not request.segments:
             return WaterSizingResult(False, message="No water pipe segments provided.")
 
@@ -271,9 +295,12 @@ class WaterSizingEngine:
         return round((flow_gpm * 0.00222800926) / max(area_sf, 1e-9), 3)
 
     def _hazen_williams_loss_psi_per_100ft(self, flow_gpm: float, diameter_in: float, *, c_factor: float) -> float:
-        if flow_gpm <= 0.0 or diameter_in <= 0.0:
+        _water_number(flow_gpm, "flow_gpm")
+        _water_number(diameter_in, "diameter_in", positive=True)
+        _water_number(c_factor, "hazen_williams_c", positive=True)
+        if flow_gpm == 0.0:
             return 0.0
-        c = max(1.0, c_factor)
+        c = c_factor
         # The4.52 coefficient with GPM/inches gives psi per foot, not feet
         # of head. Multiplying by0.433 again understates friction pressure.
         pressure_loss_psi_per_100ft = 4.52 * 100.0 * (flow_gpm ** 1.85) / ((c ** 1.85) * (diameter_in ** 4.87))
@@ -311,8 +338,32 @@ def analyze_water_pressure_graph(
     static_loss_per_ft_psi: float = 0.433,
 ) -> Dict[str, Any]:
     engine = WaterSizingEngine()
+    try:
+        _water_number(source_pressure_psi, "source_pressure_psi")
+        _water_number(hazen_williams_c, "hazen_williams_c", positive=True)
+        _water_number(static_loss_per_ft_psi, "static_loss_per_ft_psi", positive=True)
+        if not isinstance(source_node, str) or not source_node.strip():
+            raise ValueError("A source node is required.")
+        normalized = []
+        for segment in segments:
+            segment = dict(segment)
+            if not (segment.get("start_node") or segment.get("from_node")) or not (segment.get("end_node") or segment.get("to_node")):
+                raise ValueError("Water segment start/end nodes are required.")
+            for primary, alias, default, positive, signed in (
+                ("flow_gpm", "assigned_flow_gpm", None, False, False),
+                ("diameter_in", "assigned_size_in", None, True, False),
+                ("length_ft", "length", None, False, False),
+                ("elevation_gain_ft", "elevation_gain", 0.0, False, True),
+            ):
+                value = segment.get(primary) if primary in segment else segment.get(alias, default)
+                segment[primary] = _water_number(value, primary, positive=positive, signed=signed)
+            normalized.append(segment)
+    except (ValueError, TypeError) as exc:
+        return {"success": False, "source_node": source_node, "node_pressures_psi": {},
+                "segments": [], "min_pressure_psi": None, "warnings": [str(exc)],
+                "truth_label": "Invalid inputs; no water pressure calculation performed."}
     node_pressure: Dict[str, float] = {source_node: float(source_pressure_psi)}
-    unresolved = [dict(seg) for seg in segments]
+    unresolved = normalized
     solved: List[Dict[str, Any]] = []
     warnings: List[str] = []
 
@@ -328,10 +379,10 @@ def analyze_water_pressure_graph(
             if start not in node_pressure:
                 remaining.append(seg)
                 continue
-            flow_gpm = float(seg.get("flow_gpm") or seg.get("assigned_flow_gpm") or 0.0)
-            diameter_in = float(seg.get("diameter_in") or seg.get("assigned_size_in") or 1.0)
-            length_ft = float(seg.get("length_ft") or seg.get("length") or 0.0)
-            elevation_gain_ft = float(seg.get("elevation_gain_ft") or seg.get("elevation_gain") or 0.0)
+            flow_gpm = seg["flow_gpm"]
+            diameter_in = seg["diameter_in"]
+            length_ft = seg["length_ft"]
+            elevation_gain_ft = seg["elevation_gain_ft"]
             loss_100 = engine._hazen_williams_loss_psi_per_100ft(flow_gpm, diameter_in, c_factor=hazen_williams_c)
             friction_loss = (max(0.0, length_ft) / 100.0) * loss_100
             static_loss = max(0.0, elevation_gain_ft) * static_loss_per_ft_psi
