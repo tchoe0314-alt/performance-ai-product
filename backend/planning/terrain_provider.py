@@ -39,6 +39,7 @@ def _tile_url(tile_x: int, tile_y: int, zoom: int, token: str) -> str:
 
 
 def _elevation_from_rgb(r: int, g: int, b: int) -> float:
+    """Decode provider height in metres; conversion belongs to the consumer."""
     return -10000.0 + (r * 256 * 256 + g * 256 + b) * 0.1
 
 
@@ -74,6 +75,7 @@ def _fetch_tile(
 
 
 def sample_elevation(lat: float, lng: float, token: str, *, zoom: int = 14, tile_size: int = 512) -> Optional[float]:
+    """Return provider elevation in metres (not survey-controlled datum)."""
     tile_x, tile_y, px, py = _lat_lng_to_tile(lat, lng, zoom, tile_size)
     cache: Dict[Tuple[int, int, int], Image.Image] = {}
     image = _fetch_tile(token, tile_x, tile_y, zoom, cache)
@@ -166,7 +168,9 @@ def build_terrain_surface(
                 # failing tile for thousands of remaining grid samples.
                 return None
             r, g, b = image.getpixel((px, py))
-            row_vals.append(_elevation_from_rgb(r, g, b))
+            # This adapter constructs a foot-coordinate grading grid. Provider
+            # raw heights are metres; never mix their numeric magnitudes.
+            row_vals.append(_elevation_from_rgb(r, g, b) / 0.3048)
             sample_count += 1
         values.append(row_vals)
 
@@ -185,12 +189,20 @@ def build_terrain_surface(
         ncols=ncols,
         nrows=nrows,
         values=values,
+        registration={"horizontal_units": "ft", "vertical_units": "ft",
+                      "horizontal_crs": None, "vertical_datum": None,
+                      "verified": False, "source": "mapbox.terrain-rgb"},
     )
     setattr(
         surface,
         "_terrain_sample_stats",
         {
             "source": "mapbox.terrain-rgb",
+            "source_vertical_units": "m",
+            "vertical_units": "ft",
+            "vertical_conversion": "metres / 0.3048",
+            "vertical_datum": None,
+            "control_verified": False,
             "zoom": 14,
             "sample_count": sample_count,
             "missing_count": missing_count,

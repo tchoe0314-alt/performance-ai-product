@@ -64,7 +64,10 @@ def test_surface_does_not_invent_elevation_for_missing_tile(monkeypatch, missing
     else:
         assert surface is not None
         assert surface._terrain_sample_stats["missing_count"] == 0
-        assert surface.values == [[terrain._elevation_from_rgb(1,2,3)] * 2] * 2
+        assert surface.values == [[terrain._elevation_from_rgb(1,2,3) / 0.3048] * 2] * 2
+        assert surface.registration["vertical_units"] == "ft"
+        assert surface.registration["vertical_datum"] is None
+        assert surface.registration["verified"] is False
 
 
 @pytest.mark.parametrize("invalid", [{"ncols":1000000}, {"nrows":True}, {"nrows":2.5},
