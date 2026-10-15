@@ -12,6 +12,7 @@ from backend.services.database import Database
 from backend.services.project_revision import ProjectRevisionConflict
 from backend.services.project_store import ProjectStore
 from backend.services.canonical_results import ENGINE_REVISION
+from tests.remediation.identity_fixtures import invite_test_member
 
 
 @pytest.fixture
@@ -82,7 +83,7 @@ def test_api_workflow_returns_409_and_preserves_newer_artifact_metadata(setup):
 def test_collaborator_full_save_does_not_transfer_ownership(setup):
     store, auth, owner, project = setup
     editor = auth.register_user(email="editor@example.test", password="Disposable-123", name="Editor")["user"]["user_id"]
-    store.invite_project_member(actor_user_id=owner, project_id=project["project_id"], email="editor@example.test", role="editor")
+    invite_test_member(store,actor_user_id=owner, project_id=project["project_id"], email="editor@example.test", role="editor")
     saved = store.save_project(user_id=editor, project_id=project["project_id"], name="Editor change", expected_revision=project["revision_token"])
     assert saved["user_id"] == owner
     assert saved["access_role"] == "editor"

@@ -22,6 +22,7 @@ from backend.services.data_lifecycle import (
 )
 from backend.services.database import Database
 from backend.services.project_store import ProjectStore
+from tests.remediation.identity_fixtures import invite_test_member
 from backend.services.support_store import SupportStore
 from backend.services.workspace_layout import DEFAULT_LAYOUT, save_layout
 
@@ -190,7 +191,7 @@ class DataLifecycleAndBackupTests(unittest.TestCase):
             password="password123",
             name="Collaborator",
         )["user"]
-        self.projects.invite_project_member(
+        invite_test_member(self.projects,
             actor_user_id=self.user["user_id"],
             project_id=project["project_id"],
             email=collaborator["email"],

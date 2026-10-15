@@ -9,6 +9,9 @@ from fastapi.testclient import TestClient
 from backend.services.auth_store import AuthStore
 from backend.services.database import Database
 from backend.services.project_store import ProjectStore
+from tests.remediation.identity_fixtures import invite_test_member
+from backend.services.email_delivery import FakeEmailSender
+from backend.services.identity_proofs import IdentityProofStore
 from backend.application.chat_workflows import decide_chat
 
 
@@ -34,6 +37,7 @@ class ProjectLifecycleCollaborationMemoryTest(unittest.TestCase):
         self.owner = owner_registration["user"]
         self.owner_token = owner_registration["token"]
         self.reviewer = reviewer_registration["user"]
+        self.reviewer_token = reviewer_registration["token"]
         self.project = self.projects.save_project(
             user_id=self.owner["user_id"],
             project_id=None,
@@ -125,7 +129,7 @@ class ProjectLifecycleCollaborationMemoryTest(unittest.TestCase):
         self.assertEqual(unchanged["name"], "Margo Street Site")
 
     def test_presence_comments_mentions_and_review_requests_obey_roles(self):
-        self.projects.invite_project_member(
+        invite_test_member(self.projects,
             actor_user_id=self.owner["user_id"],
             project_id=self.project["project_id"],
             email=self.reviewer["email"],
@@ -251,7 +255,7 @@ class ProjectLifecycleCollaborationMemoryTest(unittest.TestCase):
         self.assertIn(project_memory["memory_id"], {item["memory_id"] for item in refreshed["items"]})
         self.assertIn(company["memory_id"], {item["memory_id"] for item in refreshed["items"]})
 
-        self.projects.invite_project_member(
+        invite_test_member(self.projects,
             actor_user_id=self.owner["user_id"],
             project_id=self.project["project_id"],
             email=self.reviewer["email"],
@@ -312,9 +316,11 @@ class ProjectLifecycleCollaborationMemoryTest(unittest.TestCase):
 
     def test_authenticated_api_exposes_reversible_lifecycle_collaboration_and_memory(self):
         headers = {"Authorization": f"Bearer {self.owner_token}"}
+        sender = FakeEmailSender()
         with (
             patch.object(api_app_module, "AUTH_STORE", self.auth),
             patch.object(api_app_module, "PROJECT_STORE", self.projects),
+            patch.object(api_app_module, "IDENTITY_PROOFS", IdentityProofStore(self.db,sender=sender)),
             TestClient(api_app_module.app) as client,
         ):
             duplicated = client.post(
@@ -346,6 +352,9 @@ class ProjectLifecycleCollaborationMemoryTest(unittest.TestCase):
                 json={"email": self.reviewer["email"], "role": "reviewer"},
             )
             self.assertEqual(invited.status_code, 200)
+            code=sender.messages[-1].text.splitlines()[0].split(": ",1)[1]
+            confirmed=client.post("/api/invitations/accept",headers={"Authorization":f"Bearer {self.reviewer_token}"},json={"token":code})
+            self.assertEqual(confirmed.status_code,200)
             role_changed = client.patch(
                 f"/api/projects/{self.project['project_id']}/admin/members/{self.reviewer['user_id']}",
                 headers=headers,

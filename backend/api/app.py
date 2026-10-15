@@ -309,6 +309,8 @@ def rate_limit(bucket: str):
 PROCESS_ROLE = str(os.getenv("CIVORA_PROCESS_ROLE") or "combined").strip().lower()
 DB = Database(DB_PATH)
 AUTH_STORE = AuthStore(DB)
+from backend.services.identity_proofs import IdentityProofStore
+IDENTITY_PROOFS = IdentityProofStore(DB)
 OBJECT_TYPE_STORE = ObjectTypeStore(DB)
 PROJECT_STORE = ProjectStore(DB)
 JOB_QUEUE = JobQueueService(DB, worker_count=0 if PROCESS_ROLE == "web" else None)
@@ -370,6 +372,10 @@ class AccountDeletePayload(BaseModel):
 
 class SessionRevokePayload(BaseModel):
     current_password: str
+
+
+class IdentityProofPayload(BaseModel):
+    token: str = Field(min_length=1, max_length=256)
 
 
 class SupportRequestPayload(BaseModel):
@@ -1570,6 +1576,42 @@ def rotate_session(
     return {"success": True, "token": token, "user": current_user}
 
 
+@app.post("/api/auth/email-verification/request")
+def request_email_verification(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    try:
+        IDENTITY_PROOFS.request_email_verification(user_id=current_user["user_id"])
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Email delivery is not configured.") from exc
+    return {"success": True}
+
+
+@app.post("/api/auth/email-verification/confirm")
+def confirm_email_verification(
+    payload: IdentityProofPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    try:
+        return {"success": True, **IDENTITY_PROOFS.consume(user_id=current_user["user_id"],token=payload.token,purpose="verify_email")}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Confirmation is invalid, expired or already used.") from exc
+
+
+@app.post("/api/invitations/accept")
+def accept_project_invitation(
+    payload: IdentityProofPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    try:
+        return {"success": True, **IDENTITY_PROOFS.consume(user_id=current_user["user_id"],token=payload.token,purpose="accept_invite")}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invitation is invalid, expired or unavailable.") from exc
+
+
 @app.post("/api/auth/logout-all")
 def logout_all_sessions(
     payload: SessionRevokePayload,
@@ -2743,6 +2785,7 @@ def invite_project_member(
     project_id: str,
     payload: ProjectInvitePayload,
     current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("auth")),
 ) -> Dict[str, Any]:
     try:
         invite = PROJECT_STORE.invite_project_member(
@@ -2751,9 +2794,37 @@ def invite_project_member(
             email=payload.email,
             role=payload.role,
         )
+        IDENTITY_PROOFS.send_invitation(actor_user_id=current_user["user_id"],project_id=project_id,invite_id=invite["invite_id"])
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Invitation is pending; email delivery is not configured.") from exc
     return {"success": True, "invite": invite}
+
+
+@app.post("/api/projects/{project_id}/admin/invites/{invite_id}/resend")
+def resend_project_invitation(project_id: str, invite_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    try:
+        IDENTITY_PROOFS.send_invitation(actor_user_id=current_user["user_id"],project_id=project_id,invite_id=invite_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=403,detail="Pending invitation not available.") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503,detail="Email delivery is not configured.") from exc
+    return {"success":True}
+
+
+@app.delete("/api/projects/{project_id}/admin/invites/{invite_id}")
+def revoke_project_invitation(project_id: str, invite_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        IDENTITY_PROOFS.revoke_invitation(actor_user_id=current_user["user_id"],project_id=project_id,invite_id=invite_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=403,detail="Pending invitation not available.") from exc
+    return {"success":True}
 
 
 @app.delete("/api/projects/{project_id}/admin/members/{member_user_id}")

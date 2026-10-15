@@ -5,6 +5,7 @@ from pathlib import Path
 from backend.services.auth_store import AuthStore
 from backend.services.database import Database
 from backend.services.project_store import ProjectStore
+from tests.remediation.identity_fixtures import invite_test_member, accept_test_invitation
 
 
 class ProjectTeamAdminTest(unittest.TestCase):
@@ -55,7 +56,9 @@ class ProjectTeamAdminTest(unittest.TestCase):
             role="editor",
         )
 
-        self.assertEqual(invite["status"], "accepted")
+        self.assertEqual(invite["status"], "pending")
+        self.assertIsNone(self.projects.project_role(user_id=self.editor["user_id"],project_id=project["project_id"]))
+        accept_test_invitation(self.projects,invite,actor_user_id=self.owner["user_id"])
         self.assertEqual(self.projects.project_role(user_id=self.editor["user_id"], project_id=project["project_id"]), "editor")
         shared = self.projects.get_project(user_id=self.editor["user_id"], project_id=project["project_id"])
         self.assertEqual(shared["access_role"], "editor")
@@ -82,7 +85,7 @@ class ProjectTeamAdminTest(unittest.TestCase):
             name="Read Only Site",
             description="",
         )
-        self.projects.invite_project_member(
+        invite_test_member(self.projects,
             actor_user_id=self.owner["user_id"],
             project_id=project["project_id"],
             email=self.viewer["email"],
@@ -112,7 +115,7 @@ class ProjectTeamAdminTest(unittest.TestCase):
             name="Review Site",
             description="",
         )
-        self.projects.invite_project_member(
+        invite_test_member(self.projects,
             actor_user_id=self.owner["user_id"],
             project_id=project["project_id"],
             email=self.viewer["email"],
@@ -143,13 +146,13 @@ class ProjectTeamAdminTest(unittest.TestCase):
             name="Admin Site",
             description="",
         )
-        self.projects.invite_project_member(
+        invite_test_member(self.projects,
             actor_user_id=self.owner["user_id"],
             project_id=project["project_id"],
             email=self.editor["email"],
             role="admin",
         )
-        self.projects.invite_project_member(
+        invite_test_member(self.projects,
             actor_user_id=self.owner["user_id"],
             project_id=project["project_id"],
             email=self.viewer["email"],

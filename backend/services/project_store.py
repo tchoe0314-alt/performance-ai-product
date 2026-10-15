@@ -1186,7 +1186,9 @@ class ProjectStore:
             ).fetchone()
             if project is None:
                 raise ValueError("Project not found.")
-            status = "accepted" if target_user else "pending"
+            # Email string equality is not proof of address ownership. Every
+            # invite requires a single-use proof delivered to that address.
+            status = "pending"
             connection.execute(
                 """
                 INSERT INTO project_invites (
@@ -1200,24 +1202,12 @@ class ProjectStore:
                     target_email,
                     normalized_role,
                     actor_user_id,
-                    target_user.get("user_id") if target_user else None,
+                    None,
                     status,
                     now,
                     now,
                 ),
             )
-            if target_user:
-                connection.execute(
-                    """
-                    INSERT INTO project_members (project_id, user_id, role, invited_email, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(project_id, user_id) DO UPDATE SET
-                        role = excluded.role,
-                        invited_email = excluded.invited_email,
-                        updated_at = excluded.updated_at
-                    """,
-                    (project_id, target_user["user_id"], normalized_role, target_email, now, now),
-                )
             self._log_access_event(
                 connection,
                 actor_user_id=actor_user_id,
@@ -1225,7 +1215,7 @@ class ProjectStore:
                 project_id=project_id,
                 target_user_id=target_user.get("user_id") if target_user else None,
                 target_email=target_email,
-                action="project_member_added" if target_user else "project_member_invited",
+                action="project_member_invited",
                 role=normalized_role,
                 metadata={"invite_id": invite_id, "status": status},
             )

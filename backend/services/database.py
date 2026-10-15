@@ -714,6 +714,27 @@ class Database:
             try:
                 schema = postgres_schema if self.storage_kind == "postgres" else sqlite_schema
                 connection.executescript(schema)
+                # Additive identity-proof records. Existing user/project rows
+                # are not marked verified merely because this schema exists.
+                connection.executescript("""
+                CREATE TABLE IF NOT EXISTS verified_email_addresses (
+                    user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+                    email TEXT NOT NULL,
+                    verified_at DOUBLE PRECISION NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS identity_challenges (
+                    token_digest TEXT PRIMARY KEY,
+                    user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
+                    email TEXT NOT NULL,
+                    purpose TEXT NOT NULL,
+                    invite_id TEXT REFERENCES project_invites(invite_id) ON DELETE CASCADE,
+                    created_at DOUBLE PRECISION NOT NULL,
+                    expires_at DOUBLE PRECISION NOT NULL,
+                    consumed_at DOUBLE PRECISION
+                );
+                CREATE INDEX IF NOT EXISTS idx_identity_challenges_user
+                    ON identity_challenges(user_id, purpose, created_at);
+                """)
                 connection.commit()
             finally:
                 connection.close()

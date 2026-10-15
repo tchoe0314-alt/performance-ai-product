@@ -7,6 +7,7 @@ from backend.services.auth_store import AuthStore
 from backend.services.database import Database
 from backend.services.project_store import ProjectStore
 from backend.services.canonical_canvas import with_canvas_snapshot
+from tests.remediation.identity_fixtures import invite_test_member
 
 def test_named_history_is_access_checked_and_uses_server_actor(tmp_path, monkeypatch):
     store=ProjectStore(Database(tmp_path / "history.db")); auth=AuthStore(store.db)
@@ -15,8 +16,8 @@ def test_named_history_is_access_checked_and_uses_server_actor(tmp_path, monkeyp
     inputs=with_canvas_snapshot({"manual_fields":{"units":"ft","site_objects":[{"id":"a","type":"office_building","x":0,"y":0,"w":20,"d":20}]}})
     project=store.save_project(user_id=creator["user_id"],project_id=None,name="History",project_input=inputs)
     pid=project["project_id"]
-    store.invite_project_member(actor_user_id=creator["user_id"],project_id=pid,email=editor["email"],role="editor")
-    invite=store.invite_project_member(actor_user_id=creator["user_id"],project_id=pid,email=viewer["email"])
+    invite_test_member(store,actor_user_id=creator["user_id"],project_id=pid,email=editor["email"],role="editor")
+    invite=invite_test_member(store,actor_user_id=creator["user_id"],project_id=pid,email=viewer["email"])
     assert invite["role"]=="viewer"
     changed=deepcopy(project["project_input"]); changed["manual_fields"]["site_objects"][0]["x"]=10
     store.save_project(user_id=editor["user_id"],project_id=pid,name="History",project_input=with_canvas_snapshot(changed))
