@@ -216,16 +216,6 @@ class WaterSizingEngine:
 
         total_flow = self._fixture_units_to_gpm(total_fu, request.conservative)
         remaining_pressure = self._estimate_remaining_pressure(request, segments)
-        for seg in segments:
-            seg.residual_pressure_psi = round(
-                request.available_pressure_psi
-                - request.meter_loss_psi
-                - request.backflow_loss_psi
-                - (request.heater_loss_psi if request.hot_water else 0.0)
-                - seg.friction_loss_psi
-                - max(0.0, seg.elevation_gain) * request.static_loss_per_ft_psi,
-                3,
-            )
 
         if remaining_pressure < 15.0:
             warnings.append("Estimated remaining pressure is low.")
@@ -354,13 +344,21 @@ class WaterSizingEngine:
         if request.hot_water:
             fixed_losses += request.heater_loss_psi
 
-        variable_losses = 0.0
-        static_losses = 0.0
-        for seg in segments:
-            variable_losses += seg.friction_loss_psi or (seg.length / 100.0) * seg.pressure_loss_per_100ft
-            static_losses += max(0.0, seg.elevation_gain) * request.static_loss_per_ft_psi
-
-        return available - fixed_losses - variable_losses - static_losses
+        lookup = {segment.name: segment for segment in segments}
+        supplied = {child for segment in segments for child in segment.connected_segment_names}
+        pending = [(segment.name, available - fixed_losses) for segment in segments if segment.name not in supplied]
+        pressures = []
+        while pending:
+            name, start_pressure = pending.pop()
+            segment = lookup[name]
+            end_pressure = (start_pressure - segment.friction_loss_psi
+                            - max(0.0, segment.elevation_gain) * request.static_loss_per_ft_psi)
+            segment.residual_pressure_psi = round(end_pressure, 3)
+            pressures.append(end_pressure)
+            pending.extend((child, end_pressure) for child in segment.connected_segment_names)
+        if len(pressures) != len(segments):
+            raise ValueError("Water pressure paths could not be resolved.")
+        return min(pressures, default=available - fixed_losses)
 
 
 def size_water_system(request: WaterSizingRequest) -> WaterSizingResult:
