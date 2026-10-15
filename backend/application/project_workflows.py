@@ -1381,6 +1381,7 @@ def review_project_candidates(
     correction_coordinate_space: str = "",
     replacement_geometries: Optional[list[Dict[str, Any]]] = None,
     replacement_feature_types: Optional[list[str]] = None,
+    expected_revision: Optional[str] = None,
 ) -> Dict[str, Any]:
     record = _candidate_review_record(
         project_store=project_store,
@@ -1389,6 +1390,12 @@ def review_project_candidates(
     )
     if record is None:
         raise HTTPException(status_code=404, detail="Project not found.")
+    if expected_revision is not None:
+        from backend.services.project_revision import check_revision
+        try:
+            check_revision(record, expected_revision)
+        except ProjectRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     latest_result = dict(record.get("latest_result") or {})
     final_plan = dict(latest_result.get("final_plan") or {})
     meta = _project_candidate_review_meta(record)

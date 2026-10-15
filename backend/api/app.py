@@ -496,6 +496,7 @@ class EngineeringMemoryPayload(BaseModel):
 
 
 class CandidateReviewPayload(BaseModel):
+    expected_revision: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
     candidate_ids: List[str] = Field(default_factory=list)
     action: str
     reason: str = ""
@@ -3175,6 +3176,7 @@ def review_project_candidates(
         correction_coordinate_space=payload.correction_coordinate_space,
         replacement_geometries=payload.replacement_geometries,
         replacement_feature_types=payload.replacement_feature_types,
+        expected_revision=payload.expected_revision,
     )
 
 

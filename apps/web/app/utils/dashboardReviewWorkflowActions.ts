@@ -149,6 +149,11 @@ export async function runDashboardCandidateReviewDecision({
     setStatusMessage("Save or load a project before reviewing candidates.");
     return null;
   }
+  const expectedRevision = currentProject?.revision_token;
+  if (currentProject?.project_id !== activeProjectId || !expectedRevision) {
+    setStatusMessage("Reload the project before reviewing candidates.");
+    return null;
+  }
   try {
     setStatusMessage(
       `${
@@ -178,6 +183,7 @@ export async function runDashboardCandidateReviewDecision({
       `/api/projects/${activeProjectId}/candidate-review`,
       {
         candidate_ids: reviewedCandidateIds,
+        expected_revision: expectedRevision,
         action,
         reason:
           correction?.reason ?? (action === "accept"

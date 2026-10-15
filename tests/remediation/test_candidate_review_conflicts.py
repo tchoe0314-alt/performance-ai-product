@@ -73,3 +73,34 @@ def test_simultaneous_review_updates_have_one_winner(project):
             return "conflict"
     with ThreadPoolExecutor(max_workers=2) as executor:
         assert sorted(executor.map(update, range(2))) == ["conflict", "saved"]
+
+
+def test_api_rejects_a_decision_based_on_an_old_browser_project(project, monkeypatch):
+    import importlib
+    api = importlib.import_module("backend.api.app")
+    store, user, saved = project
+    monkeypatch.setattr(api, "PROJECT_STORE", store)
+    payload = api.CandidateReviewPayload(candidate_ids=["b1"], action="accept",
+                                         expected_revision=saved["revision_token"])
+    store.save_project_shell(user_id=user, project_id=saved["project_id"], name="New source",
+                             expected_revision=saved["revision_token"])
+    before = store.get_project(user_id=user, project_id=saved["project_id"])
+    with pytest.raises(HTTPException) as error:
+        api.review_project_candidates(saved["project_id"], payload, {"user_id": user})
+    assert error.value.status_code == 409
+    assert store.get_project(user_id=user, project_id=saved["project_id"]) == before
+    response = api.review_project_candidates(saved["project_id"],
+        api.CandidateReviewPayload(candidate_ids=["b1"], action="accept",
+                                   expected_revision=before["revision_token"]), {"user_id": user})
+    assert response["success"] is True
+    assert response["project"]["revision_token"] != before["revision_token"]
+
+
+@pytest.mark.parametrize("revision", [None, "", "x" * 64, "a" * 63])
+def test_api_review_requires_a_valid_source_revision(revision):
+    import importlib
+    from pydantic import ValidationError
+    api = importlib.import_module("backend.api.app")
+    fields = {} if revision is None else {"expected_revision": revision}
+    with pytest.raises(ValidationError):
+        api.CandidateReviewPayload(candidate_ids=["b1"], action="accept", **fields)

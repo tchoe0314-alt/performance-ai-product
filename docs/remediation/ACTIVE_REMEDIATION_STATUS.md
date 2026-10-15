@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Browser review preconditions: public review requests require the loaded project's
+revision and reject stale-before-request decisions.93 non-overlapping backend
+cases, offline actual-action checks and TypeScript passed. See
+`BROWSER_REVIEW_PRECONDITION_2026-10-15.md`; complete UI/source-association and
+PostgreSQL acceptance remain open.
+
 Candidate-review generation follow-up: every committed review write now consumes
 its source revision, including identical-content writes.97 affected tests passed;
 see `CANDIDATE_REVIEW_GENERATION_2026-10-15.md`. Client inbox tokens and PostgreSQL

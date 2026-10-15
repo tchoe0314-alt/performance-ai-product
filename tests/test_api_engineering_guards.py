@@ -36,6 +36,7 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
             result = review_project_candidates(
                 "project-1",
                 CandidateReviewPayload(
+                    expected_revision="a" * 64,
                     candidate_ids=["candidate-1"],
                     action="correct",
                     corrected_feature_type="parking_area",
@@ -48,6 +49,7 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
             )
 
         self.assertTrue(result["success"])
+        self.assertEqual(workflow.call_args.kwargs["expected_revision"], "a" * 64)
         self.assertEqual(workflow.call_args.kwargs["corrected_feature_type"], "parking_area")
         self.assertEqual(workflow.call_args.kwargs["corrected_geometry"], corrected_geometry)
         self.assertEqual(workflow.call_args.kwargs["correction_coordinate_space"], "project_local")
