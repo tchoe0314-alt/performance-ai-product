@@ -92,7 +92,7 @@ def bind_canvas_result(result: dict, project_input: dict, *, calculation_execute
     return bound
 
 
-def canvas_result_freshness(result: dict, project_input: dict) -> dict | None:
+def canvas_result_freshness(result: dict, project_input: dict, *, require_engine_revision: bool = True) -> dict | None:
     try:
         signature = canvas_input_signature(project_input)
     except (ProjectDocumentError, ValueError, TypeError):
@@ -102,7 +102,7 @@ def canvas_result_freshness(result: dict, project_input: dict) -> dict | None:
     binding = (result.get("metadata") or {}).get(BINDING_KEY)
     if not isinstance(binding, dict) or binding.get("version") != 1 or binding.get("scope") != "canvas_manual_fields_and_site_inputs":
         return {"version": 1, "status": "unverified", "reason": "missing_input_binding"}
-    if binding.get("input_signature") == signature and not has_current_engine_revision(result):
+    if require_engine_revision and binding.get("input_signature") == signature and not has_current_engine_revision(result):
         return {"version": 1, "status": "unverified", "reason": "calculation_engine_revision_unknown_or_obsolete"}
     return {"version": 1, "status": "current" if binding.get("input_signature") == signature else "stale",
             "scope": binding["scope"]}

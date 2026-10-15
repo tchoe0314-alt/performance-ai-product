@@ -790,7 +790,8 @@ def save_project_workflow_update(
         artifact = dict(artifact_summary) if artifact_summary else None
         historical = False
         if artifact is not None and exported_result is not None:
-            freshness = canvas_result_freshness(exported_result, dict(existing.get("project_input") or {}))
+            drawing_only = artifact.get("kind") in {"drawing_dxf","drawing_pdf"}
+            freshness = canvas_result_freshness(exported_result, dict(existing.get("project_input") or {}),require_engine_revision=not drawing_only)
             archived = dict(dict(exported_result.get("metadata") or {}).get("calculation_save_v1") or {}).get("disposition") == "archived"
             historical = archived or bool(freshness and freshness.get("status") == "stale")
             artifact["snapshot_status"] = "historical" if historical else (freshness or {}).get("status", "unverified")

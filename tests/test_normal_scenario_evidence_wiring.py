@@ -6,6 +6,7 @@ from pathlib import Path
 from backend.application.artifact_workflows import export_report_artifact
 from backend.application.design_workflows import build_run_summary
 from backend.application.project_workflows import save_project_record
+from backend.services.canonical_results import ENGINE_REVISION
 from backend.planning.engine_depth_audit import CLASS_PRODUCTION_DEPTH, run_engine_depth_audit_for_scenario
 from backend.planning.engine_readiness import evaluate_engine_readiness
 from backend.planning.engineer_review_package import build_engineer_review_package
@@ -197,6 +198,7 @@ class NormalScenarioEvidenceWiringTests(unittest.TestCase):
         )
         result = {
             "success": True,
+            "metadata": {"calculation_engine_revision": ENGINE_REVISION},
             "message": "ready_for_engineer_review; construction_release_allowed=false",
             "parsed_payload": {
                 "project_name": plan["project_name"],

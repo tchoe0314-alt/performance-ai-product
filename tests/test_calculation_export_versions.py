@@ -49,7 +49,7 @@ def test_artifact_history_keeps_calculation_reference():
 
 def test_current_export_allowed_but_geometry_change_blocks_old_result():
     inputs = source()
-    bound = bind_canvas_result({"metadata": {}}, inputs)
+    bound = bind_canvas_result({"metadata": {}}, inputs, calculation_executed=True)
     check(bound, inputs)
     changed = deepcopy(inputs)
     changed["manual_fields"]["site_objects"][0]["x"] = 200
@@ -70,8 +70,10 @@ def test_archived_result_cannot_be_exported_as_current_even_when_inputs_match(pr
     assert exc.value.status_code == 409
 
 
-def test_legacy_unbound_export_remains_compatible():
-    check({"metadata": {}, "final_plan": {}}, source())
+def test_legacy_unbound_calculated_export_requires_recalculation():
+    with pytest.raises(HTTPException) as error:
+        check({"metadata": {}, "final_plan": {}}, source())
+    assert error.value.status_code == 409
 
 
 def test_missing_project_does_not_export():

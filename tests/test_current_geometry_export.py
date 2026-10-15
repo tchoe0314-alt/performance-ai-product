@@ -29,6 +29,19 @@ def test_drawing_snapshot_is_current_geometry_not_an_enriched_old_calculation():
     assert original == before
 
 
+def test_geometry_label_cannot_smuggle_calculation_data_or_stale_drawing():
+    record=project()
+    store=SimpleNamespace(get_project=lambda **kwargs:record)
+    original=prepare_current_geometry_result(record)
+    for mutation in ("engineering","geometry"):
+        result=deepcopy(original)
+        if mutation == "engineering":result["final_plan"]["meta"]["grading"]={"success":True,"invented":100}
+        else:result["final_plan"]["actions"][0]["origin"][0]+=1
+        with pytest.raises(HTTPException) as rejected:
+            export_current_geometry_artifact(artifact_service=None,project_store=store,user_id="test",project_id="pilot",result_data=result,export_format="dxf")
+        assert rejected.value.status_code == 409
+
+
 @pytest.mark.parametrize("change", [{"units": "unknown"}, {"site_objects": []}, {"site_objects": [{"id": "broken", "type": "building", "x": 0, "y": 0, "w": 0, "d": 1}]}])
 def test_invalid_drawing_not_waived_by_preliminary_acknowledgement(change):
     record = project()
@@ -107,6 +120,7 @@ def test_real_artifacts_preserve_the_old_calculation_and_drawing_history(tmp_pat
     assert after["revision_token"] == before["revision_token"]
     assert after["project_input"]["manual_fields"] == before["project_input"]["manual_fields"]
     assert after["metadata"]["workflow"]["artifacts"][0]["kind"] == f"drawing_{export_format}"
+    assert after["metadata"]["workflow"]["artifacts"][0]["snapshot_status"] == "current"
     if export_format == "pdf":
         assert path.read_bytes().startswith(b"%PDF")
     else:

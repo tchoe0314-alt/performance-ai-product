@@ -4,11 +4,11 @@ import json
 
 from backend.application.design_workflows import run_orchestration
 from backend.services.canonical_canvas import with_canvas_snapshot
-from backend.services.canonical_results import canvas_result_freshness
+from backend.services.canonical_results import ENGINE_REVISION, canvas_result_freshness
 
 
 def test_resume_reaches_engine_but_not_repeated_response_echoes():
-    checkpoint = {"actions": [{"task": "rectangle", "width": 100}], "meta": {"proof": "x" * 100_000}}
+    checkpoint = {"actions": [{"task": "rectangle", "width": 100}], "meta": {"proof": "x" * 100_000,"calculation_engine_revision":ENGINE_REVISION}}
     submitted = with_canvas_snapshot({"manual_fields": {"units": "ft", "site_objects": [
         {"id": "office", "type": "building", "x": 0, "y": 0, "w": 40, "d": 30}]},
         "meta": {"runtime_resume": {"final_plan": checkpoint},

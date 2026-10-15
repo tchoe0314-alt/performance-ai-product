@@ -91,7 +91,7 @@ class DesignAlternativesTests(unittest.TestCase):
         record = _record()
         inputs = with_canvas_snapshot({"manual_fields": {"units": "ft", "setback": 20, "site_objects": []}})
         record["project_input"] = inputs
-        record["latest_result"] = bind_canvas_result(record["latest_result"], inputs)
+        record["latest_result"] = bind_canvas_result(record["latest_result"], inputs, calculation_executed=True)
         store = _FakeStore(record)
         generated = update_project_design_alternatives(project_store=store, user_id="u1", project_id="project-1", action="generate")
         self.assertTrue(generated["design_alternatives_v1"]["quantity_basis"]["available"])

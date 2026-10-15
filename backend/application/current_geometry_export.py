@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from backend.services.canonical_canvas import resolve_canvas_input
 from backend.services.canonical_results import BINDING_KEY, canvas_input_signature, canvas_live_input_signature
 from backend.services.site_objects import geometry_issues
-from backend.application.artifact_workflows import _site_object_layer, _rotated_rectangle_points, assert_current_export_result, finalize_export_artifact
+from backend.application.artifact_workflows import _site_object_layer, _rotated_rectangle_points, finalize_export_artifact
 from backend.planning.preliminary_export import prepare_preliminary_snapshot
 
 SCOPE = "saved_current_geometry_only_no_calculations"
@@ -123,7 +123,23 @@ def prepare_current_geometry_result(project):
 def export_current_geometry_artifact(*, artifact_service, project_store, user_id, project_id, result_data, export_format, filename_stem=None):
     if export_format not in {"dxf", "pdf"} or (result_data.get("metadata") or {}).get("current_geometry_export_v1", {}).get("geometry_scope") != SCOPE:
         raise HTTPException(409, "Invalid current-drawing export snapshot.")
-    assert_current_export_result(project_store=project_store, user_id=user_id, project_id=project_id, result_data=result_data)
+    # This is deliberately not a calculation result. Reconstruct from the
+    # authorized saved model instead of bypassing calculation gates based on a
+    # caller-supplied geometry-only label. Tampered/stale snapshots reject.
+    current=project_store.get_project(user_id=user_id,project_id=project_id)
+    if current is None:
+        raise HTTPException(404,"Project not found.")
+    if current.get("access_role","owner") in {"viewer","reviewer"}:
+        raise HTTPException(403,"Editing permission is required to create a drawing export.")
+    expected=prepare_current_geometry_result(current)
+    comparison=deepcopy(result_data)
+    disclosure=comparison.get("final_plan",{}).get("meta",{}).get("preliminary_export_v1",{})
+    # The queue snapshot's timestamp differs legitimately from publication time;
+    # all other scope, source, geometry and disclosure fields must match exactly.
+    disclosure["export_timestamp"]=expected["final_plan"]["meta"]["preliminary_export_v1"]["export_timestamp"]
+    if comparison != expected:
+        raise HTTPException(409,"Drawing snapshot changed or contains data outside the saved drawing scope. Save and request a new export.")
+    result_data=expected
     if export_format == "dxf":
         path = artifact_service.export_dxf(user_id=user_id, final_plan=deepcopy(result_data["final_plan"]), stem=filename_stem, prefinalized=True)
     else:
