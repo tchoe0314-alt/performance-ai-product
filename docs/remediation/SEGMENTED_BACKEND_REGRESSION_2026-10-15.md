@@ -29,9 +29,13 @@ capacity or memory-leak qualification. Sample retained alongside the report.
 backend-ab-58: `tests/test_[a-b]*.py`,501 tests+10 subtests passed in31.46seconds,
 24 existing dependency deprecation warnings; process exit0.
 
-These three completed alphabetical selections do not overlap:1225 tests and111
-subtests passed. Remaining C–L modules and remediation tests still need completed
-current-candidate reports. backend-cf-59 has been started separately and is not
+backend-cf-59: `tests/test_[c-f]*.py`,811 tests+42 subtests passed in177.52seconds,
+33 existing dependency deprecation warnings; process exit0. XML SHA256:
+`cc5c435c01b2ebc6ace8df5bae3eaf6192eb5e5176f373a3d87064860c3b4e1d`.
+
+These four completed alphabetical selections do not overlap:2036 tests and153
+subtests passed. Remaining G–L modules and remediation tests still need completed
+current-candidate reports. backend-gl-60 has been started separately and is not
 certified by this document. No full-backend or release pass is claimed.
 
 ## Isolation / cleanup
