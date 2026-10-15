@@ -65,3 +65,17 @@ def test_surface_does_not_invent_elevation_for_missing_tile(monkeypatch, missing
         assert surface is not None
         assert surface._terrain_sample_stats["missing_count"] == 0
         assert surface.values == [[terrain._elevation_from_rgb(1,2,3)] * 2] * 2
+
+
+@pytest.mark.parametrize("invalid", [{"ncols":1000000}, {"nrows":True}, {"nrows":2.5},
+    {"ncols":140,"nrows":140}, {"cell":0}, {"cell":float("nan")},
+    {"center_lat":91}, {"center_lng":float("inf")}, {"lot_width_ft":-1}])
+def test_invalid_or_excessive_grid_rejected_before_fetch(monkeypatch, invalid):
+    monkeypatch.setenv("MAPBOX_TOKEN", "synthetic-no-network")
+    def unexpected(*args, **kwargs):
+        pytest.fail("Invalid terrain request reached tile fetching")
+    monkeypatch.setattr(terrain,"_fetch_tile",unexpected)
+    request = dict(center_lat=40, center_lng=-100, lot_x=0, lot_y=0,
+        lot_width_ft=10, lot_height_ft=10, rotation_deg=0,
+        x_min=0, y_min=0, ncols=2, nrows=2, cell=10)
+    assert terrain.build_terrain_surface(**{**request,**invalid}) is None

@@ -10,6 +10,11 @@ from backend.services.outbound_http import safe_get
 
 from engines.surface_engine import GridSurface
 
+# Match the grading caller's existing intended sampling envelope. Enforce it
+# again at the provider boundary rather than trusting every caller to coarsen.
+MAX_TERRAIN_GRID_CELLS = 12000
+MAX_TERRAIN_GRID_AXIS = 140
+
 
 def _lat_lng_to_tile(lat: float, lng: float, zoom: int, tile_size: int) -> Tuple[int, int, int, int]:
     lat_rad = math.radians(max(min(lat, 85.05112878), -85.05112878))
@@ -90,6 +95,18 @@ def build_terrain_surface(
     cell: float,
     lat_lng_bounds: Optional[Dict[str, Any]] = None,
 ) -> Optional[GridSurface]:
+    if (type(ncols) is not int or type(nrows) is not int
+            or not 2 <= ncols <= MAX_TERRAIN_GRID_AXIS
+            or not 2 <= nrows <= MAX_TERRAIN_GRID_AXIS
+            or ncols * nrows > MAX_TERRAIN_GRID_CELLS):
+        return None
+    coordinates = (center_lat, center_lng, lot_x, lot_y, lot_width_ft,
+                   lot_height_ft, rotation_deg, x_min, y_min, cell)
+    if any(type(value) not in (int, float) or not math.isfinite(value) for value in coordinates):
+        return None
+    if (not -90 <= center_lat <= 90 or not -180 <= center_lng <= 180
+            or lot_width_ft <= 0 or lot_height_ft <= 0 or cell <= 0):
+        return None
     token = os.getenv("MAPBOX_TOKEN") or os.getenv("NEXT_PUBLIC_MAPBOX_TOKEN")
     if not token:
         return None
