@@ -162,6 +162,9 @@ def queue_orchestrate_job(
     project_id: Optional[str],
     request_payload: Dict[str, Any],
 ) -> Dict[str, Any]:
+    # Checkpoint preparation expands an execution payload, not editable inputs.
+    # Keep the caller's original design request separate before that expansion.
+    editable_request = deepcopy(dict(request_payload or {}))
     if project_id:
         existing = project_store.get_project(user_id=user_id, project_id=project_id)
         if existing is None:
@@ -180,8 +183,8 @@ def queue_orchestrate_job(
         )
         seeded_project_input = {
             **dict(existing.get("project_input") or {}),
-            **dict(request_payload or {}),
-            "request_payload": dict(request_payload or {}),
+            **editable_request,
+            "request_payload": deepcopy(editable_request),
         }
         save_project_snapshot(project_store, existing,
             user_id=user_id,

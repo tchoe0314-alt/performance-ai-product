@@ -202,10 +202,10 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertTrue(submitted_meta["reactive_partial_rerun_request"]["enabled"])
         self.assertIn("drainage", submitted_meta["changed_targets"])
         self.assertIn("storm_pipes", submitted_meta["stale_outputs"])
-        self.assertEqual(
-            store.saved_payload["project_input"]["request_payload"]["meta"]["orchestrator_meta"]["runtime_resume"]["final_plan"]["project_name"],
-            "Stored Plan",
-        )
+        # Full checkpoints belong to the queued execution, not editable input.
+        saved_meta = store.saved_payload["project_input"]["request_payload"]["meta"]
+        self.assertEqual(saved_meta, {"requested_system": "drainage"})
+        self.assertNotIn("reactive_checkpoint_final_plan", store.saved_payload["project_input"]["meta"])
 
     def test_queue_orchestrate_job_submits(self):
         store = FakeProjectStore(
