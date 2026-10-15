@@ -100,7 +100,8 @@ DISCOVERY_SOURCE_SPECS = {
 
 
 def _json_get(session: Any, url: str, params: Dict[str, Any], *, timeout: float = 10.0) -> Dict[str, Any]:
-    response = session.get(url, params=params, timeout=timeout)
+    from backend.services.outbound_http import safe_get
+    response = safe_get(url, params=params, timeout=timeout, session=None if session is requests else session)
     response.raise_for_status()
     payload = response.json()
     return safe_dict(payload)
@@ -206,7 +207,8 @@ def fetch_usgs_elevation_grid(
         "outFields": "*",
     }
     try:
-        response = session.get(USGS_3DEP_GET_SAMPLES_URL, params=params, timeout=18)
+        from backend.services.outbound_http import safe_get
+        response = safe_get(USGS_3DEP_GET_SAMPLES_URL, params=params, timeout=18, session=None if session is requests else session)
         response.raise_for_status()
         payload = safe_dict(response.json())
     except Exception as exc:
@@ -726,7 +728,8 @@ def fetch_arcgis_layer_geojson(
         "returnM": "false",
     }
     try:
-        response = session.get(_arcgis_query_url(service_url, layer_id), params=params, timeout=15)
+        from backend.services.outbound_http import safe_get
+        response = safe_get(_arcgis_query_url(service_url, layer_id), params=params, timeout=15, session=None if session is requests else session)
         response.raise_for_status()
         payload = safe_dict(response.json())
     except Exception as exc:

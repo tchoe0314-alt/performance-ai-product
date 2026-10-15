@@ -795,6 +795,8 @@ def selected_provider(registry: Dict[str, Any], source_type: str) -> Dict[str, A
 
 
 def check_provider_health(provider: Dict[str, Any], *, session: Any = requests) -> Dict[str, Any]:
+    from backend.services.outbound_http import safe_get
+    import requests as real_requests
     rec = safe_dict(provider)
     url = safe_str(rec.get("service_url") or safe_dict(rec.get("arcgis")).get("service_url"))
     checked_at = _utc_now_iso()
@@ -803,7 +805,7 @@ def check_provider_health(provider: Dict[str, Any], *, session: Any = requests) 
     if rec.get("queryable") is False or safe_str(rec.get("status")) == "known_not_queryable":
         return {"status": "not_queryable", "checked_at": checked_at, "ok": False, "message": "Provider is known but not usable for candidate extraction."}
     try:
-        response = session.get(url.rstrip("/"), params={"f": "json"}, timeout=10)
+        response = safe_get(url.rstrip("/"), params={"f": "json"}, timeout=10, session=None if session is real_requests else session)
         response.raise_for_status()
         payload = safe_dict(response.json())
     except Exception as exc:
