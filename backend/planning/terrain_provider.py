@@ -141,7 +141,10 @@ def build_terrain_surface(
             sample_count += 1
         values.append(row_vals)
 
-    if sample_count <= 0:
+    # An unavailable tile is missing evidence, not permission to manufacture
+    # elevation from neighboring samples. Do not pass a partial grid to the
+    # legacy mean-fill normalization path used by the grading caller.
+    if sample_count <= 0 or missing_count > 0:
         return None
 
     surface = GridSurface(

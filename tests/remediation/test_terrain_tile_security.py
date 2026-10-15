@@ -44,3 +44,24 @@ def test_binary_transport_retains_bytes_and_size_limit():
                 safe_get("https://example.test/tile",session=session,response_kind="binary")
         else:
             assert safe_get("https://example.test/tile",session=session,response_kind="binary").content == content
+
+
+@pytest.mark.parametrize("missing", [True, False])
+def test_surface_does_not_invent_elevation_for_missing_tile(monkeypatch, missing):
+    monkeypatch.setenv("MAPBOX_TOKEN", "synthetic-no-network")
+    image = Image.new("RGB", (512,512), (1,2,3))
+    calls = []
+    def tile(*args):
+        calls.append(1)
+        return None if missing and len(calls) == 2 else image
+    monkeypatch.setattr(terrain, "_fetch_tile", tile)
+    surface = terrain.build_terrain_surface(center_lat=40, center_lng=-100,
+        lot_x=0, lot_y=0, lot_width_ft=10, lot_height_ft=10,
+        rotation_deg=0, x_min=0, y_min=0, ncols=2, nrows=2, cell=10)
+    assert len(calls) == 4
+    if missing:
+        assert surface is None
+    else:
+        assert surface is not None
+        assert surface._terrain_sample_stats["missing_count"] == 0
+        assert surface.values == [[terrain._elevation_from_rgb(1,2,3)] * 2] * 2
