@@ -2,6 +2,8 @@
 
 `production_env_validator_v1` blocks Vercel/Railway releases when required production configuration is missing, malformed, or unsafe. It emits redacted diagnostics only: secret values are reported as present/length metadata, never as raw values.
 
+Browser-visible `NEXT_PUBLIC_*` settings are checked even when diagnostics are disabled. Non-empty secret-like names and recognizable private provider-key prefixes produce a `browser_visible_secret` blocker without echoing the credential. Public `NEXT_PUBLIC_MAPBOX_TOKEN` and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` settings remain allowed unless their value has a private-key prefix. Empty settings do not trigger this check. This is a configuration safeguard, not a comprehensive secret scanner or proof that deployed assets contain no secrets. Any credential already published must be rotated by its owner; this validator does not rotate keys or modify hosting settings.
+
 Run locally or in deploy checks:
 
 ```bash

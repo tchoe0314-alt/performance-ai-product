@@ -10,6 +10,11 @@ The automated report must remain `pending_human_review` until a qualified,
 independent reviewer completes the calculation table and provides attributable
 evidence for the exact tested software revision.
 
+Dirty or unknown software checkpoints cannot receive independent-review
+acceptance. Local reports explicitly mark uncommitted/untracked changes with
+`-dirty`; checkpoint the intended source and rerun before collecting final review
+evidence. Automated comparisons can still run without implying acceptance.
+
 ## Automated scope
 
 The benchmark records:

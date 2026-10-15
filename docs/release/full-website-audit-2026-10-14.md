@@ -1,0 +1,84 @@
+# Civora full website audit — 2026-10-14
+
+## Decision
+
+Testing covers both the actually hosted website and the frozen local release candidate. It is **not** a declaration that every feature is live, that production can handle an arbitrary customer load, or that engineering outputs are professionally validated. No deployment was made during this audit.
+
+Local application revision: `23ac4e76fc4aeffc65f3c2af2b2895416fe0ba5e`, served from its existing production build. Application code was unchanged during this pass; the changes below repair and extend the test harness. The primary checkout's pre-existing edits and index were preserved.
+
+Hosted frontend identity remains `ee2055de42b3561eab8822257f911c2dfb693e26`. The live API's current-drawing export route returned **404**, consistent with its absence from the hosted API schema. Newer locally tested functionality must not be represented as deployed functionality.
+
+## Completed evidence
+
+**24 selected checks passed on the actual hosted frontend/API** across the groups below. This includes demo/fixture-backed UI checks as explicitly labelled, not 24 fully authenticated end-to-end engineering journeys. Repeated reruns are not counted again.
+
+| Check | Result and limits |
+| --- | --- |
+| Complete backend rerun | **2,239 passed; 195 subtests passed; 56 warnings; 389.57 seconds.** Clean rerun after recovering temporary disk space. |
+| Complete desktop browser collection | **700 collected: 662 passed, 22 failed, 16 skipped; 18.4 minutes.** Mix of interactive UI, API integration, and software contracts—not 700 independent customer journeys. Original failures remain in the report; follow-ups below do not turn this original command green. |
+| Real live account journeys | Chrome, desktop WebKit, mobile Chrome and mobile WebKit passed actual sign-in, open own synthetic project, move and resize a building, saved undo/redo, refresh/reopen, protected APIs, cross-account isolation, sign-out and browser-session revocation. Initial logout assertion expected the sign-in form while the app selected Request Access mode; corrected the test to select Sign In Mode and verify revocation. |
+| Hosted public workspace | Passed core control navigation, drawing/cancel, 2D/3D, high-quality geometry, and explicitly **mock** AI visualization. No paid imagery or external AI quality claim. |
+| Hosted pages | Onboarding/support and security headers passed. Header checks include home, pilot, support, upgrades, terrain validation and demo. These are not a complete penetration test. |
+| Hosted accessibility/device checks | Eight passed: two each on Chrome, WebKit, mobile Chrome and mobile WebKit. Fresh demo shell had no serious/critical violations in the tested WCAG scan; keyboard navigation, named controls, touch target and overflow assertions passed. Not physical-device certification. |
+| Hosted file imports | LandXML, GeoJSON, GeoTIFF and LAS passed through the **actual hosted API** in one four-format check using a disposable account. Imported evidence correctly remained `production_usable: false`; this is not survey/control acceptance. |
+| Hosted realistic workflows | Three public-demo scenarios passed after navigation-helper repair: Gretna office, Omaha mixed use, and a messy address. Exercises drawn objects, classification, visibility, 2D/3D, preview and truthful Generate/Deliver/chat outcomes. Signed-out/missing-input blockers and mock imagery are allowed by these tests; this is not successful authenticated engineering generation. |
+| Hosted authenticated smoke | Passed API login, own project creation, navigation, empty-input Generate/Deliver blockers, informational chat, auth gates and browser-health checks in a disposable account. |
+| Live Mapbox interaction | Four passed against the actual hosted frontend and real Mapbox canvas: Select/Pan separation, reversible map lock, preventing delayed old-map saves from contaminating New Project, and physical mouse-to-site-foot drawing coordinates. Uses synthetic project/auth fixtures, not customer data or a real hosted account's project persistence. Existing Mapbox configuration was used without publishing its token. |
+| Local drawing exports | Complete collection passed road-width editing with current-geometry PDF/DXF download, stale calculated-output exclusion, download owner isolation, and metric DXF/island units. Not available on the currently deployed API. |
+| Local calculations | Manual parking failure stayed blocked; assisted parking saved/reopened; full staged run completed and reopened. The full run still contains failed/partial engineering stages, so calculated exports correctly remain blocked. Not a positive full commercial engineering-to-calculated-export acceptance. |
+| Local drainage matrix | Six scenarios passed, including two explicit Apply paths, repeated Apply deduplication and a synthetic valid drainage control. Matrix took approximately 4.4 minutes. Retained genuine failed-path warnings rather than reporting unsupported engineering success. |
+| Additional local credentialed checks | Four passed: authenticated smoke; bounded 320-read load; 45-request auth burst; four-format source imports. These were skipped in the initial credential-free complete collection, then executed with a newly created disposable account. |
+| Bounded local read load | 320 requests, pool 35, zero unexpected responses, p95 73 ms, maximum 82 ms, total wall 412 ms. Auth burst: 45 requests, 15 throttled, zero unexpected responses, p95 29 ms. **Local only; not a production capacity promise.** |
+| TypeScript / lint / generated concept | Type checking passed; lint had zero errors and one existing unused-variable warning in `PerformanceAIDashboardView.tsx`; embedded cul-de-sac core matches its source. No new application build was needed for test-only edits. |
+| Dependencies | Production JavaScript audit: zero reported vulnerabilities. Full JavaScript audit: five high-severity development dependency findings through `braces` and the Next ESLint toolchain. All 66 installed Python runtime packages passed compatibility checking; vulnerability audit checked **66 dependencies, skipped zero, found zero known vulnerabilities**. No forced incompatible downgrade or security waiver was applied. |
+| Backend static security scan | Scanned 87,718 lines under `backend`: zero medium/high findings; 82 low findings in metrics; 12 individually suppressed checks remain. This is not a complete security review. Repaired missing metadata in the isolated existing Bandit installation by reinstalling the same pinned version; application dependencies were unchanged. |
+
+## Browser failure follow-ups
+
+- Two polling tests used a bare `success: true` mock for project saving. The application correctly requires a saved project checkpoint before generation. Corrected the fixture response and retained all polling, checkpoint and concurrency assertions. **All five related tests passed.**
+- A mobile test helper checked for the drawer before React mounted it after reload. It now waits for the workspace before closing the drawer through its visible control. Added a delayed-mount regression. **All six helper/environment checks passed**, including 320×568 and 844×390.
+- Three realistic workflow tests still requested old Setup/Draw buttons. Routed them through the existing stage-aware navigation helper. **All three passed locally and on the hosted demo.**
+- A 1024-pixel keyboard-resize check failed once in the complete run. **All three desktop sizes passed on isolated rerun.** No production fix was made; this single-run instability is not proven eliminated.
+- Thirteen account-based failures encountered 429 responses, or downstream 401 responses after an unsuccessful registration. **All 13 passed on the completed paced rerun**, tracked in `/tmp/civora-paced-account-audit-20261014.json`. Rate limits were not disabled or reset.
+- The offline Mapbox style/persistence check could not mount a map in the local candidate build, which was built without the existing private Mapbox environment. Its failed assertion was **not** changed into a skip or a success. Existing Mapbox credentials were confirmed available in the primary workspace, and applicable live-map checks were executed separately. This does not validate new, not-yet-deployed map environment controls.
+- Firefox stalled during browser startup. Its process was interrupted; **Firefox remains unverified**, not passed and not accepted as a browser-support exception.
+
+The original 16 skips are retained in JUnit. Four credentialed local checks were subsequently executed successfully (auth smoke, two load checks, source formats). Four token-gated map checks were subsequently executed against the hosted frontend with its real map, using synthetic API fixtures. The remaining conditional suites are the isolated Firefox run; dense saved vision-candidate correction; full real-source workflow; source-backed survey UI workflow; and the older Phase 2 runtime, smoke, staged-regression and Step 1 preview flows requiring their explicit account/prompt configuration. They must not be counted as passed. The failed local offline-map check is a separate remaining exception, not one of those original skips.
+
+**Final reconciliation of the original 22 failures:** 21 passed on targeted reruns after test-harness corrections or pacing; one local offline-map test remains blocked by the build configuration/storage constraint. This does not erase the original failed complete-run report, prove the intermittent keyboard-resize failure permanently eliminated, or make skipped tests pass.
+
+## Specific changes and reasons
+
+1. Extended `hosted-current-backend-safe.spec.ts` from token-seeded editing to the actual sign-in form, resize, persisted undo/redo, refresh and logout/session revocation. Retained owner isolation and a live-write guard permitting only the synthetic account's sign-in/out, owned saves and presence. No generation, export queue, deletion or deployment is allowed by this check.
+2. Disabled traces/videos for this credentialed live journey, protecting credentials and limiting disk use.
+3. Added `playwright.full-audit.config.ts`: explicit localhost-only targets, complete desktop collection, low-footprint artifacts and a JUnit report. The full suite cannot accidentally be aimed at production through this configuration.
+4. Added an opt-in low-disk recording mode to three broad UI suites. Assertions were not weakened.
+5. Updated polling save fixtures to return and retain the actual project input checkpoint.
+6. Made the mobile canvas helper wait for mounting, with a regression test for the observed reload race.
+7. Updated realistic scenario navigation to the shared current/legacy-compatible helper.
+8. Added `scripts/run-paced-local-audit.mjs` to recheck the 13 account cases with 35-second spacing after the complete run finishes. It is restricted to explicit disposable localhost services and preserves failures in a separate result file.
+
+## Remaining blockers and risks
+
+1. **Hosted release/configuration gap.** The live website/API is older than the candidate; current-geometry exports are absent. Its interface says invitation-only, but unauthenticated registration of new synthetic accounts succeeded. Enforce the intended invitation policy during a controlled release, with an approved-account path retained. Do not confuse an invitation label with enforcement.
+2. **Execution snapshots inflate saved input.** In the small drainage Apply scenario, one saved `project_input_json` measured 16,975,469 bytes and its latest result 8,497,806 bytes. Input included a ~4.24 MB `request_payload`, ~4.24 MB metadata and ~8.49 MB canonical document. Metadata duplicated a ~2.11 MB `reactive_checkpoint_final_plan` under `orchestrator_meta`. The API process was observed around 1 GB resident memory during this sequence. This identifies a concrete serialization/persistence hotspot; it does not isolate every contributor to runtime cost or establish production capacity. Separate execution-only checkpoints from canonical editable inputs without discarding real engineering outputs/history, then repeat growth and timing tests.
+3. **Full positive engineering/export acceptance remains open.** A completed workflow or a passing failure-blocking test does not prove every engineering stage is usable. Need a fully valid commercial result through current quantities, sourced pricing and calculated PDF/DXF, followed by independent CAD/professional review. The six-scenario drainage control does not close this broader gate.
+4. **Development dependency audit is not clean.** Five high-severity affected development nodes remain. The suggested forced fix downgrades the Next lint configuration incompatibly; do not apply it blindly.
+5. **Verification gaps remain explicit.** Firefox startup; new local Mapbox environment controls; tests requiring their configured hosted fixtures/accounts; real paid imagery/provider quality; real billing; production load/soak and backup/restore; and professional engineering acceptance were not established by this pass. Existing customer data was not used to manufacture missing test fixtures.
+6. **Workstation storage is critically constrained.** The first backend rerun had 2 failures and 5 setup errors, all reporting SQLite disk I/O errors; 2,232 tests had passed. After recovering space, the 15 affected-group tests passed and the subsequent complete backend run passed cleanly. Do not classify the first run as green or assume this workstation can support large recording/build/load workloads without more space.
+7. **One-command browser acceptance is not yet repeatably green.** Supplemental paced reruns establish the affected account workflows, but the complete collection still needs account-fixture pacing/isolation incorporated into its standard orchestration, a Mapbox-configured build, and investigation of the one-off keyboard-resize failure. Do not substitute a merged collection of rerun passes for a clean complete-run result.
+
+## Evidence and safety
+
+- Clean backend: `/tmp/civora-requested-clean-backend-20261014.xml`.
+- Original backend failures: `/tmp/civora-requested-full-backend-20261014.xml`; affected-group rerun: `/tmp/civora-backend-storage-rerun-20261014.xml`.
+- Complete browser baseline: `/tmp/civora-full-browser-20261014.xml` and `/tmp/civora-full-browser-20261014/`.
+- Security evidence: `/tmp/civora-backend-bandit-20261014.json` and `/tmp/civora-python-dependency-audit-20261014.json`.
+- Follow-ups: `/tmp/civora-polling-rerun-20261014/`, `/tmp/civora-preview-helper-fixed-20261014/`, `/tmp/civora-layout-keyboard-rerun-20261014/`, `/tmp/civora-realistic-rerun-20261014/`, `/tmp/civora-local-lifecycle-final-20261014/`, `/tmp/civora-bounded-local-audit-20261014/`.
+- Hosted evidence: `/tmp/civora-live-history-20261014/`, `/tmp/civora-live-logout-chrome-final-20261014/`, `/tmp/civora-live-logout-20261014/`, `/tmp/civora-live-public-20261014/`, `/tmp/civora-live-pages-20261014/`, `/tmp/civora-live-accessibility-20261014/`, `/tmp/civora-live-source-depth-20261014/`, `/tmp/civora-live-realistic-20261014/`, `/tmp/civora-live-auth-workflow-20261014/`, `/tmp/civora-live-mapbox-20261014/`, `/tmp/civora-live-map-coordinates-20261014/`.
+- Some successful list-reporter runs retain screenshots only or empty artifact directories; absence of an HTML report is not additional proof. Command outcomes are recorded in this chat.
+- Only synthetic live accounts/projects/uploads were created. No existing customer project was edited/deleted, no outreach/payment occurred, and no new service was purchased. Public-demo AI visualization was explicitly mock; paid AI/image quality was not tested. Production was not stress-tested.
+- Removed only this task's temporary downloaded PostgreSQL installer (downloadable again). Archived and verified the stopped, synthetic native PostgreSQL test cluster before removing its unpacked copy. Recoverable archive: `/tmp/civora-native-postgres-20261014.SBa4tX/data-preserved-20261014.tar.gz`. No customer database or unrelated workspace artifact was removed.
+- Stopped this audit's local website/API after all tests completed. Checkpointed the synthetic SQLite audit database, verified `quick_check: ok`, compressed it losslessly and checked archive integrity. Recoverable evidence: `/tmp/civora-requested-local-store-20261014.gnmkjV/performance_ai.db.gz` (about 11 MB). The original uncompressed temporary database was removed by compression; no customer database was involved. Free space was still only about 457 MB afterward.
+
+Conclusion: the audit provides substantial evidence for current website editing and many reliability paths, but **not an all-clear for every pilot/customer feature or full production capacity**. Resolve the release/configuration, serialization-growth and positive engineering/export gates rather than enlarging the pass claim.

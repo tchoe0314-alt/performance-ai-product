@@ -424,6 +424,8 @@ Include:
 
 ## 3.2 Requirement classification
 
+Founder-approved interaction: users explicitly choose whether an entered requirement is Required or Preferred. Civora must not guess that choice. Missing or not-yet-classified values remain Unknown; confirmation and external verification are not automatic. See `phase-3-brief-classification.md` for the implemented scope and its solver/provenance boundaries.
+
 Every brief value should be classified as:
 
 - Required.
@@ -2475,5 +2477,11 @@ These decisions should be added to the master roadmap as Civora’s initial prod
 The founder approved closing Phase 0.2 for the verified feature set, explicitly retaining unverified map/provider/Firefox behavior and carrying hosted deployment checks into Phase 0.5. This scope adjustment supersedes earlier requirements that kept 0.2 open solely for those external checks; it does not waive their evidence requirements or mark skipped tests as passed.
 
 Firefox/test-platform coverage remains tracked under 0.3 and must have recorded verification or approved limitations before release. Exact-candidate hosted authentication, persistence, exports, worker operation, migration/recovery, backup and rollback remain 0.5 gates. Real map/provider behavior requires approved access and verification or explicit exclusion from the released scope. Independent engineering, source and external CAD validation remain relevant pilot-readiness gates.
+
+## October 12, 2026 — Execution and regression-review rule
+
+The founder requested repeating the Phase 0–current regression audit after every completed phase. During individual numbered milestones, test the changed feature and the workflows it could affect. Before closing a whole phase, repeat the broader cumulative regression review, repair reproducible failures, and record remaining limitations. A skipped, blocked or flaky check is not a passing result.
+
+At each milestone handoff, explain the specific changes, their purpose, verified evidence, next milestone and any concrete questions needed for it. Preserve existing functionality and saved projects. This rule does not authorize deployment, paid services or construction-level claims. Prior dated closeout statements below remain historical; consult the milestone completion reports for later implementation and audit evidence.
 
 The evidence register is `phase-0-feature-verification.md`. Overall Phase 0 remains active; next milestone is 0.3. Phase 1 still waits for the complete Phase 0 exit criteria. This closeout is not deployment approval, permission to spend money or a claim that Civora is fully verified or ready for a controlled pilot/public launch.

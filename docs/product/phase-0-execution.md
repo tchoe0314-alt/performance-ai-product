@@ -1,6 +1,10 @@
 # Phase 0 — Execution and evidence register
 
+October 3 sequencing update: founder explicitly requested starting **Phase 1.1** while remaining Phase 0.5 checks are deferred. This supersedes the earlier sequencing instruction only; it does not mark Phase 0 complete or waive storage/recovery/release evidence. The initial canonical-document checkpoint and remaining integration work are recorded in [Phase 1.1](phase-1-canonical-project-model.md).
+
 Started: October 2, 2026. Status: active; not release-ready.
+
+Newest Phase 0.5 checkpoint: exact revised Linux image verification **passed both images** at `df0443298b4846e6e4b1858043106450e3055e80`, [run 37167648629](https://github.com/tchoe0314-alt/performance-ai-product/actions/runs/37167648629). Retained two earlier failed empty-volume fixtures; corrected fixture asserts actual inaccessible mode before startup. Artifacts inspected; fresh/restored auth/project/upload/artifact/worker checks passed as UID 10001. Thirty affected local checks passed together. Railway read-only recheck confirms Postgres backups/PITR, but API file volume has no backups and its console is disconnected. No production backend release, restore, permissions change, backup billing change or `main` push. Hosted storage/recovery and paired release remain open.
 
 Current October 3 Phase 0.5 update: website-only production release and subsequent concise-controls release are verified; guarded desktop/mobile save/reload passed. Backend remains held, not deployed with the candidate. This follow-up unifies runtime storage checks across both image startup paths; startup/migration selection **20 passed**, runner/worker health **10 passed**, real isolated wrapper health passed. Revised Linux container checks and hosted storage/recovery/paired-release proof remain open. See [storage startup follow-up](../release/phase-0-storage-startup-followup-2026-10-03.md), [website release](../release/phase-0-website-deployment-2026-10-03.md), and [controls release](../release/concise-controls-deployment-2026-10-03.md). Older entries below retain their checkpoint-time status, not current deployment status.
 
