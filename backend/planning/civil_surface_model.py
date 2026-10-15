@@ -289,6 +289,8 @@ def _grid_metadata(surface: Optional[GridSurface]) -> Dict[str, Any]:
         "nrows": safe_int(getattr(surface, "nrows", 0)),
         "ncols": safe_int(getattr(surface, "ncols", 0)),
         "cell_size": round(safe_float(getattr(surface, "cell_size", 0.0)), 3),
+        "sampling": getattr(surface, "sampling", "unknown"),
+        "registration": dict(getattr(surface, "registration", {}) or {}),
         "bounds": [round(safe_float(item), 3) for item in surface.bounds()],
     }
 

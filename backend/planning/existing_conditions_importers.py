@@ -467,6 +467,8 @@ def _surface_metadata_from_surface_rec(rec: Dict[str, Any]) -> Dict[str, Any]:
         "ncols": safe_int(rec.get("ncols") or getattr(surface, "ncols", 0), 0),
         "nrows": safe_int(rec.get("nrows") or getattr(surface, "nrows", 0), 0),
         "cell_size": safe_float(rec.get("cell_size") or getattr(surface, "cell_size", 0.0), 0.0),
+        "sampling": safe_str(rec.get("sampling") or getattr(surface, "sampling", "unknown")),
+        "registration": safe_dict(rec.get("registration") or getattr(surface, "registration", {})),
         "bounds": safe_dict(rec.get("bounds"))
         or {
             "min_x": safe_float(getattr(surface, "x_min", 0.0), 0.0),
@@ -1194,13 +1196,21 @@ def import_geotiff_surface(path: Path, *, coordinate_system: Optional[Dict[str, 
                         finite.append(value)
                     row_vals.append(value)
                 values.append(row_vals)
-            fill = sum(finite) / len(finite) if finite else 0.0
-            values = [[fill if not math.isfinite(value) else value for value in row] for row in values]
+            if any(not math.isfinite(value) for row in values for value in row):
+                raise ValueError("GeoTIFF contains NoData elevations; retain the source and prepare an explicit valid comparison domain before calculation.")
+            if abs(float(transform.b)) > 1e-12 or abs(float(transform.d)) > 1e-12:
+                raise ValueError("Rotated/sheared GeoTIFF requires an explicit supported reprojection; not silently treated as square nodes.")
             x0, y0 = transform * (0, 0)
-            x1, y1 = transform * (out_width - 1, out_height - 1)
-            cell_x = abs(float(transform.a)) or 1.0
-            cell_y = abs(float(transform.e)) or cell_x
-            cell = (cell_x + cell_y) / 2.0
+            x1, y1 = transform * (out_width, out_height)
+            cell_x = abs(float(transform.a))
+            cell_y = abs(float(transform.e))
+            if cell_x <= 0 or not math.isclose(cell_x, cell_y, rel_tol=1e-10, abs_tol=1e-12):
+                raise ValueError("Non-square GeoTIFF pixels require an explicit supported target grid.")
+            cell = cell_x
+            if transform.a < 0:
+                values = [list(reversed(row)) for row in values]
+            if transform.e < 0:
+                values = list(reversed(values))
             surface = GridSurface(
                 x_min=min(x0, x1),
                 y_min=min(y0, y1),
@@ -1210,7 +1220,17 @@ def import_geotiff_surface(path: Path, *, coordinate_system: Optional[Dict[str, 
                 ncols=out_width,
                 nrows=out_height,
                 values=values,
+                sampling="cells",
+                registration={
+                    "horizontal_crs": dataset.crs.to_string() if dataset.crs is not None else None,
+                    "horizontal_units": "degrees" if dataset.crs is not None and dataset.crs.is_geographic else (dataset.crs.linear_units if dataset.crs is not None else None),
+                    "vertical_units": (coordinate_system or {}).get("vertical_units"),
+                    "vertical_datum": (coordinate_system or {}).get("vertical_datum"),
+                    "verified": False,
+                },
             )
+            from engines.surface_integration import validate_grid
+            validate_grid(surface)
             crs_text = safe_str(dataset.crs.to_string() if dataset.crs is not None else "")
     except Exception as exc:
         return {
@@ -1242,6 +1262,8 @@ def import_geotiff_surface(path: Path, *, coordinate_system: Optional[Dict[str, 
         "ncols": surface.ncols,
         "nrows": surface.nrows,
         "cell_size": surface.cell_size,
+        "sampling": surface.sampling,
+        "registration": dict(surface.registration),
         "bounds": {"min_x": surface.x_min, "min_y": surface.y_min, "max_x": surface.x_max, "max_y": surface.y_max},
         "coordinate_system": safe_dict(coordinate_system) or ({"name": crs_text, "source": "geotiff_crs"} if crs_text else {}),
         "warnings": warnings,

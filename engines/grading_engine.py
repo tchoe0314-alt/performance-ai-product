@@ -687,7 +687,9 @@ class GradingEngine:
         return min_z, max_z
 
     def _compute_earthwork(self, proposed: GridSurface) -> Tuple[float, float, float]:
-        from .surface_integration import cut_fill
+        from .surface_integration import cut_fill, require_foot_units
+        require_foot_units(self.existing_surface)
+        require_foot_units(proposed)
         return cut_fill(self.existing_surface, proposed)
 
     def _high_level_checks(

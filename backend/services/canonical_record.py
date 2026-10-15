@@ -55,7 +55,7 @@ def resolve_model_input(project_input: dict) -> dict:
     state = (document or {}).get("extensions", {}).get(OWNER)
     if not isinstance(state, dict):
         return deepcopy(project_input)
-    if state.get("version") != 1 or not isinstance(state.get("input_controls"), dict) or not isinstance(state.get("input_meta"), dict):
+    if type(state.get("version")) is not int or state.get("version") != 1 or not isinstance(state.get("input_controls"), dict) or not isinstance(state.get("input_meta"), dict):
         raise ProjectDocumentError("Saved project model adapter is invalid.")
     if not isinstance(document.get("site", {}).get("site_inputs_v1", {}), dict) or ("legacy_manual_fields" in state and not isinstance(state["legacy_manual_fields"], dict)):
         raise ProjectDocumentError("Saved project model inputs are invalid.")

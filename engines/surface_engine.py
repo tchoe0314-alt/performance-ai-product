@@ -947,7 +947,9 @@ def serialize_tin_surface(
 
 
 def compare_surfaces(existing: GridSurface, proposed: GridSurface, *, max_cells: int = 120) -> Dict[str, Any]:
-    from .surface_integration import integrated_cells, METHOD_VERSION
+    from .surface_integration import integrated_cells, require_foot_units, METHOD_VERSION
+    require_foot_units(existing)
+    require_foot_units(proposed)
     integrated = list(integrated_cells(existing, proposed))
     nrows = min(int(existing.nrows), int(proposed.nrows))
     ncols = min(int(existing.ncols), int(proposed.ncols))

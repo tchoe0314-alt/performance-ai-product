@@ -8,6 +8,18 @@ import math
 METHOD_VERSION = "grid_triangle_cutfill_v2"
 
 
+def require_foot_units(surface):
+    """Do not label native metric/mixed-unit values as ft, ft3 or yd3.
+
+    Legacy absent registration retains local-arithmetic compatibility; it is
+    not proof of physical units. Registered non-foot inputs need conversion.
+    """
+    registration = getattr(surface, "registration", {})
+    for key in ("horizontal_units", "vertical_units"):
+        if registration.get(key) not in (None, "ft", "international_foot"):
+            raise ValueError("Feet/cubic-feet output requires explicit conversion from non-foot surface units.")
+
+
 def validate_grid(surface):
     for key in ("nrows", "ncols"):
         value = getattr(surface, key, None)

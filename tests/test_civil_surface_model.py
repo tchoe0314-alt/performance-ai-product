@@ -114,9 +114,11 @@ class CivilSurfaceModelTests(unittest.TestCase):
 
         self.assertEqual(comparison["existing_surface_id"], "EG")
         self.assertEqual(comparison["proposed_surface_id"], "FG")
-        self.assertEqual(comparison["comparison"]["fill_cf"], 300.0)
-        self.assertEqual(comparison["comparison"]["cut_cf"], 100.0)
-        self.assertEqual(comparison["cut_fill_summary_hook"]["net_cf"], 200.0)
+        #100ft2 node domain, fixed diagonal: signed integral250/3ft3.
+        # Negative subtriangle has area25/3ft2 and mean depth1/3ft.
+        self.assertEqual(comparison["comparison"]["fill_cf"], round(775/9,3))
+        self.assertEqual(comparison["comparison"]["cut_cf"], round(25/9,3))
+        self.assertEqual(comparison["cut_fill_summary_hook"]["net_cf"], round(250/3,3))
         self.assertIn("accepted_surface_review_required", comparison["cut_fill_summary_hook"]["blockers"])
         self.assertTrue(comparison["review_required"])
         self.assertFalse(comparison["construction_release_allowed"])

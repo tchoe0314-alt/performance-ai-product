@@ -546,13 +546,12 @@ def compute_earthwork(
     Returns a structured result with validation, warnings, issues, assumptions, metadata, and results.
     """
     result = _new_result()
-    from .surface_integration import validate_pair, METHOD_VERSION
+    from .surface_integration import validate_pair, require_foot_units, METHOD_VERSION
     result.metadata["method_version"] = METHOD_VERSION
     try:
         validate_pair(existing, proposed)
-        for key in ("horizontal_units", "vertical_units"):
-            if getattr(existing, "registration", {}).get(key) not in (None, "ft", "international_foot"):
-                raise ValueError("Earthwork feet/cubic-feet interface requires explicit conversion from non-foot surface units.")
+        require_foot_units(existing)
+        require_foot_units(proposed)
     except (ValueError, TypeError, AttributeError) as exc:
         result.errors.append(str(exc))
         result.message = "Earthwork blocked by surface domain/registration validation."
