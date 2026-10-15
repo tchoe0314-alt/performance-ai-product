@@ -56,7 +56,8 @@ def test_browser_payload_result_removed_only_for_existing_projects(monkeypatch):
     api.save_project(api.SaveProjectPayload(name="New", latest_result=result), {"user_id": "synthetic"})
     api.save_project(api.SaveProjectPayload(project_id="existing", expected_revision="a" * 64,
         name="Existing", latest_result=result), {"user_id": "synthetic"})
-    assert calls[0]["payload_data"]["latest_result"] == result
+    assert calls[0]["payload_data"]["latest_result"]["message"] == result["message"]
+    assert calls[0]["payload_data"]["latest_result"]["metadata"]["client_import_v1"]["verified_execution"] is False
     assert "latest_result" not in calls[1]["payload_data"]
 
 

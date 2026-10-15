@@ -2703,6 +2703,12 @@ def save_project(payload: SaveProjectPayload, current_user: Dict[str, Any] = Dep
                     raise HTTPException(status_code=422, detail="Naming metadata must use boolean values.")
                 editable_metadata[key] = client_metadata[key]
         payload_data["metadata"] = editable_metadata
+    else:
+        from backend.services.project_imports import unverify_project_import
+        try:
+            payload_data = unverify_project_import(payload_data)
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=422, detail="Imported calculation metadata is invalid.") from exc
     return application_save_project_record(
         project_store=PROJECT_STORE,
         user_id=current_user["user_id"],
