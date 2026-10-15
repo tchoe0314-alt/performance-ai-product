@@ -253,7 +253,13 @@ class ProjectStore:
                 raise ValueError("You do not have editor access to that project.")
             record = self._row_to_record(row)
             record["access_role"] = role
-            metadata = update_metadata(record)
+            generation_present = "design_save_generation_v1" in record.get("metadata", {})
+            generation = record.get("metadata", {}).get("design_save_generation_v1")
+            metadata = dict(update_metadata(record))
+            if generation_present:
+                metadata["design_save_generation_v1"] = generation
+            else:
+                metadata.pop("design_save_generation_v1", None)
             record["metadata"] = metadata
             adopted = "project_record_v1" in (record.get("project_input", {}).get(PROJECT_DOCUMENT_KEY) or {}).get("extensions", {})
             sealed = seal_record(record, previous=record, latest_result_supplied=False) if adopted else record
@@ -819,6 +825,8 @@ class ProjectStore:
             resolved_session_state = dict(session_state or {})
             resolved_metadata = merge_save_metadata(dict(existing_record.get("metadata") or {}), dict(metadata or {}),
                                                    replaced_record=existing_record if replace_original else None)
+            from .project_revision import next_design_generation
+            resolved_metadata["design_save_generation_v1"] = next_design_generation(existing_record)
             migration = "project_record_v1" not in (existing_project_input.get(PROJECT_DOCUMENT_KEY) or {}).get("extensions", {})
             if migration:
                 result_row = connection.execute("SELECT latest_result_json FROM projects WHERE project_id = ?", (project_id,)).fetchone()
@@ -990,6 +998,8 @@ class ProjectStore:
             "session_state": dict(session_state or {}),
             "metadata": dict(metadata or {}),
         }
+        from .project_revision import next_design_generation
+        record["metadata"]["design_save_generation_v1"] = next_design_generation(existing)
         if existing and "project_record_v1" not in (existing_project_input.get(PROJECT_DOCUMENT_KEY) or {}).get("extensions", {}):
             record["metadata"].setdefault("legacy_project_backup_v1", deepcopy(existing))
             from .canonical_record import migration_report

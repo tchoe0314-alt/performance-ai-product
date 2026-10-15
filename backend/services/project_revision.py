@@ -15,6 +15,9 @@ def project_revision(record: dict[str, Any]) -> str:
     design = {key: deepcopy(record.get(key)) for key in (
         "name", "description", "session_id", "tags", "project_input", "session_state",
     )}
+    metadata = record.get("metadata") or {}
+    if "design_save_generation_v1" in metadata:
+        design["design_save_generation_v1"] = metadata["design_save_generation_v1"]
     # Calculation/archive publication is not a competing geometry edit.
     document = (design.get("project_input") or {}).get("canonical_project_v1")
     if isinstance(document, dict):
@@ -40,6 +43,13 @@ def result_revision(record: dict[str, Any]) -> str:
 def metadata_revision(record: dict[str, Any]) -> str:
     """Independent CAS token: metadata writes are not geometry revisions."""
     return sha256(json.dumps(record.get("metadata") or {}, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
+
+
+def next_design_generation(record: dict | None) -> int:
+    generation = ((record or {}).get("metadata") or {}).get("design_save_generation_v1", 0)
+    if type(generation) is not int or generation < 0:
+        raise ValueError("Stored design save generation is invalid.")
+    return generation + 1
 
 
 def merge_save_metadata(existing: dict, incoming: dict, *, replaced_record: dict | None = None) -> dict:

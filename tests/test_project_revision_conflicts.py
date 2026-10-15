@@ -126,6 +126,29 @@ def test_current_server_snapshot_can_update_metadata(setup):
     assert saved["metadata"]["review_evidence"] == {"version":"new"}
 
 
+@pytest.mark.parametrize("method", ["save_project", "save_project_shell"])
+def test_change_and_restore_does_not_revalidate_old_save_token(setup,method):
+    store,_,user,project=setup
+    save=getattr(store,method)
+    changed=save(user_id=user,project_id=project["project_id"],name="Changed name",expected_revision=project["revision_token"])
+    restored=save(user_id=user,project_id=project["project_id"],name=project["name"],expected_revision=changed["revision_token"])
+    before=store.get_project(user_id=user,project_id=project["project_id"])
+    assert restored["revision_token"] != project["revision_token"]
+    with pytest.raises(ProjectRevisionConflict):
+        save(user_id=user,project_id=project["project_id"],name="Delayed overwrite",expected_revision=project["revision_token"])
+    assert store.get_project(user_id=user,project_id=project["project_id"]) == before
+
+
+def test_metadata_patch_cannot_drop_or_forge_design_generation(setup):
+    store,_,user,project=setup
+    generation=project["metadata"]["design_save_generation_v1"]
+    for metadata in ({"review":"new"},{"review":"new","design_save_generation_v1":0}):
+        store.update_project_metadata(user_id=user,project_id=project["project_id"],update_metadata=lambda _,m=metadata:m)
+        current=store.get_project(user_id=user,project_id=project["project_id"])
+        assert current["metadata"]["design_save_generation_v1"] == generation
+        assert current["revision_token"] == project["revision_token"]
+
+
 def test_server_snapshot_cannot_overwrite_a_new_calculation_with_no_geometry_edit(setup):
     from backend.application.project_snapshot import save_project_snapshot
     store, _, user, project = setup
