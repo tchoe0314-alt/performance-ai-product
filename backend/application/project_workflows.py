@@ -87,6 +87,7 @@ class ProjectStoreProtocol(Protocol):
         user_id: str,
         project_id: str,
         candidate_state: Dict[str, Any],
+        expected_revision: str,
         minimum_role: str = "reviewer",
     ) -> Dict[str, Any]:
         ...
@@ -1465,12 +1466,17 @@ def review_project_candidates(
     }
     candidate_state_updater = getattr(project_store, "update_project_candidate_review_state", None)
     if callable(candidate_state_updater):
-        saved = candidate_state_updater(
-            user_id=user_id,
-            project_id=project_id,
-            candidate_state=candidate_state,
-            minimum_role="reviewer",
-        )
+        from backend.services.project_revision import project_revision
+        try:
+            saved = candidate_state_updater(
+                user_id=user_id,
+                project_id=project_id,
+                candidate_state=candidate_state,
+                expected_revision=record.get("revision_token") or project_revision(record),
+                minimum_role="reviewer",
+            )
+        except ProjectRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail="Project changed during review. Reopen it and retry.") from exc
     else:
         saved = save_project_snapshot(project_store, record,
             user_id=user_id,

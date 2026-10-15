@@ -697,6 +697,7 @@ class ProjectStore:
         user_id: str,
         project_id: str,
         candidate_state: Dict[str, Any],
+        expected_revision: str,
         minimum_role: str = "reviewer",
     ) -> Dict[str, Any]:
         """Persist candidate review state without loading or rewriting generated results."""
@@ -719,6 +720,9 @@ class ProjectStore:
                 raise ValueError(f"You do not have {minimum_role} access to that project.")
 
             previous = self._shell_row_to_record(row)
+            if not expected_revision:
+                raise ValueError("Candidate review requires its source project revision.")
+            check_revision(previous, expected_revision)
             project_input = deepcopy(previous["project_input"])
             input_meta = dict(project_input.get("meta") or {})
             site_inputs = dict(input_meta.get("site_inputs") or {})
