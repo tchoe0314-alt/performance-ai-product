@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote_plus, urlparse
 
 import requests
+from backend.services.outbound_http import safe_get
 
 from .common import readiness_issue_explanations, safe_dict, safe_list, safe_str
 
@@ -464,7 +465,7 @@ def fetch_live_standards_source_candidate(
         warnings.append("Network fetch deferred; controlled live fetching requires explicit single-source enablement.")
     else:
         try:
-            response = session.get(source_url, timeout=20)
+            response = safe_get(source_url, timeout=20, session=None if session is requests else session, response_kind="text")
             response.raise_for_status()
             body = safe_str(getattr(response, "text", ""))
             resolved_url = safe_str(getattr(response, "url", "")) or safe_str(source_url)
@@ -676,7 +677,7 @@ def controlled_single_source_lookup(
     resolved_url = url
     headers: Dict[str, Any] = {}
     try:
-        response = session.get(url, timeout=20)
+        response = safe_get(url, timeout=20, session=None if session is requests else session, response_kind="text")
         response.raise_for_status()
         body = safe_str(getattr(response, "text", ""))
         resolved_url = safe_str(getattr(response, "url", "")) or url
@@ -1927,7 +1928,7 @@ def fetch_and_extract_rule_candidates(
     if not url:
         return {"success": False, "source_url": "", "candidate_rules": [], "warnings": ["Source URL is required."]}
     try:
-        response = session.get(url, timeout=20)
+        response = safe_get(url, timeout=20, session=None if session is requests else session, response_kind="text")
         response.raise_for_status()
         content_type = safe_str(getattr(response, "headers", {}).get("content-type", "")).lower()
         body = response.text
