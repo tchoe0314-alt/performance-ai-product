@@ -7,7 +7,11 @@ from typing import Any, Dict, List, Optional, Sequence
 
 
 def _water_number(value: Any, name: str, *, positive: bool = False, signed: bool = False) -> float:
-    if type(value) not in (int, float) or not math.isfinite(value):
+    try:
+        finite = type(value) in (int, float) and math.isfinite(value)
+    except OverflowError:
+        finite = False
+    if not finite:
         raise ValueError(f"{name} must be finite numeric input.")
     if not signed and (value <= 0 if positive else value < 0):
         raise ValueError(f"{name} must be {'positive' if positive else 'nonnegative'}.")
@@ -104,6 +108,16 @@ class WaterSizingEngine:
     }
 
     def size(self, request: WaterSizingRequest) -> WaterSizingResult:
+        try:
+            result = self._size_validated(request)
+            for record in [result, *result.segments]:
+                if any(type(value) in (int, float) and not math.isfinite(value) for value in vars(record).values()):
+                    raise ValueError("Nonfinite computed water result.")
+            return result
+        except (ValueError, ArithmeticError):
+            return WaterSizingResult(False, message="Water inputs or calculations exceed the supported numeric domain.")
+
+    def _size_validated(self, request: WaterSizingRequest) -> WaterSizingResult:
         try:
             for key in ("available_pressure_psi", "meter_loss_psi", "backflow_loss_psi", "heater_loss_psi"):
                 _water_number(getattr(request, key), key)
@@ -303,7 +317,12 @@ class WaterSizingEngine:
         c = c_factor
         # The4.52 coefficient with GPM/inches gives psi per foot, not feet
         # of head. Multiplying by0.433 again understates friction pressure.
-        pressure_loss_psi_per_100ft = 4.52 * 100.0 * (flow_gpm ** 1.85) / ((c ** 1.85) * (diameter_in ** 4.87))
+        try:
+            pressure_loss_psi_per_100ft = 4.52 * 100.0 * (flow_gpm ** 1.85) / ((c ** 1.85) * (diameter_in ** 4.87))
+        except ArithmeticError as exc:
+            raise ValueError("Water friction calculation exceeds the supported numeric domain.") from exc
+        if not math.isfinite(pressure_loss_psi_per_100ft):
+            raise ValueError("Water friction calculation is not finite.")
         return round(pressure_loss_psi_per_100ft, 3)
 
     def _estimate_remaining_pressure(
@@ -330,6 +349,27 @@ def size_water_system(request: WaterSizingRequest) -> WaterSizingResult:
 
 
 def analyze_water_pressure_graph(
+    segments: Sequence[Dict[str, Any]], *, source_node: str, source_pressure_psi: float,
+    hazen_williams_c: float = 130.0, static_loss_per_ft_psi: float = 0.433,
+) -> Dict[str, Any]:
+    try:
+        result = _analyze_water_pressure_graph(segments, source_node=source_node,
+            source_pressure_psi=source_pressure_psi, hazen_williams_c=hazen_williams_c,
+            static_loss_per_ft_psi=static_loss_per_ft_psi)
+        values = list(result.get("node_pressures_psi", {}).values())
+        values += [value for segment in result.get("segments", []) for value in segment.values()
+                   if type(value) in (int, float)]
+        if any(not math.isfinite(value) for value in values):
+            raise ValueError("Nonfinite pressure graph output.")
+        return result
+    except (ValueError, ArithmeticError):
+        return {"success": False, "source_node": source_node, "node_pressures_psi": {},
+                "segments": [], "min_pressure_psi": None,
+                "warnings": ["Water calculation exceeds the supported numeric domain."],
+                "truth_label": "No valid water pressure calculation available."}
+
+
+def _analyze_water_pressure_graph(
     segments: Sequence[Dict[str, Any]],
     *,
     source_node: str,
