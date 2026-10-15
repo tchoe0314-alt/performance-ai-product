@@ -40,6 +40,29 @@ def test_stale_revision_rejected_without_any_project_changes(setup, method):
     assert store.get_project(user_id=user, project_id=project["project_id"]) == before
 
 
+def test_candidate_review_replay_cannot_reuse_a_consumed_revision(setup):
+    store, _, user, project = setup
+    first = store.update_project_candidate_review_state(
+        user_id=user, project_id=project["project_id"],
+        candidate_state={"candidate_review_decisions_v1": []},
+        expected_revision=project["revision_token"],
+    )
+    second = store.update_project_candidate_review_state(
+        user_id=user, project_id=project["project_id"],
+        candidate_state={"candidate_review_decisions_v1": []},
+        expected_revision=first["revision_token"],
+    )
+    assert second["revision_token"] != first["revision_token"]
+    before = store.get_project(user_id=user, project_id=project["project_id"])
+    with pytest.raises(ProjectRevisionConflict):
+        store.update_project_candidate_review_state(
+            user_id=user, project_id=project["project_id"],
+            candidate_state={"candidate_review_decisions_v1": [{"stale": True}]},
+            expected_revision=first["revision_token"],
+        )
+    assert store.get_project(user_id=user, project_id=project["project_id"]) == before
+
+
 def test_simultaneous_saves_have_one_winner(setup):
     store, _, user, project = setup
     barrier = threading.Barrier(2)

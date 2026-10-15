@@ -6,6 +6,11 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Candidate-review generation follow-up: every committed review write now consumes
+its source revision, including identical-content writes.97 affected tests passed;
+see `CANDIDATE_REVIEW_GENERATION_2026-10-15.md`. Client inbox tokens and PostgreSQL
+qualification remain open; this is not full CAN-03 closure.
+
 Latest follow-up: shell saves require a source revision (`da48d1e9`;160 scoped
 tests passed). Metadata callbacks now receive a detached commit snapshot;
 146 affected tests passed after reproducing a valid geometry mutation. See

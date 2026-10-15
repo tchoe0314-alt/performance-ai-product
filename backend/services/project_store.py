@@ -730,6 +730,9 @@ class ProjectStore:
             if not expected_revision:
                 raise ValueError("Candidate review requires its source project revision.")
             check_revision(previous, expected_revision)
+            from .project_revision import next_design_generation
+            metadata = deepcopy(previous.get("metadata") or {})
+            metadata["design_save_generation_v1"] = next_design_generation(previous)
             project_input = deepcopy(previous["project_input"])
             input_meta = dict(project_input.get("meta") or {})
             site_inputs = dict(input_meta.get("site_inputs") or {})
@@ -739,19 +742,20 @@ class ProjectStore:
             project_name = _project_name(row["name"], project_input)
             if "project_record_v1" in (project_input.get(PROJECT_DOCUMENT_KEY) or {}).get("extensions", {}):
                 project_input = seal_record(
-                    {**previous, "name": project_name, "project_input": project_input},
+                    {**previous, "name": project_name, "project_input": project_input, "metadata": metadata},
                     previous=previous, latest_result_supplied=False,
                 )["project_input"]
             updated_at = _now()
             connection.execute(
-                "UPDATE projects SET name = ?, project_input_json = ?, updated_at = ? WHERE project_id = ?",
-                (project_name, _json_dumps(project_input), updated_at, project_id),
+                "UPDATE projects SET name = ?, project_input_json = ?, metadata_json = ?, updated_at = ? WHERE project_id = ?",
+                (project_name, _json_dumps(project_input), _json_dumps(metadata), updated_at, project_id),
             )
             connection.commit()
 
             shell_row = dict(row)
             shell_row["name"] = project_name
             shell_row["project_input_json"] = _json_dumps(project_input)
+            shell_row["metadata_json"] = _json_dumps(metadata)
             shell_row["updated_at"] = updated_at
             record = self._shell_row_to_record(shell_row)
             record["access_role"] = role
