@@ -207,13 +207,10 @@ def build_internal_calculation_crosschecks() -> Dict[str, Any]:
     )
 
     hazen_inputs = {"flow_gpm": 75.0, "diameter_in": 2.0, "hazen_williams_c": 130.0}
-    headloss_ft = (
-        4.52
-        * 100.0
-        * hazen_inputs["flow_gpm"] ** 1.85
-        / (hazen_inputs["hazen_williams_c"] ** 1.85 * hazen_inputs["diameter_in"] ** 4.87)
-    )
-    hazen_expected = round(headloss_ft * 0.433, 3)
+    # Independent fixed pressure oracle for the declared GPM/inch case.
+    # EPA feet/cfs comparison lives in test_water_pressure_units; do not copy
+    # the implementation's unit error back into its own assurance expectation.
+    hazen_expected = 5.587
     hazen_observed = WaterSizingEngine()._hazen_williams_loss_psi_per_100ft(
         hazen_inputs["flow_gpm"],
         hazen_inputs["diameter_in"],
@@ -277,7 +274,7 @@ def build_internal_calculation_crosschecks() -> Dict[str, Any]:
             expected=hazen_expected,
             observed=hazen_observed,
             absolute_tolerance=1e-9,
-            reference_method="direct_hazen_williams_headloss_conversion",
+            reference_method="independent_gpm_inch_pressure_oracle_psi",
             implementation_method="water_sizing_engine_pressure_loss",
             inputs=hazen_inputs,
         ),
