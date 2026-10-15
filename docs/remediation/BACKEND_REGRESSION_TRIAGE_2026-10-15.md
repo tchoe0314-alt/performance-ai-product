@@ -64,11 +64,27 @@ No expected numerical result or original audit evidence was changed here.
 
 ## Remaining acceptance
 
-Four owned-local-server tests, final full regression on the latest frozen
+At this report's initial commit, four owned-local-server tests, final full regression on the latest frozen
 candidate, complete browser acceptance, PostgreSQL concurrency and external
 engineering/security validation remain unverified. Do not call this a clean
 full backend run or a closed audit. Rollback of the drawing fix must preserve
 both saved-snapshot integrity and calculated-export version gates.
+
+### Subsequent owned-server verification
+
+`owned-network-27` passed5 tests in11.66seconds: both keepalive cases, both
+worker-health server cases and a polling configuration case. All four previously
+unmatched server-test identities now pass. The OS policy denied non-loopback
+network access and outside-owned-area writes; the Python guard admitted only
+ports allocated by the reviewed tests and propagated those allocations to their
+disposable child servers. Synthetic storage/providers-none settings remained in
+force. Test cleanup shut down its servers. No existing local or hosted service
+was used. An initial invalid sandbox-profile syntax attempt is preserved
+separately in `owned-network-26.log`, not labeled a product failure.
+
+Report: `/tmp/civora-repair-verification.NBAOtD/results/owned-network-27.xml`.
+This closes the isolated-harness restrictions for the matched cases, not final
+full-suite acceptance of the latest source revision.
 
 Only generated caches and duplicate environment files inside the disposable
 verification directory were removed for disk space. No original workspace,
