@@ -257,6 +257,19 @@ def prepare_reactive_orchestration_payload(
     payload = deepcopy(dict(payload_data or {}))
     payload = _canonical_calculation_payload(payload)
     meta = dict(payload.get("meta") or {})
+    if checkpoint_final_plan is not None:
+        # A server-resolved checkpoint (including an explicitly empty one) is
+        # authoritative over all browser resume aliases. Clear inherited stage
+        # status as well: it may describe a different plan.
+        payload.pop("final_plan", None)
+        meta.pop("runtime_resume", None)
+        meta.pop("reactive_checkpoint_final_plan", None)
+        meta.pop("reactive_partial_rerun_request", None)
+        if isinstance(meta.get("orchestrator_meta"), dict):
+            orchestrator = dict(meta["orchestrator_meta"])
+            orchestrator.pop("runtime_resume", None)
+            meta["orchestrator_meta"] = orchestrator
+        payload["meta"] = meta
     requested_system = str(
         meta.get("requested_system")
         or meta.get("generation_target")
@@ -281,7 +294,7 @@ def prepare_reactive_orchestration_payload(
         or dict(meta.get("reactive_checkpoint_final_plan") or {})
         or dict(payload.get("final_plan") or {})
     )
-    checkpoint = existing_checkpoint or dict(checkpoint_final_plan or {})
+    checkpoint = dict(checkpoint_final_plan) if checkpoint_final_plan is not None else existing_checkpoint
     if not checkpoint:
         meta["changed_targets"] = changed_targets
         meta["stale_outputs"] = _ordered_unique(list(meta.get("stale_outputs") or []) or changed_targets)
