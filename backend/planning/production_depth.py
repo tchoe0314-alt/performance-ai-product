@@ -1299,12 +1299,12 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
     source = safe_dict(enriched.get("water_source") or enriched.get("source"))
     standard_evidence = _accepted_standard_evidence(enriched, source)
     owner_criteria = _water_owner_criteria_evidence(enriched, source)
-    source_pressure = (
-        _finite_or_none(enriched.get("source_pressure_psi"))
-        or _finite_or_none(enriched.get("available_pressure_psi"))
-        or _finite_or_none(source.get("pressure_psi"))
-        or _finite_or_none(source.get("source_pressure_psi"))
-    )
+    source_pressure = next((value for value in (
+        _finite_or_none(enriched.get("source_pressure_psi")),
+        _finite_or_none(enriched.get("available_pressure_psi")),
+        _finite_or_none(source.get("pressure_psi")),
+        _finite_or_none(source.get("source_pressure_psi")),
+    ) if value is not None), None)
     source_pressure_source = safe_str(
         enriched.get("source_pressure_source")
         or enriched.get("pressure_source")
@@ -1370,10 +1370,10 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
         "source_node": source_node,
         "source_pressure_psi": round(source_pressure, 3) if source_pressure is not None else None,
         "source_pressure_source": source_pressure_source,
-        "min_pressure_psi": round(min_pressure, 3) if pressure_result else None,
+        "min_pressure_psi": round(min_pressure, 3) if pressure_result.get("success") is True else None,
         "min_required_pressure_psi": round(min_required_pressure, 3),
         "residual_pressure_source": residual_target_source,
-        "residual_pressure_margin_psi": round(min_pressure - min_required_pressure, 3) if pressure_result else None,
+        "residual_pressure_margin_psi": round(min_pressure - min_required_pressure, 3) if pressure_result.get("success") is True else None,
         "pressure_graph": pressure_result,
         "missing_inputs": pressure_missing,
         "segment_missing_inputs": missing_inputs,
