@@ -77,7 +77,7 @@ class RealMathBigPassTests(unittest.TestCase):
             hazen_williams_c=130.0,
         )
 
-        expected_loss = 4.52 * 100.0 * (75.0**1.85) / ((130.0**1.85) * (2.0**4.87)) * 0.433
+        expected_loss = 5.587  # psi/100ft, not2.419 from a second head conversion
         self.assertTrue(result["success"])
         self.assertAlmostEqual(result["node_pressures_psi"]["A"], round(70.0 - expected_loss, 3), places=3)
 

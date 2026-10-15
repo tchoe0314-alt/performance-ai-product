@@ -12,9 +12,9 @@ from backend.services.canonical_canvas import resolve_canvas_input
 from backend.services.canonical_project import PROJECT_DOCUMENT_KEY, ProjectDocumentError
 
 BINDING_KEY = "canvas_result_binding_v1"
-# v3 includes terrain metre-to-foot conversion. v2 results must remain historical
-# rather than being relabeled current against unchanged geometric inputs.
-ENGINE_REVISION = "engineering_core_2026_10_v3"
+# v4 includes the water friction-pressure unit correction (v3 added terrain
+# metre-to-foot conversion). Older outputs remain historical, not recertified.
+ENGINE_REVISION = "engineering_core_2026_10_v4"
 
 
 def has_current_engine_revision(result: dict) -> bool:

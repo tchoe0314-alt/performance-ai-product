@@ -20,5 +20,5 @@ def test_old_terrain_method_is_unverified_despite_matching_geometry():
     # Only the execution boundary may identify a new result. This stamp is not
     # professional accuracy certification and must never be used for migration.
     new=bind_canvas_result({"success":True},inputs,calculation_executed=True)
-    assert ENGINE_REVISION == "engineering_core_2026_10_v3"
+    assert ENGINE_REVISION == "engineering_core_2026_10_v4"
     assert canvas_result_freshness(new,inputs)["status"] == "current"

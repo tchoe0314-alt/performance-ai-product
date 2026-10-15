@@ -31,7 +31,7 @@ def result(label):
 def test_unstamped_or_obsolete_result_is_preserved_but_never_activated(setup):
     _, store, user, project_id, source = setup
     active = store.save_calculation_result(user_id=user, project_id=project_id, source_input=source, result=result("current"))
-    for stamp in (None, "obsolete-method", "engineering_core_2026_10_v2"):
+    for stamp in (None, "obsolete-method", "engineering_core_2026_10_v2", "engineering_core_2026_10_v3"):
         legacy = result("legacy")
         legacy["metadata"] = {} if stamp is None else {"calculation_engine_revision": stamp}
         saved = store.save_calculation_result(user_id=user, project_id=project_id, source_input=source, result=legacy)

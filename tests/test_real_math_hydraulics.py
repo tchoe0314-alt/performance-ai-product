@@ -78,8 +78,7 @@ class RealMathHydraulicsTests(unittest.TestCase):
         self.assertAlmostEqual(result.estimated_remaining_pressure_psi, 60.0, places=3)
 
         loss = WaterSizingEngine()._hazen_williams_loss_psi_per_100ft(75.0, 2.0, c_factor=130.0)
-        expected_headloss_ft = 4.52 * 100.0 * (75.0**1.85) / ((130.0**1.85) * (2.0**4.87))
-        self.assertAlmostEqual(loss, round(expected_headloss_ft * 0.433, 3), places=3)
+        self.assertAlmostEqual(loss, 5.587, places=3)
         self.assertAlmostEqual(WaterSizingEngine()._velocity_fps(75.0, 2.0), 7.66, places=2)
 
 

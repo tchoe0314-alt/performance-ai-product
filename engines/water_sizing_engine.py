@@ -274,8 +274,10 @@ class WaterSizingEngine:
         if flow_gpm <= 0.0 or diameter_in <= 0.0:
             return 0.0
         c = max(1.0, c_factor)
-        headloss_ft_per_100ft = 4.52 * 100.0 * (flow_gpm ** 1.85) / ((c ** 1.85) * (diameter_in ** 4.87))
-        return round(headloss_ft_per_100ft * 0.433, 3)
+        # The4.52 coefficient with GPM/inches gives psi per foot, not feet
+        # of head. Multiplying by0.433 again understates friction pressure.
+        pressure_loss_psi_per_100ft = 4.52 * 100.0 * (flow_gpm ** 1.85) / ((c ** 1.85) * (diameter_in ** 4.87))
+        return round(pressure_loss_psi_per_100ft, 3)
 
     def _estimate_remaining_pressure(
         self,
