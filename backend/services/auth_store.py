@@ -5,6 +5,7 @@ import hashlib
 import os
 import secrets
 import time
+import math
 import uuid
 
 from .database import Database
@@ -27,6 +28,10 @@ def _hash_password(password: str, salt_hex: str) -> str:
     ).hex()
 
 
+def _session_digest(token: str) -> str:
+    return "sha256:" + hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def _is_duplicate_email_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return any(
@@ -41,8 +46,14 @@ def _is_duplicate_email_error(exc: Exception) -> bool:
 
 
 class AuthStore:
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, *, session_ttl_seconds: float = 7 * 24 * 3600, session_idle_seconds: float = 24 * 3600) -> None:
+        if type(session_ttl_seconds) not in (int, float) or not math.isfinite(session_ttl_seconds) or session_ttl_seconds <= 0:
+            raise ValueError("Session lifetime must be finite and positive.")
         self.db = db
+        self.session_ttl_seconds = float(session_ttl_seconds)
+        if type(session_idle_seconds) not in (int, float) or not math.isfinite(session_idle_seconds) or session_idle_seconds <= 0:
+            raise ValueError("Session idle lifetime must be finite and positive.")
+        self.session_idle_seconds = float(session_idle_seconds)
 
     def register_user(self, *, email: str, password: str, name: str) -> Dict[str, Any]:
         email_norm = str(email or "").strip().lower()
@@ -119,14 +130,17 @@ class AuthStore:
 
         connection = self.db.connect()
         try:
+            now = _now()
             row = connection.execute(
                 """
                 SELECT u.user_id, u.email, u.name, u.created_at, u.updated_at
                 FROM auth_tokens t
                 JOIN users u ON u.user_id = t.user_id
-                WHERE t.token = ?
+                WHERE t.token = ? AND t.created_at > ? AND t.created_at <= ?
+                    AND t.last_used_at > ? AND t.last_used_at <= ?
                 """,
-                (token_value,),
+                (_session_digest(token_value), now - self.session_ttl_seconds, now,
+                 now - self.session_idle_seconds, now),
             ).fetchone()
             if row is None:
                 return None
@@ -134,7 +148,7 @@ class AuthStore:
             try:
                 connection.execute(
                     "UPDATE auth_tokens SET last_used_at = ? WHERE token = ?",
-                    (_now(), token_value),
+                    (_now(), _session_digest(token_value)),
                 )
                 connection.commit()
             except Exception as exc:
@@ -142,6 +156,37 @@ class AuthStore:
                 if "locked" not in str(exc).lower():
                     raise
             return dict(row)
+        finally:
+            connection.close()
+
+    def revoke_all_sessions(self, *, user_id: str, password: str) -> None:
+        if not self.verify_password(user_id=user_id, password=password):
+            raise ValueError("Password confirmation failed.")
+        connection = self.db.connect()
+        try:
+            connection.execute("DELETE FROM auth_tokens WHERE user_id = ?", (user_id,))
+            connection.commit()
+        finally:
+            connection.close()
+
+    def rotate_session(self, token: str) -> str:
+        """Single-winner rotation; preserve original absolute session lifetime."""
+        now = _now()
+        replacement = secrets.token_urlsafe(32)
+        connection = self.db.connect()
+        try:
+            cursor = connection.execute(
+                """UPDATE auth_tokens SET token = ?, last_used_at = ?
+                WHERE token = ? AND created_at > ? AND created_at <= ?
+                    AND last_used_at > ? AND last_used_at <= ?""",
+                (_session_digest(replacement), now, _session_digest(str(token or "")),
+                 now-self.session_ttl_seconds, now, now-self.session_idle_seconds, now),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                raise ValueError("Session is invalid or expired.")
+            connection.commit()
+            return replacement
         finally:
             connection.close()
 
@@ -169,7 +214,7 @@ class AuthStore:
             return
         connection = self.db.connect()
         try:
-            connection.execute("DELETE FROM auth_tokens WHERE token = ?", (token_value,))
+            connection.execute("DELETE FROM auth_tokens WHERE token = ?", (_session_digest(token_value),))
             connection.commit()
         finally:
             connection.close()
@@ -181,7 +226,7 @@ class AuthStore:
         try:
             connection.execute(
                 "INSERT INTO auth_tokens (token, user_id, created_at, last_used_at) VALUES (?, ?, ?, ?)",
-                (token, user_id, now, now),
+                (_session_digest(token), user_id, now, now),
             )
             connection.commit()
         finally:

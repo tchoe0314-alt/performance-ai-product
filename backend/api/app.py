@@ -264,12 +264,10 @@ def _rate_limit_config(bucket: str) -> tuple[int, int]:
 
 
 def _request_rate_limit_key(request: Request, authorization: Optional[str]) -> str:
-    forwarded = str(request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-    client_host = forwarded or (request.client.host if request.client else "unknown")
-    token = _bearer_token(authorization)
-    if token:
-        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
-        return f"token:{token_hash}:{client_host}"
+    # Pre-authentication limits cannot trust bearer text or client-supplied
+    # forwarding headers. Proxy-aware identity must be supplied by the server's
+    # separately reviewed trusted-proxy configuration, not by arbitrary headers.
+    client_host = request.client.host if request.client else "unknown"
     return f"ip:{client_host}"
 
 
@@ -278,6 +276,12 @@ def _check_rate_limit(bucket: str, key: str, *, limit: int, window_seconds: int,
     state_key = f"{bucket}:{key}"
     cutoff = current - float(window_seconds)
     with _RATE_LIMIT_LOCK:
+        if state_key not in _RATE_LIMIT_EVENTS and len(_RATE_LIMIT_EVENTS) >= 10000:
+            for old_key, old_events in list(_RATE_LIMIT_EVENTS.items()):
+                if not old_events or old_events[-1] <= current - 3600:
+                    del _RATE_LIMIT_EVENTS[old_key]
+            if len(_RATE_LIMIT_EVENTS) >= 10000:
+                raise HTTPException(status_code=429, detail="Rate-limit capacity reached. Retry later.")
         events = _RATE_LIMIT_EVENTS.setdefault(state_key, deque())
         while events and events[0] <= cutoff:
             events.popleft()
@@ -362,6 +366,10 @@ class LoginPayload(BaseModel):
 class AccountDeletePayload(BaseModel):
     current_password: str
     confirmation: str
+
+
+class SessionRevokePayload(BaseModel):
+    current_password: str
 
 
 class SupportRequestPayload(BaseModel):
@@ -1350,12 +1358,18 @@ async def health() -> Dict[str, Any]:
     }
 
 
+def _require_operator(current_user: Dict[str, Any]) -> None:
+    allowed = {value.strip() for value in str(os.getenv("CIVORA_OPERATOR_USER_IDS") or "").split(",") if value.strip()}
+    if str(current_user.get("user_id") or "") not in allowed:
+        raise HTTPException(status_code=403, detail="Operator access required.")
+
+
 @app.get("/api/debug/runtime")
 def debug_runtime(
     current_user: Dict[str, Any] = Depends(get_current_user),
     _rate_limit: None = Depends(rate_limit("debug")),
 ) -> Dict[str, Any]:
-    _ = current_user
+    _require_operator(current_user)
     return _runtime_debug_payload()
 
 
@@ -1364,7 +1378,7 @@ def debug_production_env(
     current_user: Dict[str, Any] = Depends(get_current_user),
     _rate_limit: None = Depends(rate_limit("debug")),
 ) -> Dict[str, Any]:
-    _ = current_user
+    _require_operator(current_user)
     return validate_production_env_v1()
 
 
@@ -1541,6 +1555,32 @@ def logout(
         auth_store=AUTH_STORE,
         token=_bearer_token(authorization),
     )
+
+
+@app.post("/api/auth/rotate-session")
+def rotate_session(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    authorization: Optional[str] = Header(default=None),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    try:
+        token = AUTH_STORE.rotate_session(_bearer_token(authorization))
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Session is invalid or expired.") from exc
+    return {"success": True, "token": token, "user": current_user}
+
+
+@app.post("/api/auth/logout-all")
+def logout_all_sessions(
+    payload: SessionRevokePayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    try:
+        AUTH_STORE.revoke_all_sessions(user_id=current_user["user_id"], password=payload.current_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Password confirmation failed.") from exc
+    return {"success": True}
 
 
 @app.post("/api/upload-image")
