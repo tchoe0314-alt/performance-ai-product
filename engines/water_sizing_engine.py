@@ -47,6 +47,7 @@ class WaterPipeSegment:
     velocity_fps: float = 0.0
     friction_loss_psi: float = 0.0
     residual_pressure_psi: float = 0.0
+    calculated_residual_pressure_psi: Optional[float] = None
     warnings: List[str] = field(default_factory=list)
     meta: Dict[str, Any] = field(default_factory=dict)
 
@@ -75,6 +76,8 @@ class WaterSizingResult:
     estimated_total_flow_gpm: float = 0.0
     estimated_remaining_pressure_psi: float = 0.0
     warnings: List[str] = field(default_factory=list)
+    pressure_requirements_met: Optional[bool] = None
+    fixture_pressure_checks: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class WaterSizingEngine:
@@ -222,14 +225,31 @@ class WaterSizingEngine:
         if total_fu <= 0.0:
             warnings.append("No effective fixture unit demand was assigned.")
 
+        pressure_checks = []
+        for fixture in fixtures:
+            endpoints = [seg for seg in segments if fixture.name in seg.connected_fixture_names]
+            available = min((seg.calculated_residual_pressure_psi for seg in endpoints), default=None)
+            verified_scope = bool(endpoints) and fixture.branch_length == 0
+            passed = verified_scope and available is not None and available >= fixture.required_pressure
+            pressure_checks.append({"fixture_name": fixture.name, "required_pressure_psi": fixture.required_pressure,
+                "available_supply_endpoint_pressure_psi": available, "passed": bool(passed),
+                "scope": "modeled_supply_endpoint_only",
+                "reason": "unconnected_fixture" if not endpoints else "unmodeled_fixture_branch_length" if not verified_scope
+                          else "requirement_met" if passed else "insufficient_pressure"})
+            if not passed:
+                warnings.append(f"Fixture '{fixture.name}' pressure requirement is unmet or unverified.")
+        pressure_met = all(check["passed"] for check in pressure_checks) if pressure_checks else None
+
         return WaterSizingResult(
-            success=True,
-            message="Water system sized.",
+            success=pressure_met is not False,
+            message="Water system sized." if pressure_met is not False else "Water pressure requirements are unmet or unverified.",
             segments=segments,
             total_fixture_units=round(total_fu, 3),
             estimated_total_flow_gpm=round(total_flow, 3),
             estimated_remaining_pressure_psi=round(remaining_pressure, 3),
             warnings=sorted(set(warnings)),
+            pressure_requirements_met=pressure_met,
+            fixture_pressure_checks=pressure_checks,
         )
 
     def _normalize_fixtures(self, fixtures: Sequence[WaterFixture]) -> List[WaterFixture]:
@@ -354,6 +374,7 @@ class WaterSizingEngine:
             end_pressure = (start_pressure - segment.friction_loss_psi
                             - max(0.0, segment.elevation_gain) * request.static_loss_per_ft_psi)
             segment.residual_pressure_psi = round(end_pressure, 3)
+            segment.calculated_residual_pressure_psi = end_pressure
             pressures.append(end_pressure)
             pending.extend((child, end_pressure) for child in segment.connected_segment_names)
         if len(pressures) != len(segments):
