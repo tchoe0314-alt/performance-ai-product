@@ -5,6 +5,7 @@ import { AlertTriangle, Download, LifeBuoy, Trash2 } from "lucide-react";
 
 import { apiErrorMessage, getJson, toApiUrl } from "../../lib/api";
 import { SupportRequestForm } from "./SupportRequestForm";
+import { IdentitySecurityPanel } from "./IdentitySecurityPanel";
 
 
 type SupportAccountPanelProps = {
@@ -12,6 +13,7 @@ type SupportAccountPanelProps = {
   projectId?: string | null;
   userEmail: string;
   onAccountDeleted: () => void;
+  onProjectJoined?: () => void | Promise<void>;
 };
 
 type DeletionReadiness = {
@@ -47,7 +49,7 @@ async function downloadAccountArchive(token: string): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
-export function SupportAccountPanel({ token, projectId, userEmail, onAccountDeleted }: SupportAccountPanelProps) {
+export function SupportAccountPanel({ token, projectId, userEmail, onAccountDeleted, onProjectJoined }: SupportAccountPanelProps) {
   const [exportBusy, setExportBusy] = useState(false);
   const [accountStatus, setAccountStatus] = useState("");
   const [readiness, setReadiness] = useState<DeletionReadiness | null>(null);
@@ -121,6 +123,7 @@ export function SupportAccountPanel({ token, projectId, userEmail, onAccountDele
 
   return (
     <div className="space-y-3" data-testid="support-account-panel">
+      {token ? <IdentitySecurityPanel key={userEmail} token={token} email={userEmail} onSignedOut={onAccountDeleted} onProjectJoined={onProjectJoined} /> : null}
       <details data-testid="support-disclosure" className="group rounded-xl border border-slate-200 bg-white">
         <summary data-testid="support-summary" className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 text-sm font-semibold text-slate-900">
           <LifeBuoy className="h-4 w-4 text-slate-500" />

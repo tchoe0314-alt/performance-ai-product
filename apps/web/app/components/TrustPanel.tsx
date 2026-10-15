@@ -39,9 +39,10 @@ type TrustPanelProps = {
   projectId?: string | null;
   userEmail: string;
   onAccountDeleted: () => void;
+  onProjectJoined?: () => void | Promise<void>;
 };
 
-export function TrustPanel({ token, projectId, userEmail, onAccountDeleted }: TrustPanelProps) {
+export function TrustPanel({ token, projectId, userEmail, onAccountDeleted, onProjectJoined }: TrustPanelProps) {
   return (
     <div className="space-y-4" data-testid="civora-trust-panel">
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -72,6 +73,7 @@ export function TrustPanel({ token, projectId, userEmail, onAccountDeleted }: Tr
         projectId={projectId}
         userEmail={userEmail}
         onAccountDeleted={onAccountDeleted}
+        onProjectJoined={onProjectJoined}
       />
     </div>
   );

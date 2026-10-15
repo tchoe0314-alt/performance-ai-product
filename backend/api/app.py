@@ -225,7 +225,7 @@ def _public_registration_allowed() -> bool:
     # An explicit operator decision must also apply to private-alpha services.
     if str(os.getenv("CIVORA_ALLOW_PUBLIC_REGISTRATION") or "").strip():
         return _env_flag("CIVORA_ALLOW_PUBLIC_REGISTRATION", False)
-    if PRODUCT_MODE in {"development", "local", "private_alpha"}:
+    if PRODUCT_MODE in {"development", "local"}:
         return True
     return _env_flag("CIVORA_ALLOW_PUBLIC_REGISTRATION", False)
 
@@ -330,6 +330,7 @@ class RegisterPayload(BaseModel):
     email: str
     password: str
     name: str = ""
+    invitation_token: Optional[str] = Field(default=None,min_length=1,max_length=256)
 
 
 class GeocodePayload(BaseModel):
@@ -372,6 +373,15 @@ class SessionRevokePayload(BaseModel):
 
 class IdentityProofPayload(BaseModel):
     token: str = Field(min_length=1, max_length=256)
+
+
+class PasswordResetRequestPayload(BaseModel):
+    email: str = Field(min_length=3,max_length=254)
+
+
+class PasswordResetPayload(PasswordResetRequestPayload):
+    token: str = Field(min_length=1,max_length=256)
+    new_password: str = Field(min_length=8,max_length=1024)
 
 
 class SupportRequestPayload(BaseModel):
@@ -1398,20 +1408,25 @@ def auth_status(_rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, An
 @app.post("/api/auth/register")
 def register(payload: RegisterPayload, _rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, Any]:
     _check_auth_target_limit(payload.email)
-    connection = DB.connect()
-    try:
-        user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
-    finally:
-        connection.close()
-    explicit_registration_policy = bool(str(os.getenv("CIVORA_ALLOW_PUBLIC_REGISTRATION") or "").strip())
-    if (user_count > 0 or explicit_registration_policy) and not _public_registration_allowed():
-        raise HTTPException(status_code=403, detail="Public registration is disabled for private alpha.")
-    return application_register_user(
+    if payload.invitation_token:
+        try:IDENTITY_PROOFS.validate_enrollment(email=payload.email,token=payload.invitation_token)
+        except ValueError as exc:
+            raise HTTPException(status_code=400,detail="Invitation is invalid, expired or unavailable.") from exc
+    elif not _public_registration_allowed():
+        raise HTTPException(status_code=403, detail="Public registration is disabled. Use an invitation or sign in.")
+    response = application_register_user(
         auth_store=AUTH_STORE,
         email=payload.email,
         password=payload.password,
         name=payload.name,
     )
+    if payload.invitation_token:
+        try:
+            IDENTITY_PROOFS.consume(user_id=response["user"]["user_id"],token=payload.invitation_token,purpose="accept_invite")
+        except ValueError as exc:
+            AUTH_STORE.logout(response["token"])
+            raise HTTPException(status_code=409,detail="Account created but invitation changed. Sign in and request a new invitation.") from exc
+    return response
 
 
 @app.post("/api/auth/login")
@@ -1584,6 +1599,36 @@ def request_email_verification(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail="Email delivery is not configured.") from exc
     return {"success": True}
+
+
+@app.get("/api/auth/email-verification/status")
+def email_verification_status(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    return {"success":True,"verified":IDENTITY_PROOFS.is_verified(current_user["user_id"])}
+
+
+@app.post("/api/auth/password-reset/request")
+def request_password_reset(payload: PasswordResetRequestPayload,
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    _check_auth_target_limit(payload.email)
+    try:IDENTITY_PROOFS.request_password_reset(email=payload.email)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503,detail="Email delivery is not configured.") from exc
+    return {"success":True,"message":"If that account exists, a confirmation code was sent."}
+
+
+@app.post("/api/auth/password-reset/confirm")
+def confirm_password_reset(payload: PasswordResetPayload,
+    _rate_limit: None = Depends(rate_limit("auth")),
+) -> Dict[str, Any]:
+    _check_auth_target_limit(payload.email)
+    try:IDENTITY_PROOFS.reset_password(email=payload.email,token=payload.token,new_password=payload.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400,detail="Confirmation is invalid, expired or already used.") from exc
+    return {"success":True,"message":"Password changed. Sign in again."}
 
 
 @app.post("/api/auth/email-verification/confirm")

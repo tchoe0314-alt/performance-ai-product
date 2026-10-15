@@ -4,6 +4,7 @@ No fake sender is selected by environment or exposed via an outbox endpoint.
 Without an approved sender, delivery fails closed; test outboxes remain local.
 """
 import hashlib
+import os
 import secrets
 import time
 
@@ -57,6 +58,42 @@ class IdentityProofStore:
         finally: connection.close()
         self._issue(user_id=user_id,email=email,purpose="verify_email")
 
+    def validate_enrollment(self, *, email, token):
+        """Read-only preflight; acceptance still rechecks atomically after signup."""
+        connection=self.db.connect()
+        try:
+            row=connection.execute("""SELECT c.created_at,c.expires_at FROM identity_challenges c
+                JOIN project_invites i ON i.invite_id=c.invite_id
+                JOIN projects p ON p.project_id=i.project_id
+                WHERE c.token_digest=? AND c.email=? AND c.purpose='accept_invite'
+                    AND c.user_id IS NULL AND c.consumed_at IS NULL
+                    AND i.email=c.email AND i.status='pending' AND p.deleted_at IS NULL
+                    AND i.invited_by_user_id=p.user_id AND i.role IN ('viewer','reviewer','editor','admin')""",
+                (_digest(token),str(email or "").strip().lower())).fetchone()
+            now=time.time()
+            if row is None or row["created_at"]>now or row["expires_at"]<=now:
+                raise ValueError("Invitation is invalid, expired or unavailable.")
+        finally:connection.close()
+
+    def request_password_reset(self, *, email):
+        # Same response for known/unknown accounts; configuration status must
+        # not become an account-existence oracle either.
+        if isinstance(self.sender,UnconfiguredEmailSender):
+            raise RuntimeError("Email delivery is not configured.")
+        connection=self.db.connect()
+        try:
+            user=connection.execute("SELECT user_id,email FROM users WHERE email=?",(str(email or "").strip().lower(),)).fetchone()
+        finally:connection.close()
+        if user is not None:self._issue(user_id=user["user_id"],email=user["email"],purpose="reset_password")
+
+    def reset_password(self, *, email, token, new_password):
+        connection=self.db.connect()
+        try:
+            user=connection.execute("SELECT user_id FROM users WHERE email=?",(str(email or "").strip().lower(),)).fetchone()
+        finally:connection.close()
+        if user is None:raise ValueError("Confirmation is invalid, expired or already used.")
+        return self.consume(user_id=user["user_id"],token=token,purpose="reset_password",new_password=new_password)
+
     def send_invitation(self, *, actor_user_id, invite_id, project_id=None):
         connection=self.db.connect()
         try:
@@ -89,9 +126,13 @@ class IdentityProofStore:
             connection.rollback(); raise
         finally:connection.close()
 
-    def consume(self, *, user_id, token, purpose):
-        if purpose not in ("verify_email","accept_invite"):
+    def consume(self, *, user_id, token, purpose, new_password=None):
+        if purpose not in ("verify_email","accept_invite","reset_password"):
             raise ValueError("Unsupported identity proof purpose.")
+        if purpose=="reset_password" and (not isinstance(new_password,str) or not 8<=len(new_password)<=1024):
+            raise ValueError("New password must contain8 to1024 characters.")
+        if purpose!="reset_password" and new_password is not None:
+            raise ValueError("Password changes require a password-reset proof.")
         now=time.time(); connection=self.db.connect()
         try:
             if self.db.storage_kind != "postgres": connection.execute("BEGIN IMMEDIATE")
@@ -126,6 +167,13 @@ class IdentityProofStore:
                     role=invite["role"],metadata={"invite_id":invite["invite_id"],"proof":"single_use_email_confirmation"})
             connection.execute("""UPDATE identity_challenges SET consumed_at=?
                 WHERE token_digest=? AND consumed_at IS NULL""",(now,_digest(token)))
+            if purpose=="reset_password":
+                from .auth_store import _hash_password
+                salt=os.urandom(16).hex()
+                connection.execute("UPDATE users SET password_salt=?,password_hash=?,updated_at=? WHERE user_id=?",
+                    (salt,_hash_password(new_password,salt),now,user_id))
+                connection.execute("DELETE FROM auth_tokens WHERE user_id=?",(user_id,))
+                connection.execute("UPDATE identity_challenges SET consumed_at=? WHERE user_id=? AND consumed_at IS NULL",(now,user_id))
             connection.execute("""INSERT INTO verified_email_addresses(user_id,email,verified_at) VALUES (?,?,?)
                 ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,verified_at=excluded.verified_at""",
                 (user_id,user["email"],now))

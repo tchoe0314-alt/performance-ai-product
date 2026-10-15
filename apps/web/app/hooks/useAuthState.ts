@@ -52,6 +52,7 @@ export default function useAuthState({
   const [authName, setAuthName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
+  const [authInvitationToken, setAuthInvitationToken] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -112,7 +113,7 @@ export default function useAuthState({
     setAuthError("");
     setAuthStatusError("");
     try {
-      if (authMode === "register" && authStatus?.public_registration_enabled === false) {
+      if (authMode === "register" && authStatus?.public_registration_enabled === false && !authInvitationToken.trim()) {
         throw new Error("Access is invitation-only. Sign in or contact support.");
       }
       const path =
@@ -123,6 +124,7 @@ export default function useAuthState({
               name: authName,
               email: authEmail,
               password: authPassword,
+              ...(authInvitationToken.trim() ? { invitation_token: authInvitationToken.trim() } : {}),
             }
           : {
               email: authEmail,
@@ -135,6 +137,7 @@ export default function useAuthState({
       setToken(data.token);
       setStoredToken(data.token);
       setUser(data.user);
+      setAuthPassword(""); setAuthInvitationToken("");
       const refreshResults = await Promise.allSettled([
         refreshProjectsRef.current(data.token),
         refreshJobsRef.current(data.token, { suppressError: true }),
@@ -159,7 +162,7 @@ export default function useAuthState({
     } finally {
       setAuthLoading(false);
     }
-  }, [authMode, authName, authEmail, authPassword, authStatus, onStatusMessage]);
+  }, [authMode, authName, authEmail, authPassword, authInvitationToken, authStatus, onStatusMessage]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -172,6 +175,8 @@ export default function useAuthState({
     clearStoredToken();
     setToken("");
     setUser(null);
+    setAuthMode("login");
+    setAuthPassword(""); setAuthInvitationToken(""); setAuthError("");
     onLogoutCleanup();
     onStatusMessage("Signed out.");
   }, [onLogoutCleanup, onStatusMessage, token]);
@@ -231,6 +236,7 @@ export default function useAuthState({
     authName,
     authEmail,
     authPassword,
+    authInvitationToken,
     showPassword,
     authError,
     authLoading,
@@ -239,6 +245,7 @@ export default function useAuthState({
     setAuthName,
     setAuthEmail,
     setAuthPassword,
+    setAuthInvitationToken,
     setAuthError,
     setShowPassword,
     handleAuth,

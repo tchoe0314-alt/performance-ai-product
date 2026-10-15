@@ -10,12 +10,12 @@ passed. Local commits are not deployed or pushed.
 |---|---|---|
 |ENG-01/02/03/04/05|`c3f23ed6`: hydrology contracts/validation, exact basin storage, supported-domain routing, shared spatial integration. Analytical oracles and old24 assertions pass|Independent full-method benchmarks, all engine families, professional review; unsupported-domain conversion|
 |SEC-01|`f9c7b85d`: public HTTPS validation, pinned IP/TLS host, redirect/DNS/size/time limits.59 tests+19 subtests pass|Independent AppSec/egress deployment review and other outbound clients|
-|SEC-02/04/06/07|`53af2cf6`: stable source key, bounded local counters, expiring hashed sessions, rotation/revocation, operator-only diagnostics|Shared/account-target limits, proxy validation, browser storage policy, operator auditing|
+|SEC-02/04/06/07|`53af2cf6`: hashed expiring sessions and operator diagnostics; `18c8791d`: shared bounded sliding-window/source/account-target limits.45 tests+5 subtests pass|PostgreSQL races/throughput, proxy validation, browser storage policy, operator auditing|
 |SEC-08/05|`eb4e120b`: immutable uploads/hash/no-replace publication; learning collection requires explicit consent.17 focused tests pass|Complete source-hash lineage; optional learning org/retention/withdrawal qualification; collection remains contained/off|
 |CAN-03/SEC-10|`7e7b31f2`: revision-required public saves and guarded internal snapshots|Low-level legacy writers, client result replacement, full PostgreSQL concurrency and all-writer enforcement|
 |Result identity/staleness|`44e0ac0e`: old-method results archive, current execution stamps, legacy checkpoint cannot recertify inherited results|Full recalculation/dependency/engine-version qualification|
 |Raster/units/CAN-01.C1|`e3482dc4`: cell extent/orientation/registration, NoData rejection, non-foot output protection, strict adapter version.54 tests pass|Full units/CRS/datum/reprojection/TIN/clip qualification and compatibility migration review|
-|SEC-03 backend boundary|`64e1fdf6`: single-use address/invite proof, owner-only resend/revoke, fake sender, no automatic matching-email grants.50 tests pass|Frontend confirmation flow, invitation-based enrollment, recovery, qualified delivery, legacy grants review and PostgreSQL/AppSec verification|
+|SEC-03 enrollment/recovery|`64e1fdf6` proof boundary plus current enrollment/recovery integration:51 tests+5 subtests; real Chromium identity flow and three-viewport responsive checks pass. See ENROLLMENT_RECOVERY_REPAIR_2026-10-15.md|Qualified delivery, legacy grants review, full atomic enrollment and PostgreSQL/AppSec verification|
 |Drawing/export regression|`3f0cf44e`: reconstruct authorized drawing rather than passing calculation gate; stale/tampered snapshots reject.48 targeted+64 integration checks pass in overlapping suites|Full browser/export compatibility and final candidate regression|
 |Evidence|`7ae22a26`:90 focused checks, preserved with candidate fingerprint and manifest|Not independent acceptance; cannot certify later commits|
 
@@ -24,10 +24,10 @@ passed. Local commits are not deployed or pushed.
 1. Qualify the latest frozen candidate through backend and browser suites;
    safely scoped local-server verification now passes5 tests. Preserve failures and
    distinguish environment limitations from product failures.
-2. Complete invitation/enrollment/recovery UI/API integration using the approved
-   fake sender only; do not expose an outbox/code endpoint or purchase delivery.
-3. Complete mandatory all-writer concurrency, shared/account-target abuse
-   limits and reviewed proxy/session/browser controls.
+2. Qualify invitation/enrollment/recovery beyond the completed fake-sender local
+   flow; do not expose an outbox/code endpoint or purchase delivery.
+3. Complete mandatory all-writer concurrency, qualify shared abuse limits on
+   PostgreSQL and review proxy/session/browser controls.
 4. Resolve checkpoint/model payload growth and prove bounded save/load/history,
    job recovery, source consistency and dependent calculation propagation.
 5. Validate every advertised engine and import/export workflow against
@@ -49,8 +49,8 @@ classification and subsequent targeted evidence are in
 Latest invitation changes were tested separately. Do not sum overlapping tests
 or silently declare original findings closed from a single green check.
 
-One pre-existing sidebar color change remains uncommitted pending actual
-browser verification. No unfinished source was discarded to clean Git status.
+The pre-existing sidebar color change passed responsive scoped contrast checks.
+No unfinished source was discarded to clean Git status.
 Original plans and historical evidence are preserved. Disk cleanup removed
 only generated/duplicate files in the disposable test directory, never original
 workspace/customer data. No paid/external API or production access was used.

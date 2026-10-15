@@ -731,6 +731,7 @@ function PerformanceAIDashboardView({
     authName,
     authEmail,
     authPassword,
+    authInvitationToken,
     showPassword,
     authError,
     authLoading,
@@ -739,6 +740,7 @@ function PerformanceAIDashboardView({
     setAuthName,
     setAuthEmail,
     setAuthPassword,
+    setAuthInvitationToken,
     setAuthError,
     setShowPassword,
     handleAuth,
@@ -5781,6 +5783,7 @@ function PerformanceAIDashboardView({
         authName={authName}
         authEmail={authEmail}
         authPassword={authPassword}
+        authInvitationToken={authInvitationToken}
         showPassword={showPassword}
         authError={authError}
         authLoading={authLoading}
@@ -5788,6 +5791,7 @@ function PerformanceAIDashboardView({
         onAuthNameChange={setAuthName}
         onAuthEmailChange={setAuthEmail}
         onAuthPasswordChange={setAuthPassword}
+        onAuthInvitationTokenChange={setAuthInvitationToken}
         onTogglePassword={() => setShowPassword((value) => !value)}
         onClearAuthError={() => setAuthError("")}
         onSubmit={handleAuth}
@@ -5894,6 +5898,7 @@ function PerformanceAIDashboardView({
                       projectId={projectId}
                       userEmail={effectiveUser.email}
                       onAccountDeleted={handleLogout}
+                      onProjectJoined={() => refreshProjects(token)}
                       />
                     ),
                     projects: (

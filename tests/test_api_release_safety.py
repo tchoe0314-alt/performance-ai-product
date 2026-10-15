@@ -441,7 +441,8 @@ class ApiReleaseSafetyTest(unittest.TestCase):
 
         with patch.object(api_app_module, "DB", FakeDatabase()):
             with patch.object(api_app_module, "AUTH_STORE", FakeAuthStore()):
-                data = register(RegisterPayload(email="new@example.com", password="long-enough", name="New User"))
+                with patch.dict(os.environ,{"CIVORA_ALLOW_PUBLIC_REGISTRATION":"1"}):
+                    data = register(RegisterPayload(email="new@example.com", password="long-enough", name="New User"))
 
         self.assertTrue(data["success"])
         self.assertEqual(data["user"]["email"], "new@example.com")

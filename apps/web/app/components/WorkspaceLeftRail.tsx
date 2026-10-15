@@ -44,7 +44,7 @@ export function WorkspaceLeftRail({
                   className={`group relative flex min-h-[58px] w-full flex-col items-center justify-center gap-1 rounded-[10px] border px-1 py-2 text-center transition ${
                     isActive
                       ? "border-slate-900 bg-slate-950 text-white shadow-sm"
-                      : "border-transparent bg-transparent text-slate-500 hover:bg-slate-50 hover:text-slate-950"
+                      : "border-transparent bg-transparent text-slate-700 hover:bg-slate-50 hover:text-slate-950"
                   }`}
                 >
                   {isActive ? <span className="absolute -left-1.5 top-3 h-8 w-0.5 rounded-r bg-blue-500" /> : null}
