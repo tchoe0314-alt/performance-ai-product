@@ -1,0 +1,161 @@
+{
+  "failed": [
+    {
+      "class": "phase1-local-tab-branches.spec.ts",
+      "name": "second tab asks on first edit and supports copy"
+    },
+    {
+      "class": "phase1-local-tab-branches.spec.ts",
+      "name": "second tab asks on first edit and supports replace"
+    },
+    {
+      "class": "phase1-local-tab-branches.spec.ts",
+      "name": "second tab asks on first edit and supports cancel"
+    },
+    {
+      "class": "phase1-local-transactions.spec.ts",
+      "name": "website persists undo redo and abandoned branches across repeated reloads"
+    },
+    {
+      "class": "phase1-local-transactions.spec.ts",
+      "name": "failed save retains live edit and history until retry succeeds"
+    },
+    {
+      "class": "phase1-local-transactions.spec.ts",
+      "name": "one undo reverses a complete multi-object group after reopening"
+    },
+    {
+      "class": "phase1-local-transactions.spec.ts",
+      "name": "one saved undo reverses a complete multi-object chat revision"
+    },
+    {
+      "class": "phase1-local-transactions.spec.ts",
+      "name": "explicit two-tab replacement retains both branches and following edits still save"
+    },
+    {
+      "class": "phase2-project-actions.spec.ts",
+      "name": "saved project actions open sharing with viewer default and named saved history"
+    },
+    {
+      "class": "phase2-project-header.spec.ts",
+      "name": "real project details persist, survive geometry autosave, and failures remain honest"
+    },
+    {
+      "class": "phase2-project-header.spec.ts",
+      "name": "first identity edit in a second tab forks only after the user's choice"
+    },
+    {
+      "class": "phase2-workspace-environment.spec.ts",
+      "name": "real project layers and two-tab memory change neither geometry, revisions, nor calculation inputs"
+    },
+    {
+      "class": "phase2-workspace-layout.spec.ts",
+      "name": "account layout survives another device context and never changes project revisions"
+    },
+    {
+      "class": "phase2-workspace-stages.spec.ts",
+      "name": "five free stages remember panels and stay contained at 844x390"
+    },
+    {
+      "class": "phase2-workspace-stages.spec.ts",
+      "name": "project and tab stage memories are independent and switching never writes design inputs"
+    },
+    {
+      "class": "phase3-local-brief-classification.spec.ts",
+      "name": "shared viewers can read brief classifications but cannot edit them"
+    },
+    {
+      "class": "phase3-local-brief-summary.spec.ts",
+      "name": "saved briefs reopen, switch independently and do not write project data"
+    },
+    {
+      "class": "phase5-autofix.spec.ts",
+      "name": "Phase 5 drainage autofix matrix \u203a drainage job scenarios and explicit Apply outcomes with replay deduplication"
+    },
+    {
+      "class": "pilot-brief-editing.spec.ts",
+      "name": "website saves an explicit source override, restores its original and retains undo history"
+    },
+    {
+      "class": "pilot-brief-editing.spec.ts",
+      "name": "website source register saves evidence links and supersession removes requirement trust"
+    },
+    {
+      "class": "pilot-calculated-workflow.spec.ts",
+      "name": "website commercial parking manual failure stays blocked"
+    },
+    {
+      "class": "pilot-calculated-workflow.spec.ts",
+      "name": "website commercial parking assisted run saves and reopens"
+    },
+    {
+      "class": "pilot-calculated-workflow.spec.ts",
+      "name": "website commercial full assisted run saves and reopens"
+    }
+  ],
+  "sha256": "be9bf0d3912af0ff7c3e51934807c19de213b3cc3e310d23e1bf6addcd5df99c",
+  "skipped": [
+    {
+      "class": "cul-de-sac-cross-browser.spec.ts",
+      "name": "isolated editor works in Firefox"
+    },
+    {
+      "class": "hosted-auth-smoke.spec.ts",
+      "name": "hosted authenticated smoke \u203a proves auth, projects, workflow panels, chat, API gates, and browser health"
+    },
+    {
+      "class": "hosted-candidate-review-stability.spec.ts",
+      "name": "hosted dense vision correction stays bounded and responsive after save"
+    },
+    {
+      "class": "hosted-current-backend-safe.spec.ts",
+      "name": "current hosted website: isolated test-account editing, save/reopen and protected API"
+    },
+    {
+      "class": "hosted-load-stability.spec.ts",
+      "name": "hosted load stability \u203a handles below-limit concurrent read traffic without bad statuses or severe latency"
+    },
+    {
+      "class": "hosted-load-stability.spec.ts",
+      "name": "hosted load stability \u203a throttles over-limit auth bursts gracefully instead of failing open or returning 5xx"
+    },
+    {
+      "class": "hosted-real-source-depth.spec.ts",
+      "name": "hosted real source depth \u203a uploads LandXML, GeoJSON, GeoTIFF, and LAS paths without fake production truth"
+    },
+    {
+      "class": "hosted-real-user-source-workflow.spec.ts",
+      "name": "hosted real user can set up site, upload real sources, generate, and deliver review package"
+    },
+    {
+      "class": "hosted-source-upload-truth.spec.ts",
+      "name": "hosted survey upload drives source-backed preview marks without fake topo"
+    },
+    {
+      "class": "human-chaos-workflow.spec.ts",
+      "name": "hosted human chaos pass clicks visible controls and builds a small site"
+    },
+    {
+      "class": "phase0-local-export-download.spec.ts",
+      "name": "signed-in local website exports and downloads preliminary PDF and DXF with owner isolation"
+    },
+    {
+      "class": "phase2-runtime.spec.ts",
+      "name": "phase 2 site setup workflow"
+    },
+    {
+      "class": "smoke.spec.ts",
+      "name": "live civora flow"
+    },
+    {
+      "class": "staged-regression.spec.ts",
+      "name": "staged regression flow"
+    },
+    {
+      "class": "step1-preview-stability.spec.ts",
+      "name": "step 1.1 preview stability flow"
+    }
+  ],
+  "status": "HISTORICAL_NOT_RERUN",
+  "tests": 701
+}

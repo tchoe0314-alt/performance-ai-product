@@ -1,0 +1,68 @@
+{
+  "cases": [
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 44, in test_E01_negative_rainfall\n    def test_E01_negative_rainfall(self): self.invalid_hydrology(intensity=-1)\n                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 43, in invalid_hydrology\n    self.assertFalse(result.success, f\"Invalid input accepted: {result}\")\nAssertionError: True is not false : Invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=-1.6128, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 0.8, 'intensity_in_hr': -1, 'flow_cfs': -1.6128}])\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E01_negative_rainfall"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 45, in test_E02_infinite_rainfall\n    def test_E02_infinite_rainfall(self): self.invalid_hydrology(intensity=float(\"inf\"))\n                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 43, in invalid_hydrology\n    self.assertFalse(result.success, f\"Invalid input accepted: {result}\")\nAssertionError: True is not false : Invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=inf, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 0.8, 'intensity_in_hr': inf, 'flow_cfs': inf}])\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E02_infinite_rainfall"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 46, in test_E03_boolean_area\n    def test_E03_boolean_area(self): self.invalid_hydrology(area=True)\n                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 43, in invalid_hydrology\n    self.assertFalse(result.success, f\"Invalid input accepted: {result}\")\nAssertionError: True is not false : Invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=3.2256, area_rows=[{'name': 'SYNTHETIC', 'area_ac': True, 'runoff_c': 0.8, 'intensity_in_hr': 4, 'flow_cfs': 3.2256}])\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E03_boolean_area"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 47, in test_E04_negative_runoff_coefficient\n    def test_E04_negative_runoff_coefficient(self): self.invalid_hydrology(c=-.1)\n                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 43, in invalid_hydrology\n    self.assertFalse(result.success, f\"Invalid input accepted: {result}\")\nAssertionError: True is not false : Invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=-0.8064, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': -0.1, 'intensity_in_hr': 4, 'flow_cfs': -0.8064}])\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E04_negative_runoff_coefficient"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 51, in test_E05_stage_storage_must_not_decrease\n    self.assertTrue(all(b.storage_cf >= a.storage_cf for a, b in zip(curve, curve[1:])),\nAssertionError: False is not true : Terminal storage decreased: [(105.0, 24661.58671028823), (105.01, 24246.212315934205)]\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E05_stage_storage_must_not_decrease"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 61, in test_E06_routing_must_not_hide_excess_storage\n    self.assertFalse(last.storage_cf > curve[-1].storage_cf and last.water_surface_elev_ft <= curve[-1].elevation,\nAssertionError: True is not false : storage=360000.0, curve_max=24661.58671028823, capped_stage=105.0\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E06_routing_must_not_hide_excess_storage"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 69, in test_E07_grading_independent_uniform_volume\n    self.assertAlmostEqual(GradingEngine(existing)._compute_earthwork(proposed)[1], 400, places=6)\nAssertionError: 900.0 != 400 within 6 places (500.0 difference)\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E07_grading_independent_uniform_volume"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 72, in test_E08_surface_helper_independent_uniform_volume\n    self.assertAlmostEqual(compare_surfaces(*self.surfaces())[\"fill_cf\"], 400, places=6)\nAssertionError: 900.0 != 400 within 6 places (500.0 difference)\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E08_surface_helper_independent_uniform_volume"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 77, in test_E09_surface_helper_must_reject_shifted_domain\n    self.assertTrue(result.get(\"success\") is False or bool(result.get(\"errors\")), \"Unrelated spatial domains compared as aligned\")\nAssertionError: False is not true : Unrelated spatial domains compared as aligned\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E09_surface_helper_must_reject_shifted_domain"
+    },
+    {
+      "detail": "Traceback (most recent call last):\n  File \"/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py\", line 81, in test_E10_boolean_model_adapter_version_rejected\n    with self.assertRaises(ProjectDocumentError): resolve_canvas_input(inputs)\nAssertionError: ProjectDocumentError not raised\n",
+      "status": "FAIL",
+      "test": "__main__.Followup.test_E10_boolean_model_adapter_version_rejected"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.Followup.test_E11_explicit_stale_revision_positive_control"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.Followup.test_E12_boolean_canvas_version_positive_control"
+    }
+  ],
+  "errors": 0,
+  "exit_code": 1,
+  "failed": 10,
+  "passed": 2,
+  "skipped": 0,
+  "tests": 12
+}

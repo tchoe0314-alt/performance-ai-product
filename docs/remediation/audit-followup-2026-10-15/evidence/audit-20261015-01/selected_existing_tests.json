@@ -1,0 +1,74 @@
+{
+  "cases": [
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_ada_repair_clamps_running_slope"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_corridor_profile_and_crowned_section_are_numeric"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_detention_level_pool_routes_storage_and_outflow"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_drainage_aware_grading_repair_reports_changes_and_reason"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_earthwork_blocks_unaccepted_surfaces_and_triggers_wall_review"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_earthwork_reports_adjusted_mass_balance_validation"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_earthwork_reports_haul_balance_import_warning_and_expected_volumes"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_fire_flow_residual_binary_searches_available_flow"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_inlet_gutter_spread_inverts_triangular_gutter_capacity"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_sanitary_assigns_manning_capacity_velocity_and_ratio"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_utility_coordination_blocks_crossing_protected_zone_and_gravity_rule_failures"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_utility_coordination_validates_cover_slope_and_clearance"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_water_pressure_graph_solves_hazen_williams_pressure_drop"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_tin_interpolates_triangle_plane_and_generates_artifacts"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_breaklines_are_sampled_and_boundary_clips_tin"
+    },
+    {
+      "status": "PASS",
+      "test": "__main__.selected_original_tests.<locals>.Guarded.test_surface_comparison_reports_cut_fill_cells"
+    }
+  ],
+  "errors": 0,
+  "exit_code": 0,
+  "failed": 0,
+  "passed": 16,
+  "skipped": 0,
+  "tests": 16
+}

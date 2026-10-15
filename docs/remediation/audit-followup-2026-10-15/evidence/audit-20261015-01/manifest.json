@@ -1,0 +1,37 @@
+{
+  "files": {
+    "expanded_probes.json": {
+      "bytes": 7327,
+      "sha256": "880772ffbffcae5af2a9da4cc2cdab7f4f06bb4d359ec0e2b9ff999f0ebc4b65"
+    },
+    "historical_browser_failures.json": {
+      "bytes": 5906,
+      "sha256": "363d9ef05f4f72f9553f9a21fb045eb8f06548dece074a19a5f7abcfeac8b5e1"
+    },
+    "inputs.json": {
+      "bytes": 877,
+      "sha256": "ddad581aa71a74afcfdf9e86fe780c374ac3ceb2861a52c7e94afd9764aced50"
+    },
+    "selected_existing_tests.json": {
+      "bytes": 2703,
+      "sha256": "52600c41030f35e440d7a85b040c809851d11bc6a91c732ddf8b5dac88f5e7f8"
+    },
+    "test_discovery.json": {
+      "bytes": 58595,
+      "sha256": "eff8eb1432b1ee75c7b90e7a8998815af402f933348e3ee69d302ac4f4d8b73f"
+    },
+    "verification.log": {
+      "bytes": 12427,
+      "sha256": "f3704bca1403f0a41157de9ac1f9edc162dba9c4ae7b9830da47dd732020c681"
+    }
+  },
+  "format": "p01_evidence_v1",
+  "metadata": {
+    "application_revision": "ab7db888e85fb9b6125551ecff769d08e0ca7322",
+    "checkout_revision": "ef22d42c4647e15cd0d6815b9d3816702cf9dbb4",
+    "repairs": "NONE",
+    "scope": "Failure-focused repository audit + selected pure offline verification; not complete runtime/live audit",
+    "timestamp_utc": "2026-10-15T07:00:59.134003+00:00"
+  },
+  "run_id": "audit-20261015-01"
+}

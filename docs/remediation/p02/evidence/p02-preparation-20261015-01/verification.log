@@ -1,0 +1,175 @@
+test_bom_source_is_not_product_syntax_failure (test_p01_evidence.EvidenceTests.test_bom_source_is_not_product_syntax_failure) ... ok
+test_case_mapping (test_p01_evidence.EvidenceTests.test_case_mapping) ... ok
+test_duplicate_run_id (test_p01_evidence.EvidenceTests.test_duplicate_run_id) ... ok
+test_extra_artifact (test_p01_evidence.EvidenceTests.test_extra_artifact) ... ok
+test_extraction_does_not_start_app (test_p01_evidence.EvidenceTests.test_extraction_does_not_start_app) ... ok
+test_guard_database (test_p01_evidence.EvidenceTests.test_guard_database) ... ok
+test_guard_network (test_p01_evidence.EvidenceTests.test_guard_network) ... ok
+test_guard_subprocess (test_p01_evidence.EvidenceTests.test_guard_subprocess) ... ok
+test_guard_write (test_p01_evidence.EvidenceTests.test_guard_write) ... ok
+test_inventory_real_source (test_p01_evidence.EvidenceTests.test_inventory_real_source) ... ok
+test_missing_artifact (test_p01_evidence.EvidenceTests.test_missing_artifact) ... ok
+test_path_traversal (test_p01_evidence.EvidenceTests.test_path_traversal) ... ok
+test_source_mismatch (test_p01_evidence.EvidenceTests.test_source_mismatch) ... ok
+test_symlink_artifact (test_p01_evidence.EvidenceTests.test_symlink_artifact) ... ok
+test_tampered_manifest (test_p01_evidence.EvidenceTests.test_tampered_manifest) ... ok
+test_tampered_report (test_p01_evidence.EvidenceTests.test_tampered_report) ... ok
+test_valid_bundle (test_p01_evidence.EvidenceTests.test_valid_bundle) ... ok
+test_wrong_anchor (test_p01_evidence.EvidenceTests.test_wrong_anchor) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.056s
+
+OK
+test_C01_hand_authored_v1_snapshot (test_p02.CompatibilityTests.test_C01_hand_authored_v1_snapshot) ... ok
+test_C02_v1_json_roundtrip (test_p02.CompatibilityTests.test_C02_v1_json_roundtrip) ... ok
+test_C03_unknown_project_versions_rejected (test_p02.CompatibilityTests.test_C03_unknown_project_versions_rejected) ... ok
+test_C04_missing_section_rejected (test_p02.CompatibilityTests.test_C04_missing_section_rejected) ... ok
+test_C05_extension_json_preserved (test_p02.CompatibilityTests.test_C05_extension_json_preserved) ... ok
+test_C06_nonfinite_rejected (test_p02.CompatibilityTests.test_C06_nonfinite_rejected) ... ok
+test_C07_duplicate_json_keys_rejected (test_p02.CompatibilityTests.test_C07_duplicate_json_keys_rejected) ... ok
+test_C08_canvas_roundtrip_exact_legacy (test_p02.CompatibilityTests.test_C08_canvas_roundtrip_exact_legacy) ... ok
+test_C09_canvas_roundtrip_after_json (test_p02.CompatibilityTests.test_C09_canvas_roundtrip_after_json) ... ok
+test_C10_canonical_wins_over_stale_legacy_geometry (test_p02.CompatibilityTests.test_C10_canonical_wins_over_stale_legacy_geometry) ... ok
+test_C11_canonical_object_geometry_wins_over_wrapper (test_p02.CompatibilityTests.test_C11_canonical_object_geometry_wins_over_wrapper) ... ok
+test_C12_unknown_units_remain_unknown (test_p02.CompatibilityTests.test_C12_unknown_units_remain_unknown) ... ok
+test_C13_metric_values_not_converted_or_guessed (test_p02.CompatibilityTests.test_C13_metric_values_not_converted_or_guessed) ... ok
+test_C14_program_only_legacy_stays_legacy (test_p02.CompatibilityTests.test_C14_program_only_legacy_stays_legacy) ... ok
+test_C15_unowned_sections_survive_recompile (test_p02.CompatibilityTests.test_C15_unowned_sections_survive_recompile) ... ok
+test_C16_stable_ids_and_order (test_p02.CompatibilityTests.test_C16_stable_ids_and_order) ... ok
+test_C17_malformed_references_rejected (test_p02.CompatibilityTests.test_C17_malformed_references_rejected) ... ok
+test_C18_source_and_quality_not_promoted (test_p02.CompatibilityTests.test_C18_source_and_quality_not_promoted) ... ok
+test_C19_result_facets_restore_exact_synthetic_result (test_p02.CompatibilityTests.test_C19_result_facets_restore_exact_synthetic_result) ... ok
+test_C20_portable_aggregate_preserves_results_and_geometry (test_p02.CompatibilityTests.test_C20_portable_aggregate_preserves_results_and_geometry) ... ok
+test_C21_canonical_controls_and_sources_override_shadows (test_p02.CompatibilityTests.test_C21_canonical_controls_and_sources_override_shadows) ... ok
+test_C22_no_edit_preserves_edit_history (test_p02.CompatibilityTests.test_C22_no_edit_preserves_edit_history) ... ok
+test_C23_unknown_adapter_version_rejected (test_p02.CompatibilityTests.test_C23_unknown_adapter_version_rejected) ... ok
+test_C24_ambiguous_legacy_surface_metadata_not_invented (test_p02.CompatibilityTests.test_C24_ambiguous_legacy_surface_metadata_not_invented) ... ok
+test_C25_typescript_schema_sections_match_python_static_only (test_p02.CompatibilityTests.test_C25_typescript_schema_sections_match_python_static_only) ... ok
+test_C26_detached_validation_does_not_mutate_fixture (test_p02.CompatibilityTests.test_C26_detached_validation_does_not_mutate_fixture) ... ok
+
+----------------------------------------------------------------------
+Ran 26 tests in 0.046s
+
+OK
+test_A01 (test_oct15_audit.AuditCases.test_A01) ... ok
+test_A02 (test_oct15_audit.AuditCases.test_A02) ... ok
+test_A03 (test_oct15_audit.AuditCases.test_A03) ... FAIL
+test_A04 (test_oct15_audit.AuditCases.test_A04) ... FAIL
+test_A05 (test_oct15_audit.AuditCases.test_A05) ... FAIL
+test_A06 (test_oct15_audit.AuditCases.test_A06) ... ok
+test_A07 (test_oct15_audit.AuditCases.test_A07) ... ok
+test_A08 (test_oct15_audit.AuditCases.test_A08) ... ok
+test_A09 (test_oct15_audit.AuditCases.test_A09) ... FAIL
+test_A10 (test_oct15_audit.AuditCases.test_A10) ... FAIL
+test_A11 (test_oct15_audit.AuditCases.test_A11) ... FAIL
+test_A12 (test_oct15_audit.AuditCases.test_A12) ... ok
+test_A13 (test_oct15_audit.AuditCases.test_A13) ... ok
+test_A14 (test_oct15_audit.AuditCases.test_A14) ... ok
+test_A15 (test_oct15_audit.AuditCases.test_A15) ... ok
+test_A16 (test_oct15_audit.AuditCases.test_A16) ... ok
+test_A17 (test_oct15_audit.AuditCases.test_A17) ... ok
+test_A18 (test_oct15_audit.AuditCases.test_A18) ... ok
+test_A19 (test_oct15_audit.AuditCases.test_A19) ... ok
+test_A20 (test_oct15_audit.AuditCases.test_A20) ... ok
+test_A21 (test_oct15_audit.AuditCases.test_A21) ... FAIL
+test_A22 (test_oct15_audit.AuditCases.test_A22) ... FAIL
+test_A23 (test_oct15_audit.AuditCases.test_A23) ... FAIL
+test_A24 (test_oct15_audit.AuditCases.test_A24) ... FAIL
+
+======================================================================
+FAIL: test_A03 (test_oct15_audit.AuditCases.test_A03)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 73, in test_A03
+    def test_A03(self): self.invalid_hydro(area=-2)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 71, in invalid_hydro
+    self.assertFalse(result.success, f"invalid input accepted: {result}")
+AssertionError: True is not false : invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=-6.4512, area_rows=[{'name': 'SYNTHETIC', 'area_ac': -2, 'runoff_c': 0.8, 'intensity_in_hr': 4, 'flow_cfs': -6.4512}])
+
+======================================================================
+FAIL: test_A04 (test_oct15_audit.AuditCases.test_A04)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 74, in test_A04
+    def test_A04(self): self.invalid_hydro(c=1.5)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 71, in invalid_hydro
+    self.assertFalse(result.success, f"invalid input accepted: {result}")
+AssertionError: True is not false : invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=12.096, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 1.5, 'intensity_in_hr': 4, 'flow_cfs': 12.096}])
+
+======================================================================
+FAIL: test_A05 (test_oct15_audit.AuditCases.test_A05)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 75, in test_A05
+    def test_A05(self): self.invalid_hydro(intensity=float("nan"))
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 71, in invalid_hydro
+    self.assertFalse(result.success, f"invalid input accepted: {result}")
+AssertionError: True is not false : invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=nan, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 0.8, 'intensity_in_hr': nan, 'flow_cfs': nan}])
+
+======================================================================
+FAIL: test_A09 (test_oct15_audit.AuditCases.test_A09)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 87, in test_A09
+    self.assertAlmostEqual(basin_storage_cf(100, 20, 5, 4), 24666.666666667, places=6)
+AssertionError: 24164.633843973068 != 24666.666666667 within 6 places (502.03282269393094 difference)
+
+======================================================================
+FAIL: test_A10 (test_oct15_audit.AuditCases.test_A10)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 91, in test_A10
+    self.assertAlmostEqual(basin_storage_cf(100, 20, 5, 4), curve[-1].storage_cf, places=6)
+AssertionError: 24164.633843973068 != 24661.58671028823 within 6 places (496.9528663151614 difference)
+
+======================================================================
+FAIL: test_A11 (test_oct15_audit.AuditCases.test_A11)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 100, in test_A11
+    self.assertAlmostEqual(result["peak_runoff_cfs"], 2.52, places=3)
+AssertionError: 0.0 != 2.52 within 3 places (2.52 difference)
+
+======================================================================
+FAIL: test_A21 (test_oct15_audit.AuditCases.test_A21)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 150, in test_A21
+    self.assertEqual(len(attempts), 0, "loopback reached recording transport (no network performed)")
+AssertionError: 1 != 0 : loopback reached recording transport (no network performed)
+
+======================================================================
+FAIL: test_A22 (test_oct15_audit.AuditCases.test_A22)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 159, in test_A22
+    self.assertAlmostEqual(result["results"]["fill_cf"], 400, places=6)
+AssertionError: 900.0 != 400 within 6 places (500.0 difference)
+
+======================================================================
+FAIL: test_A23 (test_oct15_audit.AuditCases.test_A23)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 162, in test_A23
+    self.assertFalse(validate_compatible_surfaces(*self.surfaces(1000))["success"])
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_A24 (test_oct15_audit.AuditCases.test_A24)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/tests/remediation/test_oct15_audit.py", line 167, in test_A24
+    self.assertEqual(ns["_request_rate_limit_key"](request, "Bearer unvalidated-token-A"),
+AssertionError: 'token:da35cb8c1feb5ea2:198.51.100.9' != 'token:93d0a9f30316ce51:198.51.100.9'
+- token:da35cb8c1feb5ea2:198.51.100.9
++ token:93d0a9f30316ce51:198.51.100.9
+
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.027s
+
+FAILED (failures=10)

@@ -1,0 +1,23 @@
+{
+  "input_mode": "user",
+  "prompt_text": "Synthetic compatibility fixture, not a real site",
+  "manual_fields": {
+    "units": "m",
+    "project_name": "P02 synthetic",
+    "legacy_program": {"retain": [false, 0, ""]},
+    "site_objects": [
+      {"id": "p02-building", "type": "building", "x": 12.5, "y": -2, "w": 20, "d": 10, "rotation": 17,
+       "label": "Synthetic building", "source": "manual_drawn", "meta": {"source_id": "p02-source", "source_verified": false}},
+      {"id": "p02-road", "type": "road", "x": 0, "y": 0, "w": 30, "d": 10,
+       "geometryType": "polyline", "geometry": [[0, 0], [15.25, 0], [30, 10]],
+       "meta": {"future_editor_extension": {"retain": [false, 0, ""]}}},
+      {"id": "p02-other", "type": "future_kind", "x": 1, "y": 2, "w": 3, "d": 4,
+       "unknown": {"preserve": true}}
+    ]
+  },
+  "meta": {
+    "site_inputs": {"source": {"id": "p02-source", "verified": false, "kind": "synthetic"},
+                    "coordinate_system": {"horizontal_crs": null, "vertical_datum": null}},
+    "future_control": {"preserve": true}
+  }
+}

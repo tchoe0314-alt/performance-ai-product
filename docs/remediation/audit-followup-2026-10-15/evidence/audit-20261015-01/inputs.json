@@ -1,0 +1,23 @@
+{
+  "guard_limit": "Reviewed pure Python audit hook, not a hostile-code OS sandbox; no API/DB/browser startup",
+  "inputs": [
+    {
+      "path": "docs/remediation/audit-followup-2026-10-15/run_audit.py",
+      "sha256": "e3d5ef30349ee12c435101a4869619fda27ea80e2aa4338bfa9134ef58bd2bbd"
+    },
+    {
+      "path": "tests/test_real_math_big_pass.py",
+      "sha256": "4cea8481974679f5c8b8958dd4f422a9c869e71e47fe8088d8d022e4a61f58d5"
+    },
+    {
+      "path": "tests/test_tin_surface_engine.py",
+      "sha256": "1cf5c7b237c43b3791b006bdaa898cbf375bbee4d814438114ba65381f393801"
+    },
+    {
+      "path": "tests/remediation/test_p02.py",
+      "sha256": "26859658d9459f8bde63aa9b4c9fca8b9297e9cecf3af822d628a79219a7228e"
+    }
+  ],
+  "source_inventory_anchor": "c3dbaba66d3db25d1f602ca0afed595a1dee767f6a1cbfd97fa65b079962c8f9",
+  "unchanged_application_source_files": 730
+}

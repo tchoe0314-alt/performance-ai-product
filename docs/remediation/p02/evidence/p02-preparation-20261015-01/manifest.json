@@ -1,0 +1,38 @@
+{
+  "files": {
+    "compatibility_results.json": {
+      "bytes": 2738,
+      "sha256": "dee7945b6e30eace28d01d2e36b8afd72c3893fce030c3be9cd06b33d05ab0aa"
+    },
+    "inputs.json": {
+      "bytes": 2201,
+      "sha256": "a7ed4f66d30daf76e5795f5f6f0e65a50be9f1cc83d8cf16ab66e21527906123"
+    },
+    "p01_fresh_product_assertions.json": {
+      "bytes": 13348,
+      "sha256": "16134de5ce3157103a58386fe703010974ad1787a174fba82fa687054ba0d7fa"
+    },
+    "p01_integrity_results.json": {
+      "bytes": 109,
+      "sha256": "8b7c324bb5cd351f328418cf396347f826569861bede8a636bc60e91372b0cb9"
+    },
+    "verification.log": {
+      "bytes": 12732,
+      "sha256": "13d0a572f01a523fc5d47fb034d660e404f97b5d94091859f48e5e9d5d6cf982"
+    }
+  },
+  "format": "p01_evidence_v1",
+  "metadata": {
+    "application_changes": "NONE",
+    "application_revision": "ab7db888e85fb9b6125551ecff769d08e0ca7322",
+    "authorization": "Internal P01 review and P02 drafts/compatibility preparation only",
+    "branch": "codex/remediation-p02-contract-decisions",
+    "checkout_revision": "ef22d42c4647e15cd0d6815b9d3816702cf9dbb4",
+    "gate_disposition": "NO GATE PASSED",
+    "network_production_payments_customer_data": "NOT ACCESSED",
+    "professional_validation": "PENDING; not supplied by self-review",
+    "python": "3.11.15",
+    "timestamp_utc": "2026-10-15T06:54:30.015876+00:00"
+  },
+  "run_id": "p02-preparation-20261015-01"
+}

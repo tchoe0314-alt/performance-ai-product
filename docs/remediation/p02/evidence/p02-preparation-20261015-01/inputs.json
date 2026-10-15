@@ -1,0 +1,58 @@
+{
+  "full_application_runtime_integration": "NOT TESTED",
+  "p01_anchors": {
+    "p01-20261015-01": "ddd13d740bcef0c4a32a77172a0618234d06ae88b5dfb699d40c29490d56a5a3",
+    "p01-20261015-02": "c7fbace2295db4d2784039cea935cabe61431a56c707504f9816c6b63a373577",
+    "p01-20261015-03": "c3dbaba66d3db25d1f602ca0afed595a1dee767f6a1cbfd97fa65b079962c8f9"
+  },
+  "p02_inputs": [
+    {
+      "bytes": 11867,
+      "path": "tests/remediation/test_p02.py",
+      "sha256": "bd70dc9287faa31ab7f6ae324eaf1e6556376b86017832e1b9c533f5dbb91468"
+    },
+    {
+      "bytes": 6997,
+      "path": "tests/remediation/run_p02.py",
+      "sha256": "aba6aa5d37d0570516430b3f5a0cb5e64eb74ef00c0ffc0c5204a9e334b1a53b"
+    },
+    {
+      "bytes": 3689,
+      "path": "core/data/site_object_definitions_v1.json",
+      "sha256": "69f7d78756ce4540b03542d751107fb7322f682fa13993f5da400aa960902222"
+    },
+    {
+      "bytes": 773,
+      "path": "tests/remediation/fixtures/p02_empty_v1.json",
+      "sha256": "675f4fed399ea5f7b69f818c63dd19bf2223ce245c783357e5dc9dd9c94fdacb"
+    },
+    {
+      "bytes": 1074,
+      "path": "tests/remediation/fixtures/p02_legacy_input.json",
+      "sha256": "a47fba13e8b23dc9916a00888f517c535e4dcc6a3628bc8b6a5667da9438a627"
+    },
+    {
+      "bytes": 3398,
+      "path": "docs/remediation/p02/EXECUTION_SCOPE_AND_PRODUCT_RULES.md",
+      "sha256": "a0b844856eaf6ea893c3ec810838d7b9fd20f49ea56771ea890ea1f6a4a2bf73"
+    },
+    {
+      "bytes": 4090,
+      "path": "docs/remediation/p02/P01_INTERNAL_REVIEW.md",
+      "sha256": "7c6e9e1e06b6f516c82691a8fb7d79ee9fc1494ed6e34415b58df8ba765a1549"
+    },
+    {
+      "bytes": 6059,
+      "path": "docs/remediation/p02/P02_COMPATIBILITY_AND_MIGRATION.md",
+      "sha256": "320fc179d31aea0152a655ec5341880b2f5b171f32f888f495edace63be06f10"
+    },
+    {
+      "bytes": 14950,
+      "path": "docs/remediation/p02/P02_DECISION_RECORDS.md",
+      "sha256": "a326c02d184c0b5c0398df8c47245c3a7d38337d1d722869891ad79fc0da890b"
+    }
+  ],
+  "protected_hashes_unchanged": true,
+  "protected_source_and_planning_count": 764,
+  "static_type_catalog_preload": "Reviewed pure import reads repository core/data/site_object_definitions_v1.json, not customer data"
+}

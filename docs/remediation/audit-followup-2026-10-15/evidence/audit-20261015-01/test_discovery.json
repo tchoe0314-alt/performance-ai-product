@@ -1,0 +1,1427 @@
+{
+  "browser_spec_files": 143,
+  "files": [
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "cd08f998396ac1944a949370bf2ea7abe9b4126a44920c852c21ec3e661895d2",
+      "source": "tests/test_action_contracts.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "062960f90adc4e4d4de4c15199dc6270fbce8f9629ce7b10893d1df85f641f9c",
+      "source": "tests/test_ai_orchestration_evidence.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 8
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "9c23976a09dad95b0f1205cb6aea7f454a80e9a25fc5567c241c7eedad934e2e",
+      "source": "tests/test_ai_provider_independence.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 8
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "2f4fb96412e0b147e9dc02db6983ac4fc732731bb50724b7069053efe88d6eb2",
+      "source": "tests/test_ai_renderer_deployment_contract.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "2bd85d7c4253f1f5f0fd6868bc1084c86ce98f9540e7fa7f1e26df23292f2743",
+      "source": "tests/test_ai_renderer_gateway.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "ce48db9d02e60383ebd3f0140c75cff1fff1e8bb1e92e4dae449e766f8415b9e",
+      "source": "tests/test_ai_visualization_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 13
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "b7d00e6545b8681cff45a05eea079701e1a645cb3e26005bc3906e58cc87bfa4",
+      "source": "tests/test_alpha_monitoring.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 11
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "6e24c37e6bd3e831c241913dc8d3d2e32f54f600df0cd488fa83110a0afcc46f",
+      "source": "tests/test_alpha_smoke_soak.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 10
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "bdc8553dcfd971bbe022a264d08366ebc70f100df1b53d1505dfeac6cb8a160f",
+      "source": "tests/test_api_account_support.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "342feead878802890fcb44d18abdc1fcead935db439bb1ed79679996208b5fec",
+      "source": "tests/test_api_engineering_guards.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 12
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "2dfc8364cc03c1f4c1851897b4cf524fa9d13f2294059e15ba621b0ca7509009",
+      "source": "tests/test_api_release_safety.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 27
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "513d71709906f148bdf98a4ab91495f755c2700035548b063cbb149cd1ce6fd8",
+      "source": "tests/test_application_artifact_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 44
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3a26b25cc0a8b2d3e76089ba6f0425d961cfdfa84222bc1673e02e776a798d56",
+      "source": "tests/test_application_auth_health_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 10
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "8ebb32611dc5f8617cee17e925bbcd066cdc163d25cf4238ef138829bbd5f0a1",
+      "source": "tests/test_application_chat_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 88
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "78e086c8187addbf4850fa18bb38620c834e35966c08b3c3f2ad8ae9af69050e",
+      "source": "tests/test_application_cost_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "a460c7f21ab5dbbb42f370c17d84a6ee63ad0fbff20fa5c15df00f1e05302f95",
+      "source": "tests/test_application_design_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 35
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3fde226bc584aa98e92953e655245fe056aae06b5f0c4a4d02f8c389fc96057f",
+      "source": "tests/test_application_file_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 12
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "c339ad01ac8f908552662c206e9ebbb269f72987924448f1378c23e59e6bffff",
+      "source": "tests/test_application_job_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 32
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "b9a965a94832836038cabc7bacad8f40b4017daeb9f2e1f9e5bd9de103643f42",
+      "source": "tests/test_application_project_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 44
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "ba4fe9972d70e896ccad9e32ebf07fd6e5713cc8acbdd71ec7f63a081a9a88ab",
+      "source": "tests/test_application_session_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "a18c976ba00e79155461c8ef9bbed16b09f681a5648e9f69227585e988939cc8",
+      "source": "tests/test_application_standards_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "4c09476f138388c17a2295faf44ce428824181bc74f5aececf427b59ec323a07",
+      "source": "tests/test_artifact_service.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 11
+    },
+    {
+      "fixture_or_parameter_dependent": 7,
+      "sha256": "6ecdeb69508a194e9dbddcc04d09092696b92d33e70ce73bbf51e5ffd3b8be61",
+      "source": "tests/test_atomic_export_finalization.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "611b6e87d80b95d995cf80bb809bb73699b08c714f0e5ca36c9f1ed563a39ca4",
+      "source": "tests/test_auth_store.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "7bcc829181a2c3caf454d9e543a80c03a505f646ea09394cd5b3be9bd040bb87",
+      "source": "tests/test_backend_keepalive_integration.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 12,
+      "sha256": "6afa636bd490bb5e492153e29551bc244f29484c60457647db4bb9b35b1c74c0",
+      "source": "tests/test_backend_service_startup.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 13
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "7819c25edd08ed543c6b3d647d71ee8b1cd658712fb6b60df8def0d8fd3c99ad",
+      "source": "tests/test_benchmark_suite_regression.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "9a9125525e18208110499bfe12f546d69dc8a93e911c4e9da11e02a9a1b228d8",
+      "source": "tests/test_billing_foundation.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "a879bbbc6910f561475a7cafb29c2d1f9d1aa82fc361df6aa678eb8451ba8272",
+      "source": "tests/test_blocker_explanations.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "4f658191476332e3d1c0ed469ba80a620db6c5555f418a55672a46c1da2d124b",
+      "source": "tests/test_brief_classification.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "395c66a8a37098813ae88880de199e3bcf553be67a947b77baa3a2b1beab101c",
+      "source": "tests/test_brief_editing.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "954b60be8dc77ec913266b4b57a5475dfdb9c57f48ec7a5ae748d6bdec3e4b4b",
+      "source": "tests/test_brief_requirements.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "5a35d84ecf8cf6a998a10367a2e96e694775d0c6a99a39b53648c75c5c7b2c4e",
+      "source": "tests/test_brief_sources.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "4a989ecb9f0e46ed20b7c9f1a4885b62618b2a0c54b7a7249fdc4f4f13613bf3",
+      "source": "tests/test_cad_dimension_annotation.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 5
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "c1267e681291fe8c9b02b5a8d654cd44a0b54cd7ddcbf0f9d83f8921e420f5e6",
+      "source": "tests/test_cad_entity_chat_commands.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 11
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "18b7d6ebfdaffa797fcdbebe42ea486fcdb0286a068879b8a96981d9fafb4a5b",
+      "source": "tests/test_cad_entity_dxf_roundtrip.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "fe7858fe339d8ffad391a0486ecfe766f23b39a7b6a43909eedc2b42def29d09",
+      "source": "tests/test_cad_entity_grips.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 5
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "724407290528ff1c8fa8e1416fb8a1e9e3d0b5c896b5a1aea816f9c835066b88",
+      "source": "tests/test_cad_entity_history.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "508876f9cba197fcfdff21921358812e9465b8f2ad02a86984a01fe16e86075c",
+      "source": "tests/test_cad_entity_model.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 5
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "976604116f57b4c92fbfe3961041d41078b70c64861bbd4bb8905d1a75fc7c4f",
+      "source": "tests/test_cad_layer_style_manager.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "4ff5ba43b103aed5da4dee58b87dc971c4df022be93db8ab99944748f2bd0904",
+      "source": "tests/test_calculation_execution_scope.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "718b097ce07b391507e9bd35b5c6a2b2ad39314ff4c2d4c0094040e15fd51952",
+      "source": "tests/test_calculation_export_versions.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 15,
+      "sha256": "e36d37eedcec7a42111b5e318ea924ee6a9f1d830a44f6c12b6d9cb89dcd1653",
+      "source": "tests/test_calculation_history.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 15
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "a2a81b7458e58fb98f1d66aa48db893f441b69e767b89e194e3ec57c9a6d2779",
+      "source": "tests/test_calculation_terrain_assumption.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "81be84efc79b65f9d4a49fe6bf55452dffe4512e3370ef50bbc4fc8a46aaa35c",
+      "source": "tests/test_candidate_review_inbox.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "8b2ebebbc45c675d2cc77efa1ea4e05d253d7d8c6b234f59868e3f17f5cdaa75",
+      "source": "tests/test_canonical_canvas_gateway.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 11
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "b950de51509c576dc1aea79207a2951661ce2db73f4a2ce3703f080912460370",
+      "source": "tests/test_canonical_project_document.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 9
+    },
+    {
+      "fixture_or_parameter_dependent": 9,
+      "sha256": "2d80c46aa02d3c986223cbe9e0c56b2234598e0c5e1e9659a7e66b89ee3a63e1",
+      "source": "tests/test_canonical_record_gateway.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 9
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "69888ca55c8e7b8a2608827eb86ff29b29dc09bb56ecc055923e7e96cd0e6dd4",
+      "source": "tests/test_canonical_results.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "718e9e3a93345e112701fa08bd631135189ea3749d8583958166114b443a5024",
+      "source": "tests/test_canonical_stage_output.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 5
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "aad392978419efea4393dd89e9060ecceab78ddab2a831129978c530aae21a1a",
+      "source": "tests/test_chat_intent_parser.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 108
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "c75ce2de354da36d9dbc1d500be184e9875c3c0ea4bbf73d28426cd1c9d67670",
+      "source": "tests/test_chat_learning_store.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "68daa548ed56839dbb76da45e63e8fff6bc55060adcb05fbb239341a4156b566",
+      "source": "tests/test_civil_design_readiness.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 72
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "6ed7da89d72ef9f43eacdc970ece633c6180d4655eac233461bf023f2c6201d7",
+      "source": "tests/test_civil_surface_model.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "8085d0c58983fd25309267647f37422e8783602bff5721488f79c2f876c833d7",
+      "source": "tests/test_combined_backend_runner.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 8
+    },
+    {
+      "fixture_or_parameter_dependent": 7,
+      "sha256": "af66e7525f63f388202438aab297a8db7d7c49193cfc99fe3bd2da6fb6961332",
+      "source": "tests/test_commercial_site_benchmark.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 9
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "a70585933395ae404e66a3b12d572ce938e47edd301d3e9d8236c9caed9c7a38",
+      "source": "tests/test_conflict_resolution_engine.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 26
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "8b655a03d734ac8c8edeaba122f0205f5fd7c78c3880c0e6655f1576bbe6c58b",
+      "source": "tests/test_construction_package_manifest.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 25
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "4054979bca6fdaf5a1d7fe58d83e966a5bd20630013189576a3cae5aa8e95ee0",
+      "source": "tests/test_conversational_qa.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "f84d66f1d59213b7522160e8c79fe6baa2321737392c201661f87a5570ff08c0",
+      "source": "tests/test_coordination_candidate_isolation.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "e84145569b22e931b824eba06838827ec12a835f6a482a49ba5ef6593010d449",
+      "source": "tests/test_coordination_performance_helpers.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "46df92325b89d9c551aba5cf224e5537ffa4ad30339f0b8b5eb179e23799460e",
+      "source": "tests/test_coordination_quantity_alignment.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "7e2ecd2b0e515d8819725673232c2cce5f81225d3f313c84156e5b5935b54712",
+      "source": "tests/test_coordination_state.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "54259e50e3625670d15e83ccd724fe4a009ea903065bb1529970e656d6e50421",
+      "source": "tests/test_cost_engine.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 17
+    },
+    {
+      "fixture_or_parameter_dependent": 5,
+      "sha256": "ab570699e15576d77fcd0c5ceaafb7b061ebe49a99715a188015f6825f5066cb",
+      "source": "tests/test_current_geometry_export.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 8
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "515c13ef09c0a150827276a4db44e33be553b0bf60fc4a0d833df505acdd590e",
+      "source": "tests/test_customer_templates.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "19b8448e7b6e547bd73fb675548204bd845f113bd2a613a36d4fa630f6b7f6f1",
+      "source": "tests/test_data_lifecycle_and_backup.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 17
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "5667c23d8f8b1165e73703d7db71d6cedee123205e1e041ae69582f3a5fe6c07",
+      "source": "tests/test_database_pool.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 9
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "611d3597083de7c9979e51eb9268353a9ef2196644cda7d1f05550a9ba4d6d86",
+      "source": "tests/test_dense_utility_benchmark.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "a6e33b65bf107f9c76b60e3f06078e07af55896f6e2543df21868777b1d8b63d",
+      "source": "tests/test_dependency_aware_rerun.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "110b81f3bf515e01ce2c5e274c57bc1bd96bf58eb800602b5e2bf9c4c927ee19",
+      "source": "tests/test_dependency_graph.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "45c0a355ccce66253c53ce7d92bca707adb86d36a0d29eaf2a55420cb7c3a591",
+      "source": "tests/test_depth_validators.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 28
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "ff6d7c7aa12f2793b39de2fe4b55abdc02e6143eff76be05edc5f2caaf9964ae",
+      "source": "tests/test_design_alternatives.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "be24f191b58c3c77307f950bb8fc3f108ae5bf53a8effb81a67d24ce3e185440",
+      "source": "tests/test_detection_geometry_quality.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 5
+    },
+    {
+      "fixture_or_parameter_dependent": 3,
+      "sha256": "f7ad378f82ecb4da1f04d3a9e3d11aac05689ab9291316fb8af143e5505145f8",
+      "source": "tests/test_direct_calculation_persistence.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "f395005174c7742bd87eeee2c018c02238da03c5b60e1917104ccb7f8104b78c",
+      "source": "tests/test_dxf_sheet_layouts.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 15
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "98bbdcd517a52b72bc45570a353ff19014fb240ec5b18784dba987b784ecc801",
+      "source": "tests/test_edit_transactions.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 9
+    },
+    {
+      "fixture_or_parameter_dependent": 4,
+      "sha256": "36bb819265304f665cf11df33b63926a8882eb80132eaaf79d297be46afa9df9",
+      "source": "tests/test_end_state_capability_validation.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 10
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "81259cfbe2f455aad6c69f040ba252a6f23045440ec1307fc529521c940ba972",
+      "source": "tests/test_engine_contracts.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "b7e58aacdc4a73f0eeecf63273d9af0ee4f19520a898ff54cb2f4946291fcbcd",
+      "source": "tests/test_engine_depth_audit.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 16
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "20b87a11ce536a55bd891f4c6eefa294a6be38438308fec55697d1fad9470e8e",
+      "source": "tests/test_engine_depth_dashboard.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "61daa28ddcf1a79748711c23fd3f203b07fdbda9720cfc0bdeadd3253fdb09b9",
+      "source": "tests/test_engine_hardening_drainage.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "eabaf200d4077cdaeeb165b2f56ae801604c203e0f86cff8fa0949d5db464a1e",
+      "source": "tests/test_engine_hardening_storm.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 8
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "eede488caf53b360cf1145e7cf039551a6cdc0804b18a152cb9b5efcb447872f",
+      "source": "tests/test_engine_readiness.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 17
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "2225d7300f2fd5f0bb2bc23da5fda154fa672c3c90dd68458a5588d43d5c0ef0",
+      "source": "tests/test_engineer_review_package.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 9
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "0367dae9ab46225664ca668e3cf10aa808067109ab37eef03350ca397e795211",
+      "source": "tests/test_engineering_generation_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 14
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "d41fa516ea10cef48ab1e85e6aaba9c42f2aec29539ebdab441a8707f527ad90",
+      "source": "tests/test_execution_control.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "0d4097f2f225c3e7f40304c550b6c205835ae2b040f599502737a04318b3a914",
+      "source": "tests/test_existing_conditions.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 10
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "a371e773d5b00e12e5a166a473703653025d9a6c21e325e210d4db84ae61a6cb",
+      "source": "tests/test_existing_conditions_importers.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 24
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "aa19c4d83df5548e05058d9a52a00a8b40091b42756d6fdcccee203995072f3d",
+      "source": "tests/test_existing_conditions_online.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 32
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "0cec8dc1da3921408e25fa29df30a2213eee96d5b5f6b246e3f1a5e5fb1c7235",
+      "source": "tests/test_existing_conditions_package.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "9c87f68f663de5f98d358574b0d1709cbab91feb538bacf1b48b09595e49ded7",
+      "source": "tests/test_export_external_verification.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 14
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "29e22c6f9723cc171c1bf41f298ec9e1d1085cbffdce0a51291c76534f09d54a",
+      "source": "tests/test_export_package_report.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 11
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "d5591d2120b1c9695ee8d650b138bf984fc413c7fcf5b82fff3bb9cd9ba5b9ee",
+      "source": "tests/test_export_packaging_richness.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 10
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "2fde0176886a2d4e13417860e8cb1c7eb8a40e901265327a5a96a26b4aa91069",
+      "source": "tests/test_export_vision_ground_truth_dataset.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "b5f89c439a7383aff17dec8aa0d5e86721688e7adf09621981ab0f7dbc778ead",
+      "source": "tests/test_finalization_deliverables.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 5
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "286c58738c10f4fbe0e44a8f5161b24a47f6cf4165591a03f86bc4c69ee16098",
+      "source": "tests/test_full_launch_readiness.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "be4c4e51e03ad9cbc42ba163aa099394cda37d62107ac368e099dc327e19aeb8",
+      "source": "tests/test_gis_provider_registry.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "de693e42cfcf4fbdb6e312bdc7c0be7743cca9fed1e897e0bcece24222bda624",
+      "source": "tests/test_golden_load_benchmarks.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "7619dd65da40c95db8e355ec54ff556a1bf1a42e462ebfdbc207f4da0b76e235",
+      "source": "tests/test_golden_runner.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 24
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "0da98cb70e0da0d85e0e21501f3f118bb1cc50b1af66aa7f8a62490ac964ffa8",
+      "source": "tests/test_golden_scenarios.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "d88a51027f95cfebd481af4259b39baeaa1f580a19af18d92a5db23f6899ae9d",
+      "source": "tests/test_grading_requirement_integrity.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "cfc73530633c515a4b64820e56245e6dc368a6c71a4144d0c162a6eec22bd579",
+      "source": "tests/test_hosted_canary.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 8
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "0a187099ce0ec852f181227017ca5457a2dc192783b5a4602a9480c8d98a03ea",
+      "source": "tests/test_hosted_gauntlet_script.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "5d5024a8edbf64ba3d3e1ef0ae4f0dc42b98996f7ec13239583e4a42f9cb3c13",
+      "source": "tests/test_hosted_operational_evidence.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 8
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "01449c7a8fba508436c593365fce8f9eba5ce5f410fb504bc0e1432778ac6a87",
+      "source": "tests/test_imagery_detection_gateway.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 20
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "4eb260eecfed8e4636acef4fd4b4d467753e143bdcd6cbf23115f6cf4a526bf6",
+      "source": "tests/test_imagery_object_detection_shadow.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "72c8892765b7bb12debcd4461480ff96bc6bd30173a37949394bcac21c7fa7de",
+      "source": "tests/test_imported_conditions_planner_integration.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "0381217a4f4fbb3f59083476dd18285830fb28ace8458706afd8448d551bf197",
+      "source": "tests/test_input_count_controls.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 3,
+      "sha256": "709fd087fbd5012119e9db960760859a0468c0227b1f3c24a0a948e68aaadb39",
+      "source": "tests/test_internal_assurance.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 8
+    },
+    {
+      "fixture_or_parameter_dependent": 3,
+      "sha256": "a1d1e8c79af7c0c458e32d944c73270909571aebf2311fe924c8838bb3f79673",
+      "source": "tests/test_invitation_registration_policy.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "2ea2a95ed787140629e41202da2b4254be932ce835967324ce7d97f4b0ed505d",
+      "source": "tests/test_job_handler_routing.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "f742d5bd00ad6a80f651e88e1c1295b1209a4eb06885edbb55c3415c4bf889ee",
+      "source": "tests/test_job_queue_service.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 38
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "f9e25cf3bad9bb31d31798b9cf56f93085ed8c7a9d9788150d3efdab09968ed8",
+      "source": "tests/test_job_worker_health.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "ef4e0213d9a9673f9136189d7c282b52a699e95b5c2d444830c5d53c1b2e07d6",
+      "source": "tests/test_landxml_io.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "dde1089d3644751bfaa8e880373925b8ff308934475521c4b713b5cc3956f4fb",
+      "source": "tests/test_launch_source_confirmation_evidence.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "37182533267d9d9d94fd91de3ad9f9ce00a89650c572fdd371058ce25850fc27",
+      "source": "tests/test_layout_engine_legacy_inference.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 15
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "82db87be64eb273f215cff796d9869ba9112669aa5ac4c85ac859d1b861bfa24",
+      "source": "tests/test_layout_engine_parking_fit.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "7ff8c7f8d33d07be05c61eec6706831d2427f47389a7116c239d3a4995625be2",
+      "source": "tests/test_layout_fallback_actions.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 8
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "5cfd41cd3448007cb46770a6a873b846bf6129cb4316f1cff6ae3300ae3d7116",
+      "source": "tests/test_manual_mode_validation.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 20
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "adebc4c3ac8dd21fe240cb70f9fa26afe6d712b8d11986df1dad07161560e342",
+      "source": "tests/test_map_feature_detection.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 17
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "c5f6e48645295c654a2cd3fa950e6eb0258b14b977294ddd4cce46f2a3e9741a",
+      "source": "tests/test_normal_alpha_scenario_runner.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "84693c723c5da8bad6b9e11177b2fa3d0c9c16a56b439ebfbc37e3560d9a3315",
+      "source": "tests/test_normal_scenario_evidence_wiring.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 10
+    },
+    {
+      "fixture_or_parameter_dependent": 6,
+      "sha256": "296cde01c83546509e19ed02bd6f86951dfb03cf3bdf0fa03215492c2d692e97",
+      "source": "tests/test_pdf_to_cad_entities.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "41e82cd331fcbdea027252bbeb6a7f9d6a6b398937af39887bcf0a794e7e5e10",
+      "source": "tests/test_phase0_inventory.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "9d54ddf7eceaec75bfe39d6e4487721825a4275d4e6d9c4d126211c91d87f754",
+      "source": "tests/test_phase0_legacy_database_migration.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "517b74a116e1249df7685e2ae38f7f13740cc496e39e289652184da854fee3a5",
+      "source": "tests/test_phase10_optimization_summary.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "e27624a9b99aacfe9fb4f7cb7684ec222da4ec6588ddc6208e7a6f82aeafe373",
+      "source": "tests/test_phase1_deep_validation.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "90864cd0015aff3324e8c8690f7d5770d498580565fd971c46046a2a86650f94",
+      "source": "tests/test_phase1_exit_regression.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "fb7b22ca7d9c7342382a5849aae94f36fbe49404af78c32837b1cf065622cbd5",
+      "source": "tests/test_phase1_slice3_truth.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "1ddb74d4159ab1e33fb225422699100c456340cba20373e4cf9cf4541aa2200c",
+      "source": "tests/test_phase1_slice5_consistency.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "7eeae08ae011a6d8e629423fe3604962c36097f6e763411779d5cce15e60dedd",
+      "source": "tests/test_phase1_slice6a_manual_gates.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "8166d709cc452e89c8475d890b74d9f10577a56f93ce79446539643e9a06aaed",
+      "source": "tests/test_phase1_slice6b_metric_precedence.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "9745be4aad0ff8aa3a1efc4d0159df99ed3fe779ebed7d95e96832d49e53766d",
+      "source": "tests/test_phase1_slice6d_export_metadata.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 22
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "8aad8aee8b32e2d85dc3d03987481e373d5f9f502302cff08d2d9f1819e8449e",
+      "source": "tests/test_phase1_state_contract.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "b15b09dc2c898c4cf4842376f45938b6786184841e4e3d8f7cb6d1d673a97238",
+      "source": "tests/test_phase1_truth_gates.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "8875458fe9747bfc9b34141c880c873f8b90d991fd866e39535cdf3a5ed4f5a3",
+      "source": "tests/test_phase2_drainage_alignment.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "1931778e9b9f97d1d315e565dd1e18e724486abe9c69010694ad44d68037962e",
+      "source": "tests/test_phase2_exit_gate.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "43dcc85b88ef5b4aaa246ac4f8aa96e17e726a71e6a5a6cf8bd86eb543b579af",
+      "source": "tests/test_phase2_slice1_coordination_realism.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 11
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "808da15518195ae1fd0ea713e0fd10e8fb07a5d91d5ca4aa35fbade8b05a19cf",
+      "source": "tests/test_phase3_exit_gate.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3472cc3ac629c12093b6c07773ffd12c187d4669b9535aee65a01a6b0c7da92b",
+      "source": "tests/test_phase3_strict_mode_and_utility.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "99b8850497905bbc55f1c9d95c8a89556d3b0f716a4743c75eea58c5e411a648",
+      "source": "tests/test_phase4_grading_surface.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "232165b63c2334ed8971129336e3f0f3085b45742f78ae17d422ae4016d6ca72",
+      "source": "tests/test_phase4_reactive_workflow_policy.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3772880266e40c8e08a71bed1b0f993cc8d1c4a41934a0d89cd64068b090ddca",
+      "source": "tests/test_phase5_surface_drainage_coordination.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 38
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "5431d754d101bc020709d0047742137599df5fa5a50f94023256b6c5b040fb1c",
+      "source": "tests/test_phase6_fix_pass.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 13,
+      "sha256": "3ae80dd60e518462f6e1044c443c9421c279b01bbfa62610d3c7fbf218d05144",
+      "source": "tests/test_plan_pdf_understanding.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 13
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "726e614773c481b6b8662a4c79e33c050025a2b58c2d3d1ba2d44b580739ec58",
+      "source": "tests/test_planner_orchestrator_routing.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 9
+    },
+    {
+      "fixture_or_parameter_dependent": 3,
+      "sha256": "a5223633db00221e2bdbbc3087f5bd9dfe9adad3d73fa7d1f1067c2b9378b87c",
+      "source": "tests/test_preliminary_exports.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 5
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3c8ec50f81b03f2416a6bf9255b29ac86fa7dea768e41d1700431e3fa214d313",
+      "source": "tests/test_preview_render.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 58
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "dd6f565f821951127ae19ae78bda1e2a04b244e8ab0b7dcfba1c3575d2307e90",
+      "source": "tests/test_private_alpha_readiness.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "6cb3ff032e4299a6cbdbfe01ce75205a9a622ff17c71d8442440b131b0f06d10",
+      "source": "tests/test_private_alpha_readiness_audit.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 5
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "a77b4b61e3e1c7ebd5cc11ff20dc26b1ce8d68ca417dfc599320276c774ec865",
+      "source": "tests/test_production_depth_artifacts.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 18
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "35e007bf7f954d12d00f3906aad4178c67681e07dbe9b0352c094da0a47b0025",
+      "source": "tests/test_production_env_validator_v1.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 28
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "7684851c8179859f0e986369f9e498cb6e178f1f3d5b2e57ea6e6ad8ac63337b",
+      "source": "tests/test_professional_release.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "d00310e29da3d65e61393c1deb599b1fe2e75b11765512d372c6359e8f941420",
+      "source": "tests/test_progress_timeline.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "f4b57f2a0511898f21d847d928c7be911718ad25ceb83fc98da3881573953dc5",
+      "source": "tests/test_project_edit_history_surface.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3f7898d5835cd8535b20bd0c33fbfcc0b5e518e12a54dcb4487561492567efb9",
+      "source": "tests/test_project_lifecycle_collaboration_memory.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 7,
+      "sha256": "a969b771ca8e2e9cf1b641467a19572e56d3e52fef8b8a630d4e95bde6009725",
+      "source": "tests/test_project_revision_conflicts.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "e094a26420fb1b19b423b5e54c937dc63f3ff6fd3e3a7602132ecc21818df374",
+      "source": "tests/test_project_store_fast_paths.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 11
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "2dbfc4d17ceb580b325e40588dfcbd85ded44c18496a426fb8fa16ac1ad23378",
+      "source": "tests/test_project_store_sql_safety.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "eb504cc86077e27ce604375427cb73d34de7343afe483c62bec0e6309cea8e5a",
+      "source": "tests/test_project_team_admin.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 5
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "b7eebc8dc704f253d1137df3262c34d3762f00d00d6425211b95b839572973cc",
+      "source": "tests/test_public_vision_review_sprint.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 11
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "8092544fdb6367bdc85bcb915c8f6520290daeefb390dab3028e794ea906fa30",
+      "source": "tests/test_quantity_engine_structure_classification.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "0b8b0ffe3f65806545fdd25a8eacf2d4761efc4d916bad43f943917f2a148ad2",
+      "source": "tests/test_rc1_engineering_validation.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "e6508b8b1896b7f185cb214581cf412080f2bfebd79cb0ba1037a8b53a013e6d",
+      "source": "tests/test_reactive_model_contract.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 21
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "bf44834189bde708396cb9c7a8ab141ef66550ae37c4e82b0fdfbca99f7bd7c1",
+      "source": "tests/test_reactive_partial_rerun_entrypoint.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 1,
+      "sha256": "1cedb9fa3644e6066a48995005d801c70cbcbcbcd2be87f777d65f41dec68549",
+      "source": "tests/test_real_firm_end_state_workflow.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "ba6f9c524fe5ad7388184bd3894c7f0d7847bcb401e62f745a6c5b30a81e30ee",
+      "source": "tests/test_real_input_file_benchmarks.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "4cea8481974679f5c8b8958dd4f422a9c869e71e47fe8088d8d022e4a61f58d5",
+      "source": "tests/test_real_math_big_pass.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 13
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "f1e224545365af9601e032c3f28127e44b081480ac288ca5f7bb48f2e16ca33b",
+      "source": "tests/test_real_math_hydraulics.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "7a28c3f4b8156f860e2cbf3ee214b85d62c3a2eab83977d1c4d3454bfea4e94c",
+      "source": "tests/test_release_candidate_readiness.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 17
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "6b1c621aaf030c964d74aaa482f1d1320b3dbba651fb5382def037fd6fc7f670",
+      "source": "tests/test_release_gates.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 17
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3acf788b53fd5a7963f073aea582f4f2a140d7d702ea78102ef50d7b65cbac26",
+      "source": "tests/test_release_regression_cleanup_guard.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "e91c2381c600f6e5ee8defef813b3867b6df48a579282921a72139db70ad1d0f",
+      "source": "tests/test_report_builder.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 17
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "03f44db962a0b74b9212c94b84a3f26da17212116ac61f0903d9ef20f45f42c7",
+      "source": "tests/test_review_issue_tracker.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "6078734a36d39ed2de8a13eb1bb17ca38edc4d20daf86430adc3da54d278cabc",
+      "source": "tests/test_runtime_resume_echo.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 1
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "cd496c929084e980362f547849a05e53bccd7110fad1db79cf5891f32133bda9",
+      "source": "tests/test_sanitary_stage.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 12
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "e90a9dd59055cc44d831903c71866ed6e4761d9605127fbf6aa34464a25eb7dd",
+      "source": "tests/test_semantic_drafting_objects.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 11
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "6cf8b59a8ef91eae61a076ae1883f1014020ee788f3a8ac3311554adec9ad6cc",
+      "source": "tests/test_setup_wizard.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "ff3a0fd113653d46ba383886304e2008b310567a89094b2f64907205c26acd65",
+      "source": "tests/test_site_objects.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 10
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "a9fb4e7dc28642b4a8c8b89668cf0c9c8c498fc8589e3aab0f351b20ebec0dfe",
+      "source": "tests/test_smart_fix.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "9a3965e0673ce7f047201d38021a798feb5f93ffe7c97d551ebe7dec079d1ecc",
+      "source": "tests/test_snapshot_restore_expanded_plan.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "596861b9a6124d95634fbb6d09f8a52c13b8386db4912cf40ac3e5ecea3290bd",
+      "source": "tests/test_source_confidence_map.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "2de6c7aa43ca703c834c22bc4a4db45210cc2471f0f8dd1b1589d450342d61a5",
+      "source": "tests/test_source_context_workflows.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 7
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "869a84ee603c54ee5e870d185776c021968df5d9646789e4b4a2aee52af28669",
+      "source": "tests/test_standards_discovery.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 44
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3b9d84f5ae9f30919046f95ec0ef4efcc70ba82be9daaa15b0c2dcc52429f1bb",
+      "source": "tests/test_standards_package.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 15
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "1cf5c7b237c43b3791b006bdaa898cbf375bbee4d814438114ba65381f393801",
+      "source": "tests/test_tin_surface_engine.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "27fd8a6df5ddd6ab884eaa5ddde89a5dcd0c70405cbdae9d5c438aca027ccf07",
+      "source": "tests/test_train_semantic_model.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "2c868493a161152aa38769748ea5ff137c92ad0b5857776cc88bbaf9c5686c1e",
+      "source": "tests/test_usgs_real_terrain_benchmark.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "38ccc488ca04866399909e8a13765ab6d4ae652359ebda9e0eb3ee55f80a3b24",
+      "source": "tests/test_vision_ai_review_assist.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "2f7cdd43189b986c04c0ec87912ab40784126aefaab961e9b4668c6d6f340283",
+      "source": "tests/test_vision_benchmark_dataset.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3c4433210c10861a90cd1d206dee41beb9bfacc7d54ee74caeff5d868fbe71b4",
+      "source": "tests/test_vision_detection_learning.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 13
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "0781eac4f57c5fa5110f00dd2190d4374f15f11f63e8138c8b5c23bcb5ae161e",
+      "source": "tests/test_vision_ground_truth_flywheel.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 13
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "892da8ba8d3e402e36b1f97b18dd07b7decabfa30e8fc6f8c519399049abe16e",
+      "source": "tests/test_vision_model_calibration.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "5e37ce1239c8c73fb723ab6a320deeefaa0651dda28019b161697a4eeedc7c48",
+      "source": "tests/test_vision_model_lifecycle.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 9
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "f27f717e5454f54e8f9075ad4d550d81428d66b0ae030c3267c835615b8b02f2",
+      "source": "tests/test_vision_model_runtime.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 6
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "a7fdff3e4c13e731987f8d3f9844104f9ef4f72ff179754b4ccaf16f197d1969",
+      "source": "tests/test_vision_public_bootstrap.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 9
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "3636ed2bef7b249abfbaa0328e8bd74ae7c45f689c5be86f6e7c236a7ddcb6f4",
+      "source": "tests/test_vision_shadow_evaluation.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "4dc449424840c40edb331c8be5aaf9039a494c1267f7d39ca2e210bde032c353",
+      "source": "tests/test_water_fire_flow_preview.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 3
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "765ce6dce8249382936a9bd1ab7a556cc79546cadea2b478e2ac81f3c086ed9d",
+      "source": "tests/test_workspace_landxml_export.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "f4694a7ca8d107f14286176e105df043dd9bce4e1842ce78066c6d90d92fdf8b",
+      "source": "tests/test_workspace_layout.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 2
+    },
+    {
+      "fixture_or_parameter_dependent": 0,
+      "sha256": "fdecdd3c6b3d473188530a50eff3a5e8924921df200527fb82d35e86a2bd871e",
+      "source": "tests/test_worldwide_source_discovery.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 15
+    },
+    {
+      "fixture_or_parameter_dependent": 2,
+      "sha256": "89c6c99facabf6416d2816daac631b44b1af61b7aebcbdfba9e5d1e61a20d325",
+      "source": "tests/test_zero_parking_requirement.py",
+      "status": "DISCOVERED_STATICALLY_NOT_FULL_SUITE_EXECUTED",
+      "test_functions": 4
+    }
+  ],
+  "test_functions": 2031
+}

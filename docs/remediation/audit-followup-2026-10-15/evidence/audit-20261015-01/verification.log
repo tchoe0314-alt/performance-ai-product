@@ -1,0 +1,131 @@
+test_E01_negative_rainfall (__main__.Followup.test_E01_negative_rainfall) ... FAIL
+test_E02_infinite_rainfall (__main__.Followup.test_E02_infinite_rainfall) ... FAIL
+test_E03_boolean_area (__main__.Followup.test_E03_boolean_area) ... FAIL
+test_E04_negative_runoff_coefficient (__main__.Followup.test_E04_negative_runoff_coefficient) ... FAIL
+test_E05_stage_storage_must_not_decrease (__main__.Followup.test_E05_stage_storage_must_not_decrease) ... FAIL
+test_E06_routing_must_not_hide_excess_storage (__main__.Followup.test_E06_routing_must_not_hide_excess_storage) ... ERROR
+test_E07_grading_independent_uniform_volume (__main__.Followup.test_E07_grading_independent_uniform_volume) ... FAIL
+test_E08_surface_helper_independent_uniform_volume (__main__.Followup.test_E08_surface_helper_independent_uniform_volume) ... FAIL
+test_E09_surface_helper_must_reject_shifted_domain (__main__.Followup.test_E09_surface_helper_must_reject_shifted_domain) ... FAIL
+test_E10_boolean_model_adapter_version_rejected (__main__.Followup.test_E10_boolean_model_adapter_version_rejected) ... FAIL
+test_E11_explicit_stale_revision_positive_control (__main__.Followup.test_E11_explicit_stale_revision_positive_control) ... ok
+test_E12_boolean_canvas_version_positive_control (__main__.Followup.test_E12_boolean_canvas_version_positive_control) ... ok
+
+======================================================================
+ERROR: test_E06_routing_must_not_hide_excess_storage (__main__.Followup.test_E06_routing_must_not_hide_excess_storage)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 61, in test_E06_routing_must_not_hide_excess_storage
+    self.assertFalse(last.storage_cf > curve[-1].storage_cf and last.water_surface_elev <= curve[-1].elevation,
+                                                                ^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'DetentionRoutingPoint' object has no attribute 'water_surface_elev'
+
+======================================================================
+FAIL: test_E01_negative_rainfall (__main__.Followup.test_E01_negative_rainfall)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 44, in test_E01_negative_rainfall
+    def test_E01_negative_rainfall(self): self.invalid_hydrology(intensity=-1)
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 43, in invalid_hydrology
+    self.assertFalse(result.success, f"Invalid input accepted: {result}")
+AssertionError: True is not false : Invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=-1.6128, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 0.8, 'intensity_in_hr': -1, 'flow_cfs': -1.6128}])
+
+======================================================================
+FAIL: test_E02_infinite_rainfall (__main__.Followup.test_E02_infinite_rainfall)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 45, in test_E02_infinite_rainfall
+    def test_E02_infinite_rainfall(self): self.invalid_hydrology(intensity=float("inf"))
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 43, in invalid_hydrology
+    self.assertFalse(result.success, f"Invalid input accepted: {result}")
+AssertionError: True is not false : Invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=inf, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': 0.8, 'intensity_in_hr': inf, 'flow_cfs': inf}])
+
+======================================================================
+FAIL: test_E03_boolean_area (__main__.Followup.test_E03_boolean_area)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 46, in test_E03_boolean_area
+    def test_E03_boolean_area(self): self.invalid_hydrology(area=True)
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 43, in invalid_hydrology
+    self.assertFalse(result.success, f"Invalid input accepted: {result}")
+AssertionError: True is not false : Invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=3.2256, area_rows=[{'name': 'SYNTHETIC', 'area_ac': True, 'runoff_c': 0.8, 'intensity_in_hr': 4, 'flow_cfs': 3.2256}])
+
+======================================================================
+FAIL: test_E04_negative_runoff_coefficient (__main__.Followup.test_E04_negative_runoff_coefficient)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 47, in test_E04_negative_runoff_coefficient
+    def test_E04_negative_runoff_coefficient(self): self.invalid_hydrology(c=-.1)
+                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 43, in invalid_hydrology
+    self.assertFalse(result.success, f"Invalid input accepted: {result}")
+AssertionError: True is not false : Invalid input accepted: HydrologyResult(success=True, total_runoff_cfs=-0.8064, area_rows=[{'name': 'SYNTHETIC', 'area_ac': 2, 'runoff_c': -0.1, 'intensity_in_hr': 4, 'flow_cfs': -0.8064}])
+
+======================================================================
+FAIL: test_E05_stage_storage_must_not_decrease (__main__.Followup.test_E05_stage_storage_must_not_decrease)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 51, in test_E05_stage_storage_must_not_decrease
+    self.assertTrue(all(b.storage_cf >= a.storage_cf for a, b in zip(curve, curve[1:])),
+AssertionError: False is not true : Terminal storage decreased: [(105.0, 24661.58671028823), (105.01, 24246.212315934205)]
+
+======================================================================
+FAIL: test_E07_grading_independent_uniform_volume (__main__.Followup.test_E07_grading_independent_uniform_volume)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 69, in test_E07_grading_independent_uniform_volume
+    self.assertAlmostEqual(GradingEngine(existing)._compute_earthwork(proposed)[1], 400, places=6)
+AssertionError: 900.0 != 400 within 6 places (500.0 difference)
+
+======================================================================
+FAIL: test_E08_surface_helper_independent_uniform_volume (__main__.Followup.test_E08_surface_helper_independent_uniform_volume)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 72, in test_E08_surface_helper_independent_uniform_volume
+    self.assertAlmostEqual(compare_surfaces(*self.surfaces())["fill_cf"], 400, places=6)
+AssertionError: 900.0 != 400 within 6 places (500.0 difference)
+
+======================================================================
+FAIL: test_E09_surface_helper_must_reject_shifted_domain (__main__.Followup.test_E09_surface_helper_must_reject_shifted_domain)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 77, in test_E09_surface_helper_must_reject_shifted_domain
+    self.assertTrue(result.get("success") is False or bool(result.get("errors")), "Unrelated spatial domains compared as aligned")
+AssertionError: False is not true : Unrelated spatial domains compared as aligned
+
+======================================================================
+FAIL: test_E10_boolean_model_adapter_version_rejected (__main__.Followup.test_E10_boolean_model_adapter_version_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/tommychoe/Documents/Playground/Civora AI/docs/remediation/audit-followup-2026-10-15/run_audit.py", line 81, in test_E10_boolean_model_adapter_version_rejected
+    with self.assertRaises(ProjectDocumentError): resolve_canvas_input(inputs)
+AssertionError: ProjectDocumentError not raised
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.019s
+
+FAILED (failures=9, errors=1)
+test_ada_repair_clamps_running_slope (__main__.selected_original_tests.<locals>.Guarded.test_ada_repair_clamps_running_slope) ... ok
+test_corridor_profile_and_crowned_section_are_numeric (__main__.selected_original_tests.<locals>.Guarded.test_corridor_profile_and_crowned_section_are_numeric) ... ok
+test_detention_level_pool_routes_storage_and_outflow (__main__.selected_original_tests.<locals>.Guarded.test_detention_level_pool_routes_storage_and_outflow) ... ok
+test_drainage_aware_grading_repair_reports_changes_and_reason (__main__.selected_original_tests.<locals>.Guarded.test_drainage_aware_grading_repair_reports_changes_and_reason) ... ok
+test_earthwork_blocks_unaccepted_surfaces_and_triggers_wall_review (__main__.selected_original_tests.<locals>.Guarded.test_earthwork_blocks_unaccepted_surfaces_and_triggers_wall_review) ... ok
+test_earthwork_reports_adjusted_mass_balance_validation (__main__.selected_original_tests.<locals>.Guarded.test_earthwork_reports_adjusted_mass_balance_validation) ... ok
+test_earthwork_reports_haul_balance_import_warning_and_expected_volumes (__main__.selected_original_tests.<locals>.Guarded.test_earthwork_reports_haul_balance_import_warning_and_expected_volumes) ... ok
+test_fire_flow_residual_binary_searches_available_flow (__main__.selected_original_tests.<locals>.Guarded.test_fire_flow_residual_binary_searches_available_flow) ... ok
+test_inlet_gutter_spread_inverts_triangular_gutter_capacity (__main__.selected_original_tests.<locals>.Guarded.test_inlet_gutter_spread_inverts_triangular_gutter_capacity) ... ok
+test_sanitary_assigns_manning_capacity_velocity_and_ratio (__main__.selected_original_tests.<locals>.Guarded.test_sanitary_assigns_manning_capacity_velocity_and_ratio) ... ok
+test_utility_coordination_blocks_crossing_protected_zone_and_gravity_rule_failures (__main__.selected_original_tests.<locals>.Guarded.test_utility_coordination_blocks_crossing_protected_zone_and_gravity_rule_failures) ... ok
+test_utility_coordination_validates_cover_slope_and_clearance (__main__.selected_original_tests.<locals>.Guarded.test_utility_coordination_validates_cover_slope_and_clearance) ... ok
+test_water_pressure_graph_solves_hazen_williams_pressure_drop (__main__.selected_original_tests.<locals>.Guarded.test_water_pressure_graph_solves_hazen_williams_pressure_drop) ... ok
+test_tin_interpolates_triangle_plane_and_generates_artifacts (__main__.selected_original_tests.<locals>.Guarded.test_tin_interpolates_triangle_plane_and_generates_artifacts) ... ok
+test_breaklines_are_sampled_and_boundary_clips_tin (__main__.selected_original_tests.<locals>.Guarded.test_breaklines_are_sampled_and_boundary_clips_tin) ... ok
+test_surface_comparison_reports_cut_fill_cells (__main__.selected_original_tests.<locals>.Guarded.test_surface_comparison_reports_cut_fill_cells) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.006s
+
+OK
