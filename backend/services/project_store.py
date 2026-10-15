@@ -910,6 +910,9 @@ class ProjectStore:
                 role = "owner" if row["user_id"] == user_id else (member["role"] if member else "viewer")
                 if row["user_id"] != user_id and not (member and _role_allows(role, minimum_role)):
                     raise ValueError(f"You do not have {minimum_role} access to that project.")
+                if expected_revision is None:
+                    from .project_revision import ProjectRevisionConflict
+                    raise ProjectRevisionConflict(project_revision(existing))
                 check_revision(existing, expected_revision)
                 if expected_metadata_revision is not None:
                     from .project_revision import metadata_revision, ProjectRevisionConflict

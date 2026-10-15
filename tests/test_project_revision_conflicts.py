@@ -149,6 +149,14 @@ def test_metadata_patch_cannot_drop_or_forge_design_generation(setup):
         assert current["revision_token"] == project["revision_token"]
 
 
+def test_low_level_full_save_requires_revision_and_preserves_record(setup):
+    store,_,user,project=setup
+    before=store.get_project(user_id=user,project_id=project["project_id"])
+    with pytest.raises(ProjectRevisionConflict):
+        store.save_project(user_id=user,project_id=project["project_id"],name="Unchecked overwrite")
+    assert store.get_project(user_id=user,project_id=project["project_id"]) == before
+
+
 def test_server_snapshot_cannot_overwrite_a_new_calculation_with_no_geometry_edit(setup):
     from backend.application.project_snapshot import save_project_snapshot
     store, _, user, project = setup

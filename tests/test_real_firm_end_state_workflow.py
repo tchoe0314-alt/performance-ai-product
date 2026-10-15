@@ -296,6 +296,7 @@ def test_real_firm_scenario_connects_objects_engines_persistence_reactivity_and_
     saved_after_move = store.save_project(
         user_id=owner["user_id"],
         project_id=saved["project_id"],
+        expected_revision=saved["revision_token"],
         name=plan["project_name"],
         project_input=project_input,
         latest_result={"final_plan": stale_plan},

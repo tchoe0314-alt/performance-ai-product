@@ -67,6 +67,7 @@ class ProjectTeamAdminTest(unittest.TestCase):
             project_id=project["project_id"],
             name="Shared Site Updated",
             description="",
+            expected_revision=shared["revision_token"],
         )
         self.assertEqual(saved["name"], "Shared Site Updated")
         audit_actions = [

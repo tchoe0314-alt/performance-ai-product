@@ -50,7 +50,8 @@ class ProjectStoreFastPathTests(unittest.TestCase):
             incoming["manual_fields"]["site_objects"][0]["x"] += 10
             expected = incoming["manual_fields"]["site_objects"][0]["x"]
             saver = self.store.save_project if full else self.store.save_project_shell
-            saver(user_id=self.user_id, project_id=saved["project_id"], name="Pilot", project_input=incoming)
+            saver(user_id=self.user_id, project_id=saved["project_id"], name="Pilot", project_input=incoming,
+                  expected_revision=restored["revision_token"])
             reopened = ProjectStore(Database(Path(self.tmp.name) / "civora-fast-path.db"))
             persisted = reopened.get_project(user_id=self.user_id, project_id=saved["project_id"])
             self.assertEqual(resolve_canvas_input(persisted["project_input"])["manual_fields"]["site_objects"][0]["x"], expected)
@@ -82,7 +83,8 @@ class ProjectStoreFastPathTests(unittest.TestCase):
             document["roads"] = [] if shell else document["roads"]
             saver = reopened.save_project_shell if shell else reopened.save_project
             saver(user_id=self.user_id, project_id=saved["project_id"], name="Canonical pilot",
-                  project_input={PROJECT_DOCUMENT_KEY: document})
+                  project_input={PROJECT_DOCUMENT_KEY: document},
+                  expected_revision=reopened.get_project(user_id=self.user_id,project_id=saved["project_id"])["revision_token"])
             persisted = reopened.get_project(user_id=self.user_id, project_id=saved["project_id"])
             self.assertCanonicalContentPreserved(persisted["project_input"][PROJECT_DOCUMENT_KEY], document)
             self.assertEqual(persisted["project_input"]["legacy"], {"sentinel": "preserve"})
@@ -93,7 +95,7 @@ class ProjectStoreFastPathTests(unittest.TestCase):
         for saver in (self.store.save_project, self.store.save_project_shell):
             with self.assertRaises(ProjectDocumentError):
                 saver(user_id=self.user_id, project_id=saved["project_id"], name="Invalid update",
-                      project_input={PROJECT_DOCUMENT_KEY: {}})
+                      project_input={PROJECT_DOCUMENT_KEY: {}},expected_revision=saved["revision_token"])
             unchanged = self.store.get_project(user_id=self.user_id, project_id=saved["project_id"])
             self.assertEqual(unchanged["name"], saved["name"])
             self.assertEqual(unchanged["project_input"], saved["project_input"])
@@ -106,7 +108,8 @@ class ProjectStoreFastPathTests(unittest.TestCase):
         for full_save in (True, False):
             document["utilities"] = []
             payload = {"project_id": saved["project_id"], "name": "Pilot",
-                       "project_input": {PROJECT_DOCUMENT_KEY: document}}
+                       "project_input": {PROJECT_DOCUMENT_KEY: document},
+                       "expected_revision":self.store.get_project(user_id=self.user_id,project_id=saved["project_id"])["revision_token"]}
             if full_save:
                 payload["latest_result"] = {"sentinel": "generated"}
             result = save_project_record(project_store=self.store, user_id=self.user_id, payload_data=payload)

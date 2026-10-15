@@ -20,7 +20,7 @@ def test_named_history_is_access_checked_and_uses_server_actor(tmp_path, monkeyp
     invite=invite_test_member(store,actor_user_id=creator["user_id"],project_id=pid,email=viewer["email"])
     assert invite["role"]=="viewer"
     changed=deepcopy(project["project_input"]); changed["manual_fields"]["site_objects"][0]["x"]=10
-    store.save_project(user_id=editor["user_id"],project_id=pid,name="History",project_input=with_canvas_snapshot(changed))
+    store.save_project(user_id=editor["user_id"],project_id=pid,name="History",project_input=with_canvas_snapshot(changed),expected_revision=project["revision_token"])
     monkeypatch.setattr(api,"PROJECT_STORE",store)
     surface=api.get_project_edit_history(pid,viewer)
     assert surface["creator_name"]=="Creator"
