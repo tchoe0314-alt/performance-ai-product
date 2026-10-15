@@ -1,0 +1,105 @@
+test_A01 (test_oct15_audit.AuditCases.test_A01) ... ok
+test_A02 (test_oct15_audit.AuditCases.test_A02) ... ok
+test_A03 (test_oct15_audit.AuditCases.test_A03) ... ok
+test_A04 (test_oct15_audit.AuditCases.test_A04) ... ok
+test_A05 (test_oct15_audit.AuditCases.test_A05) ... ok
+test_A06 (test_oct15_audit.AuditCases.test_A06) ... ok
+test_A07 (test_oct15_audit.AuditCases.test_A07) ... ok
+test_A08 (test_oct15_audit.AuditCases.test_A08) ... ok
+test_A09 (test_oct15_audit.AuditCases.test_A09) ... ok
+test_A10 (test_oct15_audit.AuditCases.test_A10) ... ok
+test_A11 (test_oct15_audit.AuditCases.test_A11) ... ok
+test_A12 (test_oct15_audit.AuditCases.test_A12) ... ok
+test_A13 (test_oct15_audit.AuditCases.test_A13) ... ok
+test_A14 (test_oct15_audit.AuditCases.test_A14) ... ok
+test_A15 (test_oct15_audit.AuditCases.test_A15) ... ok
+test_A16 (test_oct15_audit.AuditCases.test_A16) ... ok
+test_A17 (test_oct15_audit.AuditCases.test_A17) ... ok
+test_A18 (test_oct15_audit.AuditCases.test_A18) ... ok
+test_A19 (test_oct15_audit.AuditCases.test_A19) ... ok
+test_A20 (test_oct15_audit.AuditCases.test_A20) ... ok
+test_A21 (test_oct15_audit.AuditCases.test_A21) ... ok
+test_A22 (test_oct15_audit.AuditCases.test_A22) ... ok
+test_A23 (test_oct15_audit.AuditCases.test_A23) ... ok
+test_A24 (test_oct15_audit.AuditCases.test_A24) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.049s
+
+OK
+test_adapter_does_not_fabricate_missing_result (test_core_repairs.HydrologyTests.test_adapter_does_not_fabricate_missing_result) ... ok
+test_composite_arithmetic_and_overflow (test_core_repairs.HydrologyTests.test_composite_arithmetic_and_overflow) ... ok
+test_invalid_inputs (test_core_repairs.HydrologyTests.test_invalid_inputs) ... ok
+test_zero_and_empty_are_distinct (test_core_repairs.HydrologyTests.test_zero_and_empty_are_distinct) ... ok
+test_invalid_geometry_and_curve_inputs (test_core_repairs.DetentionTests.test_invalid_geometry_and_curve_inputs) ... ok
+test_invalid_time_and_curve (test_core_repairs.DetentionTests.test_invalid_time_and_curve) ... ok
+test_out_of_range_original_fixture_rejected (test_core_repairs.DetentionTests.test_out_of_range_original_fixture_rejected) ... ok
+test_simpson_independent_integral_oracle (test_core_repairs.DetentionTests.test_simpson_independent_integral_oracle) ... ok
+test_zero_outlet_conserves_every_interval (test_core_repairs.DetentionTests.test_zero_outlet_conserves_every_interval) ... ok
+test_all_entrypoints_reject_displacement (test_core_repairs.SurfaceTests.test_all_entrypoints_reject_displacement) ... ok
+test_ambiguous_and_nodata_fail_without_mutation (test_core_repairs.SurfaceTests.test_ambiguous_and_nodata_fail_without_mutation) ... ok
+test_explicit_cells_keep_distinct_semantics (test_core_repairs.SurfaceTests.test_explicit_cells_keep_distinct_semantics) ... ok
+test_plane_and_zero_crossing_conservation (test_core_repairs.SurfaceTests.test_plane_and_zero_crossing_conservation) ... ok
+test_registration_mismatch_and_unsupported_boundary_fail (test_core_repairs.SurfaceTests.test_registration_mismatch_and_unsupported_boundary_fail) ... ok
+test_stripping_and_factors_separate_from_raw_volume (test_core_repairs.SurfaceTests.test_stripping_and_factors_separate_from_raw_volume) ... ok
+test_uniform_volume_all_paths (test_core_repairs.SurfaceTests.test_uniform_volume_all_paths) ... ok
+test_mixed_dns_and_rebinding_pin (test_core_repairs.EgressTests.test_mixed_dns_and_rebinding_pin) ... ok
+test_private_and_unsafe_urls (test_core_repairs.EgressTests.test_private_and_unsafe_urls) ... ok
+test_redirect_revalidated_and_response_bounded (test_core_repairs.EgressTests.test_redirect_revalidated_and_response_bounded) ... ok
+test_complete_upload_and_hash (test_core_repairs.StorageSecurityTests.test_complete_upload_and_hash) ... ok
+test_learning_collection_requires_separate_consent (test_core_repairs.StorageSecurityTests.test_learning_collection_requires_separate_consent) ... ok
+test_operator_allowlist_and_untrusted_forwarded_identity (test_core_repairs.StorageSecurityTests.test_operator_allowlist_and_untrusted_forwarded_identity) ... ok
+test_session_digest_expiry_revocation_and_legacy_reauth (test_core_repairs.StorageSecurityTests.test_session_digest_expiry_revocation_and_legacy_reauth) ... ok
+test_upload_collision_and_oversize_preserve_original (test_core_repairs.StorageSecurityTests.test_upload_collision_and_oversize_preserve_original) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.078s
+
+OK
+test_C01_hand_authored_v1_snapshot (test_p02.CompatibilityTests.test_C01_hand_authored_v1_snapshot) ... ok
+test_C02_v1_json_roundtrip (test_p02.CompatibilityTests.test_C02_v1_json_roundtrip) ... ok
+test_C03_unknown_project_versions_rejected (test_p02.CompatibilityTests.test_C03_unknown_project_versions_rejected) ... ok
+test_C04_missing_section_rejected (test_p02.CompatibilityTests.test_C04_missing_section_rejected) ... ok
+test_C05_extension_json_preserved (test_p02.CompatibilityTests.test_C05_extension_json_preserved) ... ok
+test_C06_nonfinite_rejected (test_p02.CompatibilityTests.test_C06_nonfinite_rejected) ... ok
+test_C07_duplicate_json_keys_rejected (test_p02.CompatibilityTests.test_C07_duplicate_json_keys_rejected) ... ok
+test_C08_canvas_roundtrip_exact_legacy (test_p02.CompatibilityTests.test_C08_canvas_roundtrip_exact_legacy) ... ok
+test_C09_canvas_roundtrip_after_json (test_p02.CompatibilityTests.test_C09_canvas_roundtrip_after_json) ... ok
+test_C10_canonical_wins_over_stale_legacy_geometry (test_p02.CompatibilityTests.test_C10_canonical_wins_over_stale_legacy_geometry) ... ok
+test_C11_canonical_object_geometry_wins_over_wrapper (test_p02.CompatibilityTests.test_C11_canonical_object_geometry_wins_over_wrapper) ... ok
+test_C12_unknown_units_remain_unknown (test_p02.CompatibilityTests.test_C12_unknown_units_remain_unknown) ... ok
+test_C13_metric_values_not_converted_or_guessed (test_p02.CompatibilityTests.test_C13_metric_values_not_converted_or_guessed) ... ok
+test_C14_program_only_legacy_stays_legacy (test_p02.CompatibilityTests.test_C14_program_only_legacy_stays_legacy) ... ok
+test_C15_unowned_sections_survive_recompile (test_p02.CompatibilityTests.test_C15_unowned_sections_survive_recompile) ... ok
+test_C16_stable_ids_and_order (test_p02.CompatibilityTests.test_C16_stable_ids_and_order) ... ok
+test_C17_malformed_references_rejected (test_p02.CompatibilityTests.test_C17_malformed_references_rejected) ... ok
+test_C18_source_and_quality_not_promoted (test_p02.CompatibilityTests.test_C18_source_and_quality_not_promoted) ... ok
+test_C19_result_facets_restore_exact_synthetic_result (test_p02.CompatibilityTests.test_C19_result_facets_restore_exact_synthetic_result) ... ok
+test_C20_portable_aggregate_preserves_results_and_geometry (test_p02.CompatibilityTests.test_C20_portable_aggregate_preserves_results_and_geometry) ... ok
+test_C21_canonical_controls_and_sources_override_shadows (test_p02.CompatibilityTests.test_C21_canonical_controls_and_sources_override_shadows) ... ok
+test_C22_no_edit_preserves_edit_history (test_p02.CompatibilityTests.test_C22_no_edit_preserves_edit_history) ... ok
+test_C23_unknown_adapter_version_rejected (test_p02.CompatibilityTests.test_C23_unknown_adapter_version_rejected) ... ok
+test_C24_ambiguous_legacy_surface_metadata_not_invented (test_p02.CompatibilityTests.test_C24_ambiguous_legacy_surface_metadata_not_invented) ... ok
+test_C25_typescript_schema_sections_match_python_static_only (test_p02.CompatibilityTests.test_C25_typescript_schema_sections_match_python_static_only) ... ok
+test_C26_detached_validation_does_not_mutate_fixture (test_p02.CompatibilityTests.test_C26_detached_validation_does_not_mutate_fixture) ... ok
+test_dns_deadline_and_saturation_fail_closed (test_outbound_http_security.OutboundSecurityTests.test_dns_deadline_and_saturation_fail_closed) ... ok
+test_private_transition_and_mixed_answers_are_rejected (test_outbound_http_security.OutboundSecurityTests.test_private_transition_and_mixed_answers_are_rejected) ... ok
+test_public_request_pins_address_but_preserves_tls_host (test_outbound_http_security.OutboundSecurityTests.test_public_request_pins_address_but_preserves_tls_host) ... ok
+test_redirect_to_private_and_oversized_content_rejected (test_outbound_http_security.OutboundSecurityTests.test_redirect_to_private_and_oversized_content_rejected) ... ok
+test_url_policy (test_outbound_http_security.OutboundSecurityTests.test_url_policy) ... ok
+test_exact_idle_expiry_and_absolute_expiry (test_session_security.SessionSecurityTests.test_exact_idle_expiry_and_absolute_expiry) ... ok
+test_future_session_cannot_authenticate (test_session_security.SessionSecurityTests.test_future_session_cannot_authenticate) ... ok
+test_only_hashes_stored_and_legacy_raw_tokens_rejected (test_session_security.SessionSecurityTests.test_only_hashes_stored_and_legacy_raw_tokens_rejected) ... ok
+test_revoke_all_needs_password_and_does_not_revoke_other_user (test_session_security.SessionSecurityTests.test_revoke_all_needs_password_and_does_not_revoke_other_user) ... ok
+test_rotation_has_one_winner_and_does_not_extend_absolute_expiry (test_session_security.SessionSecurityTests.test_rotation_has_one_winner_and_does_not_extend_absolute_expiry) ... ok
+test_rational_one_acre_reference_and_invalid_domains (test_numerical_repair_contracts.NumericalRepairContracts.test_rational_one_acre_reference_and_invalid_domains) ... ok
+test_rectangular_basin_simpson_reference (test_numerical_repair_contracts.NumericalRepairContracts.test_rectangular_basin_simpson_reference) ... ok
+test_uniform_node_domain_all_volume_entrypoints (test_numerical_repair_contracts.NumericalRepairContracts.test_uniform_node_domain_all_volume_entrypoints) ... ok
+test_fake_captures_without_shared_state (test_email_delivery.EmailDeliveryTests.test_fake_captures_without_shared_state) ... ok
+test_header_injection_and_invalid_recipients_rejected (test_email_delivery.EmailDeliveryTests.test_header_injection_and_invalid_recipients_rejected) ... ok
+test_unconfigured_delivery_fails_closed (test_email_delivery.EmailDeliveryTests.test_unconfigured_delivery_fails_closed) ... ok
+
+----------------------------------------------------------------------
+Ran 42 tests in 0.288s
+
+OK

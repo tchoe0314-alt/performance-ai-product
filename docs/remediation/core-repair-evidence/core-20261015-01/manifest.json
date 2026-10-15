@@ -1,0 +1,26 @@
+{
+  "files": {
+    "results.json": {
+      "bytes": 9836,
+      "sha256": "bf147c7434863feeb90c7422f9747f8f78c6c3d862ccfbbeaaa402e75dfd7ef9"
+    },
+    "verification.log": {
+      "bytes": 10281,
+      "sha256": "3d2717a8c79047c1154b4e483822a9680dd97c05028fdefb96f43990f83d04ca"
+    }
+  },
+  "format": "p01_evidence_v1",
+  "metadata": {
+    "application_revision": "64e1fdf6bccbe7cc3e6923180eb3fca50029ca94",
+    "branch": "codex/remediation-core-repairs",
+    "gate_disposition": "FULL AUDIT STILL OPEN",
+    "python_source_fingerprint": {
+      "files": 509,
+      "sha256": "4dd4010c8628d06c2b9a881f791bdb7e16679a40efad5b73feee4c407cdb02e1"
+    },
+    "scope": "Synthetic offline focused checks; no release/engineering/security certification",
+    "timestamp_utc": "2026-10-15T11:24:45.732504+00:00",
+    "working_tree_status": "M apps/web/app/components/WorkspaceLeftRail.tsx\n?? tests/remediation/run_core_repair_checks.py\n?? tests/remediation/test_core_repairs.py"
+  },
+  "run_id": "core-20261015-01"
+}
