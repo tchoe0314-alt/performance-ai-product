@@ -233,7 +233,8 @@ class ProjectStore:
         """Merge workflow metadata against a locked project, without rewriting its design.
 
         The callback must be local/pure: no database calls or external work while
-        the row is locked. Its snapshot is detached from stored JSON.
+        the row is locked. Its snapshot is detached from both stored JSON and
+        the record committed below; only its returned metadata may be persisted.
         """
         connection = self.db.connect()
         try:
@@ -255,7 +256,7 @@ class ProjectStore:
             record["access_role"] = role
             generation_present = "design_save_generation_v1" in record.get("metadata", {})
             generation = record.get("metadata", {}).get("design_save_generation_v1")
-            metadata = dict(update_metadata(record))
+            metadata = deepcopy(dict(update_metadata(deepcopy(record))))
             if generation_present:
                 metadata["design_save_generation_v1"] = generation
             else:

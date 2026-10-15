@@ -6,6 +6,13 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Latest follow-up: shell saves require a source revision (`da48d1e9`;160 scoped
+tests passed). Metadata callbacks now receive a detached commit snapshot;
+146 affected tests passed after reproducing a valid geometry mutation. See
+`SHELL_SAVE_REVISION_REQUIRED_2026-10-15.md` and
+`METADATA_CALLBACK_ISOLATION_2026-10-15.md`. These scoped results do not supersede
+historical failures or establish all-writer/PostgreSQL/full-release acceptance.
+
 |Finding family|Implementation/evidence|Still open|
 |---|---|---|
 |ENG-01/02/03/04/05|`c3f23ed6`: hydrology contracts/validation, exact basin storage, supported-domain routing, shared spatial integration. Analytical oracles and old24 assertions pass|Independent full-method benchmarks, all engine families, professional review; unsupported-domain conversion|

@@ -64,6 +64,27 @@ def test_workflow_update_does_not_use_read_then_full_project_save(setup, monkeyp
     assert after["metadata"]["workflow"]["artifacts"][0]["artifact_id"] == "a"
 
 
+def test_metadata_callback_cannot_mutate_the_design_or_calculation(setup):
+    _, store, _, user, project_id, _, _ = setup
+    before = store.get_project(user_id=user, project_id=project_id)
+
+    def accidental_mutation(snapshot):
+        snapshot["project_input"]["manual_fields"]["site_objects"][0]["x"] = -999
+        snapshot["project_input"] = with_canvas_snapshot(snapshot["project_input"])
+        snapshot["name"] = "Not a metadata edit"
+        snapshot["latest_result"].clear()
+        return {**snapshot["metadata"], "note": "metadata only"}
+
+    returned = store.update_project_metadata(
+        user_id=user, project_id=project_id, update_metadata=accidental_mutation,
+    )
+    after = store.get_project(user_id=user, project_id=project_id)
+    for field in ("project_input", "name", "latest_result", "revision_token", "session_state"):
+        assert after[field] == before[field]
+        assert returned[field] == before[field]
+    assert after["metadata"]["note"] == "metadata only"
+
+
 def test_simultaneous_export_history_updates_do_not_drop_records(setup):
     _, store, _, user, project_id, source, result = setup
     barrier = threading.Barrier(6)
