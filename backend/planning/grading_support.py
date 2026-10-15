@@ -273,6 +273,7 @@ def build_existing_surface(
     site_rotation = safe_float(site_inputs.get("site_rotation_deg"), 0.0)
     terrain_surface = None
     if geocode.get("lat") is not None and geocode.get("lng") is not None:
+        profile["terrain_attempted"] = True
         terrain_surface = build_terrain_surface(
             center_lat=safe_float(geocode.get("lat"), 0.0),
             center_lng=safe_float(geocode.get("lng"), 0.0),
@@ -296,6 +297,9 @@ def build_existing_surface(
             profile["terrain_stats"] = deepcopy(getattr(terrain_surface, "_terrain_sample_stats", {}))
             setattr(terrain_surface, "_inferred_profile", profile)
             return normalize_surface(terrain_surface, DEFAULT_PAD_ELEV)
+        profile["terrain_used"] = False
+        profile["terrain_unavailable"] = True
+        profile["source_detail"] = "Terrain unavailable or incomplete; " + str(profile["source_detail"]) + ". Not surveyed elevations."
 
     setattr(surface, "_inferred_profile", profile)
     return surface
@@ -920,6 +924,7 @@ def canonical_grading_payload(
         "grading_source_detail": safe_str(inferred_profile_dict.get("source_detail"), ""),
         "source_quality": safe_str(inferred_profile_dict.get("source_quality"), ""),
         "source_detail": safe_str(inferred_profile_dict.get("source_detail"), ""),
+        "terrain_unavailable": bool(inferred_profile_dict.get("terrain_unavailable")),
         "high_points": deepcopy(existing_high_points),
         "checks": [
             {
