@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from backend.services.auth_store import AuthStore
 from backend.services.database import Database
+from backend.services.rate_limit_store import RateLimitStore
 
 
 def test_rotate_and_revoke_routes_require_identity_and_password(tmp_path, monkeypatch):
@@ -14,7 +15,7 @@ def test_rotate_and_revoke_routes_require_identity_and_password(tmp_path, monkey
     second = auth.login(email="session@example.test", password="Synthetic-password-123")["token"]
     monkeypatch.setattr(api, "AUTH_STORE", auth)
     # Independent test state; does not change configured abuse limits.
-    monkeypatch.setattr(api, "_RATE_LIMIT_EVENTS", {})
+    monkeypatch.setattr(api, "RATE_LIMIT_STORE", RateLimitStore(auth.db))
     with TestClient(api.app) as client:
         assert client.post("/api/auth/rotate-session").status_code == 401
         headers = {"Authorization":"Bearer "+account["token"]}

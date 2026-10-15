@@ -18,7 +18,6 @@ from backend.api.app import (
     ProfessionalReleasePayload,
     RegisterPayload,
     _RATE_LIMIT_DEFAULTS,
-    _RATE_LIMIT_EVENTS,
     _cors_allow_origins,
     _runtime_debug_payload,
     app,
@@ -28,9 +27,18 @@ from backend.api.app import (
 )
 
 api_app_module = importlib.import_module("backend.api.app")
+from backend.services.database import Database
+from backend.services.rate_limit_store import RateLimitStore
 
 
 class ApiReleaseSafetyTest(unittest.TestCase):
+    def setUp(self):
+        temp=tempfile.TemporaryDirectory(prefix="civora-api-rate-")
+        self.addCleanup(temp.cleanup)
+        store=RateLimitStore(Database(Path(temp.name)/"synthetic.sqlite",database_url="sqlite-local-only"))
+        state=patch.object(api_app_module,"RATE_LIMIT_STORE",store)
+        state.start();self.addCleanup(state.stop)
+
     def test_health_never_invents_a_commit_from_the_app_version(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
             identity = TestClient(app).get("/api/health").json()["deployment"]
@@ -456,7 +464,6 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         with patch.object(api_app_module, "DB", FakeDatabase()):
             with patch.object(api_app_module, "PRODUCT_MODE", "production"):
                 with patch.dict(os.environ, {"CIVORA_ALLOW_PUBLIC_REGISTRATION": ""}, clear=False):
-                    api_app_module._RATE_LIMIT_EVENTS.clear()
                     with self.assertRaises(HTTPException) as ctx:
                         register(RegisterPayload(email="new@example.com", password="long-enough", name="New User"))
 
@@ -486,7 +493,6 @@ class ApiReleaseSafetyTest(unittest.TestCase):
             with patch.object(api_app_module, "AUTH_STORE", FakeAuthStore()):
                 with patch.object(api_app_module, "PRODUCT_MODE", "production"):
                     with patch.dict(os.environ, {"CIVORA_ALLOW_PUBLIC_REGISTRATION": "1"}, clear=False):
-                        api_app_module._RATE_LIMIT_EVENTS.clear()
                         data = register(RegisterPayload(email="new@example.com", password="long-enough", name="New User"))
 
         self.assertTrue(data["success"])
@@ -495,14 +501,12 @@ class ApiReleaseSafetyTest(unittest.TestCase):
     def test_auth_status_route_is_rate_limited(self) -> None:
         client = TestClient(app)
         previous = _RATE_LIMIT_DEFAULTS["auth"]
-        _RATE_LIMIT_EVENTS.clear()
         _RATE_LIMIT_DEFAULTS["auth"] = (1, 60)
         try:
             first = client.get("/api/auth/status")
             second = client.get("/api/auth/status")
         finally:
             _RATE_LIMIT_DEFAULTS["auth"] = previous
-            _RATE_LIMIT_EVENTS.clear()
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 429)

@@ -7,7 +7,6 @@ import re
 import time
 import uuid
 import urllib.parse
-from collections import deque
 from contextlib import asynccontextmanager
 import hashlib
 import threading
@@ -233,6 +232,7 @@ def _public_registration_allowed() -> bool:
 
 _RATE_LIMIT_DEFAULTS: Dict[str, tuple[int, int]] = {
     "auth": (30, 60),
+    "auth_target": (10, 60),
     "health": (120, 60),
     "debug": (30, 60),
     "geocode": (30, 60),
@@ -245,8 +245,6 @@ _RATE_LIMIT_DEFAULTS: Dict[str, tuple[int, int]] = {
     "support": (10, 60),
     "image": (6, 60),
 }
-_RATE_LIMIT_EVENTS: Dict[str, deque[float]] = {}
-_RATE_LIMIT_LOCK = threading.Lock()
 
 
 def _env_int(name: str, default: int) -> int:
@@ -272,25 +270,21 @@ def _request_rate_limit_key(request: Request, authorization: Optional[str]) -> s
 
 
 def _check_rate_limit(bucket: str, key: str, *, limit: int, window_seconds: int, now: Optional[float] = None) -> None:
-    current = float(now if now is not None else time.time())
-    state_key = f"{bucket}:{key}"
-    cutoff = current - float(window_seconds)
-    with _RATE_LIMIT_LOCK:
-        if state_key not in _RATE_LIMIT_EVENTS and len(_RATE_LIMIT_EVENTS) >= 10000:
-            for old_key, old_events in list(_RATE_LIMIT_EVENTS.items()):
-                if not old_events or old_events[-1] <= current - 3600:
-                    del _RATE_LIMIT_EVENTS[old_key]
-            if len(_RATE_LIMIT_EVENTS) >= 10000:
-                raise HTTPException(status_code=429, detail="Rate-limit capacity reached. Retry later.")
-        events = _RATE_LIMIT_EVENTS.setdefault(state_key, deque())
-        while events and events[0] <= cutoff:
-            events.popleft()
-        if len(events) >= limit:
-            raise HTTPException(
-                status_code=429,
-                detail=f"Rate limit exceeded for {bucket}. Wait about {window_seconds} seconds, then try again.",
-            )
-        events.append(current)
+    from backend.services.rate_limit_store import RateLimitExceeded, RateLimitUnavailable
+    try:
+        RATE_LIMIT_STORE.consume(bucket,key,limit=limit,window_seconds=window_seconds,now=now)
+    except RateLimitExceeded as exc:
+        raise HTTPException(status_code=429,
+            detail=f"Rate limit exceeded for {bucket}. Wait about {window_seconds} seconds, then try again.",
+            headers={"Retry-After":str(exc.retry_after)}) from exc
+    except (RateLimitUnavailable,ValueError) as exc:
+        raise HTTPException(status_code=503,detail="Request protection is temporarily unavailable. Retry later.",
+            headers={"Retry-After":"60"}) from exc
+
+
+def _check_auth_target_limit(email: str) -> None:
+    limit,window=_rate_limit_config("auth_target")
+    _check_rate_limit("auth_target","account:"+email.strip().lower(),limit=limit,window_seconds=window)
 
 
 def rate_limit(bucket: str):
@@ -308,6 +302,8 @@ def rate_limit(bucket: str):
 
 PROCESS_ROLE = str(os.getenv("CIVORA_PROCESS_ROLE") or "combined").strip().lower()
 DB = Database(DB_PATH)
+from backend.services.rate_limit_store import RateLimitStore
+RATE_LIMIT_STORE = RateLimitStore(DB)
 AUTH_STORE = AuthStore(DB)
 from backend.services.identity_proofs import IdentityProofStore
 IDENTITY_PROOFS = IdentityProofStore(DB)
@@ -1401,6 +1397,7 @@ def auth_status(_rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, An
 
 @app.post("/api/auth/register")
 def register(payload: RegisterPayload, _rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, Any]:
+    _check_auth_target_limit(payload.email)
     connection = DB.connect()
     try:
         user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
@@ -1419,6 +1416,7 @@ def register(payload: RegisterPayload, _rate_limit: None = Depends(rate_limit("a
 
 @app.post("/api/auth/login")
 def login(payload: LoginPayload, _rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, Any]:
+    _check_auth_target_limit(payload.email)
     return application_login_user(
         auth_store=AUTH_STORE,
         email=payload.email,

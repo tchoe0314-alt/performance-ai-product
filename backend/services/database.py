@@ -734,6 +734,20 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_identity_challenges_user
                     ON identity_challenges(user_id, purpose, created_at);
+                CREATE TABLE IF NOT EXISTS rate_limit_control (
+                    singleton_id INTEGER PRIMARY KEY
+                );
+                INSERT INTO rate_limit_control(singleton_id) VALUES (1)
+                    ON CONFLICT(singleton_id) DO NOTHING;
+                CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+                    identity_digest TEXT PRIMARY KEY,
+                    events_json TEXT NOT NULL,
+                    expires_at DOUBLE PRECISION NOT NULL,
+                    limit_count INTEGER NOT NULL,
+                    window_seconds INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_rate_limit_buckets_expiry
+                    ON rate_limit_buckets(expires_at);
                 """)
                 connection.commit()
             finally:

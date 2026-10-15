@@ -8,6 +8,7 @@ from backend.services.database import Database
 from backend.services.email_delivery import FakeEmailSender
 from backend.services.identity_proofs import IdentityProofStore
 from backend.services.project_store import ProjectStore
+from backend.services.rate_limit_store import RateLimitStore
 
 
 def test_fake_delivered_proof_required_for_existing_account_invitation(tmp_path, monkeypatch):
@@ -18,7 +19,7 @@ def test_fake_delivered_proof_required_for_existing_account_invitation(tmp_path,
     recipient=auth.register_user(email="recipient@example.test",password="Synthetic-only-123",name="Recipient")
     project=store.save_project(user_id=owner["user"]["user_id"],project_id=None,name="Synthetic")
     monkeypatch.setattr(api,"AUTH_STORE",auth); monkeypatch.setattr(api,"PROJECT_STORE",store)
-    monkeypatch.setattr(api,"IDENTITY_PROOFS",proofs); monkeypatch.setattr(api,"_RATE_LIMIT_EVENTS",{})
+    monkeypatch.setattr(api,"IDENTITY_PROOFS",proofs); monkeypatch.setattr(api,"RATE_LIMIT_STORE",RateLimitStore(db))
     owner_headers={"Authorization":"Bearer "+owner["token"]}
     recipient_headers={"Authorization":"Bearer "+recipient["token"]}
     with TestClient(api.app) as client:

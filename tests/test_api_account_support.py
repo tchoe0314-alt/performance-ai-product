@@ -18,6 +18,7 @@ from backend.services.data_lifecycle import (
 )
 from backend.services.database import Database
 from backend.services.support_store import SupportStore
+from backend.services.rate_limit_store import RateLimitStore
 
 
 api_module = importlib.import_module("backend.api.app")
@@ -52,10 +53,10 @@ class AccountSupportApiTests(unittest.TestCase):
             patch.object(api_module, "AUTH_STORE", self.auth),
             patch.object(api_module, "SUPPORT_STORE", self.support),
             patch.object(api_module, "DATA_LIFECYCLE", self.lifecycle),
+            patch.object(api_module, "RATE_LIMIT_STORE", RateLimitStore(db)),
         )
         for item in self.patches:
             item.start()
-        api_module._RATE_LIMIT_EVENTS.clear()
 
     def tearDown(self) -> None:
         for item in reversed(self.patches):
