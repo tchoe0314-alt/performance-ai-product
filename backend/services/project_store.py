@@ -884,6 +884,7 @@ class ProjectStore:
         metadata: Optional[Dict[str, Any]] = None, organization_id: Optional[str] = None,
         minimum_role: str = "editor", expected_revision: Optional[str] = None, replace_original: bool = False,
         expected_result_revision: Optional[str] = None,
+        expected_metadata_revision: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not project_id and not organization_id:
             organization_id = self.ensure_default_organization(user_id=user_id)["organization_id"]
@@ -902,6 +903,10 @@ class ProjectStore:
                 if row["user_id"] != user_id and not (member and _role_allows(role, minimum_role)):
                     raise ValueError(f"You do not have {minimum_role} access to that project.")
                 check_revision(existing, expected_revision)
+                if expected_metadata_revision is not None:
+                    from .project_revision import metadata_revision, ProjectRevisionConflict
+                    if metadata_revision(existing) != expected_metadata_revision:
+                        raise ProjectRevisionConflict(project_revision(existing))
                 if expected_result_revision is not None:
                     from .project_revision import result_revision, ProjectRevisionConflict
                     if result_revision(existing) != expected_result_revision:

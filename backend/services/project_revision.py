@@ -37,6 +37,11 @@ def result_revision(record: dict[str, Any]) -> str:
     return sha256(json.dumps(record.get("latest_result") or {}, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
 
 
+def metadata_revision(record: dict[str, Any]) -> str:
+    """Independent CAS token: metadata writes are not geometry revisions."""
+    return sha256(json.dumps(record.get("metadata") or {}, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
+
+
 def merge_save_metadata(existing: dict, incoming: dict, *, replaced_record: dict | None = None) -> dict:
     metadata = {**deepcopy(existing), **deepcopy(incoming)}
     # Workflow history is server-owned. A browser autosave must not erase an

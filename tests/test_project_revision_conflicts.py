@@ -104,6 +104,28 @@ def test_server_snapshot_workflow_cannot_restore_old_geometry(setup):
     assert store.get_project(user_id=user, project_id=project["project_id"]) == before
 
 
+def test_server_snapshot_cannot_restore_old_review_metadata(setup):
+    from backend.application.project_snapshot import save_project_snapshot
+    store, _, user, project = setup
+    store.update_project_metadata(user_id=user,project_id=project["project_id"],
+        update_metadata=lambda record:{**record["metadata"],"review_evidence":{"version":"new"}})
+    before=store.get_project(user_id=user,project_id=project["project_id"])
+    assert before["revision_token"] == project["revision_token"]
+    with pytest.raises(HTTPException) as error:
+        save_project_snapshot(store,project,user_id=user,project_id=project["project_id"],
+            name=project["name"],project_input=project["project_input"],metadata={"review_evidence":{"version":"old"}})
+    assert error.value.status_code == 409
+    assert store.get_project(user_id=user,project_id=project["project_id"]) == before
+
+
+def test_current_server_snapshot_can_update_metadata(setup):
+    from backend.application.project_snapshot import save_project_snapshot
+    store, _, user, project = setup
+    saved=save_project_snapshot(store,project,user_id=user,project_id=project["project_id"],
+        name=project["name"],project_input=project["project_input"],metadata={"review_evidence":{"version":"new"}})
+    assert saved["metadata"]["review_evidence"] == {"version":"new"}
+
+
 def test_server_snapshot_cannot_overwrite_a_new_calculation_with_no_geometry_edit(setup):
     from backend.application.project_snapshot import save_project_snapshot
     store, _, user, project = setup

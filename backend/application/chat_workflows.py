@@ -5599,7 +5599,7 @@ def decide_chat(
     if chat_thread:
         memory_summary = build_chat_memory_summary(chat_thread)
     if chat_thread and project_store and user_id and project_id:
-        from backend.services.project_revision import project_revision, result_revision, ProjectRevisionConflict
+        from backend.services.project_revision import project_revision, result_revision, metadata_revision, ProjectRevisionConflict
         try:
             if record:
                 project_input = dict(record.get("project_input") or {})
@@ -5619,6 +5619,7 @@ def decide_chat(
                     metadata=record.get("metadata") or {},
                     expected_revision=record.get("revision_token") or project_revision(record),
                     expected_result_revision=result_revision(record),
+                    expected_metadata_revision=metadata_revision(record),
                 )
         except ProjectRevisionConflict:
             decision.setdefault("response_metadata", {})["memory_save_status"] = "conflict_not_saved"
