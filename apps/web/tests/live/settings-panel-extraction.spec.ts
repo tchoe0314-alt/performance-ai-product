@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
 
 async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&debugPanel=settings", { waitUntil: "domcontentloaded" });
@@ -9,6 +10,9 @@ async function openDemoWorkspace(page: Page) {
 async function openSettingsPanel(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&debugPanel=settings", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+  const actions = page.getByTestId("workspace-project-actions");
+  await actions.locator("summary").click();
+  await actions.getByRole("button", { name: "Workspace settings", exact: true }).click();
   const panel = page.getByTestId("workspace-right-panel");
   await expect(panel).toContainText("Workspace settings", { timeout: 5_000 });
   await expect(panel).toContainText("Run defaults");
@@ -21,6 +25,8 @@ test("Settings panel remains functional after component extraction", async ({ pa
   let panel = await openSettingsPanel(page);
   await expect(panel).toContainText("Appearance");
   await expect(panel).toContainText("AI behavior");
+  const accessibility = await new AxeBuilder({ page }).include('[data-testid="workspace-right-panel"]').analyze();
+  expect(accessibility.violations.filter(issue => issue.impact === "serious" || issue.impact === "critical")).toEqual([]);
 
   const roadsToggle = panel.getByLabel("Roads");
   await expect(roadsToggle).toBeVisible();

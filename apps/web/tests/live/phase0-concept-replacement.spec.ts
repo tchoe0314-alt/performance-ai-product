@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 import type { BuildingPlacement } from "../../app/types";
 import { canonicalConceptReplacementBlocker } from "../../app/utils/canonicalEditCommands";
@@ -18,7 +19,7 @@ test(`${mode} cannot replace a protected existing program`, async ({ page }) => 
   await expect(originalBuilding).toBeVisible();
   const originalId = await originalBuilding.getAttribute("data-cad-object-id");
   const originalBoundary = await page.locator("main").innerText();
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate(element => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 76 stalls" }).first().getByTestId("object-manager-inspect").click();

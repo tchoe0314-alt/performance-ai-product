@@ -1,7 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 import { setPreviewQuality } from "./testUiHelpers";
 
-test.use({ video: "on", screenshot: "on" });
+test.use({ video: process.env.CIVORA_LOW_DISK_TESTS === "1" ? "off" : "on", screenshot: "only-on-failure" });
 
 const ignoredRuntimeNoise = /favicon|ERR_CONNECTION_REFUSED|401|api\/auth|api\/orchestrate/i;
 
@@ -21,7 +22,7 @@ async function openPanel(page: Page, name: RegExp | string) {
   if (await showSidebar.isVisible().catch(() => false)) {
     await showSidebar.click();
   }
-  await page.getByRole("button", { name }).filter({ visible: true }).first().click();
+  await openWorkspacePanelByName(page,name);
   await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
 }
 

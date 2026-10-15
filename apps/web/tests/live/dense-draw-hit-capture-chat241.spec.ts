@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 
 async function openDemoWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&seedDemo=1", { waitUntil: "domcontentloaded" });
@@ -13,7 +14,8 @@ async function openDrawPanel(page: Page) {
   const objectManager = page.getByRole("button", { name: /^Object Manager$/ }).filter({ visible: true }).first();
   const drawStep = page.getByRole("button", { name: "Go to workflow step 2" }).filter({ visible: true }).first();
   const drawButton = page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first();
-  if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
+  if (await page.getByTestId("workspace-stage-explore").count()) await openWorkspaceTool(page,"Draw");
+  else if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
   else if (await drawStep.isVisible().catch(() => false)) await drawStep.click();
   else if (await drawButton.isVisible().catch(() => false)) await drawButton.click();
   else await page.keyboard.press("D");

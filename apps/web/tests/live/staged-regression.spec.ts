@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import fs from "node:fs/promises";
@@ -153,7 +154,7 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
     fullPage: true,
   });
 
-  await page.getByRole("button", { name: /^Generate$/ }).first().click();
+  await openWorkspaceTool(page, "Generate");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate|Run review concepts/i, {
     timeout: 15_000,
   });

@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -6,7 +7,7 @@ const explicitlyLocal = process.env.CIVORA_PHASE0_LOCAL_TESTS === "1" && /^http:
 
 async function inspectBuilding(page: Page) {
   await expect(page.getByTestId("project-status-summary")).toContainText("Project opened");
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const list = page.getByTestId("object-manager-panel");
   await expect(list).toBeVisible();
   if (!(await list.evaluate(element => element.hasAttribute("open")))) await list.locator("summary").click();
@@ -60,6 +61,9 @@ test("real local authentication preserves manual geometry across save and reload
     const response = await request.get(`${api}/api/projects/${project.project_id}`, { headers });
     const payload = await response.json();
     const fields = payload.project.project_input.manual_fields;
+    const canonical = payload.project.project_input.canonical_project_v1;
+    const canonicalObjects = (canonical?.buildings ?? []).map((item: { canvas_placement_v1?: { id: string; x?: number } }) => item.canvas_placement_v1);
+    if (canonicalObjects.find((item: { id: string; x?: number } | undefined) => item?.id === "persistence-office")?.x !== 125) return null;
     const objects = fields.site_objects ?? fields.buildings ?? [];
     return objects.find((item: { id: string }) => item.id === "persistence-office")?.x;
   }).toBe(125);

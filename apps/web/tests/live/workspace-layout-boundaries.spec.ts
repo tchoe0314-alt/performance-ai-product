@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 
 for (const width of [375, 768, 1024, 1280, 1440]) {
@@ -33,7 +34,7 @@ for (const width of [375, 768, 1024, 1280, 1440]) {
   test(`Draw layer controls fit their cards at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/demo/workspace?seedDemo=1&aiRealismProvider=mock");
-    await page.getByRole("button", { name: "Draw", exact: true }).click();
+    await openWorkspaceTool(page, "Draw");
     const layers = page.getByTestId("object-manager-layers");
     await layers.locator(":scope > summary").click();
     const actions = layers.getByTestId("object-manager-layer-select");

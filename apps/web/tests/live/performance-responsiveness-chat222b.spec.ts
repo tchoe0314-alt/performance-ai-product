@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
+import { openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 
 import { setPreviewQuality } from "./testUiHelpers";
 
@@ -67,7 +68,7 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
   if (await workspaceButton.isVisible().catch(() => false)) {
     await workspaceButton.click();
   }
-  await page.getByRole("button", { name }).first().click();
+  await openWorkspacePanelByName(page, name);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
 }
 

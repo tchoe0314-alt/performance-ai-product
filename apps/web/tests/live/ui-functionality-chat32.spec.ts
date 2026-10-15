@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 
 async function openDemoWorkspace(page: import("@playwright/test").Page) {
@@ -45,7 +46,7 @@ test.describe("Chat 32 UI functionality QA", () => {
     expect(await page.locator("[data-object-overlay]").count()).toBe(initialObjectOverlayCount);
 
     await canvas.getByTestId("preview-interaction-edit").click();
-    await page.getByTestId("left-sidebar").getByRole("button", { name: "Draw", exact: true }).click();
+    await openWorkspaceTool(page, "Draw");
     const drawTools = page.getByTestId("draw-cad-tools-section");
     await expect(drawTools).toBeVisible();
     await expect(drawTools.getByTestId("cad-tool-pan")).toBeEnabled();
@@ -114,7 +115,7 @@ test.describe("Chat 32 UI functionality QA", () => {
     await expect(page.getByTestId("civora-command-input")).toBeFocused();
     await expect(sidebar).toBeVisible();
 
-    await sidebar.getByRole("button", { name: /^Draw$/ }).click();
+    await openWorkspaceTool(page,"Draw");
     const drawPanel = page.getByTestId("workspace-right-panel");
     await expect(drawPanel.getByTestId("cad-tool-line")).toBeVisible();
     await expect(drawPanel.getByTestId("cad-tool-area")).toBeVisible();

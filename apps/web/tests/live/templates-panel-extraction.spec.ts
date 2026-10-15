@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page) {
@@ -9,7 +10,7 @@ async function openDemoWorkspace(page: Page) {
 test("Templates panel remains reachable after component extraction", async ({ page }) => {
   await openDemoWorkspace(page);
 
-  await page.getByRole("button", { name: /^Setup$/ }).click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/);
 
   const sources = page.getByTestId("setup-survey-terrain-card");

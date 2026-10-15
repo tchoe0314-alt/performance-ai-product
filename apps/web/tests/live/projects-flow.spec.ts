@@ -1,3 +1,4 @@
+import { openWorkspaceTool, openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { openCadPrecisionTools } from "./testUiHelpers";
 
@@ -311,17 +312,7 @@ async function openProjects(page: Page) {
 }
 
 async function openWorkspaceMode(page: Page, name: RegExp) {
-  const modeButton = page
-    .getByTestId("primary-workflow-sidebar")
-    .getByRole("button", { name })
-    .filter({ visible: true })
-    .first();
-  if (!(await modeButton.isVisible().catch(() => false))) {
-    const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
-    if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
-  }
-  await expect(modeButton).toBeVisible();
-  await modeButton.click();
+  await openWorkspacePanelByName(page, name);
 }
 
 async function openSetup(page: Page) {
@@ -415,7 +406,7 @@ test.describe("project drawer reliability", () => {
     });
     await mockShell(page, store);
     await openApp(page);
-    await page.getByRole("button", { name: /^Generate$/ }).first().click();
+    await openWorkspaceTool(page, "Generate");
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/site boundary/i);
     await openProjects(page);
@@ -424,12 +415,7 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("site-status")).toContainText("Site Locked");
     const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
     if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
-    await page
-      .getByTestId("primary-workflow-sidebar")
-      .getByRole("button", { name: /^Draw\b/i })
-      .filter({ visible: true })
-      .first()
-      .click();
+    await openWorkspaceTool(page, "Draw");
     await page.getByLabel("Select Denver Office").filter({ visible: true }).first().click();
     await expect(page.getByTestId("preview-object-manager-list")).toContainText("Denver Office");
     await openSetup(page);
@@ -437,7 +423,7 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByLabel("Depth (ft)")).toHaveValue("730");
     await expect(page.getByTestId("setup-site-box-controls")).toContainText(/920 ft x 730 ft/i);
     await expect(page.getByTestId("setup-site-box-controls")).toContainText(/ready/i);
-    await page.getByRole("button", { name: /^Generate$/ }).first().click();
+    await openWorkspaceTool(page, "Generate");
     await expect(page.getByTestId("generate-flow-summary")).toHaveCount(0);
   });
 
@@ -583,12 +569,7 @@ test.describe("project drawer reliability", () => {
     const drawBox = async (first: [number, number], second: [number, number]) => {
       const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
       if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
-      await page
-        .getByTestId("primary-workflow-sidebar")
-        .getByRole("button", { name: /^Draw\b/i })
-        .filter({ visible: true })
-        .first()
-        .click();
+      await openWorkspaceTool(page, "Draw");
       await page.getByTestId("cad-tool-box").filter({ visible: true }).first().click();
       const panel = page.getByTestId("workspace-right-panel");
       await panel.getByRole("button", { name: "Minimize" }).click();
@@ -900,12 +881,7 @@ test.describe("project drawer reliability", () => {
       const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
       if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
     }
-    await page
-      .getByTestId("primary-workflow-sidebar")
-      .getByRole("button", { name: /^Draw\b/i })
-      .filter({ visible: true })
-      .first()
-      .click();
+    await openWorkspaceTool(page, "Draw");
 
     const addBox = page.getByTestId("cad-tool-box").filter({ visible: true }).first();
     await expect(addBox).toBeEnabled();
@@ -1248,7 +1224,7 @@ test.describe("project drawer reliability", () => {
     await page.getByTestId("civora-command-input").press("Enter");
     await expect(page.getByTestId("workspace-right-panel").getByText("Open Objects and place Parking Field - 140 stalls", { exact: false }).last()).toBeVisible();
 
-    await page.getByRole("button", { name: /^Generate$/ }).first().click();
+    await openWorkspaceTool(page, "Generate");
     const visibleGeneratePanel = page.getByTestId("workspace-right-panel");
     await expect(visibleGeneratePanel.getByTestId("generate-placement-context")).toContainText(
       "7 requested objects still need placement",
@@ -1287,9 +1263,9 @@ test.describe("project drawer reliability", () => {
     await expect(chatComposer).toBeVisible();
     await chatComposer.fill("add 140 parking spaces");
     await chatComposer.press("Enter");
-    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await openWorkspaceTool(page, "Draw");
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls");
-    await expect(page.getByTestId("workspace-right-panel")).toContainText("Parking Field - 140 stalls was added as draft geometry.");
+    await expect(page.getByTestId("object-manager-status")).toContainText("Added Parking Field - 140 stalls.");
     const parkingOverlay = page
       .locator('[data-object-overlay][aria-label*="Parking Field - 140 stalls"]')
       .first();
@@ -1311,7 +1287,7 @@ test.describe("project drawer reliability", () => {
     expect(JSON.stringify(store.get(firstProjectId)?.project_input)).toContain("123 MAIN ST");
     expect(JSON.stringify(store.get(firstProjectId)?.project_input)).toContain("Generate a parking layout note.");
 
-    await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
+    await openWorkspaceTool(page, "Draw");
     await page.getByTestId("cad-tool-line").filter({ visible: true }).first().click();
     await expect(page.getByTestId("draw-active-tool")).toContainText(/LINE/i);
     await openProjects(page);
@@ -1322,7 +1298,7 @@ test.describe("project drawer reliability", () => {
     await openSetup(page);
     await expect(page.getByLabel("Type project address")).toHaveValue("");
     await expect(page.getByText("parcel/site boundary")).not.toBeVisible();
-    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await openWorkspaceTool(page, "Draw");
     await expect(page.getByTestId("workspace-right-panel")).not.toContainText("Parking Field - 140 stalls");
     await expect(page.getByRole("button", { name: "Undo last draft change" })).toBeDisabled();
     await page.getByTestId("header-chat-button").click();
@@ -1340,7 +1316,7 @@ test.describe("project drawer reliability", () => {
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
     await openSetup(page);
     await expect(page.getByTestId("workspace-right-panel")).toContainText("123 MAIN ST, TEST CITY, TX");
-    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await openWorkspaceTool(page, "Draw");
     const restoredParkingOverlay = page
       .locator('[data-object-overlay][aria-label*="Parking Field - 140 stalls"]')
       .first();

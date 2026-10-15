@@ -1,12 +1,29 @@
 import { expect, test, type Page } from "@playwright/test";
 import { buildDashboardQuantityRows } from "../../app/utils/dashboardQuantityRows";
+import { QuantitiesPanel } from "../../app/components/QuantitiesPanel";
+
+test("previous quantity totals are labelled and cannot be downloaded as current", () => {
+  const rows = buildDashboardQuantityRows({ quantityTotals: { building_area_sf: 1200 }, quantityExplain: {}, costEstimate: { explain: {} } });
+  const props = { rows, staleSystemCount: 0, trustScoreLabel: "Ready", onExportReport: () => {},
+    formatMetric: (value: number | null, unit: string) => `${value} ${unit}`,
+    statusLabelForQuantityReview: (status: string) => status, calculationReference: "calculation-1" };
+  // Playwright represents imported JSX as a component tree, not React DOM.
+  const previous = JSON.stringify(QuantitiesPanel({ ...props, outdated: true }));
+  expect(previous).toContain("Out of date");
+  expect(previous).toContain("Previous calculation. Recalculate for current totals.");
+  expect(previous).toContain('"disabled":true');
+  expect(previous).toContain("1200");
+  const current = JSON.stringify(QuantitiesPanel(props));
+  expect(current).toContain("Calculation: calculation-1");
+  expect(current).toContain('"disabled":false');
+});
 
 async function openQuantitiesPanel(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&debugPanel=quantities", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   const panel = page.getByTestId("workspace-right-panel");
   await expect(panel).toContainText("Quantity takeoff", { timeout: 5_000 });
-  await expect(panel).toContainText("Traceable canonical quantities");
+  await expect(panel.getByTestId("quantity-calculation-source")).toContainText("Calculation version unverified.");
   return panel;
 }
 

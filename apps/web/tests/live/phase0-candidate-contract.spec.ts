@@ -20,6 +20,9 @@ test("canonical deletion protects the whole group before any mutation", () => {
 import type { BuildingPlacement } from "../../app/types";
 import { generateLayoutAlternatives, parseLayoutGoals, searchLayoutAlternatives, rerankLayoutSearch } from "../../app/utils/layoutAlternatives";
 import { resolveDependencyProposal, type CanonicalDependencyProposal } from "../../app/utils/canonicalDependencyPolicies";
+import { layoutRequirementContext, layoutInputsMatch } from "../../app/utils/layoutPreviewSource";
+import { liveInputFingerprint } from "../../app/utils/liveCalculationFreshness";
+import { buildProjectInputPlacements, restoreExactCanvasPlacements } from "../../app/utils/projectInputRestore";
 
 const fixture = (): BuildingPlacement[] => [
   { id: "site", label: "Site", type: "site", x: 0, y: 0, w: 900, d: 700, placed: true },
@@ -27,6 +30,68 @@ const fixture = (): BuildingPlacement[] => [
   { id: "parking", label: "Parking", type: "parking", x: 240, y: 360, w: 330, d: 150, stallCount: 60, placed: true },
   { id: "entry", label: "Entry", type: "entrance", x: 60, y: 650, w: 20, d: 20, placed: true },
 ];
+
+test("restoring parking objects preserves exact stall counts, zero and legacy metadata without rounding invalid demand", () => {
+  expect(restoreExactCanvasPlacements([{ id: "parking", type: "parking", w: 330, d: 150, stall_count: 60 }])[0].stallCount).toBe(60);
+  expect(restoreExactCanvasPlacements([{ id: "parking", type: "parking", w: 330, d: 150, stall_count: 0 }])[0].stallCount).toBe(0);
+  for (const value of [0, 60, "60"]) {
+    const placements = buildProjectInputPlacements({ projectInput: { manual_fields: { site_objects: [{ id: "parking", type: "parking", x: 10, y: 10, w: 330, d: 150, stall_count: value as number }] } }, siteInputs: {} });
+    expect(placements.find(item => item.id === "parking")?.stallCount).toBe(Number(value));
+  }
+  const legacy = buildProjectInputPlacements({ projectInput: { manual_fields: { site_objects: [{ id: "parking", type: "parking", x: 10, y: 10, w: 330, d: 150, meta: { requested_stalls: 35 } }] } }, siteInputs: {} });
+  expect(legacy.find(item => item.id === "parking")?.stallCount).toBe(35);
+  const invalid = buildProjectInputPlacements({ projectInput: { manual_fields: { site_objects: [{ id: "parking", type: "parking", x: 10, y: 10, w: 330, d: 150, stall_count: 1.5 }] } }, siteInputs: {} });
+  expect(invalid.find(item => item.id === "parking")?.stallCount).toBeUndefined();
+});
+
+test("layout search respects global parking demand rather than treating field capacity as installed stalls", () => {
+  const source = fixture();
+  const result = searchLayoutAlternatives(source, 5, { units: "ft", requiredParking: 140 });
+  expect(result.alternatives).toHaveLength(0);
+  expect(result.searchReport.rejectionReasons.join()).toContain("required parking shortfall");
+  expect(searchLayoutAlternatives(source, 5, { units: "ft", requiredParking: 60 }).alternatives).toHaveLength(5);
+  expect(searchLayoutAlternatives(source, 5, { units: "unknown" }).searchReport.rejectionReasons).toContain("set project units to ft or m");
+});
+
+test("unsupported parking shapes and dimensions cannot be called modeled-pass layouts", () => {
+  const source = fixture();
+  source[2] = { ...source[2], geometryType: "polygon", geometry: [[240, 360], [570, 360], [570, 400], [240, 400]] };
+  expect(searchLayoutAlternatives(source, 5).searchReport.rejectionReasons).toContain("parking search supports rectangular fields only");
+  source[2] = { ...fixture()[2], meta: { parkingParams: { stallWidth: 0 } } };
+  expect(searchLayoutAlternatives(source, 5).searchReport.rejectionReasons).toContain("parking parameter outside supported model: stallWidth");
+});
+
+test("layout search enforces entered building setbacks and its explicit bounded size", () => {
+  const source = fixture();
+  source[1] = { ...source[1], x: 5, locked: true };
+  const result = searchLayoutAlternatives(source, 5, { units: "ft", setback: 20 });
+  expect(result.alternatives).toHaveLength(0);
+  expect(result.searchReport.rejectionReasons.join()).toContain("entered building setback violation");
+  expect(searchLayoutAlternatives(source, 5, { units: "ft", setback: 0 }).alternatives.length).toBeGreaterThan(0);
+  const oversized = Array.from({ length: 201 }, (_, index) => ({ ...fixture()[1], id: String(index) }));
+  expect(searchLayoutAlternatives(oversized, 5).searchReport.rejectionReasons).toContain("layout search limit: 200 objects / 2000 vertices");
+});
+
+test("metric layout search preserves physical parking capacity and distances", () => {
+  const feet = fixture(), metres = feet.map(item => ({ ...item, x: (item.x ?? 0) * 0.3048, y: (item.y ?? 0) * 0.3048, w: item.w * 0.3048, d: item.d * 0.3048 }));
+  const a = searchLayoutAlternatives(feet, 5, { units: "ft", requiredParking: 60 });
+  const b = searchLayoutAlternatives(metres, 5, { units: "m", requiredParking: 60 });
+  expect(b.alternatives).toHaveLength(5);
+  for (const candidate of b.alternatives) {
+    const original = a.candidatePool.find(item => item.id === candidate.id)!;
+    expect(candidate.metrics.capacity).toBe(original.metrics.capacity);
+    expect(candidate.metrics.entranceDistance).toBeCloseTo(original.metrics.entranceDistance, 6);
+  }
+});
+
+test("layout preview binding catches non-geometric brief changes and distinguishes zero from invalid counts", () => {
+  const input = { manual_fields: { units: "ft", site_plan: { parking_count: 60 } } };
+  const source = { projectId: "p", placements: "unchanged", inputKey: liveInputFingerprint(input) };
+  expect(layoutInputsMatch(source, input)).toBe(true);
+  expect(layoutInputsMatch(source, { ...input, manual_fields: { ...input.manual_fields, site_plan: { parking_count: 140 } } })).toBe(false);
+  expect(layoutRequirementContext({ ...input, meta: { edit_controls_v1: { parkingCount: "0" } } }).requiredParking).toBe(0);
+  expect(Number.isNaN(layoutRequirementContext({ ...input, meta: { edit_controls_v1: { parkingCount: "1.5" } } }).requiredParking)).toBe(true);
+});
 
 test("dependency approval applies all objects atomically and rejects stale or cross-project previews", () => {
   const source = fixture();

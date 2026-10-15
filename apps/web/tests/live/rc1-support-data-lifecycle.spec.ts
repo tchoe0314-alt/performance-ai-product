@@ -38,7 +38,7 @@ test.describe("RC1 support and account data lifecycle", () => {
 
     await page.getByTestId("support-summary").click();
     await page.getByLabel("What happened?").fill("RC1 account lifecycle browser proof");
-    await page.getByLabel("Details").fill("Temporary permission-cleared issue created by the automated RC1 browser test.");
+    await page.getByRole("textbox", { name: "Details", exact: true }).fill("Temporary permission-cleared issue created by the automated RC1 browser test.");
     await page.getByRole("button", { name: "Send issue" }).click();
     await expect(page.getByText(/Issue received|Support request received/i)).toBeVisible();
 

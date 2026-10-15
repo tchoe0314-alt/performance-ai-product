@@ -1,6 +1,9 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 import { openCadPrecisionTools } from "./testUiHelpers";
+import { resolveCanonicalCanvasInput } from "../../app/utils/canonicalCanvasProject";
+import type { ProjectInput } from "../../app/types";
 
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
@@ -179,10 +182,13 @@ async function openFreshMargoProject(page: Page, options: { requireFullProgramOb
 
 async function runGenerateAndCapture(page: Page, captured: { queuedRequest: Record<string, unknown> | null }) {
   captured.queuedRequest = null;
-  await page.getByRole("button", { name: /^Generate$/ }).first().click();
+  await openWorkspaceTool(page, "Generate");
   await page.getByTestId("generate-main-action").click();
   await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:/i, { timeout: 8_000 });
   await expect.poll(() => captured.queuedRequest, { timeout: 8_000 }).not.toBeNull();
+  const request = captured.queuedRequest!.request as ProjectInput;
+  expect(request.canonical_project_v1?.schema_version).toBe("civora_project_v1");
+  expect(resolveCanonicalCanvasInput(request).manual_fields).toEqual(request.manual_fields);
   const queued = captured.queuedRequest!;
   return queued.request as Record<string, unknown>;
 }
@@ -193,7 +199,7 @@ test("Generate queues drawn and placed objects as engineering context", async ({
 
   await openFreshMargoProject(page, { requireFullProgramObjects: false });
 
-  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const precisionTools = await openCadPrecisionTools(page);
   await precisionTools.getByLabel("Draft command input").fill("LINE 20,20 220,20");
   await precisionTools.getByLabel("Draft command input").press("Enter");
@@ -247,12 +253,12 @@ test("Generate queues drawn and placed objects as engineering context", async ({
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/editable draft\/review context/i);
 });
 
-test("Generate immediately sees newly combined semantic objects", async ({ page }) => {
+test("Generate sees combined context without double-counting its physical members", async ({ page }) => {
   const captured: { queuedRequest: Record<string, unknown> | null } = { queuedRequest: null };
   await installHostedMocks(page, captured);
 
   await openFreshMargoProject(page, { requireFullProgramObjects: false });
-  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  await openWorkspaceTool(page, "Draw");
 
   const officeRow = page
     .getByLabel("Rename Office Building - 28,000 sf", { exact: true })
@@ -284,12 +290,17 @@ test("Generate immediately sees newly combined semantic objects", async ({ page 
   expect(combined?.placed).toBe(true);
   expect(JSON.stringify(combined?.meta ?? {})).toContain("semantic_object_model");
   expect(JSON.stringify(combined?.meta ?? {})).toContain("combined_from_object_ids");
-  expect(combined?.canonical_geometry_handoff_v1).toBeTruthy();
-  expect(combinedHandoff?.object_type).toBe("office_building");
-  expect(combinedHandoff?.canonical_object_type).toBe("office_building");
-  expect(combinedHandoff?.creation_method).toBe("semantic_conversion");
-  expect(combinedHandoff?.valid).toBe(true);
-  expect(buildings.some((item) => String(item.label) === "Combined Site Program")).toBeTruthy();
+  // A combined group of physical buildings/parking is a context wrapper, not
+  // an additional footprint. Its hidden original members remain authoritative.
+  expect(combinedHandoff).toBeUndefined();
+  const memberIds=(combined?.meta as {combined_from_object_ids:string[]}).combined_from_object_ids;
+  expect(memberIds).toHaveLength(2);
+  for(const id of memberIds){
+    const handoff=handoffs.find(item=>item.object_id===id);
+    expect(handoff).toBeTruthy();expect(handoff?.valid).toBe(true);
+  }
+  expect(buildings.some((item) => String(item.label) === "Combined Site Program")).toBe(false);
+  expect(buildings.some((item) => memberIds.includes(String(item.id)))).toBe(true);
   expect(JSON.stringify(request.meta ?? {})).toContain("Combined Site Program");
 
   await askChat(page, "what did you use from my drawing?", /Combined Site Program/i);

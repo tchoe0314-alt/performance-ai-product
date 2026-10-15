@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 import { setPreviewQuality } from "./testUiHelpers";
@@ -35,7 +36,7 @@ test.describe("Preview height and geometry fidelity", () => {
     });
 
     await openDemoWorkspace(page);
-    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await openWorkspaceTool(page, "Draw");
     const initialObjectCount = await page.getByTestId("object-manager-row").count();
     const buildingRow = page
       .getByTestId("object-manager-row")
@@ -100,7 +101,7 @@ test.describe("Preview height and geometry fidelity", () => {
       await expect(page.getByTestId("professional-building-footprint").first()).toHaveJSProperty("tagName", "polygon");
     }
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/CONCEPT PLAN/i);
-    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await openWorkspaceTool(page, "Draw");
     expect(await page.getByTestId("object-manager-row").count()).toBe(initialObjectCount);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     expect(pageErrors).toEqual([]);

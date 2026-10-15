@@ -1,3 +1,6 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
+import { resolveCanonicalCanvasInput } from "../../app/utils/canonicalCanvasProject";
+import type { ProjectInput } from "../../app/types";
 import { expect, test, type Locator } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
@@ -194,6 +197,7 @@ function visionReviewWorkspace(eventCount = 0) {
 
 test("Apply Address automatically runs Auto Site Context", async ({ page }, testInfo) => {
   let savedProjectInput: Record<string, unknown> | null = null;
+  const currentSources=()=>savedProjectInput?resolveCanonicalCanvasInput(savedProjectInput as ProjectInput).meta?.site_inputs:undefined;
   let fetchOnlineCalled = false;
   let fetchOnlineRequest: Record<string, unknown> | null = null;
   let lastVisionCorrectionPayload: Record<string, unknown> | null = null;
@@ -636,7 +640,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const addressSection = page.getByTestId("setup-address-truth");
   if (!(await addressSection.evaluate((node) => node.hasAttribute("open")))) {
     await addressSection.locator("summary").click();
@@ -668,7 +672,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect(page.getByTestId("canvas-quick-finish").filter({ visible: true }).first()).toBeEnabled();
   await page.getByTestId("canvas-quick-finish").filter({ visible: true }).first().click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
-  await page.getByRole("button", { name: "Draw" }).first().click();
+  await openWorkspaceTool(page, "Draw");
   await expect(page.getByTestId("object-manager-panel")).toBeVisible();
   const cadTools = page.getByTestId("draw-cad-tools-section");
   await cadTools.getByTestId("cad-tool-area").filter({ visible: true }).first().click();
@@ -685,7 +689,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   await expect.poll(() => JSON.stringify(savedProjectInput), { timeout: 30_000 }).toContain('"site_alignment_locked":true');
   await expect.poll(() => JSON.stringify(savedProjectInput), { timeout: 30_000 }).toContain("site_boundary_geometry");
   await expect(page.getByTestId("object-manager-panel")).toBeVisible();
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
 
   const runtimeMapToggle = page.getByTestId("preview-inner-map-toggle");
   if (await runtimeMapToggle.isEnabled()) {
@@ -941,7 +945,7 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
   expect(exportedQuality.precision).toBeNull();
   expect(manifestText).not.toContain("access_token");
 
-  await page.getByRole("button", { name: "Draw" }).first().click();
+  await openWorkspaceTool(page, "Draw");
   await cadTools.getByTestId("cad-tool-box").filter({ visible: true }).first().click();
   await clickExposedSurface(drawingSurface, 0.52, 0.4);
   await clickExposedSurface(drawingSurface, 0.64, 0.55);
@@ -987,22 +991,24 @@ test("Apply Address automatically runs Auto Site Context", async ({ page }, test
       },
     },
   });
-  expect(JSON.stringify(savedProjectInput)).toContain("online_existing_conditions_discovery_v1");
-  expect(JSON.stringify(savedProjectInput)).toContain("site_intelligence_summary_v1");
-  expect(JSON.stringify(savedProjectInput)).toContain("imagery_object_detection_report_v1");
+  expect(JSON.stringify(currentSources())).toContain("online_existing_conditions_discovery_v1");
+  expect(JSON.stringify(currentSources())).toContain("site_intelligence_summary_v1");
+  expect(JSON.stringify(currentSources())).toContain("imagery_object_detection_report_v1");
 
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
   await page
     .getByRole("button", { name: "Start a blank site from detailed setup controls and clear address map evidence" })
     .click();
-  await expect.poll(() => JSON.stringify(savedProjectInput)).not.toContain("online_existing_conditions_discovery_v1");
-  expect(JSON.stringify(savedProjectInput)).not.toContain("site_intelligence_summary_v1");
-  expect(JSON.stringify(savedProjectInput)).not.toContain("imagery_object_detection_report_v1");
-  expect(JSON.stringify(savedProjectInput)).not.toContain("candidate_review_accepted_drafts_v1");
+  // Prior source snapshots deliberately remain in durable Undo history. They
+  // must be absent from the authoritative current inputs, not erased from history.
+  await expect.poll(() => JSON.stringify(currentSources())).not.toContain("online_existing_conditions_discovery_v1");
+  expect(JSON.stringify(currentSources())).not.toContain("site_intelligence_summary_v1");
+  expect(JSON.stringify(currentSources())).not.toContain("imagery_object_detection_report_v1");
+  expect(JSON.stringify(currentSources())).not.toContain("candidate_review_accepted_drafts_v1");
   await expect(page.getByTestId("project-status-summary")).toContainText("Blank site started");
   await expect(page.getByTestId("project-status-summary")).not.toContainText("Address applied");
   await page.getByRole("button", { name: "Cancel" }).click();
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByTestId("setup-detect-inside-site")).toContainText("Blank site started");
   await expect(page.getByTestId("setup-detect-inside-site")).toContainText("0 found");
   await expect(page.getByTestId("auto-site-context-candidates")).toContainText(
@@ -1150,7 +1156,7 @@ test("Apply Address recovers when a background source status poll is transiently
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const addressSection = page.getByTestId("setup-address-truth");
   if (!(await addressSection.evaluate((node) => node.hasAttribute("open")))) {
     await addressSection.locator("summary").click();

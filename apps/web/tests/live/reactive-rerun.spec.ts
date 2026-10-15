@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Route } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
@@ -31,10 +32,11 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, projects: [] }) });
       return;
     }
+    const saved=route.request().postDataJSON() as Record<string,unknown>;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ success: true, project: { project_id: "reactive-project", name: "Reactive Project", project_input: {} } }),
+      body: JSON.stringify({ success: true, project: { project_id: "reactive-project", name: "Reactive Project", project_input: saved.project_input??{},latest_result:saved.latest_result??null } }),
     });
   });
 
@@ -95,7 +97,7 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: /^Setup$/ }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const siteDetails = page.getByTestId("setup-site-box-controls");
   if (!(await siteDetails.evaluate((element) => element.hasAttribute("open")))) {
     await siteDetails.locator("summary").click();
@@ -103,7 +105,7 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
   await page.getByRole("button", { name: "Use 1000 x 1000 ft" }).click();
   await page.getByRole("button", { name: "Use this site" }).click();
   await expect(page.getByText("SITE LOCKED").first()).toBeVisible({ timeout: 10_000 });
-  await page.getByRole("button", { name: /^Generate$/ }).first().click();
+  await openWorkspaceTool(page, "Generate");
   await expect(page.getByTestId("generate-reactive-details")).toBeVisible();
   const systemDetails = page.getByTestId("generate-system-details");
   if (!(await systemDetails.evaluate((element) => element.hasAttribute("open")))) {
@@ -113,6 +115,11 @@ test("focused generate sends reactive checkpoint metadata", async ({ page }) => 
   await expect.poll(() => observedPayload, { timeout: 8_000 }).not.toBeNull();
   await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran: grading/i, { timeout: 8_000 });
   await expect(page.getByTestId("generate-grading")).toBeEnabled({ timeout: 8_000 });
+  const firstPayload = observedPayload as Record<string, unknown>;
+  const firstFields = firstPayload.manual_fields as { site_objects: Array<{ meta?: { generated_review_concept?: boolean } }> };
+  expect(firstFields.site_objects.some(object => object.meta?.generated_review_concept)).toBe(true);
+  const firstMeta = firstPayload.meta as { site_inputs: { generate_flow_summary_v1: { target: string } } };
+  expect(firstMeta.site_inputs.generate_flow_summary_v1.target).toBe("grading");
   await page.waitForTimeout(250);
   observedPayload = null;
 

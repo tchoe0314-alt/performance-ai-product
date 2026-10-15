@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 
 const email = process.env.CIVORA_EMAIL || "";
@@ -42,7 +43,7 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
 
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
   if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
-  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Address \/ Location|Site Boundary/i);
 
   const addressSection = page.getByTestId("setup-address-truth");
@@ -60,7 +61,7 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
   await siteSection.getByTestId("create-centered-site-button").click();
 
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 60_000 });
-  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const refreshedAddressSection = page.getByTestId("setup-address-truth");
   const refreshedSiteSection = page.getByTestId("setup-site-box-controls");
   await expect(refreshedSiteSection).toContainText("1000 ft x 1000 ft");
@@ -75,7 +76,7 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
   await refreshedSiteSection.getByRole("button", { name: "Use this site" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked");
 
-  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const surveySection = page.getByTestId("setup-survey-terrain-card");
   await expect(surveySection).toBeVisible({ timeout: 15_000 });
   if (!(await surveySection.evaluate((node) => node.hasAttribute("open")))) {
@@ -100,7 +101,7 @@ test("phase 2 site setup workflow", async ({ page, request, baseURL }) => {
   await expect(page.getByTestId("image-upload-status")).not.toContainText(/Uploading image|Detecting site features/i);
   test.info().annotations.push({ type: "image-detection-outcome", description: await page.getByTestId("image-upload-status").innerText() });
 
-  await page.getByRole("button", { name: /^Generate$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Generate");
   await expect(page.getByTestId("generate-main-action")).toBeVisible();
   await page.getByTestId("generate-main-action").click();
   await expect(page.getByTestId("generate-flow-summary")).toContainText(

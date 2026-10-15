@@ -1,3 +1,4 @@
+import { openWorkspaceTool, openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 import { openCadPrecisionTools } from "./testUiHelpers";
@@ -13,8 +14,7 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
   const panel = page.getByTestId("workspace-right-panel");
   if (await panel.filter({ hasText: expected }).isVisible().catch(() => false)) return;
   const navName = name === "Object Manager" || name === "Open canvas from sidebar" ? /^Draw$/ : name;
-  const directButton = page.getByRole("button", { name: navName }).first();
-  await directButton.click();
+  await openWorkspacePanelByName(page, navName);
   await expect(panel).toContainText(expected, { timeout: 5_000 });
 }
 
@@ -157,7 +157,7 @@ test.describe("button functionality audit", () => {
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Chat");
     await expect(page.getByTestId("civora-command-input")).toBeVisible();
 
-    await page.getByRole("button", { name: /^Setup$/ }).click();
+    await openWorkspaceTool(page, "Setup");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/);
     await expect(page.getByTestId("setup-address-truth")).toBeVisible();
 

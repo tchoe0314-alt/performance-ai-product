@@ -54,13 +54,13 @@ test.describe("Chat 232 naming and trust copy", () => {
     await expect(page.getByRole("button", { name: "Help" })).toBeVisible();
 
     const sidebar = page.getByTestId("primary-workflow-sidebar");
-    await expect(sidebar).toContainText(/setup/i);
-    await expect(sidebar).toContainText(/draw/i);
-    await expect(sidebar).toContainText(/generate/i);
+    await expect(sidebar).toContainText(/brief/i);
+    await expect(sidebar).toContainText(/explore/i);
+    await expect(sidebar).toContainText(/analyze/i);
+    await expect(sidebar).toContainText(/review/i);
     await expect(sidebar).toContainText(/deliver/i);
     await expect(sidebar).not.toContainText(/object manager/i);
     await expect(sidebar).not.toContainText(/project health/i);
-    await expect(sidebar).not.toContainText(/analyze/i);
 
     await page.getByTestId("header-chat-button").click();
     await expect(page.getByTestId("workspace-right-panel")).toContainText("Conversation and assisted workflow control");

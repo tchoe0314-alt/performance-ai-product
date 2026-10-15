@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 import { setPreviewQuality } from "./testUiHelpers";
@@ -33,7 +34,7 @@ async function openNewProject(page: Page) {
 }
 
 async function createBlankSite(page: Page) {
-  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const panel = page.getByTestId("workspace-right-panel");
   await expect(panel).toBeVisible({ timeout: 5_000 });
   const boundary = panel.getByTestId("setup-site-box-controls");
@@ -65,7 +66,7 @@ test.describe("Chat 238 site preview performance", () => {
     await expect(page.getByText("Pinecrest Mixed-Use Demo Site")).toHaveCount(0);
     await expect(page.getByText("Pinecrest Mixed-Use")).toHaveCount(0);
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
-    await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+    await openWorkspaceTool(page, "Setup");
     await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
     await expect(page.getByLabel("Type project address")).toBeVisible();
     await page.getByLabel("Type project address").fill("20525 Margo St, Gretna, NE");

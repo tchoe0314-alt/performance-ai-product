@@ -1,0 +1,36 @@
+import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { withCanonicalCanvasSnapshot, resolveCanonicalCanvasInput } from "../../app/utils/canonicalCanvasProject";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
+
+test("unknown saved units remain unknown until explicit owner interpretation, survive reload and can be undone", async ({ page, context, request }) => {
+  const api = process.env.PLAYWRIGHT_API_BASE_URL ?? "";
+  test.skip(process.env.CIVORA_PHASE0_LOCAL_TESTS !== "1" || !/^http:\/\/(127\.0\.0\.1|localhost):/.test(api), "Disposable local accounts only.");
+  const registered = await request.post(`${api}/api/auth/register`, { data: { email: `unknown-units-${randomUUID()}@example.test`, password: "Disposable-123", name: "Units regression" } });
+  expect(registered.status()).toBe(200); const { token } = await registered.json(), headers = { Authorization: `Bearer ${token}` };
+  const object = { id: "office", label: "Unverified office", type: "building", x: 100, y: 120, w: 160, d: 90, placed: true };
+  const input = withCanonicalCanvasSnapshot({ manual_fields: { project_name: "Unknown units pilot", site_objects: [object] } });
+  const created = await request.post(`${api}/api/projects`, { headers, data: { name: "Unknown units pilot", project_input: input } });
+  expect(created.status()).toBe(200); const { project } = await created.json();
+  const saved = async () => resolveCanonicalCanvasInput((await (await request.get(`${api}/api/projects/${project.project_id}`, { headers })).json()).project.project_input);
+  await context.addInitScript(value => { localStorage.setItem("civora-ai-token", value); sessionStorage.setItem("civora-ai-session-auth-restore", "1"); }, token);
+  await page.goto("/"); await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+  await page.getByTestId("header-projects-button").click(); await page.getByRole("button", { name: "Open project Unknown units pilot", exact: true }).click();
+  await expect(page.getByTestId("project-status-summary")).toContainText("Project opened");
+  await openWorkspaceTool(page, "Setup");
+  await expect(page.getByTestId("unknown-drawing-units")).toBeVisible();
+  expect((await saved()).manual_fields?.units).toBeUndefined();
+  page.once("dialog", dialog => dialog.dismiss());
+  await page.getByLabel("Set drawing units", { exact: true }).selectOption("ft");
+  expect((await saved()).manual_fields?.units).toBeUndefined();
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByLabel("Set drawing units", { exact: true }).selectOption("ft");
+  await expect.poll(async () => (await saved()).manual_fields?.units).toBe("ft");
+  const restored = (await saved()).manual_fields!.site_objects!.find(item => item.id === "office")!;
+  expect([restored.x, restored.y, restored.w, restored.d]).toEqual([100, 120, 160, 90]);
+  await page.reload(); await openWorkspaceTool(page, "Setup");
+  await expect(page.getByTestId("unknown-drawing-units")).toHaveCount(0);
+  await page.getByRole("button", { name: "Undo last draft change", exact: true }).click();
+  await expect.poll(async () => (await saved()).manual_fields?.units).toBeUndefined();
+  await expect(page.getByTestId("unknown-drawing-units")).toBeVisible();
+});

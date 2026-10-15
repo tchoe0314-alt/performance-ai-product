@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function openCleanWorkspace(page: Page) {
@@ -41,7 +42,7 @@ test.describe("canvas-first workspace redesign", () => {
     await expect(page.getByTestId("preview-object-manager-overlay")).toHaveCount(0);
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Setup", exact: true }).click();
+    await openWorkspaceTool(page, "Setup");
     const drawer = page.getByTestId("workspace-right-panel");
     const toolbar = page.getByTestId("preview-control-stack").locator(".civora-preview-view-toolbar");
     await expect(drawer).toBeVisible();
@@ -50,7 +51,7 @@ test.describe("canvas-first workspace redesign", () => {
 
     await page.getByRole("button", { name: "Minimize", exact: true }).click();
     await expect(drawer).toBeHidden();
-    await page.getByRole("button", { name: "Setup", exact: true }).click();
+    await openWorkspaceTool(page, "Setup");
     await expect(drawer).toBeVisible();
 
     const deliverMode = page.getByRole("button", { name: "Deliver", exact: true });
@@ -64,7 +65,7 @@ test.describe("canvas-first workspace redesign", () => {
   test("mobile keeps the drawer, command input, and workflow rail separate", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openCleanWorkspace(page);
-    await page.getByRole("button", { name: "Setup", exact: true }).click();
+    await openWorkspaceTool(page, "Setup");
 
     const drawer = await box(page.getByTestId("workspace-right-panel"));
     const command = await box(page.getByTestId("floating-command-bar"));
@@ -75,7 +76,7 @@ test.describe("canvas-first workspace redesign", () => {
     await expect(page.locator(".civora-preview-mobile-draw-toolbar")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 
-    await page.getByRole("button", { name: "Draw", exact: true }).click();
+    await openWorkspaceTool(page, "Draw");
     await page.getByTestId("cad-tool-line").click();
     await expect(page.getByTestId("workspace-right-panel")).toBeHidden();
     const mobileTools = page.locator(".civora-preview-mobile-draw-toolbar");
@@ -90,7 +91,7 @@ test.describe("canvas-first workspace redesign", () => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await openCleanWorkspace(page);
 
-    await page.getByRole("button", { name: "Setup", exact: true }).click();
+    await openWorkspaceTool(page, "Setup");
     const siteBoundarySection = page.getByTestId("setup-site-box-controls");
     if (!(await siteBoundarySection.evaluate((node) => (node as HTMLDetailsElement).open))) {
       await siteBoundarySection.locator(":scope > summary").click();
@@ -103,7 +104,7 @@ test.describe("canvas-first workspace redesign", () => {
     const siteBox = await box(page.getByTestId("canonical-site-boundary"));
     expect(Math.abs(siteBox.width - siteBox.height)).toBeLessThan(2);
 
-    await page.getByRole("button", { name: "Draw", exact: true }).click();
+    await openWorkspaceTool(page, "Draw");
     await page.getByTestId("cad-tool-line").click();
     const drawer = page.getByTestId("workspace-right-panel");
     const drawHud = page.getByTestId("active-draw-hud");
@@ -126,7 +127,7 @@ test.describe("canvas-first workspace redesign", () => {
     await page.getByTestId("preview-mode-2d").click();
     await expect(page.getByTestId("preview-plan-canvas-svg")).toBeVisible();
 
-    await page.getByRole("button", { name: "Generate", exact: true }).click();
+    await openWorkspaceTool(page, "Generate");
     await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
     await expect(page.getByTestId("cad-command-feedback-panel")).toHaveCount(0);
   });

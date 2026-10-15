@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { workspaceToolButton, openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 import { setPreviewQuality } from "./testUiHelpers";
 
 const ignoredConsoleError = /favicon|401|unauthorized|auth\/status/i;
@@ -46,7 +47,7 @@ async function openPanel(page: Page, name: RegExp | string, expectedText: RegExp
   if (await workspaceButton.isVisible().catch(() => false)) {
     await workspaceButton.click();
   }
-  await page.getByRole("button", { name }).first().click();
+  await openWorkspacePanelByName(page, name);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expectedText, { timeout: 6_000 });
 }
 
@@ -56,9 +57,9 @@ test.describe("hosted/public workspace smoke", () => {
 
     await expect(page.getByTestId("header-projects-button")).toBeVisible();
     await expect(page.getByTestId("header-chat-button")).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Setup$/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Draw$/ })).toBeVisible();
-    expect(await visibleButtonCount(page, "Generate")).toBe(1);
+    await expect(workspaceToolButton(page,"Setup")).toBeVisible();
+    await expect(workspaceToolButton(page,"Draw")).toBeVisible();
+    await expect(workspaceToolButton(page,"Generate")).toBeVisible();
     expect(await visibleButtonCount(page, /^Deliver$/)).toBe(1);
 
     await expect(page.getByTestId("preview-mode-2d").first()).toBeVisible();

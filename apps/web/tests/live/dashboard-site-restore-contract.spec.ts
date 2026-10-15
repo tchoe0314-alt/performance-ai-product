@@ -14,6 +14,7 @@ test("missing saved context restores blank fields instead of another project's s
   expect(restored.uploadedImageApiUrl).toBe("");
   expect(restored.siteScaleLocked).toBe(false);
   expect(buildDashboardProjectInputView({}, undefined).mergedPlacements).toEqual([]);
+  expect(buildDashboardProjectInputView({}, undefined).units).toBe("");
 });
 
 test("source restoration uses saved lot dimensions, keeps geometry, and does not mutate input", () => {

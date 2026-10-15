@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 import { setPreviewQuality } from "./testUiHelpers";
 
 
@@ -55,7 +56,7 @@ async function openAuthenticatedWorkspace(context: BrowserContext, token: string
 async function openPanel(page: Page, name: RegExp | string) {
   const showSidebar = page.getByRole("button", { name: "Show left sidebar" });
   if (await showSidebar.isVisible().catch(() => false)) await showSidebar.click();
-  await page.getByRole("button", { name }).filter({ visible: true }).first().click();
+  await openWorkspacePanelByName(page,name);
   await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
 }
 

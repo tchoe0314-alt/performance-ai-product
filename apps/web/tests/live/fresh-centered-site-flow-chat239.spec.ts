@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
@@ -225,7 +226,7 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
   await page.getByRole("button", { name: "New Project" }).first().click();
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
 
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByTestId("setup-address-truth")).toBeVisible();
   await page
     .getByLabel("Type project address")
@@ -241,7 +242,7 @@ test("fresh setup creates a centered 1000 by 1000 site from an address", async (
   await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary", { timeout: 30_000 });
   await page.getByTestId("create-centered-site-button").click();
 
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
   await expect(page.getByTestId("setup-site-box-controls")).toContainText("Ready");
   await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary", { timeout: 30_000 });
@@ -418,7 +419,7 @@ test("chat can create the same centered site from natural language", async ({ pa
   await composer.press("Enter");
 
   await expect(page.getByText("SITE LOCKED").first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("workspace-canvas-shell")).toContainText("1000 FT x 1000 FT");
+  await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/1000 ft x 1000 ft/i);
 
   await page.getByRole("button", { name: "Chat" }).first().click();
   const chatPanel = page.getByTestId("workspace-right-panel");
@@ -426,7 +427,7 @@ test("chat can create the same centered site from natural language", async ({ pa
   await expect(chatPanel).toContainText("20525 Margo St");
   await expect(chatPanel).not.toContainText(/Before I move forward|site type or land use/i);
 
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
   await expect(page.getByTestId("setup-site-box-controls")).toContainText("Ready");
   await expect(page.getByTestId("auto-site-context-found")).toContainText("parcel/site boundary", { timeout: 30_000 });
@@ -447,7 +448,7 @@ test("centered site rejects bad dimensions without discovery and offers an expli
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Projects" }).first().click();
   await page.getByRole("button", { name: "New Project" }).first().click();
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
 
   await page.getByLabel("Type project address").fill("20525 Margo St Gretna NE");
   await page.waitForTimeout(500);
@@ -480,7 +481,7 @@ test("centered site rejects bad dimensions without discovery and offers an expli
   await page.getByTestId("use-1000-site-size").click();
   await page.getByTestId("create-centered-site-button").click();
   await expect(page.getByTestId("site-status")).toContainText("Site Locked", { timeout: 30_000 });
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
   expect(counters.geocode).toBeGreaterThanOrEqual(autocompleteGeocodeCount);
   await expect.poll(() => counters.sourceContext).toBeGreaterThan(0);

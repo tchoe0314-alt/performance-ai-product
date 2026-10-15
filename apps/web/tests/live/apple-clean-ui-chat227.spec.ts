@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1") {
   await page.goto(`/demo/workspace?${query}`, { waitUntil: "domcontentloaded" });
@@ -17,12 +18,7 @@ async function visibleButtonCount(page: Page, name: RegExp | string) {
 }
 
 async function openPanel(page: Page, name: RegExp | string, expected: RegExp | string) {
-  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
-  if (await workspaceButton.isVisible()) {
-    await workspaceButton.click();
-  }
-  const navName = name === "Object Manager" ? /^Draw$/ : name;
-  await page.getByRole("button", { name: navName }).first().click();
+  await openWorkspacePanelByName(page, name === "Object Manager" ? "Draw" : name);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
 }
 
@@ -41,7 +37,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await page.locator('summary[aria-label="Preview view options"]').click();
     await expect(page.getByTestId("workspace-canvas-shell").getByTestId("preview-quality-high")).toBeVisible();
 
-    expect(await visibleButtonCount(page, "Generate")).toBe(1);
+    expect(await visibleButtonCount(page, "Explore")).toBe(1);
     expect(await visibleButtonCount(page, /^Deliver$/)).toBe(1);
 
     await expect(page.getByTestId("preview-source-review-object-badge")).toHaveCount(0);
@@ -82,7 +78,7 @@ test.describe("Chat 227 Apple-clean UI", () => {
     expect(await visibleButtonCount(page, /Enter Address First|Apply Address/i)).toBe(1);
 
     await openPanel(page, "Generate", /Generate/);
-    expect(await visibleButtonCount(page, /^Generate$/)).toBe(1);
+    expect(await visibleButtonCount(page, "Generate systems")).toBe(1);
 
     await openPanel(page, /^Deliver$/, /Review package|Deliver/);
     await expect(page.getByTestId("deliver-review-package-flow").getByRole("button", { name: /Make Review Package/i })).toHaveCount(1);
@@ -108,9 +104,9 @@ test.describe("Chat 227 Apple-clean UI", () => {
     await expect(editable).toContainText("Parking Field");
 
     await editable.getByTestId("object-manager-visibility").click();
-    await expect(editable.getByTestId("object-manager-visibility")).toContainText("Show");
+    await expect(editable.getByTestId("object-manager-visibility")).toHaveAccessibleName("Show");
     await editable.getByTestId("object-manager-visibility").click();
-    await expect(editable.getByTestId("object-manager-visibility")).toContainText("Hide");
+    await expect(editable.getByTestId("object-manager-visibility")).toHaveAccessibleName("Hide");
 
     await editable.getByTestId("object-manager-focus").click();
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);

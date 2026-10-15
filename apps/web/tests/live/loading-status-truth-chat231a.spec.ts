@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
@@ -27,7 +28,7 @@ async function openPanel(page: Page, name: RegExp | string, expected: RegExp | s
   if (await workspaceButton.isVisible()) {
     await workspaceButton.click();
   }
-  await page.getByRole("button", { name }).first().click();
+  await openWorkspacePanelByName(page, name);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 10_000 });
 }
 

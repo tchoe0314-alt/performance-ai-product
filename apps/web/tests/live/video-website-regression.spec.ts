@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 import { buildDashboardDemoWorkspaceSeed } from "../../app/utils/dashboardDemoWorkspaceSeed";
 import { buildDashboardPreview3DView } from "../../app/utils/dashboardPreview3DItems";
@@ -30,7 +31,7 @@ test("recorded website workflow selects objects and opens 3D without duplicate k
   await page.goto("/demo/workspace?seedDemo=1&debugPreview=1");
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
   await expect(page.getByTestId("preview-inner-map-toggle")).not.toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const list = page.getByTestId("object-manager-panel");
   if (!(await list.evaluate(el => (el as HTMLDetailsElement).open))) await list.locator(":scope > summary").click();
   await page.getByTestId("object-manager-row").filter({ hasText: "Office Headquarters" }).first().getByTestId("object-manager-select").click();

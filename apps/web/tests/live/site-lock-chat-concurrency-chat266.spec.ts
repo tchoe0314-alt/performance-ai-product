@@ -1,9 +1,12 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
 
 async function mockSignedInSlowProjectSave(page: Page) {
+  await page.route("**/api/account/workspace-layout", route => route.fulfill({ json: { layout: { version: 1, mode: "simple", leftWidth: 260, rightWidth: 320, deltaHeight: 64, leftVisible: false, rightVisible: false, deltaVisible: false } } }));
+  await page.route("**/api/projects/*/calculations", route=>route.fulfill({json:{calculations:[],last_successful_calculation_at:null}}));
   await page.route("**/api/auth/status", async (route) => {
     await route.fulfill({
       status: 200,
@@ -99,7 +102,7 @@ test("opening Chat during the first site save keeps the newer panel open", async
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const siteSection = page.getByTestId("setup-site-box-controls");
   if (!(await siteSection.evaluate((node) => node.hasAttribute("open")))) {
     await siteSection.locator("summary").click();

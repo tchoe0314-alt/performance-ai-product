@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 import { openCadPrecisionTools } from "./testUiHelpers";
@@ -33,7 +34,7 @@ async function runCommand(page: Page, command: string) {
 }
 
 async function openDrawPanel(page: Page) {
-  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  await openWorkspaceTool(page, "Draw");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/, { timeout: 5_000 });
 }
 
@@ -139,7 +140,7 @@ test.describe("Chat 231B undo recovery and change history", () => {
     await openDemoWorkspace(page);
 
     await openDrawPanel(page);
-    await page.getByRole("button", { name: "Generate" }).first().click();
+    await openWorkspaceTool(page, "Generate");
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input/i, { timeout: 10_000 });
     await openDrawPanel(page);

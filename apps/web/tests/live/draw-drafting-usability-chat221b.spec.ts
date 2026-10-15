@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { openCadPrecisionTools } from "./testUiHelpers";
@@ -20,7 +21,8 @@ async function openDrawPanel(page: Page) {
   const objectManager = page.getByRole("button", { name: /^Object Manager$/ }).filter({ visible: true }).first();
   const drawStep = page.getByRole("button", { name: "Go to workflow step 2" }).filter({ visible: true }).first();
   const drawButton = page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first();
-  if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
+  if (await page.getByTestId("workspace-stage-explore").count()) await openWorkspaceTool(page,"Draw");
+  else if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
   else if (await drawStep.isVisible().catch(() => false)) await drawStep.click();
   else if (await drawButton.isVisible().catch(() => false)) await drawButton.click();
   else await page.keyboard.press("D");
@@ -63,7 +65,7 @@ async function revealCadTool(page: Page, tool: string) {
 async function startBlankSite(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&chat7DrawnBoundary=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: /^Setup\b/i }).filter({ visible: true }).first().click({ noWaitAfter: true });
+  await openWorkspaceTool(page, "Setup");
   const addressDetails = page.getByTestId("setup-address-truth");
   await expect(addressDetails).toBeVisible();
   if (!(await addressDetails.evaluate((element) => element.hasAttribute("open")))) {
@@ -298,9 +300,9 @@ test.describe("Chat 221B draw drafting usability", () => {
     // Exact endpoint/intersection snaps intentionally outrank Ortho. Turn
     // object/grid snapping off so this test isolates the Ortho constraint.
     await page.keyboard.press("s");
-    await expect(page.getByLabel("Snap")).not.toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Snap", exact: true })).not.toBeChecked();
     await page.keyboard.press("o");
-    await expect(page.getByLabel("Ortho")).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Ortho", exact: true })).toBeChecked();
     await cadTools.getByTestId("cad-tool-line").click();
     await clickExposedSurface(surface, 0.2, 0.32);
     await clickExposedSurface(surface, 0.48, 0.43);
@@ -408,8 +410,11 @@ test.describe("Chat 221B draw drafting usability", () => {
 
     const lineRows = page.getByTestId("object-manager-row").filter({ hasText: /Custom Line/ });
     await expect(lineRows).toHaveCount(4);
-    await page.getByRole("button", { name: /Select visible draft/i }).click();
-    await expect(page.getByTestId("object-manager-selected-count")).toContainText(/Selected [1-9]/);
+    // Combine only the four new lines, not locked/source-only demo objects.
+    for (let index = 0; index < 4; index += 1) {
+      await lineRows.nth(index).getByTestId("object-manager-bulk-select").check();
+    }
+    await expect(page.getByTestId("object-manager-selected-count")).toContainText("Selected 4");
 
     await page.getByTestId("object-manager-combine-name").fill("Office Footprint A");
     await page.getByTestId("object-manager-combine-type").selectOption("office_building");

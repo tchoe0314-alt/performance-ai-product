@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 import { setPreviewQuality } from "./testUiHelpers";
@@ -92,7 +93,7 @@ test("creates a dense editable civil concept from a fresh project", async ({ pag
   }
   await canvas.getByTestId("preview-mode-2d").click();
 
-  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectPanel = page.getByTestId("object-manager-panel");
   await expect(objectPanel).toContainText("Office Building - 28,000 sf");
   await expect(objectPanel).toContainText("Parking Field - 84 stalls");
@@ -134,7 +135,7 @@ test("honors a commercial program and executes a follow-up revision locally", as
   await expect(page.locator('[data-cad-object-id][aria-label*="Retail Building - 42,000 sf"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 114 stalls"]').first()).toBeVisible();
   await expect(page.locator('[data-cad-object-id][aria-label*="Parking Field - 76 stalls"]').first()).toBeVisible();
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate(element => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 76 stalls" }).first().getByTestId("object-manager-inspect").click();
@@ -183,7 +184,7 @@ test("understands recreate-the-image wording without a prebuilt site", async ({ 
   const actionStrip = page.getByTestId("dense-concept-action-strip");
   await expect(actionStrip).toHaveCount(0);
 
-  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectPanel = page.getByTestId("object-manager-panel");
   await expect(objectPanel).toContainText("Central Loop Road");
   await expect(objectPanel).toContainText("Contour 710");

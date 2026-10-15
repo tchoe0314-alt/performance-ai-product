@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 async function openDemoWorkspace(page: Page, query = "debugPreview=1&aiRealismProvider=mock", options?: { requireLockedSite?: boolean }) {
@@ -57,7 +58,7 @@ async function runCommand(page: Page, command: string) {
 }
 
 async function openDrawPanel(page: Page) {
-  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  await openWorkspaceTool(page, "Draw");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/, { timeout: 5_000 });
 }
 
@@ -191,7 +192,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     const chatPanel = await openChatPanel(page);
     await expect(chatPanel).toContainText(/not survey\/control evidence/i);
 
-    await page.getByRole("button", { name: /^Generate$/ }).first().click();
+    await openWorkspaceTool(page, "Generate");
     await expect(page.getByTestId("generate-current-drawing-context")).toContainText("Review Grading Fall Line");
     await expect(page.getByTestId("generate-current-drawing-context")).toContainText("Review Drainage Area Cue");
     await expect(page.getByTestId("generate-current-drawing-context")).toContainText(/grading, drainage|drainage, grading/);
@@ -312,7 +313,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     );
 
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Site Locked/i, { timeout: 8_000 });
-    await page.getByRole("button", { name: "Setup" }).first().click();
+    await openWorkspaceTool(page, "Setup");
     await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
     await expect(page.getByTestId("setup-address-truth")).toContainText(/20525 Margo St/i);
     await expect(page.getByTestId("setup-address-truth")).toContainText(/Local|Applied/i);
@@ -329,7 +330,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     );
 
     await expect(page.getByTestId("workspace-canvas-shell")).toContainText(/Site Locked/i, { timeout: 8_000 });
-    await page.getByRole("button", { name: "Setup" }).first().click();
+    await openWorkspaceTool(page, "Setup");
     await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
     await expect(page.getByTestId("setup-address-truth")).toContainText(/20525 Margo St/i);
     await expect(page.getByTestId("workspace-right-panel")).not.toContainText(/site type or land use/i);
@@ -349,7 +350,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.locator('[data-cad-object-id][aria-label*="Detention Basin"]').first()).toBeVisible();
     await expect(page.locator('[data-cad-object-id][aria-label*="Public Water Line"]').first()).toBeVisible();
 
-    await page.getByRole("button", { name: "Setup" }).first().click();
+    await openWorkspaceTool(page, "Setup");
     await expect(page.getByTestId("setup-site-box-controls")).toContainText("1000 ft x 1000 ft");
     await expect(page.getByTestId("setup-address-truth")).toContainText(/20525 Margo St/i);
     await expect(page.getByTestId("workspace-right-panel")).not.toContainText(/site type or land use|which systems/i);
@@ -376,7 +377,7 @@ test.describe("Chat 229 command power layer and shortcuts", () => {
     await expect(page.getByText(/140-space parking target/i).first()).toBeVisible();
     await expect(page.getByText(/site at site at/i)).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Setup" }).first().click();
+    await openWorkspaceTool(page, "Setup");
     await expect(page.getByTestId("setup-address-truth")).toContainText(/20525 Margo St/i);
     await expect(page.getByTestId("setup-address-truth")).not.toContainText(/for a 28,000|objects already drawn/i);
 

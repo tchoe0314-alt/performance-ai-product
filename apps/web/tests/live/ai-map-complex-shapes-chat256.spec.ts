@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
@@ -52,7 +53,7 @@ async function drawArea(page: Page, points: Array<[number, number]>) {
 }
 
 async function drawSiteBoundary(page: Page) {
-  await page.getByRole("button", { name: /^Setup$/ }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const siteBoundarySection = page.getByTestId("setup-site-box-controls");
   if (!(await siteBoundarySection.evaluate((node) => (node as HTMLDetailsElement).open))) {
     await siteBoundarySection.locator(":scope > summary").click();
@@ -73,14 +74,14 @@ async function drawSiteBoundary(page: Page) {
   }
   const siteStatus = page.getByTestId("site-status");
   if ((await siteStatus.textContent())?.includes("Site Locked")) {
-    await page.getByRole("button", { name: /^Draw$/ }).first().click();
+    await openWorkspaceTool(page, "Draw");
     return;
   }
   const finish = page.getByTestId("canvas-quick-finish").filter({ visible: true }).first();
   await expect(finish).toBeEnabled();
   await finish.click();
   await expect(siteStatus).toContainText("Site Locked");
-  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  await openWorkspaceTool(page, "Draw");
 }
 
 test("keeps available map context and preserves complex building and parking polygons", async ({ page }) => {
@@ -99,7 +100,7 @@ test("keeps available map context and preserves complex building and parking pol
     waitUntil: "domcontentloaded",
   });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: /^Draw$/ }).first().click();
+  await openWorkspaceTool(page, "Draw");
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
   await drawSiteBoundary(page);
 

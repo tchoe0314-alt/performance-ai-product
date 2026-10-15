@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 import { openMapAnchoredFixture } from "./mapAnchoredFixture";
 
@@ -13,7 +14,7 @@ async function openDemoWorkspace(page: Page, query = "debugPreview=1&seedDemo=1"
 }
 
 async function openDrawPanel(page: Page) {
-  await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
 }
 
@@ -107,7 +108,7 @@ test.describe("Chat 265 human UI friction repair", () => {
     await existingLayer.click();
     await expect(existingLayer).toHaveAttribute("aria-pressed", "true");
 
-    await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+    await openWorkspaceTool(page, "Setup");
     await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
     await expect(page.getByTestId("preview-semantic-layer-controls")).toBeHidden();
     expect(consoleErrors).toEqual([]);
@@ -194,7 +195,7 @@ test.describe("Chat 265 human UI friction repair", () => {
     await openDemoWorkspace(page, "debugPreview=1&seedDemo=0");
     await expect(page.getByTestId("site-status")).toContainText("Site Editable");
     await expect(page.locator("body")).not.toContainText("Site not locked");
-    await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+    await openWorkspaceTool(page, "Setup");
     const siteSection = page.getByTestId("setup-site-box-controls");
     await expect(siteSection).not.toContainText(/No boundary locked|Needs lock/i);
     await expect(siteSection).toContainText(/No site boundary yet|Not set/i);
@@ -215,7 +216,7 @@ test.describe("Chat 265 human UI friction repair", () => {
   test("empty projects stay honest and uncluttered across Generate, Review, and Deliver", async ({ page }) => {
     await openDemoWorkspace(page, "debugPreview=1&seedDemo=0");
 
-    await page.getByRole("button", { name: /^Generate$/ }).filter({ visible: true }).first().click();
+    await openWorkspaceTool(page, "Generate");
     await expect(page.getByTestId("generate-main-action")).toContainText(/needs site boundary/i);
     await expect(page.getByTestId("generate-system-readiness-details")).toBeVisible();
     await expect(page.getByTestId("generate-system-list")).toBeHidden();

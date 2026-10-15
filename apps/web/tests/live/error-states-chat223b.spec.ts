@@ -1,3 +1,4 @@
+import { openWorkspaceTool, openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
@@ -13,7 +14,7 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
   if (await workspaceButton.isVisible()) {
     await workspaceButton.click();
   }
-  await page.getByRole("button", { name }).filter({ visible: true }).first().click();
+  await openWorkspacePanelByName(page, name);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 10_000 });
 }
 
@@ -245,7 +246,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-    await page.getByRole("button", { name: "Setup" }).first().click();
+    await openWorkspaceTool(page, "Setup");
     const addressDetails = page.getByTestId("setup-address-truth");
     await expect(addressDetails).toBeVisible();
     if (!(await addressDetails.evaluate((element) => element.hasAttribute("open")))) {
@@ -312,7 +313,7 @@ test.describe("Chat 223B empty/error/loading/recovery states", () => {
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-    await page.getByRole("button", { name: "Setup" }).first().click();
+    await openWorkspaceTool(page, "Setup");
     await page.getByLabel("Type project address").fill("asdfghjkl; not a real address");
     await page.getByRole("button", { name: "Apply address" }).click();
 

@@ -1,4 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 
@@ -29,7 +30,8 @@ async function openFreshWorkspace(page: Page) {
 async function openPanel(page: Page, name: RegExp | string) {
   const showSidebar = page.getByRole("button", { name: "Show left sidebar" });
   if (await showSidebar.isVisible().catch(() => false)) await showSidebar.click();
-  await page.getByRole("button", { name }).filter({ visible: true }).first().click();
+  if(String(name)==="/^Draw$/")await openWorkspaceTool(page,"Draw");
+  else await page.getByRole("button", { name }).filter({ visible: true }).first().click();
   await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
 }
 

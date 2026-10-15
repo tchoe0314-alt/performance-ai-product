@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 
 async function openDemoWorkspace(page: Page) {
   await page.route("**/api/plan", async (route) => {
@@ -27,7 +28,7 @@ async function openWorkspacePanel(page: Page, name: RegExp | string, expected: R
   if (await workspaceButton.isVisible()) {
     await workspaceButton.click();
   }
-  await page.getByRole("button", { name }).first().click();
+  await openWorkspacePanelByName(page, name);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 5_000 });
 }
 

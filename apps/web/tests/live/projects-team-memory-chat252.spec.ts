@@ -236,7 +236,8 @@ test("team, comments, review requests, and controlled memory stay contextual", a
   await page.getByLabel("Invite email").fill("reviewer@example.com");
   await page.getByRole("button", { name: "Invite project member" }).click();
   await expect(page.getByRole("status")).toContainText("invitation");
-  await expect(page.getByLabel("Role for Reviewer")).toHaveValue("reviewer");
+  // Sharing is view-only until the creator explicitly grants another role.
+  await expect(page.getByLabel("Role for Reviewer")).toHaveValue("viewer");
   await page.getByLabel("Role for Reviewer").selectOption("editor");
   await expect(page.getByRole("status")).toContainText("role updated");
 

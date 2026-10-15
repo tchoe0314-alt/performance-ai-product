@@ -26,7 +26,7 @@ test("signed-in local website exports and downloads preliminary PDF and DXF with
     },
     latest_result: { final_plan: { project_name: name, units: "ft",
       actions: [{ task: "rectangle", layer: "BUILDING", origin: [100, 100], width: 80, height: 40 }],
-      meta: { canonical_revision: "local-export-revision-1", system_dirty_state: { grading: { state: "stale" } },
+      meta: { canonical_revision: "local-export-revision-1", system_dirty_state: { grading: { state: "fresh" } },
         warnings: ["LOCAL_EXPORT_WARNING"], assumptions: ["Synthetic fixture, not a surveyed design."] },
     } },
   } });

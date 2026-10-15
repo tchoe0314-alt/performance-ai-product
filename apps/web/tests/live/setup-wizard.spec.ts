@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 
 test("setup opens clean sections and direct setup actions", async ({ page, baseURL }) => {
@@ -6,7 +7,7 @@ test("setup opens clean sections and direct setup actions", async ({ page, baseU
   await page.goto(`${baseURL!.replace(/\/+$/, "")}/demo/workspace?debugPreview=1`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
 
   await expect(page.getByTestId("setup-wizard-sidebar-card")).toHaveCount(0);
   await expect(page.getByTestId("setup-address-truth")).toContainText("Address / Location");

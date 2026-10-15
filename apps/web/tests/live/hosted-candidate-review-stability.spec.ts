@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import { openCadPrecisionTools } from "./testUiHelpers";
@@ -125,7 +126,7 @@ async function openProject(page: Page, project: HostedProject) {
 async function selectCorrectionRectangle(page: Page) {
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
   if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
-  await page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const rectangles = page.getByTestId("object-manager-row").filter({ hasText: /Command Rectangle/ });
   if ((await rectangles.count()) === 0) {
     const precision = await openCadPrecisionTools(page);
@@ -142,7 +143,7 @@ async function selectCorrectionRectangle(page: Page) {
 async function openCandidateReview(page: Page) {
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
   if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
-  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByTestId("auto-site-context-summary")).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("review-found-context").click();
   const review = page.getByTestId("detected-items-review");

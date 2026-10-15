@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
@@ -85,10 +86,10 @@ test.describe("hosted authenticated smoke", () => {
     await page.getByRole("button", { name: /New Project/i }).filter({ visible: true }).first().click();
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
 
-    await page.getByRole("button", { name: /^Setup$/ }).click();
+    await openWorkspaceTool(page, "Setup");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/i);
 
-    await page.getByRole("button", { name: "Generate" }).click();
+    await openWorkspaceTool(page, "Generate");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Generate systems/i);
     await page.getByTestId("generate-main-action").click();
     await expect(page.getByTestId("generate-flow-summary")).toContainText(/Ran:|Needs input/i, { timeout: 10_000 });

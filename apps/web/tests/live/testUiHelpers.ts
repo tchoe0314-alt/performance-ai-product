@@ -25,6 +25,9 @@ export async function openCadPrecisionTools(page: Page): Promise<Locator> {
 }
 
 export async function revealPreviewCanvas(page: Page) {
+  // Reload resolves before React mounts its drawer. Checking for Close too
+  // early misses it, leaving the subsequently mounted panel over the toolbar.
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
   if ((page.viewportSize()?.width ?? 1440) < 1024) {
     const closePanel = page.getByRole("button", { name: "Close panel", exact: true }).filter({ visible: true }).first();
     if (await closePanel.isVisible()) await closePanel.click();

@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 import { revealPreviewCanvas } from "./testUiHelpers";
 
@@ -292,7 +293,7 @@ test("chat move and CAD editing share the canonical update path", async ({ page 
   });
   await page.goto("/demo/workspace?seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const row = page.getByTestId("object-manager-row").filter({ hasText: "Office Headquarters" }).first();
   await row.getByTestId("object-manager-select").click();
   await row.getByTestId("object-manager-inspect").click();
@@ -305,7 +306,7 @@ test("chat move and CAD editing share the canonical update path", async ({ page 
   await commandInput.fill("move the selected building 25 ft east");
   await commandInput.press("Enter");
 
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) {
     await objectList.locator("summary").click();
@@ -321,7 +322,7 @@ test("user can opt linked parking into following a building edit", async ({ page
   });
   await page.goto("/demo/workspace?seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) {
     await objectList.locator("summary").click();
@@ -332,7 +333,7 @@ test("user can opt linked parking into following a building edit", async ({ page
   await parkingRow.getByTestId("object-manager-inspect").click();
   const initialParkingX = Number(await page.getByTestId("selected-object-x-input").inputValue());
 
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) {
     await objectList.locator("summary").click();
   }
@@ -345,7 +346,7 @@ test("user can opt linked parking into following a building edit", async ({ page
   await page.getByTestId("civora-command-input").fill("move the selected building 25 ft east");
   await page.getByTestId("civora-command-input").press("Enter");
 
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) {
     await objectList.locator("summary").click();
   }
@@ -361,7 +362,7 @@ test("ask mode previews the whole transaction and rejection preserves building a
   });
   await page.goto("/demo/workspace?seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
 
@@ -370,7 +371,7 @@ test("ask mode previews the whole transaction and rejection preserves building a
   await parkingRow.getByTestId("object-manager-inspect").click();
   const initialParkingX = Number(await page.getByTestId("selected-object-x-input").inputValue());
 
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   const buildingRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Headquarters" }).first();
   await buildingRow.getByTestId("object-manager-select").click();
@@ -396,11 +397,11 @@ test("ask mode previews the whole transaction and rejection preserves building a
   await page.getByTestId("dependency-proposal-reject").click();
   await expect(page.getByTestId("dependency-proposal-card")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await buildingRow.getByTestId("object-manager-inspect").click();
   await expect(page.getByTestId("selected-object-x-input")).toHaveValue(initialBuildingX);
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate(element => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await parkingRow.getByTestId("object-manager-inspect").click();
   await expect(page.getByTestId("selected-object-x-input")).toHaveValue(String(initialParkingX));
@@ -412,7 +413,7 @@ test("accepting an ask-mode proposal commits linked parking as one undoable chan
   });
   await page.goto("/demo/workspace?seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "West Parking Field" }).first();
@@ -420,7 +421,7 @@ test("accepting an ask-mode proposal commits linked parking as one undoable chan
   await parkingRow.getByTestId("object-manager-inspect").click();
   const initialParkingX = Number(await page.getByTestId("selected-object-x-input").inputValue());
 
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   const buildingRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Headquarters" }).first();
   await buildingRow.getByTestId("object-manager-select").click();
@@ -432,22 +433,22 @@ test("accepting an ask-mode proposal commits linked parking as one undoable chan
   await page.getByTestId("dependency-proposal-accept").click();
   await expect(page.getByTestId("dependency-proposal-card")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await buildingRow.getByTestId("object-manager-inspect").click();
   await expect(page.getByTestId("selected-object-x-input")).toHaveValue(String(initialBuildingX + 10));
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate(element => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await parkingRow.getByTestId("object-manager-inspect").click();
   await expect.poll(async () => Number(await page.getByTestId("selected-object-x-input").inputValue())).not.toBe(initialParkingX);
   await expect(page.getByTestId("selected-object-status")).toContainText(/proposal accepted.*Undo restores/i);
   await expect(page.getByTestId("parking-reflow-status")).toBeVisible();
   await page.getByRole("button", { name: "Undo last draft change", exact: true }).click();
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate(element => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await parkingRow.getByTestId("object-manager-inspect").click();
   await expect(page.getByTestId("selected-object-x-input")).toHaveValue(String(initialParkingX));
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate(element => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await buildingRow.getByTestId("object-manager-inspect").click();
   await expect(page.getByTestId("selected-object-x-input")).toHaveValue(String(initialBuildingX));
@@ -459,7 +460,7 @@ test("users can visually unlink and relink parking from a building", async ({ pa
   });
   await page.goto("/demo/workspace?seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   const buildingRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Headquarters" }).first();
@@ -483,7 +484,7 @@ test("constraint warnings update immediately when a selected building moves outs
   });
   await page.goto("/demo/workspace?seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   const buildingRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Headquarters" }).first();
@@ -504,7 +505,7 @@ test("parking inspector reports capacity shortfalls and recovers when the reques
   });
   await page.goto("/demo/workspace?seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   const parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "West Parking Field" }).first();
@@ -521,7 +522,7 @@ test("outdated layout alternatives cannot overwrite newer manual edits", async (
   await page.route("**/api/**", async route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) }));
   await page.goto("/demo/workspace?seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const list = page.getByTestId("object-manager-panel");
   if (!(await list.evaluate(element => element.hasAttribute("open")))) await list.locator("summary").click();
   const row = page.getByTestId("object-manager-row").filter({ hasText: "Office Headquarters" }).first();
@@ -535,7 +536,7 @@ test("outdated layout alternatives cannot overwrite newer manual edits", async (
   await expect(page.getByTestId("layout-alternatives-card")).toBeVisible();
   const compactComparison = (page.viewportSize()?.width ?? 1440) < 1024;
   if (compactComparison) await page.getByTestId("layout-alternatives-minimize").click();
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await list.evaluate(element => element.hasAttribute("open")))) await list.locator("summary").click();
   await row.getByTestId("object-manager-inspect").click();
   await page.getByTestId("selected-object-x-input").fill(String(initialX + 7));
@@ -553,7 +554,7 @@ test("chat creates five preview-only alternatives and applies only the chosen op
   });
   await page.goto("/demo/workspace?seedDemo=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const objectList = page.getByTestId("object-manager-panel");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   const buildingRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Headquarters" }).first();
@@ -581,7 +582,7 @@ test("chat creates five preview-only alternatives and applies only the chosen op
   await expect(page.getByTestId("layout-alternatives-card")).toContainText("keep buildings near the entrance");
   await page.getByTestId("layout-alternatives-cancel").click();
 
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await buildingRow.getByTestId("object-manager-inspect").click();
   await expect(page.getByTestId("selected-object-x-input")).toHaveValue(String(initialX));
@@ -598,20 +599,20 @@ test("chat creates five preview-only alternatives and applies only the chosen op
   await page.getByTestId("layout-alternatives-apply").click();
   await expect(page.getByTestId("layout-alternatives-card")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await buildingRow.getByTestId("object-manager-inspect").click();
   await expect.poll(async () => Number(await page.getByTestId("selected-object-x-input").inputValue())).not.toBe(initialX);
   await expect(page.getByTestId("selected-object-status")).toContainText(/working plan.*Undo restores/i);
   const appliedX = await page.getByTestId("selected-object-x-input").inputValue();
   await page.getByRole("button", { name: "Undo last draft change", exact: true }).click();
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await buildingRow.getByTestId("object-manager-inspect").click();
   await expect(page.getByTestId("selected-object-name-input")).toHaveValue("Office Headquarters");
   await expect(page.getByTestId("selected-object-x-input")).toHaveValue(String(initialX));
   await page.getByRole("button", { name: "Redo draft change", exact: true }).click();
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   if (!(await objectList.evaluate((element) => element.hasAttribute("open")))) await objectList.locator("summary").click();
   await buildingRow.getByTestId("object-manager-inspect").click();
   await expect(page.getByTestId("selected-object-name-input")).toHaveValue("Office Headquarters");
@@ -622,7 +623,7 @@ test("chat creates five preview-only alternatives and applies only the chosen op
   await layerMenu.locator("summary").click();
   await page.getByTestId("preview-layer-select-roads").click();
   await layerMenu.locator("summary").click();
-  await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   await expect(page.getByTestId("object-manager-selected-count")).toContainText(/Selected [2-9]/);
   await revealPreviewCanvas(page);
   await layerMenu.locator("summary").click();

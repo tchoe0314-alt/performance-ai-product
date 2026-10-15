@@ -1,4 +1,66 @@
-import { expect, test } from "@playwright/test";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
+import { expect, test, type Route } from "@playwright/test";
+
+async function fulfillProjectSave(route: Route, project: { project_id: string; project_input: unknown }) {
+  const request = route.request();
+  if (new URL(request.url()).pathname !== "/api/projects" || request.method() !== "POST") return false;
+  const payload = request.postDataJSON();
+  expect(payload.project_id).toBe(project.project_id);
+  // Generation now waits for an actual saved checkpoint. A bare success flag
+  // is not a valid save response; keep this fixture faithful to that contract.
+  project.project_input = payload.project_input;
+  await route.fulfill({ json: { success: true, project } });
+  return true;
+}
+
+for (const check of ["archived", "unsaved inputs"]) {
+test(`a late calculation (${check}) is retained as history without publishing an active preview`, async ({ page }) => {
+  test.setTimeout(30_000);
+  let previewCalls = 0;
+  let jobDetailCalls = 0;
+  const project = { project_id: "project-archived", name: "Edited Project", has_result: false,
+    project_input: { input_mode: "user", manual_fields: { units: "ft", lot: { w: 720, h: 520 } },
+      meta: { site_inputs: { site_alignment_locked: true } } } };
+  const job = { job_id: "job-archived", project_id: project.project_id, job_type: "orchestrate", status: "completed",
+    progress: 100, updated_at: Date.now() / 1000, can_cancel: false, can_resume: false,
+    result: { success: true, message: "Old calculation", final_plan: { actions: [], meta: {} },
+      metadata: { calculation_save_v1: { calculation_id: "calc-old", disposition: check === "archived" ? "archived" : "active", reason: "fixture" },
+        ...(check === "unsaved inputs" ? { canvas_result_binding_v1: { version: 1, scope: "canvas_manual_fields_and_site_inputs", input_signature: "fixture", live_input_key_v1: "0".repeat(64) } } : {}) } },
+    result_freshness_v1: { version: 1, status: check === "archived" ? "stale" : "current" } };
+  await page.route("**/api/**", async route => {
+    if (await fulfillProjectSave(route, project)) return;
+    const path = new URL(route.request().url()).pathname;
+    let response: unknown = { success: true };
+    if (path === "/api/auth/me") response = { user: { user_id: "fixture", email: "fixture@example.test" } };
+    else if (path === "/api/auth/status") response = { success: true, auth_enabled: true, account_setup: "configured" };
+    else if (path === "/api/projects" && route.request().method() === "GET") response = { projects: [project] };
+    else if (path === "/api/projects" || path === `/api/projects/${project.project_id}`) response = { project };
+    else if (path === `/api/projects/${project.project_id}/result`) response = { latest_result: {} };
+    else if (path === "/api/jobs/orchestrate") response = { job: { ...job, status: "queued", result: null } };
+    else if (path === `/api/jobs/${job.job_id}`) { jobDetailCalls += 1; response = { job }; }
+    else if (path === "/api/jobs") response = { jobs: [] };
+    else if (path === "/api/preview") { previewCalls += 1; response = { success: true, image_url: "", summary: {} }; }
+    await route.fulfill({ json: response });
+  });
+  await page.addInitScript(projectId => {
+    localStorage.setItem("civora-ai-token", "fixture-token");
+    localStorage.setItem("civora.activeProjectId", projectId);
+    sessionStorage.setItem("civora-ai-session-auth-restore", "1");
+  }, project.project_id);
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
+  if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
+  await openWorkspaceTool(page, "Generate");
+  await page.getByTestId("generate-main-action").click();
+  await expect.poll(() => jobDetailCalls).toBeGreaterThan(0);
+  await expect(page.getByTestId("project-status-summary")).toContainText("Calculation saved in history");
+  await page.getByRole("button", { name: /^Deliver\b/i }).filter({ visible: true }).first().click();
+  await page.getByRole("button", { name: "Downloads", exact: true }).click();
+  await expect(page.getByTestId("jobs-refresh-status")).toContainText("Saved in history");
+  expect(previewCalls).toBe(0);
+});
+}
 
 test("an approval hold does not create overlapping project or job polling", async ({ page }) => {
   let jobListCalls = 0;
@@ -50,6 +112,7 @@ test("an approval hold does not create overlapping project or job polling", asyn
   };
 
   await page.route("**/api/**", async (route) => {
+    if (await fulfillProjectSave(route, project)) return;
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
@@ -153,7 +216,7 @@ test("an approval hold does not create overlapping project or job polling", asyn
 
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
   if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
-  await page.getByRole("button", { name: /^Generate\b/i }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Generate");
   await page.getByTestId("generate-main-action").click();
   await expect.poll(() => queueCalls).toBe(1);
   await expect(page.getByTestId("generate-review-hold")).toContainText(/Review storm pipes/i);
@@ -210,6 +273,7 @@ test("a completed job does not block the next review export", async ({ page }) =
   };
 
   await page.route("**/api/**", async (route) => {
+    if (await fulfillProjectSave(route, project)) return;
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path === "/api/auth/status") {
@@ -349,6 +413,7 @@ test("a completed staged run replaces the queued global status", async ({ page }
   };
 
   await page.route("**/api/**", async (route) => {
+    if (await fulfillProjectSave(route, project)) return;
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path === "/api/auth/status") {
@@ -404,12 +469,12 @@ test("a completed staged run replaces the queued global status", async ({ page }
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
   if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
-  await page.getByRole("button", { name: /^Generate\b/i }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Generate");
   await page.getByTestId("generate-main-action").click();
   await expect(page.getByTestId("project-status-summary")).toContainText("Generate completed", { timeout: 15_000 });
   await expect(page.getByTestId("project-status-summary")).not.toContainText("Generate queued");
 
-  await page.getByRole("button", { name: /^Draw\b/i }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Draw");
   const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building A" });
   await expect(officeRow).toHaveCount(1);
   await officeRow.getByTestId("object-manager-bulk-select").check();
@@ -418,7 +483,7 @@ test("a completed staged run replaces the queued global status", async ({ page }
   await page.getByTestId("object-manager-bulk-move-action").click();
   await expect(page.getByTestId("object-manager-status")).toContainText("Moved 1 selected draft object by 20,0.");
 
-  await page.getByRole("button", { name: /^Generate\b/i }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Generate");
   await expect(page.getByTestId("generate-reactive-details")).toContainText(/This edit affects|Ready for quick partial rerun/i, { timeout: 5_000 });
   await expect(page.getByTestId("generate-reactive-details")).not.toContainText("No stale systems");
 });

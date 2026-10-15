@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 
 const email = process.env.CIVORA_EMAIL || "";
@@ -34,7 +35,7 @@ test("step 1.1 preview stability flow", async ({ page, request, baseURL }) => {
   await page.getByRole("button", { name: /New Project/i }).filter({ visible: true }).first().click();
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
   if (await workspaceButton.isVisible().catch(() => false)) await workspaceButton.click();
-  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Setup");
 
   const addressSection = page.getByTestId("setup-address-truth");
   if (!(await addressSection.evaluate((node) => node.hasAttribute("open")))) {
@@ -54,7 +55,7 @@ test("step 1.1 preview stability flow", async ({ page, request, baseURL }) => {
   await expect(page.locator(".mapboxgl-canvas")).toBeVisible({ timeout: 45_000 });
   await expect(canvas.getByTestId("preview-inner-map-toggle")).toContainText("Map On");
 
-  await page.getByRole("button", { name: /^Setup$/ }).filter({ visible: true }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const refreshedSiteSection = page.getByTestId("setup-site-box-controls");
   await refreshedSiteSection.getByRole("button", { name: "Edit site" }).click();
   await expect(page.getByTestId("site-status")).toContainText("Site Editable");

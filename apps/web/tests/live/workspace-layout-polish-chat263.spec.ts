@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWorkspaceTool, workspaceToolButton } from "./helpers/workspaceNavigation";
 
 type Rect = { left: number; right: number; top: number; bottom: number; width: number; height: number };
 
@@ -25,9 +26,9 @@ async function openDemoWorkspace(page: Page) {
 }
 
 async function openRailPanel(page: Page, name: "Setup" | "Draw" | "Generate" | "Deliver") {
-  const button = page.getByTestId("left-sidebar").getByRole("button", { name, exact: true });
+  const button = workspaceToolButton(page,name);
   await expect(button).toHaveCount(1);
-  await button.click();
+  await openWorkspaceTool(page,name);
   await expect(page.getByTestId("workspace-right-panel")).toBeVisible();
   return button;
 }

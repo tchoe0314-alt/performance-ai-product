@@ -1,8 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 
 async function openStandardsPanel(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1&debugPanel=standards", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+  await openWorkspaceTool(page, "Setup");
+  await page.getByTestId("workspace-stage-panel").selectOption("standards");
   const panel = page.getByTestId("workspace-right-panel");
   await expect(panel).toContainText("Active criteria", { timeout: 5_000 });
   await expect(panel).toContainText("Standards source registry");

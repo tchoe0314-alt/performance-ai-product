@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { setPreviewQuality } from "./testUiHelpers";
@@ -153,7 +154,7 @@ test.describe("Chat 226 AI visualization preview", () => {
     await expect(page.getByTestId("ai-realism-image")).toBeVisible();
     await page.getByTestId("ai-realism-off").click();
 
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await openWorkspaceTool(page, "Draw");
     await expect(page.getByTestId("draw-cad-tools-section")).toBeVisible();
     await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-line").click();
     const surface = page.getByTestId("preview-drawing-surface");

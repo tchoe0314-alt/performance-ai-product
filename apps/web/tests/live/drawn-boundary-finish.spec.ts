@@ -1,3 +1,4 @@
+import { openWorkspaceTool, workspaceToolButton } from "./helpers/workspaceNavigation";
 import { expect, type Page, type Locator, test } from "@playwright/test";
 
 import { openCadPrecisionTools, revealPreviewCanvas } from "./testUiHelpers";
@@ -75,11 +76,9 @@ async function openSetupControls(page: Page) {
     return;
   }
 
-  const sidebarSetup = page
-    .getByTestId("left-sidebar")
-    .getByRole("button", { name: "Setup", exact: true });
+  const sidebarSetup = workspaceToolButton(page,"Setup");
   await expect(sidebarSetup).toHaveCount(1);
-  await sidebarSetup.click({ noWaitAfter: true });
+  await openWorkspaceTool(page,"Setup");
   const setupDetails = page.locator("details").filter({ hasText: "Detailed setup controls and evidence" }).first();
   if (await setupDetails.isVisible().catch(() => false)) {
     const isOpen = await setupDetails.evaluate((element) => element.hasAttribute("open"));
@@ -159,14 +158,9 @@ async function clickCanvasTool(canvas: Locator, name: string) {
   };
   const managerToolId = toolByName[name];
   if (managerToolId) {
-    const drawPanelButton = canvas
-      .page()
-      .getByTestId("primary-workflow-sidebar")
-      .getByRole("button", { name: /^Draw\b/i })
-      .filter({ visible: true })
-      .first();
+    const drawPanelButton = workspaceToolButton(canvas.page(),"Draw");
     if (await drawPanelButton.isVisible().catch(() => false)) {
-      await drawPanelButton.click();
+      await openWorkspaceTool(canvas.page(),"Draw");
     }
     const managerTool = canvas.page().getByTestId(`cad-tool-${managerToolId}`).filter({ visible: true }).first();
     await expect(managerTool).toBeEnabled();
@@ -268,7 +262,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     await clickSurfaceAt(surface, 0.44, 0.66);
     await expect(surface).toHaveAttribute("data-draw-mode", "select");
     if ((page.viewportSize()?.width ?? 1440) < 1024) {
-      await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+      await openWorkspaceTool(page, "Draw");
       const list = page.getByTestId("object-manager-panel");
       await expect(list).toBeVisible();
       if (!(await list.evaluate(element => element.hasAttribute("open")))) await list.locator("summary").click();
@@ -522,7 +516,7 @@ test.describe("drawn site boundary Finish workflow", () => {
     ).toBe(true);
     await applyClassification.click();
     if ((page.viewportSize()?.width ?? 1440) < 1024) {
-      await page.getByRole("button", { name: "Draw", exact: true }).first().click();
+      await openWorkspaceTool(page, "Draw");
       const objects = page.getByTestId("object-manager-panel");
       if (!(await objects.evaluate(element => element.hasAttribute("open")))) await objects.locator("summary").click();
     }
@@ -549,7 +543,8 @@ async function openDrawControls(page: Page) {
   const objectManager = page.getByRole("button", { name: /^Object Manager$/ }).filter({ visible: true }).first();
   const drawStep = page.getByRole("button", { name: "Go to workflow step 2" }).filter({ visible: true }).first();
   const drawButton = page.getByRole("button", { name: /^Draw$/ }).filter({ visible: true }).first();
-  if (await drawStep.isVisible().catch(() => false)) await drawStep.click({ timeout: 5_000 });
+  if (await page.getByTestId("workspace-stage-explore").count()) await openWorkspaceTool(page,"Draw");
+  else if (await drawStep.isVisible().catch(() => false)) await drawStep.click({ timeout: 5_000 });
   else if (await objectManager.isVisible().catch(() => false)) await objectManager.click();
   else if (await drawButton.isVisible().catch(() => false)) {
     await drawButton.click({ timeout: 5_000 }).catch(() => page.keyboard.press("D"));

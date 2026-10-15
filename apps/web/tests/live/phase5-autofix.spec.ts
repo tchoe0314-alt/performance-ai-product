@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 
 const APP_BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:3000";
@@ -388,7 +389,11 @@ async function applyIssue(page: Page, actionLabel: string) {
 
   let applyButton = await waitForVisibleApplyButton(2_000);
   if (!applyButton) {
-    await clickFirstVisible(["Generate", "Analyze", "Review & QA", "Issues", "Recent changes", "Review gates"]);
+    if (await page.getByTestId("workspace-stage-review").count()) {
+      await openWorkspaceTool(page, "Review");
+    } else {
+      await clickFirstVisible(["Generate", "Analyze", "Review & QA", "Issues", "Recent changes", "Review gates"]);
+    }
 
     const modernPanel = page.getByTestId("bottom-review-panel");
     if (await modernPanel.isVisible().catch(() => false)) {

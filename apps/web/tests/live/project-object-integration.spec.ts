@@ -1,10 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { defaultLayout } from "../../app/utils/culDeSacConcept";
 
 async function openDraw(page: Page) {
-  const button = page.getByRole("button", { name: /^Draw$/ }).first();
-  if (!(await button.isVisible())) await page.getByRole("button", { name: "Show left sidebar" }).click();
-  await button.click();
+  await openWorkspaceTool(page,"Draw");
   const disclosure = page.getByTestId("object-manager-panel");
   if (!(await disclosure.evaluate(el => (el as HTMLDetailsElement).open))) await disclosure.locator(":scope > summary").click();
 }

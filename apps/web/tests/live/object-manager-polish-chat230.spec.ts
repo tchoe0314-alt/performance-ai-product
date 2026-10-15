@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 
 import { openCadPrecisionTools } from "./testUiHelpers";
 
@@ -65,11 +66,7 @@ async function runCommand(page: Page, command: string) {
 }
 
 async function openDrawPanel(page: Page) {
-  const drawButton = page.getByRole("button", { name: /^Draw$/ }).first();
-  if (!(await drawButton.isVisible().catch(() => false))) {
-    await page.getByRole("button", { name: "Show left sidebar" }).click();
-  }
-  await drawButton.click();
+  await openWorkspaceTool(page,"Draw");
   await expect(page.getByTestId("workspace-right-panel")).toContainText(/Draw & Objects|Tools/, { timeout: 5_000 });
   await openDisclosure(page, "object-manager-panel");
 }
@@ -599,7 +596,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-status")).toContainText("resize needs input: unlock HQ Office Test before changing draft geometry.");
     await renamedRow.getByTestId("object-manager-lock").click();
     await expect(renamedRow).toContainText(/draft placed/i);
-    await expect(renamedRow.getByTestId("object-manager-lock")).toHaveText("Lock");
+    await expect(renamedRow.getByTestId("object-manager-lock")).toHaveAttribute("aria-label", "Lock");
     await renamedRow.getByTestId("object-manager-length").fill("310");
     await expect(renamedRow).toContainText(/310/);
     await clickRecentChange(page, "undo");
@@ -618,13 +615,13 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(renamedRow).toContainText("Parking Field");
 
     await renamedRow.getByTestId("object-manager-visibility").click();
-    await expect(renamedRow.getByTestId("object-manager-visibility")).toContainText("Show");
+    await expect(renamedRow.getByTestId("object-manager-visibility")).toHaveAttribute("aria-label", "Show");
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("hidden object");
     await clickRecentChange(page, "undo");
     await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored previous state for HQ Office Test.");
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
     await renamedRow.getByTestId("object-manager-visibility").click();
-    await expect(renamedRow.getByTestId("object-manager-visibility")).toContainText("Show");
+    await expect(renamedRow.getByTestId("object-manager-visibility")).toHaveAttribute("aria-label", "Show");
     await page.getByTestId("object-manager-show-all").click();
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("0 hidden objects");
 
@@ -792,7 +789,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     const basinRow = page.getByTestId("object-manager-row").filter({ hasText: /Basin|Detention/i }).first();
 
     await parkingRow.getByTestId("object-manager-visibility").click();
-    await expect(parkingRow.getByTestId("object-manager-visibility")).toContainText("Show");
+    await expect(parkingRow.getByTestId("object-manager-visibility")).toHaveAttribute("aria-label", "Show");
 
     await page.getByTestId("object-manager-select-visible").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Selected 2 visible draft objects.");
@@ -829,7 +826,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(page.getByTestId("object-manager-hidden-state")).toContainText("2 hidden objects");
     await page.getByTestId("object-manager-clear-multi-selection").click();
     await officeRow.getByTestId("object-manager-visibility").click();
-    await expect(officeRow.getByTestId("object-manager-visibility")).toContainText("Show");
+    await expect(officeRow.getByTestId("object-manager-visibility")).toHaveAttribute("aria-label", "Show");
     await page.getByTestId("object-manager-invert-selection").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Invert selection needs input: no visible editable draft objects are available.");
   });
@@ -855,8 +852,8 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     await page.getByTestId("object-manager-bulk-unlock").click();
     await expect(page.getByTestId("object-manager-status")).toContainText("Unlocked 2 selected draft objects.");
-    await expect(officeRow.getByTestId("object-manager-lock")).toHaveText("Lock");
-    await expect(parkingRow.getByTestId("object-manager-lock")).toHaveText("Lock");
+    await expect(officeRow.getByTestId("object-manager-lock")).toHaveAttribute("aria-label", "Lock");
+    await expect(parkingRow.getByTestId("object-manager-lock")).toHaveAttribute("aria-label", "Lock");
 
     await page.getByTestId("object-manager-clear-multi-selection").click();
     const siteRow = page.getByTestId("object-manager-row").filter({ hasText: "Site" }).first();
@@ -1352,7 +1349,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
 
     await clickRecentChange(page, "undo");
     await expect(page.getByTestId("object-manager-status")).toContainText("Undo: restored 3 draft objects from combined object trace update.");
-    await expect(combinedRow.getByTestId("object-manager-lock")).toHaveText("Lock");
+    await expect(combinedRow.getByTestId("object-manager-lock")).toHaveAttribute("aria-label", "Lock");
     await expect(officeRow).not.toContainText(/locked/i);
     await expect(parkingRow).not.toContainText(/locked/i);
 

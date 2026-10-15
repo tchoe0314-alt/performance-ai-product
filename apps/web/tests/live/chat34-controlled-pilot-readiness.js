@@ -457,6 +457,11 @@ async function clickButton(page, matcher, options = {}) {
 }
 
 async function openSetup(page) {
+  if(await page.getByTestId("workspace-stage-brief").count()) {
+    await page.getByTestId("workspace-stage-brief").click();
+    await page.getByTestId("workspace-stage-panel").selectOption("site_existing");
+    return true;
+  }
   return clickButton(page, /^Setup/, { name: "Open Setup panel", owner: "Chat 7", optional: false });
 }
 
@@ -757,7 +762,10 @@ async function runProductWorkflow() {
       return { ok: reviewOk && deliverOk, detail: text.slice(0, 500) };
     });
     await soft("Generate/analyze smoke records run or exact block without fake success", "Chat 34", "P1", async () => {
-      await clickButton(page, /^Generate$/, { name: "Open Generate panel", owner: "Chat 34", optional: true }).catch(() => null);
+      if(await page.getByTestId("workspace-stage-explore").count()) {
+        await page.getByTestId("workspace-stage-explore").click();
+        await page.getByTestId("workspace-stage-panel").selectOption("generate");
+      } else await clickButton(page, /^Generate$/, { name: "Open Generate panel", owner: "Chat 34", optional: true }).catch(() => null);
       await page.waitForTimeout(400);
       const grading = page.getByTestId("generate-grading");
       const visible = await grading.isVisible().catch(() => false);

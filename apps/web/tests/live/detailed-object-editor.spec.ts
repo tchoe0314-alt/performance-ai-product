@@ -1,11 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { defaultLayout } from "../../app/utils/culDeSacConcept";
 import { PUBLIC_PLAN_REFERENCE } from "../../app/utils/publicPlanReference";
 
 async function draw(page: Page) {
-  const button = page.getByRole("button", { name: /^Draw$/ }).first();
-  if (!(await button.isVisible())) await page.getByRole("button", { name: "Show left sidebar" }).click();
-  await button.click();
+  await openWorkspaceTool(page,"Draw");
   const list = page.getByTestId("object-manager-panel");
   if (!(await list.evaluate(el => (el as HTMLDetailsElement).open))) await list.locator(":scope > summary").click();
 }

@@ -1,7 +1,8 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 import { setPreviewQuality } from "./testUiHelpers";
 
-test.use({ video: "on", screenshot: "on" });
+test.use({ video: process.env.CIVORA_LOW_DISK_TESTS === "1" ? "off" : "on", screenshot: "only-on-failure" });
 
 const ignoredConsole = /401|auth|orchestrate|favicon/i;
 const badWords = /construction-ready|approved for construction|stamped by Civora|sealed by Civora|signed by Civora/i;
@@ -25,7 +26,7 @@ async function humanClick(locator: ReturnType<Page["locator"]>, label: string) {
 async function openPanel(page: Page, name: RegExp | string, expected?: RegExp | string) {
   const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
   if (await workspaceButton.isVisible().catch(() => false)) await humanClick(workspaceButton, "Open workspace controls");
-  await humanClick(page.getByRole("button", { name }), `Open ${String(name)}`);
+  await openWorkspacePanelByName(page,name);
   if (expected) await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 10_000 });
 }
 

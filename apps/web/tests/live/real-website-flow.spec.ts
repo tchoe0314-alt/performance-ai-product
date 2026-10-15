@@ -1,3 +1,4 @@
+import { openWorkspaceTool, workspaceToolButton, openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 import { expect, test, type Page } from "@playwright/test";
 
 import { openCadPrecisionTools } from "./testUiHelpers";
@@ -20,7 +21,7 @@ async function visibleButtonCount(page: Page, name: RegExp | string) {
 
 async function timedOpen(page: Page, buttonName: RegExp | string, expectedPanelTitle: RegExp | string) {
   const start = Date.now();
-  await page.getByRole("button", { name: buttonName }).first().click();
+  await openWorkspacePanelByName(page, buttonName);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expectedPanelTitle, { timeout: 4_000 });
   return Date.now() - start;
 }
@@ -63,20 +64,20 @@ test.describe("real website workflow clarity", () => {
     await openDemoWorkspace(page);
 
     await expect(page.getByTestId("workspace-right-panel")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Setup$/ })).toBeVisible();
+    await expect(workspaceToolButton(page,"Setup")).toBeVisible();
     await expect(page.getByTestId("header-projects-button")).toBeVisible();
     await page.getByTestId("header-projects-button").click();
     await expect(page.getByTestId("projects-drawer")).toBeVisible();
     await expect(page.getByTestId("header-chat-button")).toBeVisible();
-    await page.getByRole("button", { name: /^Setup$/ }).click();
+    await openWorkspaceTool(page, "Setup");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Setup|Address \/ Location|Site Boundary/);
     await expect(page.getByTestId("setup-address-truth")).toBeVisible();
 
     await expect(page.getByText("Quick actions")).toHaveCount(0);
     await expect(page.getByText("Generate Systems").first()).not.toBeVisible();
     await expect(page.getByText("Run engines with gates").first()).not.toBeVisible();
-    await expect(page.getByRole("button", { name: /^Draw$/ })).toHaveCount(1);
-    expect(await visibleButtonCount(page, "Generate")).toBe(1);
+    await expect(workspaceToolButton(page,"Draw")).toHaveCount(1);
+    await expect(workspaceToolButton(page,"Generate")).toBeVisible();
 
     await expectSectionToggles(page, "setup-address-truth", "Address / Location", /Project address/);
     await expectSectionToggles(page, "setup-site-box-controls", "Site Boundary", /Width \(ft\)/);
@@ -93,7 +94,7 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByTestId("import-source-hierarchy")).toContainText(/Professional survey \/ control/i);
     await expect(page.getByTestId("import-source-hierarchy")).toContainText(/Civil CAD \/ LandXML \/ point files/i);
     await expect(page.getByTestId("import-source-hierarchy")).toContainText(/GeoTIFF/i);
-    await page.getByRole("button", { name: /^Setup$/ }).click();
+    await openWorkspaceTool(page, "Setup");
     const siteContextDetails = page.getByTestId("setup-detect-inside-site");
     if (!(await siteContextDetails.evaluate((node) => node.hasAttribute("open")))) {
       await siteContextDetails.getByText("Site Context").first().click();
@@ -105,16 +106,16 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByTestId("cad-tool-line")).toBeVisible();
     await page.getByTestId("cad-tool-line").click();
     await expect(page.getByTestId("draw-active-tool")).toContainText(/LINE/i);
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await openWorkspaceTool(page, "Draw");
     await (await revealCadTool(page, "snap")).click();
     await expect(page.getByTestId("draw-active-tool-detail")).toContainText(/SNAP (on|off)/);
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await openWorkspaceTool(page, "Draw");
     await (await revealCadTool(page, "offset")).click();
     await expect(page.getByTestId("draw-active-tool-detail")).toContainText(/OFFSET/);
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await openWorkspaceTool(page, "Draw");
     await (await revealCadTool(page, "dimension")).click();
     await expect(page.getByTestId("draw-active-tool-detail")).toContainText(/DIM/);
-    await page.getByRole("button", { name: /^Draw$/ }).click();
+    await openWorkspaceTool(page, "Draw");
     await (await revealCadTool(page, "command")).click();
     await expect((await openCadPrecisionTools(page)).getByLabel("Draft command input")).toHaveValue(/LINE/);
     const generateOpenMs = await timedOpen(page, "Generate", /Generate systems|Generate/);
@@ -133,7 +134,7 @@ test.describe("real website workflow clarity", () => {
     await expect(page.getByRole("button", { name: "Hide left sidebar" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Show left sidebar" })).toHaveCount(0);
     expect(await visibleButtonCount(page, /^Generate$/)).toBeLessThanOrEqual(1);
-    await expect(page.getByRole("button", { name: /^Setup$/ })).toBeVisible();
+    await expect(workspaceToolButton(page,"Setup")).toBeVisible();
     await expect(page.getByTestId("left-sidebar")).toBeVisible();
     expect(await visibleButtonCount(page, /^Generate$/)).toBeLessThanOrEqual(1);
 

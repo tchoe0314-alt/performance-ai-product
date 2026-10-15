@@ -1,0 +1,243 @@
+import { test, expect } from "@playwright/test";
+import { editBriefValue, briefProtectionKey } from "../../app/utils/briefEditing";
+import { buildActiveBriefSummary } from "../../app/utils/activeBriefSummary";
+import { withCanonicalCanvasSnapshot, resolveCanonicalCanvasInput } from "../../app/utils/canonicalCanvasProject";
+import { classificationFor, changeBriefClassification } from "../../app/utils/briefClassification";
+import type { ProjectInput } from "../../app/types";
+import { randomUUID } from "node:crypto";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
+import { briefMissingInformation } from "../../app/utils/briefMissingInformation";
+import { validateBriefSources, type BriefSource } from "../../app/utils/briefSources";
+import { preserveExplicitBriefProgram } from "../../app/utils/briefProgramPreservation";
+import { ADDITIONAL_BRIEF_FIELDS, validateAdditionalBriefRequirements } from "../../app/utils/briefRequirements";
+import { protectedBriefWriteReason } from "../../app/utils/protectedBriefWrites";
+
+const fixture = (): ProjectInput => withCanonicalCanvasSnapshot({ manual_fields: { units: "ft", setback: 20, lot: { x: 0, y: 0, w: 900, h: 700 }, site_objects: [], site_plan: { parking_count: 100, building_program_sf: 12000, building_type: "office" } } });
+const sourceFixture = (): BriefSource => ({ id: "source-1", name: "Pilot survey", type: "survey", origin: "Original survey file", jurisdiction: "", effective_date: "", imported_at: "2026-10-12T12:00:00Z", version: "v1", accepted: true, verification: "unverified", verified_by: "", verification_reference: "", superseded: false, rights: "unknown", rights_reference: "", object_ids: [], calculation_ids: [], requirement_ids: [] });
+test("legacy parking presentation changes preserve source protection but value changes do not inherit it", () => {
+  const input = fixture();
+  const row = buildActiveBriefSummary(input).find(item => item.id === "required-parking")!;
+  input.meta = { site_inputs: { active_brief_classifications_v1: { version: 1, fields: { "required-parking": { priority: "required", trust: "sourced", source_reference: "Engineer parking requirement", value_key: row.valueKey } } } } };
+  const live = { ...input, meta: { ...input.meta, edit_controls_v1: { parkingCount: "100" } } };
+  const displayed = buildActiveBriefSummary(live).find(item => item.id === "required-parking")!;
+  expect(displayed.valueKey).not.toBe(row.valueKey);
+  expect(classificationFor(displayed, live.meta?.site_inputs?.active_brief_classifications_v1).trust).toBe("sourced");
+  expect(protectedBriefWriteReason(live, "required-parking", "40")).toContain("Override");
+  expect(protectedBriefWriteReason(live, "required-parking", "100.0")).toBeNull();
+  const changed = { ...live, meta: { ...live.meta, edit_controls_v1: { parkingCount: "40" } } };
+  expect(classificationFor(buildActiveBriefSummary(changed).find(item => item.id === "required-parking")!, changed.meta.site_inputs?.active_brief_classifications_v1).trust).toBe("unverified");
+});
+test("legacy sourced program targets survive drawing tags without requiring an earlier brief edit", () => {
+  const input = fixture(), rows = buildActiveBriefSummary(input);
+  input.meta = { site_inputs: { active_brief_classifications_v1: { version: 1, fields: Object.fromEntries(["building-area", "building-use"].map(id => [id, { priority: "required", trust: "sourced", source_reference: "Regression source", value_key: rows.find(row => row.id === id)!.valueKey }])) } } };
+  const authoritative = withCanonicalCanvasSnapshot(input);
+  authoritative.manual_fields = { ...authoritative.manual_fields, site_plan: { ...authoritative.manual_fields?.site_plan, building_program_sf: 777 } };
+  const fields = preserveExplicitBriefProgram({ site_plan: { building_program_sf: 999, building_type: "retail", parking_count: 50 } }, authoritative);
+  expect(fields.site_plan).toEqual({ building_program_sf: 12000, building_type: "office", parking_count: 50 });
+});
+test("every additional brief field edits, saves and resets with explicit unverified scope", () => {
+  for (const [id, definition] of Object.entries(ADDITIONAL_BRIEF_FIELDS)) {
+    const input = fixture();
+    const next = editBriefValue(input, id as keyof typeof ADDITIONAL_BRIEF_FIELDS, definition.kind === "text" ? "Explicit project requirement" : "2");
+    const restored = resolveCanonicalCanvasInput(JSON.parse(JSON.stringify(next)));
+    const row = buildActiveBriefSummary(restored).find(item => item.id === id)!;
+    expect(row.known).toBe(true);
+    expect(row.basis).toContain("not automatically checked");
+    const reset = editBriefValue(restored, id as keyof typeof ADDITIONAL_BRIEF_FIELDS, "", { reset: true });
+    expect(buildActiveBriefSummary(reset).find(item => item.id === id)?.known).toBe(false);
+  }
+  expect(validateAdditionalBriefRequirements(editBriefValue(fixture(), "usable-acreage", "43560", { unit: "sf" }).meta?.site_inputs?.brief_requirements_v1).fields["usable-acreage"]?.value).toBe(1);
+  expect(validateAdditionalBriefRequirements(editBriefValue(fixture(), "height", "3.048", { unit: "m" }).meta?.site_inputs?.brief_requirements_v1).fields.height?.value).toBeCloseTo(10, 10);
+  expect(() => editBriefValue(fixture(), "impervious", "101")).toThrow();
+  expect(() => editBriefValue(fixture(), "storeys", "1.5")).toThrow();
+});
+test("source attachment does not certify requirements and changed evidence cannot regain trust through Reset", () => {
+  const input = fixture();
+  input.meta = { site_inputs: { brief_sources_v1: { version: 1, records: [sourceFixture()] } } };
+  const attached = editBriefValue(input, "setbacks", "20", { sourceId: "source-1" });
+  const sources = validateBriefSources(attached.meta?.site_inputs?.brief_sources_v1);
+  expect(sources.records[0].verification).toBe("unverified");
+  expect(sources.records[0].requirement_ids).toContain("setbacks");
+  const edited = editBriefValue(attached, "setbacks", "0", { override: true });
+  const protectionKey = briefProtectionKey(attached, "setbacks");
+  expect(editBriefValue(edited, "setbacks", "", { reset: true }).meta?.site_inputs?.active_brief_classifications_v1).toEqual(attached.meta?.site_inputs?.active_brief_classifications_v1);
+  sources.records[0].version = "v2";
+  attached.meta!.site_inputs!.brief_sources_v1 = sources;
+  expect(() => editBriefValue(attached, "setbacks", "10", { override: true, expectedProtectionKey: protectionKey })).toThrow("source or protection changed");
+  edited.meta!.site_inputs!.brief_sources_v1 = sources;
+  const reset = editBriefValue(edited, "setbacks", "", { reset: true });
+  expect(reset.manual_fields?.setback).toBe(20);
+  expect(classificationFor(buildActiveBriefSummary(reset).find(item => item.id === "setbacks")!, reset.meta?.site_inputs?.active_brief_classifications_v1).trust).toBe("unverified");
+  sources.records[0].superseded = true;
+  expect(() => editBriefValue(edited, "setbacks", "20", { sourceId: "source-1" })).toThrow("accepted, current");
+});
+test("missing brief fields explain provisional limits without inventing requirements", () => {
+  for (const row of buildActiveBriefSummary({}).filter(item => !item.known)) {
+    const info = briefMissingInformation(row.id);
+    expect(info.blocks.length).toBeGreaterThan(0);
+    expect(info.verification.length).toBeGreaterThan(0);
+    expect(info.assumption).toContain("None applied automatically");
+    expect(info.provisional).toContain("unverified");
+  }
+});
+test("brief edits keep zero, reject invalid values and preserve original across JSON reload", () => {
+  const input = fixture();
+  const zero = editBriefValue(input, "setbacks", "0");
+  expect(zero.manual_fields?.setback).toBe(0);
+  const restored = resolveCanonicalCanvasInput(JSON.parse(JSON.stringify(zero)));
+  expect(editBriefValue(restored, "setbacks", "", { reset: true }).manual_fields?.setback).toBe(20);
+  expect((editBriefValue(input, "required-parking", "0").meta?.edit_controls_v1 as Record<string, unknown>)?.parkingCount).toBe("0");
+  for (const bad of ["-1", "NaN", "Infinity", "1.5"]) expect(() => editBriefValue(input, "required-parking", bad)).toThrow();
+  expect(() => editBriefValue(input, "building-area", "0")).toThrow();
+  expect(editBriefValue(input, "setbacks", "20", { unit: "ft" })).toBe(input);
+  expect(editBriefValue(input, "building-area", "").manual_fields?.site_plan?.building_program_sf).toBeUndefined();
+  expect(input.manual_fields?.setback).toBe(20);
+  expect(editBriefValue(input, "setbacks", "3.048", { unit: "m" }).manual_fields?.setback).toBeCloseTo(10, 10);
+  expect(editBriefValue(input, "building-area", "100", { unit: "m2" }).manual_fields?.site_plan?.building_program_sf).toBeCloseTo(1076.39104167, 7);
+  expect(() => editBriefValue(input, "required-parking", "100", { unit: "m" })).toThrow("units");
+  const area = editBriefValue(input, "building-area", "18000");
+  expect(preserveExplicitBriefProgram({ site_plan: { building_program_sf: 12000, parking_count: 50 } }, area).site_plan).toEqual({ building_program_sf: 18000, building_type: "office", parking_count: 50 });
+  const cleared = editBriefValue(area, "building-area", "");
+  expect(preserveExplicitBriefProgram({ site_plan: { building_program_sf: 12000 } }, cleared).site_plan?.building_program_sf).toBeUndefined();
+});
+test("sourced values require Override, lose confirmation after change and regain original only on Reset", () => {
+  const input = fixture();
+  const row = buildActiveBriefSummary(input).find(item => item.id === "setbacks")!;
+  input.meta = { site_inputs: { active_brief_classifications_v1: { version: 1, fields: { setbacks: { priority: "required", trust: "sourced", source_reference: "Engineer sheet C1", value_key: row.valueKey } } } } };
+  expect(() => editBriefValue(input, "setbacks", "10")).toThrow("Override");
+  expect(() => changeBriefClassification(row, input.meta?.site_inputs?.active_brief_classifications_v1, "preferred")).toThrow("Override");
+  expect(changeBriefClassification(row, input.meta?.site_inputs?.active_brief_classifications_v1, "preferred", false, true).fields.setbacks.trust).toBe("unverified");
+  const edited = editBriefValue(input, "setbacks", "10", { override: true, expectedValueKey: row.valueKey });
+  expect(classificationFor(buildActiveBriefSummary(edited).find(item => item.id === "setbacks")!, edited.meta?.site_inputs?.active_brief_classifications_v1).trust).toBe("unverified");
+  const reset = editBriefValue(edited, "setbacks", "", { reset: true });
+  expect(reset.manual_fields?.setback).toBe(20);
+  expect(classificationFor(buildActiveBriefSummary(reset).find(item => item.id === "setbacks")!, reset.meta?.site_inputs?.active_brief_classifications_v1).trust).toBe("sourced");
+  expect(() => editBriefValue(edited, "setbacks", "15", { expectedValueKey: row.valueKey })).toThrow("changed");
+});
+
+test("website saves an explicit source override, restores its original and retains undo history", async ({ page, context, request }) => {
+  const api = process.env.PLAYWRIGHT_API_BASE_URL ?? "";
+  test.skip(process.env.CIVORA_PHASE0_LOCAL_TESTS !== "1" || !/^http:\/\/(127\.0\.0\.1|localhost):/.test(api), "Disposable local accounts only.");
+  const registered = await request.post(`${api}/api/auth/register`, { data: { email: `brief-edit-${randomUUID()}@example.test`, password: "Disposable-123", name: "Brief editor regression" } });
+  expect(registered.status()).toBe(200);
+  const { token } = await registered.json(), headers = { Authorization: `Bearer ${token}` };
+  const input = fixture();
+  const row = buildActiveBriefSummary(input).find(item => item.id === "setbacks")!;
+  input.meta = { site_inputs: { active_brief_classifications_v1: { version: 1, fields: { setbacks: { priority: "required", trust: "sourced", source_reference: "Engineer sheet C1", value_key: row.valueKey } } } } };
+  const created = await request.post(`${api}/api/projects`, { headers, data: { name: "Brief editing regression", project_input: withCanonicalCanvasSnapshot(input) } });
+  expect(created.status()).toBe(200);
+  const { project } = await created.json();
+  const saved = async () => resolveCanonicalCanvasInput((await (await request.get(`${api}/api/projects/${project.project_id}`, { headers })).json()).project.project_input);
+  await context.addInitScript(value => { localStorage.setItem("civora-ai-token", value); sessionStorage.setItem("civora-ai-session-auth-restore", "1"); }, token);
+  await page.goto("/"); await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+  await page.getByTestId("header-projects-button").click();
+  await page.getByRole("button", { name: "Open project Brief editing regression", exact: true }).click();
+  await expect(page.getByTestId("project-status-summary")).toContainText("Project opened");
+  await openWorkspaceTool(page, "Setup");
+  const summary = page.getByTestId("active-brief-summary");
+  const setback = summary.getByTestId("brief-value-setbacks");
+  await setback.getByRole("button", { name: "Edit Setbacks", exact: true }).click();
+  await expect(setback.getByRole("textbox", { name: "Setbacks value" })).toBeDisabled();
+  await setback.getByRole("button", { name: "Override", exact: true }).click();
+  await setback.getByLabel("Setbacks units", { exact: true }).selectOption("m");
+  await expect(setback.getByRole("textbox", { name: "Setbacks value" })).toHaveValue("6.096");
+  await setback.getByRole("button", { name: "Apply", exact: true }).click();
+  expect((await saved()).manual_fields?.setback).toBe(20);
+  await expect(setback.getByTestId("brief-trust")).toContainText("sourced");
+  await setback.getByRole("button", { name: "Edit Setbacks", exact: true }).click();
+  await setback.getByRole("button", { name: "Override", exact: true }).click();
+  await setback.getByRole("textbox", { name: "Setbacks value" }).fill("0");
+  await setback.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect.poll(async () => (await saved()).manual_fields?.setback).toBe(0);
+  await expect(setback.getByTestId("brief-trust")).toContainText("unverified");
+  await page.reload(); await openWorkspaceTool(page, "Setup");
+  await expect(setback).toContainText("0 ft");
+  await setback.getByRole("button", { name: "Edit Setbacks", exact: true }).click();
+  await setback.getByRole("button", { name: "Reset original", exact: true }).click();
+  await expect.poll(async () => (await saved()).manual_fields?.setback).toBe(20);
+  await expect(setback.getByTestId("brief-trust")).toContainText("sourced");
+  await page.getByRole("button", { name: "Undo last draft change", exact: true }).click();
+  await expect.poll(async () => (await saved()).manual_fields?.setback).toBe(0);
+  await expect(setback.getByTestId("brief-trust")).toContainText("unverified");
+  const parking = summary.getByTestId("brief-value-required-parking");
+  await parking.getByRole("button", { name: "Edit Required parking", exact: true }).click();
+  await parking.getByRole("textbox", { name: "Required parking value" }).fill("0");
+  await parking.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect.poll(async () => (await saved()).manual_fields?.site_plan?.parking_count).toBe(0);
+  const area = summary.getByTestId("brief-value-building-area");
+  await area.getByRole("button", { name: "Edit Building-area target", exact: true }).click();
+  await area.getByRole("textbox", { name: "Building-area target value" }).fill("18000");
+  await area.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect.poll(async () => (await saved()).manual_fields?.site_plan?.building_program_sf).toBe(18000);
+  await page.reload(); await openWorkspaceTool(page, "Setup");
+  await expect(area).toContainText("18,000 sf");
+  await expect(parking).toContainText("0 spaces");
+  await summary.locator("summary").filter({ hasText: "All requirements" }).click();
+  for (const [id, definition] of Object.entries(ADDITIONAL_BRIEF_FIELDS)) {
+    const field = summary.getByTestId(`brief-value-${id}`);
+    await field.getByRole("button", { name: /^Edit / }).click();
+    await field.getByRole("textbox").fill(definition.kind === "text" ? "Pilot review requirement" : "2");
+    await field.getByRole("button", { name: "Apply", exact: true }).click();
+    await expect.poll(async () => {
+      const stored = (await saved()).meta?.site_inputs?.brief_requirements_v1;
+      return stored === undefined ? undefined : validateAdditionalBriefRequirements(stored).fields[id as keyof typeof ADDITIONAL_BRIEF_FIELDS]?.value;
+    }).toBe(definition.kind === "text" ? "Pilot review requirement" : 2);
+    await expect(field).toContainText("not automatically checked");
+  }
+  await page.reload(); await openWorkspaceTool(page, "Setup");
+  await summary.locator("summary").filter({ hasText: "All requirements" }).click();
+  for (const [id, definition] of Object.entries(ADDITIONAL_BRIEF_FIELDS)) {
+    await expect(summary.getByTestId(`brief-value-${id}`)).toContainText(definition.kind === "text" ? "Pilot review requirement" : `2 ${definition.unit}`);
+  }
+});
+
+test("website source register saves evidence links and supersession removes requirement trust", async ({ page, context, request }) => {
+  const api = process.env.PLAYWRIGHT_API_BASE_URL ?? "";
+  test.skip(process.env.CIVORA_PHASE0_LOCAL_TESTS !== "1" || !/^http:\/\/(127\.0\.0\.1|localhost):/.test(api), "Disposable local accounts only.");
+  const registered = await request.post(`${api}/api/auth/register`, { data: { email: `source-register-${randomUUID()}@example.test`, password: "Disposable-123", name: "Source regression" } });
+  expect(registered.status()).toBe(200);
+  const { token } = await registered.json(), headers = { Authorization: `Bearer ${token}` };
+  const created = await request.post(`${api}/api/projects`, { headers, data: { name: "Source register regression", project_input: fixture() } });
+  expect(created.status()).toBe(200);
+  const { project } = await created.json();
+  const saved = async () => resolveCanonicalCanvasInput((await (await request.get(`${api}/api/projects/${project.project_id}`, { headers })).json()).project.project_input);
+  await context.addInitScript(value => { localStorage.setItem("civora-ai-token", value); sessionStorage.setItem("civora-ai-session-auth-restore", "1"); }, token);
+  await page.goto("/"); await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+  await page.getByTestId("header-projects-button").click();
+  await page.getByRole("button", { name: "Open project Source register regression", exact: true }).click();
+  await expect(page.getByTestId("project-status-summary")).toContainText("Project opened");
+  await openWorkspaceTool(page, "Setup");
+  const register = page.getByTestId("brief-source-register");
+  await register.locator("summary").first().click();
+  await register.getByRole("button", { name: "Add source", exact: true }).click();
+  await register.getByLabel("Source Name", { exact: true }).fill("Pilot zoning reference");
+  await register.getByLabel("Source Original file or source reference", { exact: true }).fill("Original uploaded zoning document, page 2");
+  await register.getByLabel("Source type", { exact: true }).selectOption("zoning");
+  await register.getByLabel("Source Version", { exact: true }).fill("v1");
+  await register.getByLabel("Accept for this project", { exact: true }).check();
+  await register.getByLabel("Source verification", { exact: true }).selectOption("verification_recorded");
+  await register.getByRole("button", { name: "Save source", exact: true }).click();
+  await expect(register.locator("form")).toBeVisible(); // Missing verifier/reference must not be accepted.
+  await register.getByLabel("Source verification", { exact: true }).selectOption("unverified");
+  await register.getByRole("button", { name: "Save source", exact: true }).click();
+  await expect.poll(async () => {
+    const stored = (await saved()).meta?.site_inputs?.brief_sources_v1;
+    return stored === undefined ? 0 : validateBriefSources(stored).records.length;
+  }).toBe(1);
+  const sourceId = validateBriefSources((await saved()).meta?.site_inputs?.brief_sources_v1).records[0].id;
+  const setback = page.getByTestId("active-brief-summary").getByTestId("brief-value-setbacks");
+  await setback.getByRole("button", { name: "Edit Setbacks", exact: true }).click();
+  await setback.getByLabel("Setbacks source", { exact: true }).selectOption(sourceId);
+  await setback.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(setback.getByTestId("brief-trust")).toContainText("sourced (recorded) · Pilot zoning reference");
+  await expect.poll(async () => validateBriefSources((await saved()).meta?.site_inputs?.brief_sources_v1).records[0].requirement_ids).toContain("setbacks");
+  await page.reload(); await openWorkspaceTool(page, "Setup");
+  await register.locator("summary").first().click();
+  await register.getByRole("button", { name: "Edit source Pilot zoning reference", exact: true }).click();
+  await register.getByLabel("Superseded", { exact: true }).check();
+  await register.getByRole("button", { name: "Save source", exact: true }).click();
+  await expect.poll(async () => validateBriefSources((await saved()).meta?.site_inputs?.brief_sources_v1).records[0].superseded).toBe(true);
+  await expect(setback.getByTestId("brief-trust")).toContainText("unverified");
+  await page.reload(); await openWorkspaceTool(page, "Setup");
+  await expect(setback.getByTestId("brief-trust")).toContainText("unverified");
+});

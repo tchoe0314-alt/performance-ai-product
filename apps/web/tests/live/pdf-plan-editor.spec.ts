@@ -63,7 +63,7 @@ async function openPdfPanel(page: Page) {
 
   const directPanels = [
     page.getByRole("button", { name: /^Deliver$/ }).first(),
-    page.getByRole("button", { name: /^Setup$/ }).first(),
+    page.getByRole("button", { name: /^(Brief|Setup)$/ }).first(),
     page.getByRole("button", { name: /^Import$/ }).first(),
   ];
   for (const panelButton of directPanels) {

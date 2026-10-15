@@ -1,3 +1,4 @@
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 
 const TOKEN_KEY = "civora-ai-token";
@@ -165,7 +166,7 @@ test("source context reports progress, cancels safely, and force-refreshes on re
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Setup" }).first().click();
+  await openWorkspaceTool(page, "Setup");
   const addressSection = page.getByTestId("setup-address-truth");
   if (!(await addressSection.evaluate((node) => node.hasAttribute("open")))) {
     await addressSection.locator("summary").click();
