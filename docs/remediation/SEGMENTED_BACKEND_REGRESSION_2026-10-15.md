@@ -38,6 +38,28 @@ subtests passed. Remaining G–L modules and remediation tests still need comple
 current-candidate reports. backend-gl-60 has been started separately and is not
 certified by this document. No full-backend or release pass is claimed.
 
+### G–L completion and policy-test reconciliation
+
+backend-gl-60 completed exit1:205 tests+42 subtests passed, one test failed,
+22 warnings,101.74seconds. XML SHA256:
+`fc74699554f5bea2d3f231edea54b409e116af04c67f6878d1b6f422fe512fa7`.
+The failure was test_explicit_open_registration_and_legacy_local_defaults,
+expecting private_alpha signup open by default. The implemented invitation-only
+contract (fa5f9c52) and actual API regressions require it closed. Reopening the
+application to satisfy this assertion would restore the enrollment weakness.
+
+That outdated assertion was replaced with explicit default and operator-policy
+matrices covering all four modes. This is a documented security contract test
+correction, not a changed numerical oracle or suppressed failure. Original GL
+failure XML/log remain unchanged. Application source remains443451ee; only this
+test and execution documentation changed.
+
+policy-61:57 tests passed, one existing httpx warning,1.43seconds: updated policy
+matrix, enrollment/recovery API and release safety. No real mail/providers or
+production/customer data used. This targeted rerun does not replace the failed
+GL report or constitute a new all-green full suite. Remediation-only current
+qualification and final unified candidate acceptance remain outstanding.
+
 ## Isolation / cleanup
 
 Existing disposable Python runtime and tracked-source copy; env-i with explicit

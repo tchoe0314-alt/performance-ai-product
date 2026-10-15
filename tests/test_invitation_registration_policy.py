@@ -31,11 +31,16 @@ def test_closed_registration_cannot_bootstrap_or_create_an_account(monkeypatch, 
     assert api.auth_status()["public_registration_enabled"] is False
 
 
-def test_explicit_open_registration_and_legacy_local_defaults(monkeypatch):
-    monkeypatch.setattr(api, "PRODUCT_MODE", "private_alpha")
+@pytest.mark.parametrize("mode,expected", [("private_alpha",False), ("production",False),
+    ("local",True), ("development",True)])
+def test_registration_defaults_match_enrollment_boundary(monkeypatch, mode, expected):
+    monkeypatch.setattr(api, "PRODUCT_MODE", mode)
     monkeypatch.delenv("CIVORA_ALLOW_PUBLIC_REGISTRATION", raising=False)
-    assert api._public_registration_allowed() is True
-    monkeypatch.setattr(api, "PRODUCT_MODE", "production")
-    assert api._public_registration_allowed() is False
+    assert api._public_registration_allowed() is expected
+
+
+@pytest.mark.parametrize("mode", ["private_alpha", "production", "local", "development"])
+def test_explicit_operator_open_policy_remains_supported(monkeypatch, mode):
+    monkeypatch.setattr(api, "PRODUCT_MODE", mode)
     monkeypatch.setenv("CIVORA_ALLOW_PUBLIC_REGISTRATION", "true")
     assert api._public_registration_allowed() is True
