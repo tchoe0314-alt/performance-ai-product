@@ -151,24 +151,43 @@ class WaterSizingEngine:
                 fu += fx.demand_fu
             seg.assigned_fixture_units = round(fu, 3)
 
-        changed = True
-        safety_iter = 0
-        while changed and safety_iter < 25:
-            changed = False
-            safety_iter += 1
-            for seg in segments:
-                downstream_fu = sum(
-                    segment_lookup[name].assigned_fixture_units
-                    for name in seg.connected_segment_names
-                    if name in segment_lookup
-                )
-                total_fu = round(seg.assigned_fixture_units + downstream_fu, 3)
-                if total_fu > seg.assigned_fixture_units:
-                    seg.assigned_fixture_units = total_fu
-                    changed = True
+        if len(fixture_lookup) != len(fixtures) or len(segment_lookup) != len(segments):
+            raise ValueError("Water fixture and segment names must be unique.")
+        if any(not isinstance(item.name, str) or not item.name.strip() for item in [*fixtures, *segments]):
+            raise ValueError("Water fixture and segment names are required.")
+        pending_children = {}
+        upstream = {}
+        fixture_sets = {}
+        for seg in segments:
+            if any(name not in fixture_lookup for name in seg.connected_fixture_names):
+                raise ValueError("Water segment references a missing fixture.")
+            if len(set(seg.connected_segment_names)) != len(seg.connected_segment_names):
+                raise ValueError("Duplicate downstream water segment reference.")
+            pending_children[seg.name] = len(seg.connected_segment_names)
+            fixture_sets[seg.name] = set(seg.connected_fixture_names)
+            for child in seg.connected_segment_names:
+                if child not in segment_lookup or child in upstream:
+                    raise ValueError("Missing or multiply supplied downstream water segment.")
+                upstream[child] = seg.name
+        ready = [name for name, count in pending_children.items() if count == 0]
+        processed = 0
+        while ready:
+            name = ready.pop()
+            processed += 1
+            segment_lookup[name].assigned_fixture_units = round(sum(fixture_lookup[fixture].demand_fu
+                for fixture in sorted(fixture_sets[name])), 3)
+            parent = upstream.get(name)
+            if parent is not None:
+                fixture_sets[parent].update(fixture_sets[name])
+                pending_children[parent] -= 1
+                if pending_children[parent] == 0:
+                    ready.append(parent)
+        if processed != len(segments):
+            raise ValueError("Cyclic water segment dependencies are unsupported.")
 
         warnings: List[str] = []
-        total_fu = max((seg.assigned_fixture_units for seg in segments), default=0.0)
+        referenced_fixtures = set().union(*fixture_sets.values())
+        total_fu = sum(fixture_lookup[name].demand_fu for name in sorted(referenced_fixtures))
 
         for seg in segments:
             seg.assigned_flow_gpm = round(
@@ -195,7 +214,7 @@ class WaterSizingEngine:
                 seg.warnings.append("Assigned size is smaller than minimum requested.")
             warnings.extend(seg.warnings)
 
-        total_flow = max((seg.assigned_flow_gpm for seg in segments), default=0.0)
+        total_flow = self._fixture_units_to_gpm(total_fu, request.conservative)
         remaining_pressure = self._estimate_remaining_pressure(request, segments)
         for seg in segments:
             seg.residual_pressure_psi = round(
