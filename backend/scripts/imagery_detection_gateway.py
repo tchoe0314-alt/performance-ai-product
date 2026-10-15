@@ -8,6 +8,7 @@ import queue
 import secrets
 import tempfile
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -480,6 +481,36 @@ def _require_provider_success(response: Any) -> None:
         raise ValueError("Detector provider returned a non-success response; redirects are not allowed.")
 
 
+def _provider_json(response: Any) -> Dict[str, Any]:
+    """Bound successful detector output and close even rejected responses."""
+    limit = 2 * 1024 * 1024
+    deadline = time.monotonic() + 20
+    try:
+        _require_provider_success(response)
+        if callable(getattr(response, "iter_content", None)):
+            blocks = []
+            size = 0
+            for block in response.iter_content(chunk_size=65536):
+                size += len(block)
+                if size > limit or time.monotonic() >= deadline:
+                    raise ValueError("Detector response exceeded its resource budget.")
+                blocks.append(block)
+            payload = json.loads(b"".join(blocks))
+        else:
+            # Offline fake-response compatibility; real requests Responses
+            # always expose iter_content and use the bounded path above.
+            payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Detector response must be a JSON object.")
+        if len(json.dumps(payload, allow_nan=False).encode("utf-8")) > limit:
+            raise ValueError("Detector response exceeded its resource budget.")
+        return payload
+    finally:
+        closer = getattr(response, "close", None)
+        if callable(closer):
+            closer()
+
+
 def _call_roboflow(*, image_url: str, session: Any) -> Dict[str, Any]:
     endpoint = os.getenv("ROBOFLOW_API_URL", "").strip()
     api_key = os.getenv("ROBOFLOW_API_KEY", "").strip()
@@ -487,12 +518,11 @@ def _call_roboflow(*, image_url: str, session: Any) -> Dict[str, Any]:
         raise ValueError("ROBOFLOW_API_URL and ROBOFLOW_API_KEY are required for Roboflow detection.")
     mode = os.getenv("ROBOFLOW_IMAGE_MODE", "url_param").strip().lower()
     if mode == "json":
-        response = session.post(endpoint, json={"image": image_url, "api_key": api_key}, timeout=60, allow_redirects=False)
+        response = session.post(endpoint, json={"image": image_url, "api_key": api_key}, timeout=(5,20), allow_redirects=False, stream=True)
     else:
         sep = "&" if "?" in endpoint else "?"
-        response = session.post(f"{endpoint}{sep}{urlencode({'api_key': api_key, 'image': image_url})}", timeout=60, allow_redirects=False)
-    _require_provider_success(response)
-    return _dict(response.json())
+        response = session.post(f"{endpoint}{sep}{urlencode({'api_key': api_key, 'image': image_url})}", timeout=(5,20), allow_redirects=False, stream=True)
+    return _provider_json(response)
 
 
 def _call_civora_detector(
@@ -1223,9 +1253,8 @@ def _call_generic_detector(*, payload: Dict[str, Any], image_url: str, session: 
     if not endpoint:
         raise ValueError("CIVORA_GATEWAY_GENERIC_DETECTOR_URL is required for generic detection.")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    response = session.post(endpoint, json={**payload, "image_url": image_url}, headers=headers, timeout=60, allow_redirects=False)
-    _require_provider_success(response)
-    return _dict(response.json())
+    response = session.post(endpoint, json={**payload, "image_url": image_url}, headers=headers, timeout=(5,20), allow_redirects=False, stream=True)
+    return _provider_json(response)
 
 
 def _bbox_from_payload(payload: Dict[str, Any]) -> Dict[str, float]:

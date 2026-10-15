@@ -36,7 +36,8 @@ class _GenericSession:
     def __init__(self):
         self.calls = []
 
-    def post(self, url, json=None, headers=None, timeout=None, allow_redirects=None):
+    def post(self, url, json=None, headers=None, timeout=None, allow_redirects=None, stream=None):
+        assert stream is True
         assert allow_redirects is False
         self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
         return _Response(
@@ -72,7 +73,8 @@ class _RoboflowSession:
     def __init__(self):
         self.calls = []
 
-    def post(self, url, json=None, headers=None, timeout=None, allow_redirects=None):
+    def post(self, url, json=None, headers=None, timeout=None, allow_redirects=None, stream=None):
+        assert stream is True
         assert allow_redirects is False
         self.calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
         return _Response(
