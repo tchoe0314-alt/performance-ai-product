@@ -2692,6 +2692,17 @@ def save_project(payload: SaveProjectPayload, current_user: Dict[str, Any] = Dep
         # Dropping the echoed field selects the locked shell-save boundary,
         # which preserves the current server calculation without a read/write race.
         payload_data.pop("latest_result", None)
+        # Existing-project autosaves own naming preferences, not server review,
+        # recovery or workflow ledgers. Old clients may echo those records;
+        # preserve their server values instead of replaying an old snapshot.
+        client_metadata = dict(payload_data.get("metadata") or {})
+        editable_metadata = {}
+        for key in ("auto_named", "auto_file_named"):
+            if key in client_metadata:
+                if type(client_metadata[key]) is not bool:
+                    raise HTTPException(status_code=422, detail="Naming metadata must use boolean values.")
+                editable_metadata[key] = client_metadata[key]
+        payload_data["metadata"] = editable_metadata
     return application_save_project_record(
         project_store=PROJECT_STORE,
         user_id=current_user["user_id"],
