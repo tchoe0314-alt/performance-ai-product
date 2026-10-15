@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import math
 import os
+import time
 from typing import Any, Dict, Optional, Tuple
 
 from PIL import Image
@@ -14,6 +15,8 @@ from engines.surface_engine import GridSurface
 # again at the provider boundary rather than trusting every caller to coarsen.
 MAX_TERRAIN_GRID_CELLS = 12000
 MAX_TERRAIN_GRID_AXIS = 140
+MAX_TERRAIN_TILES = 32
+TERRAIN_REQUEST_SECONDS = 30.0
 
 
 def _lat_lng_to_tile(lat: float, lng: float, zoom: int, tile_size: int) -> Tuple[int, int, int, int]:
@@ -45,6 +48,7 @@ def _fetch_tile(
     tile_y: int,
     zoom: int,
     cache: Dict[Tuple[int, int, int], Image.Image],
+    *, timeout_seconds: float = 10.0,
 ) -> Optional[Image.Image]:
     key = (zoom, tile_x, tile_y)
     cached = cache.get(key)
@@ -52,7 +56,7 @@ def _fetch_tile(
         return cached
     url = _tile_url(tile_x, tile_y, zoom, token)
     try:
-        response = safe_get(url, timeout=10, response_kind="binary")
+        response = safe_get(url, timeout=min(10.0, timeout_seconds), response_kind="binary")
         response.raise_for_status()
         with Image.open(io.BytesIO(response.content)) as source:
             # This URL requests a512px Terrain-RGB tile, not arbitrary imagery.
@@ -121,6 +125,8 @@ def build_terrain_surface(
     center_x = lot_x + lot_width_ft / 2.0
     center_y = lot_y + lot_height_ft / 2.0
     bounds = _normalize_bounds(lat_lng_bounds)
+    deadline = time.monotonic() + TERRAIN_REQUEST_SECONDS
+    requested_tiles = set()
     sample_count = 0
     missing_count = 0
     for row in range(nrows):
@@ -148,7 +154,13 @@ def build_terrain_surface(
                 lng = center_lng + dx_m / meters_per_deg_lng
                 lat = center_lat + dy_m / meters_per_deg_lat
             tile_x, tile_y, px, py = _lat_lng_to_tile(lat, lng, 14, 512)
-            image = _fetch_tile(token, tile_x, tile_y, 14, cache)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            requested_tiles.add((14, tile_x, tile_y))
+            if len(requested_tiles) > MAX_TERRAIN_TILES:
+                return None
+            image = _fetch_tile(token, tile_x, tile_y, 14, cache, timeout_seconds=remaining)
             if image is None:
                 # This surface is already unusable. Do not retry the same
                 # failing tile for thousands of remaining grid samples.
@@ -161,7 +173,7 @@ def build_terrain_surface(
     # An unavailable tile is missing evidence, not permission to manufacture
     # elevation from neighboring samples. Do not pass a partial grid to the
     # legacy mean-fill normalization path used by the grading caller.
-    if sample_count <= 0 or missing_count > 0:
+    if sample_count <= 0 or missing_count > 0 or time.monotonic() >= deadline:
         return None
 
     surface = GridSurface(

@@ -51,7 +51,7 @@ def test_surface_does_not_invent_elevation_for_missing_tile(monkeypatch, missing
     monkeypatch.setenv("MAPBOX_TOKEN", "synthetic-no-network")
     image = Image.new("RGB", (512,512), (1,2,3))
     calls = []
-    def tile(*args):
+    def tile(*args, **kwargs):
         calls.append(1)
         return None if missing and len(calls) == 2 else image
     monkeypatch.setattr(terrain, "_fetch_tile", tile)
@@ -84,7 +84,7 @@ def test_invalid_or_excessive_grid_rejected_before_fetch(monkeypatch, invalid):
 def test_provider_failure_stops_large_admissible_grid_immediately(monkeypatch):
     monkeypatch.setenv("MAPBOX_TOKEN", "synthetic-no-network")
     calls = []
-    monkeypatch.setattr(terrain,"_fetch_tile",lambda *args:calls.append(1))
+    monkeypatch.setattr(terrain,"_fetch_tile",lambda *args,**kwargs:calls.append(1))
     assert terrain.build_terrain_surface(center_lat=40,center_lng=-100,
         lot_x=0,lot_y=0,lot_width_ft=1000,lot_height_ft=1000,
         rotation_deg=0,x_min=0,y_min=0,ncols=100,nrows=100,cell=10) is None
