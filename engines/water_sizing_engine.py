@@ -537,7 +537,35 @@ def analyze_fire_flow_residual(
     by pressure-graph validation; this is not a network equilibrium solver.
     """
 
-    clean_segments = [dict(seg) for seg in segments]
+    try:
+        for value, name, positive in ((source_pressure_psi,"source_pressure_psi",False),
+            (required_fire_flow_gpm,"required_fire_flow_gpm",True),
+            (min_residual_pressure_psi,"min_residual_pressure_psi",False),
+            (hazen_williams_c,"hazen_williams_c",True),
+            (static_loss_per_ft_psi,"static_loss_per_ft_psi",True),
+            (max_search_gpm,"max_search_gpm",True),(tolerance_gpm,"tolerance_gpm",True)):
+            _water_number(value,name,positive=positive)
+        if not isinstance(hydrant_node,str) or not hydrant_node.strip():
+            raise ValueError("A hydrant node is required.")
+        clean_segments = [dict(seg) for seg in segments]
+        names = set()
+        for index, segment in enumerate(clean_segments, start=1):
+            name = str(segment.get("name") or segment.get("id") or f"W-{index}")
+            if name in names:
+                raise ValueError("Fire-flow pipe identities must be unique.")
+            names.add(name)
+            segment["name"] = name
+        baseline = analyze_water_pressure_graph(clean_segments,source_node=source_node,
+            source_pressure_psi=source_pressure_psi,hazen_williams_c=hazen_williams_c,
+            static_loss_per_ft_psi=static_loss_per_ft_psi)
+        if not baseline["success"]:
+            raise ValueError("Fire-flow pressure graph inputs or topology are unsupported.")
+    except (ValueError,TypeError,ArithmeticError) as exc:
+        return {"valid":False,"source":"water_fire_flow_residual_calculation",
+            "source_node":source_node,"hydrant_node":hydrant_node,
+            "required_fire_flow_gpm":None,"available_fire_flow_gpm":None,
+            "residual_pressure_psi":None,"fire_flow_path":[],"warnings":[str(exc)],
+            "truth_label":"Invalid or unsupported inputs; fire flow was not calculated."}
     path_names, path_warnings = _shortest_water_path(clean_segments, source_node, hydrant_node)
     warnings: List[str] = list(path_warnings)
     if not path_names:
@@ -562,7 +590,7 @@ def analyze_fire_flow_residual(
         trial_rows: List[Dict[str, Any]] = []
         for seg in clean_segments:
             name = str(seg.get("name") or seg.get("id") or "")
-            base_flow = float(seg.get("flow_gpm") or seg.get("assigned_flow_gpm") or 0.0)
+            base_flow = float(seg["flow_gpm"] if "flow_gpm" in seg else seg.get("assigned_flow_gpm",0.0))
             trial_rows.append(
                 {
                     **seg,
