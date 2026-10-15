@@ -39,9 +39,16 @@ def _sha256(path: Path) -> str:
 
 def _revision() -> str:
     try:
-        return subprocess.check_output(
+        revision = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL
         ).strip()
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=ROOT, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        # A commit alone cannot identify locally modified or untracked code.
+        # Do not expose changed paths or hash potentially confidential contents.
+        return f"{revision}-dirty" if dirty else revision
     except (OSError, subprocess.SubprocessError):
         return "unknown"
 
@@ -78,6 +85,8 @@ def _assess_independent_review(
         return {"status": "pending", "accepted": False, "blockers": ["review_evidence_missing"]}
 
     blockers = []
+    if len(software_revision) not in {40, 64} or any(char not in "0123456789abcdef" for char in software_revision):
+        blockers.append("software_checkpoint_not_clean_or_identifiable")
     reviewer = dict(evidence.get("reviewer") or {})
     attestation = dict(evidence.get("attestation") or {})
     if not str(reviewer.get("name") or "").strip():

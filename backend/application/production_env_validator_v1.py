@@ -14,6 +14,8 @@ PRODUCTION_MODES = {"public_beta", "production"}
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # nosec B104
 SECRET_MARKERS = ("KEY", "SECRET", "TOKEN", "PASSWORD", "DATABASE_URL", "POSTGRES", "REDIS_URL")
 RECOGNIZED_BILLING_PROVIDERS = {"none", "disabled", "off", "stripe"}
+PUBLIC_KEY_SETTINGS = {"NEXT_PUBLIC_MAPBOX_TOKEN", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"}
+PRIVATE_KEY_PREFIXES = ("sk-", "sk.", "sk_live_", "sk_test_", "rk_live_", "rk_test_", "whsec_")
 
 
 @dataclass(frozen=True)
@@ -210,6 +212,22 @@ def validate_production_env_v1(
     blockers: list[Dict[str, Any]] = []
     warnings: list[Dict[str, Any]] = []
     info: list[Dict[str, Any]] = []
+
+    # Next.js embeds NEXT_PUBLIC settings into browser assets. Never echo values
+    # in findings, including settings that are not part of our known contract.
+    for name, value in env.items():
+        raw = str(value or "").strip()
+        if not name.startswith("NEXT_PUBLIC_") or not raw:
+            continue
+        if (
+            (_secret_like(name) and name not in PUBLIC_KEY_SETTINGS)
+            or raw.startswith(PRIVATE_KEY_PREFIXES)
+        ):
+            blockers.append(_issue(
+                "blocker", "browser_visible_secret",
+                "A browser-visible setting appears to contain a private credential. Keep private credentials in server-only settings and rotate any already published credential.",
+                env_vars=[name],
+            ))
 
     if mode not in VALID_PRODUCT_MODES:
         blockers.append(_issue("blocker", "invalid_product_mode", f"CIVORA_PRODUCT_MODE must be one of {sorted(VALID_PRODUCT_MODES)}.", env_vars=["CIVORA_PRODUCT_MODE"]))

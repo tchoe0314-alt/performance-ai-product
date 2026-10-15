@@ -34,6 +34,8 @@ from core.utils import (
 
 
 LEGACY_LAYERS = {
+    "LANDSCAPE",
+    "ROAD_MARKING",
     "SITE",
     "SETBACK",
     "BUILDING",
@@ -87,6 +89,8 @@ LEGACY_LAYERS = {
 }
 
 STANDARD_LAYERS = {
+    "C-LANDSCAPE",
+    "C-ROAD-MARKING",
     "C-BOUNDARY",
     "C-SETBACK",
     "C-CENTERLINE",
@@ -118,6 +122,8 @@ STANDARD_LAYERS = {
 
 
 LAYER_ALIASES = {
+    "C-LANDSCAPE": "LANDSCAPE",
+    "C-ROAD-MARKING": "ROAD_MARKING",
     "PARK": "PARKING",
     "WALKWAY": "WALK",
     "SIDEWALK": "WALK",
@@ -157,6 +163,8 @@ LAYER_ALIASES = {
 
 
 STANDARD_LAYER_COLORS = {
+    "C-LANDSCAPE": 3,
+    "C-ROAD-MARKING": 2,
     "C-BOUNDARY": 7,
     "C-SETBACK": 8,
     "C-CENTERLINE": 4,
@@ -187,6 +195,8 @@ STANDARD_LAYER_COLORS = {
 }
 
 STANDARD_LAYER_LINEWEIGHTS = {
+    "C-LANDSCAPE": 20,
+    "C-ROAD-MARKING": 18,
     "C-BOUNDARY": 35,
     "C-SETBACK": 18,
     "C-CENTERLINE": 18,
@@ -217,6 +227,8 @@ STANDARD_LAYER_LINEWEIGHTS = {
 }
 
 LEGACY_LAYER_COLORS = {
+    "LANDSCAPE": 3,
+    "ROAD_MARKING": 2,
     "SITE": 7,
     "SETBACK": 8,
     "BUILDING": 2,
@@ -431,6 +443,10 @@ def _legacy_to_standard_layer(layer: str, action: Optional[Dict[str, Any]] = Non
     text = safe_text(action.get("text"), "").upper()
     task = safe_text(action.get("task"), "").lower()
     canonical_type = safe_text(action.get("canonical_source_type"), "").lower()
+    if layer == "LANDSCAPE":
+        return "C-LANDSCAPE"
+    if layer == "ROAD_MARKING":
+        return "C-ROAD-MARKING"
 
     if layer in {"LABEL"}:
         return "C-LABEL"
@@ -4331,6 +4347,21 @@ def _timeout_checker(
     return check
 
 
+def _new_drawing_document(plan: Dict[str, Any]):
+    # DXF coordinates are unitless numbers; the modelspace header establishes
+    # their physical units. ezdxf's default (metres) is wrong for feet plans.
+    declared = safe_text(plan.get("units"), "ft").strip().lower()
+    codes = {"ft": ezdxf.units.FT, "feet": ezdxf.units.FT, "foot": ezdxf.units.FT,
+             "m": ezdxf.units.M, "meters": ezdxf.units.M, "metres": ezdxf.units.M,
+             "mm": ezdxf.units.MM, "cm": ezdxf.units.CM, "in": ezdxf.units.IN}
+    if declared not in codes:
+        raise ValueError("DXF drawing units are unknown or unsupported.")
+    code = codes[declared]
+    doc = ezdxf.new("R2010", units=code)
+    doc.header["$MEASUREMENT"] = 0 if code in {ezdxf.units.FT, ezdxf.units.IN} else 1
+    return doc
+
+
 def finalize_export_metadata(plan: Dict[str, Any], *, timeout_seconds: Optional[float] = None) -> Dict[str, Any]:
     """Attach the same sheet/export metadata that DXF export will use.
 
@@ -4356,7 +4387,7 @@ def finalize_export_metadata(plan: Dict[str, Any], *, timeout_seconds: Optional[
     meta["sheet_registry"] = [deepcopy(safe_dict(item)) for item in sheet_registry]
 
     stage_started = time.perf_counter()
-    doc = ezdxf.new("R2010")
+    doc = _new_drawing_document(plan)
     ensure_layers(doc)
     ensure_text_styles(doc)
     ensure_blocks(doc)
@@ -4414,7 +4445,7 @@ def save_dxf(
         _record_export_stage(plan, "save.prefinalize_metadata", time.perf_counter(), reused=True)
 
     stage_started = time.perf_counter()
-    doc = ezdxf.new("R2010")
+    doc = _new_drawing_document(plan)
     ensure_layers(doc)
     ensure_text_styles(doc)
     ensure_blocks(doc)

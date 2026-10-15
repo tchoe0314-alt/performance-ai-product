@@ -332,6 +332,8 @@ class ArtifactService:
             "construction_release_blocked": True,
             "external_artifact_verification": external_verification,
         }
+        if export_type == "pdf" and isinstance(dict(final_plan.get("meta") or {}).get("pdf_overview_v1"), dict):
+            payload["pdf_overview_v1"] = deepcopy(final_plan["meta"]["pdf_overview_v1"])
         if report_payload is not None:
             payload["report_line_items"] = self._report_line_items(report_payload, package_report)
         sidecar_path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
@@ -474,6 +476,31 @@ class ArtifactService:
         self._write_export_sidecar(artifact_path=path, export_type="dxf", final_plan=final_plan)
         return path
 
+    def export_landxml(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None, prefinalized: bool = False) -> Path:
+        import math
+        from backend.planning.landxml_io import build_landxml_pipe_network
+        from backend.planning.export_external_verification import verify_landxml_export
+        if str(final_plan.get("units") or "").lower() not in {"ft", "feet"}:
+            raise ValueError("LandXML pipe-network export currently supports feet only.")
+        meta = final_plan.get("meta") or {}
+        for system in (meta.get("storm_pipes") or meta.get("storm_pipe_summary") or {}, meta.get("sanitary") or meta.get("sanitary_summary") or {}):
+            for segment in system.get("segments") or []:
+                try:
+                    length = float(segment["length_ft"])
+                    diameter = float(segment["diameter_ft"]) if "diameter_ft" in segment else float(segment["diameter_in"]) / 12
+                    if not all(math.isfinite(value) and value > 0 for value in (length, diameter)):
+                        raise ValueError()
+                except (KeyError, TypeError, ValueError):
+                    raise ValueError("LandXML pipe segments need known positive length and diameter.") from None
+        xml = build_landxml_pipe_network(final_plan)
+        verification = verify_landxml_export(xml, plan=final_plan)
+        if verification.get("failures"):
+            raise ValueError("LandXML review export needs supported pipe-network data: " + ", ".join(verification["failures"]))
+        path = self._user_dir(user_id) / self._artifact_name(stem, "landxml")
+        path.write_text(xml, encoding="utf-8")
+        self._write_export_sidecar(artifact_path=path, export_type="landxml", final_plan=final_plan)
+        return path
+
     def export_review_pdf(
         self,
         *,
@@ -483,12 +510,14 @@ class ArtifactService:
         auto_site_context_summary: Optional[Dict[str, Any]] = None,
         review_package_summary: Optional[Dict[str, Any]] = None,
         stem: Optional[str] = None,
+        geometry_scope: str = "generated_or_saved_snapshot_not_unsaved_canvas",
     ) -> Path:
         from PIL import Image, ImageDraw
 
         final_plan = deepcopy(dict(result_data.get("final_plan") or {}))
         from backend.planning.preliminary_export import prepare_preliminary_snapshot, preliminary_disclosure_lines
-        final_plan = prepare_preliminary_snapshot(final_plan, result_data, notes=list(sheet_set.get("blockers") or []) + list(dict(review_package_summary or {}).get("missing") or []))
+        final_plan = prepare_preliminary_snapshot(final_plan, result_data, notes=list(sheet_set.get("blockers") or []) + list(dict(review_package_summary or {}).get("missing") or []) + ["PDF overview is fitted to the page, not plotted at a fixed measurement scale. Use the editable DXF for coordinate-based measurement."], geometry_scope=geometry_scope)
+        final_plan["meta"]["pdf_overview_v1"] = {"rendering": "fit_to_page", "fixed_print_scale": False}
         disclosure = final_plan["meta"]["preliminary_export_v1"]
         self._ensure_export_package_report(final_plan, export_type="pdf")
         preview_bytes: Optional[bytes]
@@ -501,6 +530,9 @@ class ArtifactService:
                 "C-PARKING",
                 "C-DRIVEWAY",
                 "C-ROAD",
+                "C-CENTERLINE",
+                "C-LANDSCAPE",
+                "C-ROAD-MARKING",
                 "C-SIDEWALK",
                 "C-CONTOUR",
                 "C-SPOT-ELEV",
@@ -542,7 +574,7 @@ class ArtifactService:
                         "sheetNumber": "C-1.0",
                         "reviewStage": "Review",
                         "preparedBy": "Civora review workflow",
-                        "checkedBy": "Qualified reviewer",
+                        "checkedBy": "Not reviewed",
                         "date": time.strftime("%Y-%m-%d"),
                     },
                     "annotations": [],
@@ -581,7 +613,8 @@ class ArtifactService:
             draw.text((72, 62), project_name, fill=ink, font=font_title)
             draw.text((72, 103), sheet_title, fill=muted, font=font_heading)
             draw.rounded_rectangle((1655, 61, 1968, 116), radius=10, outline=accent, width=2, fill=(241, 248, 252))
-            draw.text((1680, 76), "REVIEW PACKAGE", fill=accent, font=font_label)
+            drawing_only = geometry_scope == "saved_current_geometry_only_no_calculations"
+            draw.text((1680, 76), "CURRENT DRAWING" if drawing_only else "REVIEW PACKAGE", fill=accent, font=font_label)
 
             preview_box = (72, 150, 1545, 1084)
             draw.rectangle(preview_box, fill=(249, 251, 252), outline=ink, width=3)
@@ -611,7 +644,7 @@ class ArtifactService:
             info_rows = [
                 ("Sheet", sheet_number),
                 ("Stage", review_stage),
-                ("Scale", str((list(sheet.get("viewports") or [{}]) or [{}])[0].get("scale") or "See viewport")),
+                ("Scale", "Fit to page"),
                 ("Date", str(title_block.get("date") or time.strftime("%Y-%m-%d"))),
             ]
             y = 194
@@ -620,13 +653,14 @@ class ArtifactService:
                 draw.text((side_x + 112, y), value, fill=ink, font=font_body)
                 y += 36
 
-            draw.text((side_x, y + 12), "N", fill=ink, font=font_heading)
+            draw.text((side_x, y + 12), "+Y", fill=ink, font=font_heading)
             draw.line((side_x + 16, y + 52, side_x + 16, y + 112), fill=ink, width=4)
             draw.polygon(
                 [(side_x + 16, y + 36), (side_x + 5, y + 58), (side_x + 27, y + 58)],
                 fill=ink,
             )
-            draw.text((side_x + 56, y + 72), "NORTH", fill=muted, font=font_small)
+            draw.text((side_x + 56, y + 72), "WORKING AXIS", fill=muted, font=font_small)
+            draw.text((side_x + 56, y + 96), "Not verified survey north", fill=muted, font=font_tiny)
             y += 142
 
             candidate_count = int(source_summary.get("candidateCount") or source_summary.get("candidate_count") or 0)
@@ -638,6 +672,8 @@ class ArtifactService:
                 f"Detected review items: {candidate_count}",
                 f"Missing sources: {', '.join(str(item) for item in missing_labels[:4]) or 'none recorded'}",
             ]
+            if drawing_only:
+                source_lines = [f"Drawing objects: {len(dict(result_data.get('metadata') or {}).get('current_geometry_export_v1', {}).get('object_ids') or [])}", "Sources/design unverified. See disclosure pages."]
             for line in source_lines:
                 for wrapped in _wrap_pdf_text(draw, line, font_body, side_width, max_lines=3):
                     draw.text((side_x, y), wrapped, fill=ink, font=font_body)
@@ -648,7 +684,7 @@ class ArtifactService:
             draw.text((side_x, y + 8), "REVIEW NOTES", fill=ink, font=font_label)
             draw.line((side_x, y + 37, side_x + side_width, y + 37), fill=border, width=2)
             y += 52
-            note_items = blockers[:5] or ["No package notes recorded."]
+            note_items = ["Footprints and linework only.", "No calculations or parking-stall detailing.", "Independent engineering and CAD review required."] if drawing_only else blockers[:5] or ["No package notes recorded."]
             for item in note_items:
                 wrapped_lines = _wrap_pdf_text(draw, f"- {item}", font_small, side_width, max_lines=2)
                 for wrapped in wrapped_lines:
@@ -663,11 +699,11 @@ class ArtifactService:
             draw.line((1740, 1112, 1740, 1252), fill=ink, width=2)
             draw.text((92, 1132), project_name, fill=ink, font=font_heading)
             draw.text((92, 1170), sheet_title, fill=muted, font=font_body)
-            draw.text((92, 1204), "Generated/saved snapshot. Newer unsaved canvas edits are not included. See source disclosure pages.", fill=muted, font=font_small)
+            draw.text((92, 1204), "Saved current drawing. No calculations included. See source disclosures." if drawing_only else "Generated/saved snapshot. Newer unsaved canvas edits are not included. See source disclosure pages.", fill=muted, font=font_small)
             draw.text((1518, 1132), "PREPARED BY", fill=muted, font=font_small)
             draw.text((1518, 1162), str(title_block.get("preparedBy") or "Civora"), fill=ink, font=font_body)
-            draw.text((1518, 1200), "CHECKED BY", fill=muted, font=font_small)
-            draw.text((1518, 1222), str(title_block.get("checkedBy") or "Qualified reviewer"), fill=ink, font=font_small)
+            draw.text((1518, 1200), "REVIEWER (RECORDED)", fill=muted, font=font_tiny)
+            draw.text((1518, 1222), str(title_block.get("checkedBy") or "Not reviewed"), fill=ink, font=font_small)
             draw.text((1765, 1130), sheet_number, fill=ink, font=font_title)
             draw.text((1765, 1180), review_stage, fill=accent, font=font_label)
             review_lines = _wrap_pdf_text(draw, "Professional review required", font_tiny, 180, max_lines=2)
@@ -707,7 +743,7 @@ class ArtifactService:
             resolution=120.0,
             save_all=True,
             append_images=page_images[1:],
-            title=str(sheet_set.get("name") or "Civora Review Package"),
+            title=str(sheet_set.get("name") or ("Civora Current Drawing" if geometry_scope == "saved_current_geometry_only_no_calculations" else "Civora Review Package")),
             author="Civora",
             subject="Professional review package",
         )

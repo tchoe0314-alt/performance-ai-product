@@ -11,7 +11,7 @@ from collections import deque
 from contextlib import asynccontextmanager
 import hashlib
 import threading
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Literal
 
 try:
     threading.stack_size(int(os.getenv("CIVORA_THREAD_STACK_BYTES") or str(512 * 1024)))
@@ -21,7 +21,8 @@ except (RuntimeError, ValueError):
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool, ConfigDict
+from backend.application.current_geometry_export import queue_current_geometry_export, build_current_geometry_export_runner
 import httpx
 from anyio import to_thread
 from starlette.background import BackgroundTask
@@ -53,6 +54,7 @@ from backend.application.ai_visualization_workflows import (
     queue_ai_visualization_job as application_queue_ai_visualization_job,
 )
 from backend.ai.image_provider import image_provider_status
+from backend.services.object_type_store import ObjectTypeStore
 from backend.application.cost_workflows import (
     normalize_unit_price_book_response as application_normalize_unit_price_book_response,
     unit_price_book_from_csv_response as application_unit_price_book_from_csv_response,
@@ -221,6 +223,9 @@ def _env_flag(name: str, default: bool = False) -> bool:
 
 
 def _public_registration_allowed() -> bool:
+    # An explicit operator decision must also apply to private-alpha services.
+    if str(os.getenv("CIVORA_ALLOW_PUBLIC_REGISTRATION") or "").strip():
+        return _env_flag("CIVORA_ALLOW_PUBLIC_REGISTRATION", False)
     if PRODUCT_MODE in {"development", "local", "private_alpha"}:
         return True
     return _env_flag("CIVORA_ALLOW_PUBLIC_REGISTRATION", False)
@@ -300,6 +305,7 @@ def rate_limit(bucket: str):
 PROCESS_ROLE = str(os.getenv("CIVORA_PROCESS_ROLE") or "combined").strip().lower()
 DB = Database(DB_PATH)
 AUTH_STORE = AuthStore(DB)
+OBJECT_TYPE_STORE = ObjectTypeStore(DB)
 PROJECT_STORE = ProjectStore(DB)
 JOB_QUEUE = JobQueueService(DB, worker_count=0 if PROCESS_ROLE == "web" else None)
 ARTIFACTS = ArtifactService(ARTIFACT_DIR)
@@ -368,6 +374,7 @@ class SupportRequestPayload(BaseModel):
 
 
 class OrchestratePayload(BaseModel):
+    canonical_project_v1: Optional[Dict[str, Any]] = None
     project_id: Optional[str] = None
     full_design_mode: bool = False
     input_mode: str = "assisted"
@@ -407,11 +414,18 @@ class SaveProjectPayload(BaseModel):
     project_input: Dict[str, Any] = Field(default_factory=dict)
     latest_result: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    expected_revision: Optional[str] = Field(default=None, min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+    replace_original: bool = False
 
 
 class ProjectInvitePayload(BaseModel):
     email: str
     role: str = "viewer"
+
+
+class CalculationArchivePayload(BaseModel):
+    source_input: Dict[str, Any]
+    result: Dict[str, Any]
 
 
 class ProjectMemberRolePayload(BaseModel):
@@ -474,7 +488,7 @@ class CandidateReviewPayload(BaseModel):
 
 class DesignAlternativesPayload(BaseModel):
     action: str = "generate"
-    requested_count: int = 3
+    requested_count: int = 5
     option_number: Optional[int] = None
     alternative_id: str = ""
     reason: str = ""
@@ -516,6 +530,14 @@ class ArtifactPayload(BaseModel):
 
 class QueueArtifactExportPayload(ArtifactPayload):
     pass
+
+
+class CurrentGeometryExportPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: str = Field(min_length=1, max_length=120)
+    expected_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    export_format: Literal["dxf", "pdf"]
+    acknowledgement: StrictBool
 
 
 class QueueAiVisualizationPayload(BaseModel):
@@ -758,6 +780,15 @@ def _resolve_orchestration_project_id(
 
 def _orchestration_request_payload(payload: OrchestratePayload) -> Dict[str, Any]:
     request_payload = _model_to_dict(payload)
+    if request_payload.get("canonical_project_v1") is None:
+        request_payload.pop("canonical_project_v1", None)
+    else:
+        from backend.services.canonical_canvas import resolve_canvas_input
+        from backend.services.canonical_project import ProjectDocumentError
+        try:
+            request_payload = resolve_canvas_input(request_payload)
+        except ProjectDocumentError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not request_payload.get("prompt_text") and request_payload.get("prompt"):
         request_payload["prompt_text"] = request_payload["prompt"]
     return request_payload
@@ -1085,6 +1116,7 @@ def _deployment_metadata() -> Dict[str, str]:
         "build_status": "known" if commit_sha or _first_env_value("CIVORA_BUILD_VERSION") else "unknown",
         "build_version": _first_env_value("CIVORA_BUILD_VERSION", "VERCEL_GIT_COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA")[:12] or APP_VERSION,
         "commit_sha": commit_sha[:12] if commit_sha else "",
+        "full_commit_sha": commit_sha,
         "commit_ref": _first_env_value("VERCEL_GIT_COMMIT_REF", "RAILWAY_GIT_BRANCH", "RENDER_GIT_BRANCH", "GIT_BRANCH"),
         "environment": _first_env_value("VERCEL_ENV", "RAILWAY_ENVIRONMENT_NAME", "RENDER_SERVICE_TYPE", "CIVORA_ENVIRONMENT", "NODE_ENV"),
         "provider": "vercel" if os.getenv("VERCEL") else "railway" if os.getenv("RAILWAY_ENVIRONMENT") else "render" if os.getenv("RENDER") else "",
@@ -1172,6 +1204,8 @@ def _register_job_handler(job_type: str, runner: Callable[[Dict[str, Any]], Dict
 
 
 def register_job_handlers() -> None:
+    for export_format in ("dxf", "pdf"):
+        _register_job_handler(f"export_current_geometry_{export_format}", build_current_geometry_export_runner(artifact_service=ARTIFACTS, project_store=PROJECT_STORE, update_job_progress=JOB_QUEUE.update_job_progress, export_format=export_format))
     _register_job_handler(
         "orchestrate",
         application_build_orchestrate_job_runner(
@@ -1281,6 +1315,7 @@ async def health() -> Dict[str, Any]:
             "build_status": deployment_identity["build_status"],
             "build_version": deployment_identity["build_version"],
             "commit_sha": deployment_identity["commit_sha"],
+            "full_commit_sha": deployment_identity["full_commit_sha"],
             "commit_ref": _first_env_value("VERCEL_GIT_COMMIT_REF", "RAILWAY_GIT_BRANCH", "RENDER_GIT_BRANCH", "GIT_BRANCH"),
             "environment": _first_env_value("VERCEL_ENV", "RAILWAY_ENVIRONMENT_NAME", "RENDER_SERVICE_TYPE", "CIVORA_ENVIRONMENT", "NODE_ENV"),
             "provider": "vercel" if os.getenv("VERCEL") else "railway" if os.getenv("RAILWAY_ENVIRONMENT") else "render" if os.getenv("RENDER") else "",
@@ -1340,7 +1375,8 @@ def auth_status(_rate_limit: None = Depends(rate_limit("auth"))) -> Dict[str, An
         user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
     finally:
         connection.close()
-    return application_auth_status(user_count=user_count)
+    return {**application_auth_status(user_count=user_count),
+            "public_registration_enabled": _public_registration_allowed()}
 
 
 @app.post("/api/auth/register")
@@ -1350,7 +1386,8 @@ def register(payload: RegisterPayload, _rate_limit: None = Depends(rate_limit("a
         user_count = int(connection.execute("SELECT COUNT(*) FROM users").fetchone()[0])
     finally:
         connection.close()
-    if user_count > 0 and not _public_registration_allowed():
+    explicit_registration_policy = bool(str(os.getenv("CIVORA_ALLOW_PUBLIC_REGISTRATION") or "").strip())
+    if (user_count > 0 or explicit_registration_policy) and not _public_registration_allowed():
         raise HTTPException(status_code=403, detail="Public registration is disabled for private alpha.")
     return application_register_user(
         auth_store=AUTH_STORE,
@@ -1393,6 +1430,21 @@ def _cleanup_account_export(path: Path) -> None:
         path.parent.rmdir()
     except OSError:
         return
+
+
+@app.get("/api/account/workspace-layout")
+def get_workspace_layout(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    from backend.services.workspace_layout import read_layout
+    return {"layout": read_layout(AUTH_STORE.db, current_user["user_id"])}
+
+
+@app.put("/api/account/workspace-layout")
+def put_workspace_layout(payload: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    from backend.services.workspace_layout import save_layout
+    try:
+        return {"layout": save_layout(AUTH_STORE.db, current_user["user_id"], payload)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/account/export")
@@ -2346,7 +2398,8 @@ def chat_feedback(
             )
             meta["chat_feedback"] = history[-50:]
             project_input["meta"] = meta
-            PROJECT_STORE.save_project(
+            from backend.application.project_snapshot import save_project_snapshot
+            save_project_snapshot(PROJECT_STORE, record,
                 user_id=current_user["user_id"],
                 project_id=record.get("project_id"),
                 name=record.get("name") or "Untitled Project",
@@ -2447,11 +2500,38 @@ def orchestrate(
     current_user: Dict[str, Any] = Depends(get_current_user),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    result = _run_orchestration(_orchestration_request_payload(payload), current_user=current_user)
+    request_data = _orchestration_request_payload(payload)
+    from backend.services.canonical_results import canvas_input_signature
+    saved_project_id = str(request_data.get("project_id") or "").strip()
+    save_calculation = bool(saved_project_id and canvas_input_signature(request_data) is not None)
+    if save_calculation and not PROJECT_STORE.has_project_permission(user_id=current_user["user_id"], project_id=saved_project_id, minimum_role="editor"):
+        raise HTTPException(status_code=403, detail="Editing permission is required to calculate this project.")
+    result = _run_orchestration(request_data, current_user=current_user)
+    if save_calculation:
+        try:
+            stored = PROJECT_STORE.save_calculation_result(user_id=current_user["user_id"], project_id=saved_project_id, source_input=request_data, result=result)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="Project access or state changed during calculation. Reopen it and retry.") from exc
+        if stored is not None:
+            result = stored
     metadata = dict(result.get("metadata") or {})
     metadata["billing_usage_gate_v1"] = usage_gate(action="orchestrate", user=current_user)
     result["metadata"] = metadata
     return result
+
+
+@app.get("/api/object-types")
+def list_object_types(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    return {"success": True, "types": OBJECT_TYPE_STORE.list_types(current_user["user_id"])}
+
+
+@app.post("/api/object-types")
+def save_object_type(payload: Dict[str, Any], current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    try:
+        definition = OBJECT_TYPE_STORE.save_type(current_user["user_id"], payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"success": True, "type": definition}
 
 
 @app.get("/api/projects")
@@ -2546,6 +2626,66 @@ def get_project_result(project_id: str, current_user: Dict[str, Any] = Depends(g
         user_id=current_user["user_id"],
         project_id=project_id,
     )
+
+
+@app.get("/api/projects/{project_id}/document")
+def get_project_document(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    from backend.services.canonical_record import portable_document
+    project = PROJECT_STORE.get_project(user_id=current_user["user_id"], project_id=project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    if "project_record_v1" not in (project.get("project_input", {}).get("canonical_project_v1") or {}).get("extensions", {}):
+        raise HTTPException(status_code=409, detail="Save this project before exporting its canonical document.")
+    return {"success": True, "project_id": project_id, "revision_token": project["revision_token"],
+            "document": portable_document(project)}
+
+
+@app.get("/api/projects/{project_id}/calculations")
+def list_project_calculations(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    history = PROJECT_STORE.list_calculation_history(user_id=current_user["user_id"], project_id=project_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return {"success": True, "project_id": project_id, "calculations": history,
+            "last_successful_calculation_at": PROJECT_STORE.get_last_successful_calculation_at(user_id=current_user["user_id"], project_id=project_id)}
+
+
+@app.get("/api/projects/{project_id}/edit-history")
+def get_project_edit_history(project_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    project = PROJECT_STORE.get_project(user_id=current_user["user_id"], project_id=project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    ledger = (project.get("project_input", {}).get("meta") or {}).get("edit_history_v1") or {}
+    entries = []
+    for transaction in reversed(ledger.get("transactions", [])):
+        actor = transaction.get("actor") or {}
+        user = PROJECT_STORE._public_user_by_id(actor.get("user_id")) if actor.get("user_id") else None
+        entries.append({"id": transaction["id"], "reason": transaction["reason"], "timestamp": transaction["timestamp"],
+                        "actor_name": (user or {}).get("name") or ("System" if actor.get("kind") == "system" else "Unknown user"),
+                        "actor_user_id": actor.get("user_id"), "affected_object_ids": transaction.get("affected_object_ids", []),
+                        "is_current": transaction["id"] == ledger.get("head")})
+    creator = PROJECT_STORE._public_user_by_id(project["user_id"]) or {}
+    return {"success": True, "project_id": project_id, "creator_name": creator.get("name") or "Project creator", "entries": entries}
+
+
+@app.post("/api/projects/{project_id}/calculations/archive")
+def archive_project_calculation(project_id: str, payload: CalculationArchivePayload, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    from backend.services.canonical_project import ProjectDocumentError
+    try:
+        stored = PROJECT_STORE.save_calculation_result(user_id=current_user["user_id"], project_id=project_id,
+            source_input=payload.source_input, result=payload.result, force_archive=True)
+    except (ProjectDocumentError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if stored is None:
+        raise HTTPException(status_code=422, detail="A canonical canvas snapshot is required.")
+    return {"success": True, "calculation": stored}
+
+
+@app.get("/api/projects/{project_id}/calculations/{calculation_id}")
+def get_project_calculation(project_id: str, calculation_id: str, current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    entry = PROJECT_STORE.get_calculation_history(user_id=current_user["user_id"], project_id=project_id, calculation_id=calculation_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Calculation not found.")
+    return {"success": True, "calculation": entry}
 
 
 @app.get("/api/projects/{project_id}/admin")
@@ -2969,6 +3109,16 @@ def queue_export_dxf_job(
     return response
 
 
+@app.post("/api/jobs/export/current-geometry")
+def queue_current_drawing_export(payload: CurrentGeometryExportPayload, current_user: Dict[str, Any] = Depends(get_current_user), _rate_limit: None = Depends(rate_limit("export"))) -> Dict[str, Any]:
+    if not _job_handler_is_enabled(f"export_current_geometry_{payload.export_format}"):
+        raise HTTPException(503, "Current drawing export is not enabled on this server.")
+    gate = usage_gate(action="queue_export_dxf_job" if payload.export_format == "dxf" else "queue_export_review_pdf_job", user=current_user)
+    response = queue_current_geometry_export(project_store=PROJECT_STORE, job_queue=JOB_QUEUE, user_id=current_user["user_id"], project_id=payload.project_id, expected_revision=payload.expected_revision, export_format=payload.export_format, acknowledged=payload.acknowledgement)
+    response["billing_usage_gate_v1"] = gate
+    return response
+
+
 @app.post("/api/jobs/export/report")
 def queue_export_report_job(
     payload: QueueArtifactExportPayload,
@@ -3112,6 +3262,16 @@ def export_dxf(
     )
 
 
+@app.post("/api/export/landxml")
+def export_landxml(payload: ArtifactPayload, current_user: Dict[str, Any] = Depends(get_current_user),
+                   _rate_limit: None = Depends(rate_limit("export"))) -> FileResponse:
+    result_data = _result_from_payload(current_user, payload)
+    path = application_export_dxf_artifact(artifact_service=ARTIFACTS, project_store=PROJECT_STORE,
+        user_id=current_user["user_id"], project_id=payload.project_id, result_data=result_data,
+        filename_stem=payload.filename_stem, export_scope="review", export_format="landxml")
+    return FileResponse(path, media_type="application/xml", filename=path.name)
+
+
 @app.post("/api/export/report")
 def export_report(
     payload: ArtifactPayload,
@@ -3164,6 +3324,14 @@ def get_job(job_id: str, current_user: Dict[str, Any] = Depends(get_current_user
     job = JOB_QUEUE.get_job_detail(user_id=current_user["user_id"], job_id=job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found.")
+    if job.get("project_id") and job.get("result") and job.get("job_type") in {"orchestrate", "drainage_only"}:
+        from backend.services.canonical_results import canvas_result_freshness
+        project = PROJECT_STORE.get_project_shell(user_id=current_user["user_id"], project_id=job["project_id"])
+        job = dict(job)
+        job["result_freshness_v1"] = (
+            canvas_result_freshness(dict(job["result"]), dict(project.get("project_input") or {}))
+            if project is not None else {"version": 1, "status": "stale", "reason": "project_unavailable"}
+        )
     return {"success": True, "job": job}
 
 

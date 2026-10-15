@@ -31,7 +31,9 @@ TECHNICAL_EVIDENCE_KEYS = (
 
 
 def _revision() -> str:
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    dirty = subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=normal"], cwd=ROOT, text=True).strip()
+    return f"{revision}-dirty" if dirty else revision
 
 
 def _redact(text: str, env: Dict[str, str]) -> str:
@@ -209,7 +211,7 @@ def main() -> None:
             existing = {}
     else:
         existing = {}
-    if str(existing.get("revision") or "") != revision:
+    if str(existing.get("revision") or "") != revision or revision.endswith("-dirty"):
         existing = {}
     manifest: Dict[str, Any] = {
         "version": "civora_rc1_evidence_manifest_v1",
@@ -241,6 +243,9 @@ def main() -> None:
             if not firefox_ci["success"]:
                 record["message"] = firefox_ci["message"]
         record["revision"] = revision
+        if _revision() != revision:
+            record["success"] = False
+            record["message"] = "Source checkpoint changed during verification; rerun on the intended clean candidate."
         record["recorded_at"] = datetime.now(timezone.utc).isoformat()
         manifest["evidence"][section] = record
         manifest["generated_at"] = datetime.now(timezone.utc).isoformat()

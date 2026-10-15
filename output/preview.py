@@ -49,6 +49,8 @@ STAGE_DIAGNOSTIC_SYSTEMS = ("layout", "grading", "drainage", "utilities")
 
 
 FINAL_GEOMETRY_LAYERS = {
+    "C-LANDSCAPE",
+    "C-ROAD-MARKING",
     "C-BOUNDARY",
     "C-SETBACK",
     "C-CENTERLINE",
@@ -176,6 +178,8 @@ PROFILE_LAYER_VISIBILITY = {
 }
 
 STANDARD_LAYERS = {
+    "C-LANDSCAPE",
+    "C-ROAD-MARKING",
     "C-BOUNDARY",
     "C-SETBACK",
     "C-CENTERLINE",
@@ -216,6 +220,8 @@ LEGACY_LAYER_ALIASES = {
 }
 
 LEGACY_TO_STANDARD_LAYER = {
+    "LANDSCAPE": "C-LANDSCAPE",
+    "ROAD_MARKING": "C-ROAD-MARKING",
     "SITE": "C-BOUNDARY",
     "LOT": "C-BOUNDARY",
     "SETBACK": "C-SETBACK",
@@ -269,6 +275,8 @@ LEGACY_TO_STANDARD_LAYER = {
 }
 
 _SYSTEM_BY_STANDARD_LAYER = {
+    "C-LANDSCAPE": "layout",
+    "C-ROAD-MARKING": "layout",
     "C-BOUNDARY": "layout",
     "C-SETBACK": "layout",
     "C-CENTERLINE": "layout",
@@ -395,6 +403,8 @@ def _collect_stage_diagnostics(plan: Dict[str, Any], actions: List[Dict[str, Any
     }
 
 STANDARD_LAYER_COLORS = {
+    "C-LANDSCAPE": "#4d7c0f",
+    "C-ROAD-MARKING": "#eab308",
     "C-BOUNDARY": "#94a3b8",
     "C-SETBACK": "#d1d5db",
     "C-CENTERLINE": "#64748b",
@@ -523,6 +533,8 @@ def _apply_preview_style(style: Optional[str]) -> None:
     _ACTIVE_STYLE = preset
 
 STANDARD_LAYER_LINEWIDTH = {
+    "C-LANDSCAPE": 1.2,
+    "C-ROAD-MARKING": 1.2,
     "C-BOUNDARY": 1.2,
     "C-SETBACK": 1.0,
     "C-CENTERLINE": 1.2,
@@ -1059,7 +1071,8 @@ def get_linewidth(action):
 
 def get_color(action):
     layer = get_layer(action, "C-TEXT")
-    return _ACTIVE_STYLE.get("colors", STANDARD_LAYER_COLORS).get(layer, STANDARD_LAYER_COLORS["C-TEXT"])
+    colors = _ACTIVE_STYLE.get("colors", STANDARD_LAYER_COLORS)
+    return colors.get(layer, STANDARD_LAYER_COLORS.get(layer, colors.get("C-TEXT", STANDARD_LAYER_COLORS["C-TEXT"])))
 
 
 def get_linestyle(action):
@@ -1184,6 +1197,12 @@ def _rectangle_visual_style(action, w, h):
         fill_alpha = 0.0
         facecolor = "none"
 
+    if safe_dict(action.get("meta")).get("drawing_only_snapshot") is True:
+        # A footprint-only drawing must not fade out real objects or synthesize
+        # striping. Retain the established calculated-plan styling otherwise.
+        fill_alpha, facecolor, edge_alpha, linewidth_boost = 0.0, "none", 1.0, 0.4
+        stripe_alpha, stripe_spacing, stripe_gap = 0.0, 1.0, 0.0
+
     return {
         "fill_alpha": fill_alpha,
         "facecolor": facecolor,
@@ -1228,6 +1247,8 @@ def preview_label(action):
     label = clean_label(action.get("label"), "")
     if not label:
         return ""
+    if safe_dict(action.get("meta")).get("drawing_only_snapshot") is True and layer not in {"C-BOUNDARY", "C-SETBACK"}:
+        return (label[:57] + "..." if len(label) > 60 else label).replace("_", " ").strip()
     if layer in SUPPRESSED_AUTO_LABEL_LAYERS:
         return ""
     upper = label.upper()

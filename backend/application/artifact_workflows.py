@@ -20,6 +20,22 @@ from backend.planning.release_gates import (
     final_plan_requires_construction_release,
 )
 from geometry.layout_engine import _build_expanded_plan
+from backend.services.canonical_results import canvas_result_freshness
+
+
+def assert_current_export_result(*, project_store: Any, user_id: str, project_id: Optional[str], result_data: Dict[str, Any]) -> None:
+    archived = dict(dict(result_data.get("metadata") or {}).get("calculation_save_v1") or {}).get("disposition") == "archived"
+    if archived:
+        raise HTTPException(status_code=409, detail="This calculation is archived. Recalculate before exporting the current plan.")
+    if not project_id:
+        return
+    getter = getattr(project_store, "get_project_shell", None)
+    project = getter(user_id=user_id, project_id=project_id) if callable(getter) else project_store.get_project(user_id=user_id, project_id=project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    freshness = canvas_result_freshness(result_data, dict(project.get("project_input") or {}))
+    if freshness and freshness.get("status") == "stale":
+        raise HTTPException(status_code=409, detail="Calculation is out of date. Recalculate before exporting the current plan.")
 
 
 class ProjectStoreProtocol(Protocol):
@@ -41,6 +57,28 @@ class ProjectStoreProtocol(Protocol):
         metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
         ...
+
+
+def finalize_export_artifact(
+    *, project_store: ProjectStoreProtocol, user_id: str, project_id: str,
+    path: Path, artifact_kind: str, result_data: Dict[str, Any],
+) -> None:
+    summary = artifact_summary(path=path, artifact_kind=artifact_kind, project_id=project_id, result_data=result_data)
+    record = save_project_workflow_update(
+        project_store=project_store, user_id=user_id, project_id=project_id,
+        artifact_summary=summary, exported_result=result_data,
+    )
+    if record is None:
+        raise HTTPException(status_code=409, detail="Project became unavailable during export. The export was not published as current.")
+    artifacts = dict(dict(record.get("metadata") or {}).get("workflow") or {}).get("artifacts") or []
+    saved = next((item for item in artifacts if item.get("artifact_id") == summary["artifact_id"]), {})
+    if saved.get("snapshot_status") == "historical":
+        raise HTTPException(status_code=409, detail={
+            "code": "export_became_historical",
+            "message": "Project changed during export. This file was retained in history; recalculate for the current plan.",
+            "artifact_id": summary["artifact_id"], "download_path": summary["download_path"],
+            "snapshot_status": "historical",
+        })
 
 
 DISPLAY_LAYOUT_LAYERS = {"BUILDING", "PARKING", "PAVEMENT", "ROAD", "WALK", "FIRE", "SITE", "SETBACK", "PAD"}
@@ -1350,7 +1388,11 @@ def export_dxf_artifact(
     result_data: Dict[str, Any],
     filename_stem: Optional[str] = None,
     export_scope: str = "construction",
+    export_format: str = "dxf",
 ) -> Path:
+    if export_format not in {"dxf", "landxml"} or (export_format == "landxml" and export_scope != "review"):
+        raise HTTPException(status_code=400, detail="Unsupported exchange export format or scope.")
+    assert_current_export_result(project_store=project_store, user_id=user_id, project_id=project_id, result_data=result_data)
     result_data = _enrich_result_data_from_project(
         result_data,
         project_store=project_store,
@@ -1422,12 +1464,15 @@ def export_dxf_artifact(
         )
     stem = filename_stem or str(final_plan.get("project_name") or "civora-ai-plan")
     try:
-        path = artifact_service.export_dxf(
+        exporter = artifact_service.export_landxml if export_format == "landxml" else artifact_service.export_dxf
+        path = exporter(
             user_id=user_id,
             final_plan=final_plan,
             stem=stem,
             prefinalized=True,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except HeavyExportBlockedError as exc:
         raise HTTPException(
             status_code=503,
@@ -1441,16 +1486,11 @@ def export_dxf_artifact(
             },
         ) from exc
     if project_id:
-        save_project_workflow_update(
+        finalize_export_artifact(
             project_store=project_store,
             user_id=user_id,
             project_id=project_id,
-            artifact_summary=artifact_summary(
-                path=path,
-                artifact_kind="dxf",
-                project_id=project_id,
-                result_data=result_data,
-            ),
+            path=path, artifact_kind=export_format, result_data=result_data,
         )
     return path
 
@@ -1464,6 +1504,7 @@ def export_report_artifact(
     result_data: Dict[str, Any],
     filename_stem: Optional[str] = None,
 ) -> Path:
+    assert_current_export_result(project_store=project_store, user_id=user_id, project_id=project_id, result_data=result_data)
     result_data = _enrich_result_data_from_project(
         result_data,
         project_store=project_store,
@@ -1493,16 +1534,11 @@ def export_report_artifact(
         stem=stem,
     )
     if project_id:
-        save_project_workflow_update(
+        finalize_export_artifact(
             project_store=project_store,
             user_id=user_id,
             project_id=project_id,
-            artifact_summary=artifact_summary(
-                path=path,
-                artifact_kind="report",
-                project_id=project_id,
-                result_data=enriched_result_data,
-            ),
+            path=path, artifact_kind="report", result_data=enriched_result_data,
         )
     return path
 
@@ -1519,6 +1555,7 @@ def export_review_pdf_artifact(
     review_package_summary: Optional[Dict[str, Any]] = None,
     filename_stem: Optional[str] = None,
 ) -> Path:
+    assert_current_export_result(project_store=project_store, user_id=user_id, project_id=project_id, result_data=result_data)
     result_data = _enrich_result_data_from_project(
         result_data,
         project_store=project_store,
@@ -1570,15 +1607,10 @@ def export_review_pdf_artifact(
         stem=stem,
     )
     if project_id:
-        save_project_workflow_update(
+        finalize_export_artifact(
             project_store=project_store,
             user_id=user_id,
             project_id=project_id,
-            artifact_summary=artifact_summary(
-                path=path,
-                artifact_kind="review_pdf",
-                project_id=project_id,
-                result_data=enriched_result_data,
-            ),
+            path=path, artifact_kind="review_pdf", result_data=enriched_result_data,
         )
     return path

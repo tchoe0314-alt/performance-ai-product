@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+import backend.application.commercial_site_benchmark as benchmark_module
 
 from backend.application.commercial_site_benchmark import (
     build_independent_review_template,
@@ -105,7 +109,8 @@ def _review_evidence(report: dict) -> dict:
     }
 
 
-def test_commercial_site_benchmark_accepts_complete_revision_bound_review(tmp_path: Path) -> None:
+def test_commercial_site_benchmark_accepts_complete_revision_bound_review(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(benchmark_module, "_revision", lambda: "a" * 40)
     initial = run_commercial_site_benchmark(run_scenario_fn=lambda _scenario_id: _scenario())
     evidence_path = tmp_path / "review.json"
     evidence_path.write_text(json.dumps(_review_evidence(initial)), encoding="utf-8")
@@ -121,6 +126,25 @@ def test_commercial_site_benchmark_accepts_complete_revision_bound_review(tmp_pa
     assert "independent_engineer_review_pending" not in report["blockers"]
     assert len(report["independent_review"]["evidence_sha256"]) == 64
     assert report["construction_ready"] is False
+
+
+@pytest.mark.parametrize("revision", ["unknown", "a" * 40 + "-dirty"])
+def test_review_cannot_accept_an_unidentifiable_or_dirty_checkpoint(tmp_path: Path, monkeypatch, revision: str) -> None:
+    monkeypatch.setattr(benchmark_module, "_revision", lambda: revision)
+    initial = run_commercial_site_benchmark(run_scenario_fn=lambda _scenario_id: _scenario())
+    evidence_path = tmp_path / "review.json"
+    evidence_path.write_text(json.dumps(_review_evidence(initial)), encoding="utf-8")
+    report = run_commercial_site_benchmark(review_evidence_path=evidence_path, run_scenario_fn=lambda _scenario_id: _scenario())
+    assert report["automated_passed"] is True
+    assert report["independently_reviewed"] is False
+    assert "independent_review:software_checkpoint_not_clean_or_identifiable" in report["blockers"]
+
+
+@pytest.mark.parametrize("status", ["", " M planner.py", "?? new_module.py"])
+def test_revision_reports_tracked_and_untracked_changes_without_exposing_paths(status: str) -> None:
+    with patch.object(benchmark_module.subprocess, "check_output", side_effect=["a" * 40, status]):
+        revision = benchmark_module._revision()
+    assert revision == "a" * 40 + ("-dirty" if status else "")
 
 
 def test_commercial_site_benchmark_rejects_review_for_another_revision(tmp_path: Path) -> None:

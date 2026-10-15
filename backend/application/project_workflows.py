@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
+from backend.application.project_snapshot import save_project_snapshot
 
 from backend.application.design_workflows import (
     new_workflow_id,
@@ -49,7 +50,14 @@ from backend.planning.vision_ground_truth_flywheel import (
     attach_vision_ground_truth_flywheel,
 )
 from backend.application.protocols import ArtifactServiceProtocol
+from backend.services.canonical_results import canvas_result_freshness
+from backend.services.project_revision import ProjectRevisionConflict
 from backend.application.job_workflows import JobQueueProtocol
+
+from backend.services.canonical_project import (
+    PROJECT_DOCUMENT_KEY, ProjectDocumentError, validate_project_document, validate_project_input,
+)
+from backend.services.canonical_canvas import reconcile_canvas_save, resolve_canvas_input
 
 PROJECT_VERSION_HISTORY_VERSION = "project_version_history_v1"
 
@@ -135,7 +143,7 @@ def _merge_project_input_value(existing: Any, incoming: Any) -> Any:
     if incoming is None:
         return existing
     if isinstance(existing, dict) and isinstance(incoming, dict):
-        return _merge_project_input(existing, incoming)
+        return _merge_project_input(existing, incoming, _canonical_root=False)
     if isinstance(existing, list) and isinstance(incoming, list):
         return incoming if incoming else existing
     if isinstance(existing, str) and isinstance(incoming, str):
@@ -152,19 +160,24 @@ def _merge_project_input_value(existing: Any, incoming: Any) -> Any:
     return incoming
 
 
-def _merge_project_input(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_project_input(existing: Dict[str, Any], incoming: Dict[str, Any], *, _canonical_root: bool = True) -> Dict[str, Any]:
     if not existing:
         return dict(incoming or {})
     if not incoming:
         return dict(existing or {})
     merged: Dict[str, Any] = {}
     for key in set(existing.keys()) | set(incoming.keys()):
-        if key not in incoming:
+        if _canonical_root and key == PROJECT_DOCUMENT_KEY and key in incoming:
+            merged[key] = validate_project_document(incoming[key])
+        elif key not in incoming:
             merged[key] = existing[key]
         elif key not in existing:
             merged[key] = incoming[key]
         else:
             merged[key] = _merge_project_input_value(existing[key], incoming[key])
+    if _canonical_root and isinstance(incoming.get("meta"), dict) and "edit_history_v1" in incoming["meta"]:
+        from backend.services.edit_transactions import validate_ledger
+        merged.setdefault("meta", {})["edit_history_v1"] = validate_ledger(incoming["meta"]["edit_history_v1"])
     return merged
 
 
@@ -466,6 +479,8 @@ def _compact_artifact_for_dashboard(artifact: Dict[str, Any]) -> Dict[str, Any]:
         "filename": str(artifact.get("filename") or ""),
         "created_at": artifact.get("created_at"),
         "download_path": str(artifact.get("download_path") or ""),
+        "snapshot_status": str(artifact.get("snapshot_status") or "unverified"),
+        "calculation_reference": dict(artifact.get("calculation_reference") or {}),
         "release_status": str(artifact.get("release_status") or ""),
         "release_ready": bool(artifact.get("release_ready")),
         "release_blockers": list(artifact.get("release_blockers") or []),
@@ -769,16 +784,35 @@ def save_project_workflow_update(
     project_id: str,
     run_summary: Optional[Dict[str, Any]] = None,
     artifact_summary: Optional[Dict[str, Any]] = None,
+    exported_result: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
+    def update_metadata(existing: Dict[str, Any]) -> Dict[str, Any]:
+        artifact = dict(artifact_summary) if artifact_summary else None
+        historical = False
+        if artifact is not None and exported_result is not None:
+            freshness = canvas_result_freshness(exported_result, dict(existing.get("project_input") or {}))
+            archived = dict(dict(exported_result.get("metadata") or {}).get("calculation_save_v1") or {}).get("disposition") == "archived"
+            historical = archived or bool(freshness and freshness.get("status") == "stale")
+            artifact["snapshot_status"] = "historical" if historical else (freshness or {}).get("status", "unverified")
+            if historical:
+                artifact["release_ready"] = False
+                artifact["release_status"] = "historical"
+                artifact["release_blockers"] = list(dict.fromkeys([*list(artifact.get("release_blockers") or []), "project_inputs_changed_during_export"]))
+        return merge_project_metadata(
+            dict(existing.get("metadata") or {}), run_summary=run_summary,
+            artifact_summary=artifact,
+            # A historical export must not advance the active revision snapshot.
+            latest_result={} if historical else (exported_result if exported_result is not None else dict(existing.get("latest_result") or {})),
+        )
+
+    updater = getattr(project_store, "update_project_metadata", None)
+    if callable(updater):
+        return updater(user_id=user_id, project_id=project_id, update_metadata=update_metadata)
+    # Compatibility for external adapters/test doubles without the atomic method.
     existing = project_store.get_project(user_id=user_id, project_id=project_id)
     if existing is None:
         return None
-    metadata = merge_project_metadata(
-        dict(existing.get("metadata") or {}),
-        run_summary=run_summary,
-        artifact_summary=artifact_summary,
-        latest_result=dict(existing.get("latest_result") or {}),
-    )
+    metadata = update_metadata(existing)
     return project_store.save_project(
         user_id=user_id,
         project_id=project_id,
@@ -927,6 +961,11 @@ def artifact_summary(
         "project_name": str(final_plan.get("project_name") or "Generated Plan"),
         "download_path": f"/api/artifacts/{path.name}",
     }
+    result_metadata = dict(result_data.get("metadata") or {})
+    calculation_reference = dict(result_metadata.get("quantity_binding_v1") or {})
+    if calculation_reference:
+        calculation_reference["calculation_id"] = dict(result_metadata.get("calculation_save_v1") or {}).get("calculation_id")
+        artifact["calculation_reference"] = calculation_reference
     if release_status:
         artifact["release_status"] = release_status
         artifact["release_ready"] = release_status == "ready" and not release_blockers
@@ -1002,6 +1041,9 @@ def get_project_result(
     return {
         "success": True,
         "project_id": project_id,
+        "result_freshness_v1": canvas_result_freshness(
+            dict(latest_result or {}), dict(record.get("project_input") or {}),
+        ),
         "latest_result": _with_progress_timeline_result(
             _with_smart_fix_result(dict(latest_result or {})),
             project_input=dict(record.get("project_input") or {}),
@@ -1195,12 +1237,27 @@ def get_project_source_confidence_map(
     }
 
 
+def _design_alternative_review_meta(record, meta):
+    """Strategies must not republish stale quantities as current comparisons."""
+    from copy import deepcopy
+    review_meta = dict(meta)
+    freshness = canvas_result_freshness(dict(record.get("latest_result") or {}), dict(record.get("project_input") or {})) or {"status": "unverified", "reason": "missing_input_binding"}
+    review_meta["alternative_quantity_freshness_v1"] = freshness
+    if freshness.get("status") != "current" and isinstance(review_meta.get(ALTERNATIVES_VERSION), dict):
+        alternatives = deepcopy(review_meta[ALTERNATIVES_VERSION])
+        alternatives["quantity_basis"] = {"available": False, "totals": {}, "truth_label": "Saved quantities are stale or unverified."}
+        for row in alternatives.get("alternatives") or []:
+            row["cost_quantity_comparison"] = {"available": False, "reason": "Current input-bound quantities are required; saved results are stale or unverified."}
+        review_meta[ALTERNATIVES_VERSION] = alternatives
+    return review_meta
+
+
 def get_project_design_alternatives(
     *,
     project_store: ProjectStoreProtocol,
     user_id: str,
     project_id: str,
-    requested_count: int = 3,
+    requested_count: int = 5,
 ) -> Dict[str, Any]:
     record = project_store.get_project(user_id=user_id, project_id=project_id)
     if record is None:
@@ -1209,7 +1266,7 @@ def get_project_design_alternatives(
     final_plan = dict(latest_result.get("final_plan") or {})
     if not final_plan:
         raise HTTPException(status_code=400, detail="Selected project has no saved planner result.")
-    meta = dict(final_plan.get("meta") or {})
+    meta = _design_alternative_review_meta(record, dict(final_plan.get("meta") or {}))
     alternatives = dict(meta.get(ALTERNATIVES_VERSION) or build_design_alternatives(meta, requested_count=requested_count))
     return {
         "success": True,
@@ -1226,7 +1283,7 @@ def update_project_design_alternatives(
     user_id: str,
     project_id: str,
     action: str,
-    requested_count: int = 3,
+    requested_count: int = 5,
     option_number: Optional[int] = None,
     alternative_id: str = "",
     reason: str = "",
@@ -1239,7 +1296,7 @@ def update_project_design_alternatives(
     final_plan = dict(latest_result.get("final_plan") or {})
     if not final_plan:
         raise HTTPException(status_code=400, detail="Selected project has no saved planner result.")
-    meta = dict(final_plan.get("meta") or {})
+    meta = _design_alternative_review_meta(record, dict(final_plan.get("meta") or {}))
     normalized_action = str(action or "generate").strip().lower()
     try:
         if normalized_action == "generate":
@@ -1283,7 +1340,7 @@ def update_project_design_alternatives(
         latest_result,
         project_input=dict(record.get("project_input") or {}),
     )
-    saved = project_store.save_project(
+    saved = save_project_snapshot(project_store, record,
         user_id=user_id,
         project_id=project_id,
         name=record.get("name", "Untitled Project"),
@@ -1413,7 +1470,7 @@ def review_project_candidates(
             minimum_role="reviewer",
         )
     else:
-        saved = project_store.save_project(
+        saved = save_project_snapshot(project_store, record,
             user_id=user_id,
             project_id=project_id,
             name=record.get("name", "Untitled Project"),
@@ -1454,11 +1511,22 @@ def save_project_record(
     export_session_state: Optional[Callable[[Optional[str]], Dict[str, Any]]] = None,
     build_run_summary: Optional[Callable[..., Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
+    try:
+        payload_data = dict(payload_data)
+        payload_data["project_input"] = validate_project_input(dict(payload_data.get("project_input") or {}))
+        resolve_canvas_input(payload_data["project_input"])
+    except ProjectDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     project_id = payload_data.get("project_id")
     session_id = payload_data.get("session_id")
     session_export = export_session_state(session_id) if export_session_state else {}
     latest_result_in_payload = "latest_result" in payload_data
     incoming_latest_result = dict(payload_data.get("latest_result") or {})
+    revision_options = {}
+    if payload_data.get("expected_revision") is not None:
+        revision_options["expected_revision"] = payload_data["expected_revision"]
+    if payload_data.get("replace_original"):
+        revision_options["replace_original"] = True
     shell_getter = getattr(project_store, "get_project_shell", None)
     shell_saver = getattr(project_store, "save_project_shell", None)
     if (
@@ -1486,7 +1554,12 @@ def save_project_record(
                 project_input=project_input,
                 session_state=dict(session_export or {}),
                 metadata=metadata,
+                **revision_options,
             )
+        except ProjectRevisionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ProjectDocumentError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         return {"success": True, "project": _record_with_operational_summary(record)}
@@ -1516,6 +1589,10 @@ def save_project_record(
         existing_project_input = dict(current_existing.get("project_input") or {})
         if existing_project_input:
             project_input = _merge_project_input(existing_project_input, project_input)
+    project_input = reconcile_canvas_save(
+        dict((current_existing or {}).get("project_input") or {}),
+        dict(payload_data.get("project_input") or {}), project_input,
+    )
     if latest_result:
         latest_result = attach_cad_entity_model_to_result(latest_result, project_input=project_input)
         latest_result = attach_source_confidence_map(latest_result, project_input=project_input)
@@ -1549,7 +1626,12 @@ def save_project_record(
             latest_result=latest_result,
             session_state=dict(session_export or {}),
             metadata=metadata,
+            **revision_options,
         )
+    except ProjectRevisionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProjectDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     return {"success": True, "project": _record_with_operational_summary(record)}

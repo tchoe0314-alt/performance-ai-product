@@ -97,6 +97,21 @@ _OPTION_LIBRARY = [
         ],
         "quantity_weights": {"paving": 1.1, "storm": 1.02, "utility": 0.98, "earthwork": 1.02},
     },
+    {
+        "seed": "open_space_first",
+        "label": "Option 5 - Open Space First",
+        "summary": "Reserve connected landscape and pedestrian space before organizing the remaining program.",
+        "concepts": {
+            "parking_layouts": "Review smaller parking groups around retained open-space corridors.",
+            "road_circulation_layouts": "Review access around protected landscape and pedestrian routes.",
+            "basin_placement": "Review whether stormwater reserves can align with open space without assuming shared capacity.",
+            "utility_routing": "Review utility corridors outside protected landscape where feasible.",
+            "grading_drainage_concepts": "Review terrain and drainage impacts before claiming usable landscape area.",
+            "site_organization": "Reserve open-space connections, then test building, parking and access fit.",
+        },
+        "tradeoffs": ["Prioritizes connected open space.", "May constrain building and parking fit.", "Requires geometry, access and stormwater feasibility checks."],
+        "quantity_weights": {"paving": 1.0, "storm": 1.0, "utility": 1.0, "earthwork": 1.0},
+    },
 ]
 
 
@@ -144,6 +159,9 @@ def _accepted_input_summary(meta: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _quantity_basis(meta: Dict[str, Any]) -> Dict[str, Any]:
+    freshness = meta.get("alternative_quantity_freshness_v1")
+    if isinstance(freshness, dict) and freshness.get("status") != "current":
+        return {"available": False, "totals": {}, "line_item_count": 0, "review_required": True, "truth_label": "Quantity comparison unavailable: saved calculations are stale or lack a current input binding."}
     quantities = safe_dict(meta.get("quantities"))
     totals = safe_dict(quantities.get("totals"))
     cost = safe_dict(meta.get("cost_estimate"))
@@ -224,7 +242,7 @@ def _score_option(option: Dict[str, Any], index: int, accepted_inputs: Dict[str,
     }
 
 
-def _normalize_count(value: Any, default: int = 3) -> int:
+def _normalize_count(value: Any, default: int = 5) -> int:
     try:
         parsed = int(value)
     except Exception:
@@ -232,7 +250,7 @@ def _normalize_count(value: Any, default: int = 3) -> int:
     return max(1, min(parsed, len(_OPTION_LIBRARY)))
 
 
-def requested_alternative_count_from_message(message: str, default: int = 3) -> int:
+def requested_alternative_count_from_message(message: str, default: int = 5) -> int:
     match = re.search(r"\bshow\s+me\s+(\d+)\s+options?\b", safe_str(message).lower())
     if match:
         return _normalize_count(match.group(1), default)
@@ -242,11 +260,11 @@ def requested_alternative_count_from_message(message: str, default: int = 3) -> 
 def build_design_alternatives(
     meta: Dict[str, Any],
     *,
-    requested_count: int = 3,
+    requested_count: int = 5,
     focus: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     meta = safe_dict(meta)
-    count = _normalize_count(requested_count, 3)
+    count = _normalize_count(requested_count, 5)
     accepted_inputs = _accepted_input_summary(meta)
     quantity_basis = _quantity_basis(meta)
     selected_prior = safe_str(safe_dict(meta.get(ALTERNATIVES_VERSION)).get("selected_alternative_id"))
@@ -294,13 +312,16 @@ def build_design_alternatives(
         "alternatives": alternatives,
         "ranked_alternative_ids": [safe_str(item.get("alternative_id")) for item in ranked],
         "review_required": True,
+        "geometry_generated": False,
+        "feasibility_checked": False,
+        "comparison_basis": "written_strategy_and_heuristic_weights_not_calculated_layouts",
         "construction_release_allowed": False,
         "construction_readiness_implied": False,
         "truth_label": "Alternatives are review-required concepts unless supported by accepted inputs; they do not create field-use readiness.",
     }
 
 
-def compare_design_alternatives(meta: Dict[str, Any], *, requested_count: int = 3) -> Dict[str, Any]:
+def compare_design_alternatives(meta: Dict[str, Any], *, requested_count: int = 5) -> Dict[str, Any]:
     alternatives_record = safe_dict(meta.get(ALTERNATIVES_VERSION)) or build_design_alternatives(meta, requested_count=requested_count)
     alternatives = [safe_dict(item) for item in safe_list(alternatives_record.get("alternatives")) if safe_dict(item)]
     rows = []

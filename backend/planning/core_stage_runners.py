@@ -28,6 +28,7 @@ from .field_contract import (
 )
 from .runtime import PlannerExecutionContext, _lot_area, _mark_dependency_state, collect_plan_stats
 from .grading_support import surface_range
+from .grading_requirements import requested_grading_ratio
 
 
 def _preview_meta_for_action(layer: str, task: str) -> Dict[str, Any]:
@@ -1450,9 +1451,6 @@ def run_grading_stage(
         corner_elevations = safe_dict(grading_profile.get("corner_elevations"))
         has_corner_elevations = corner_elevations.get("northwest") is not None and corner_elevations.get("southeast") is not None
         min_site_slope_pct = safe_float(grading_profile.get("min_slope_pct"), 0.0)
-        max_parking_slope_pct = safe_float(grading_profile.get("max_parking_slope_pct"), 0.0)
-        max_road_grade_pct = safe_float(grading_profile.get("max_road_grade_pct"), 0.0)
-        max_ada_cross_slope_pct = safe_float(grading_profile.get("max_ada_cross_slope_pct"), 0.0)
         if strict_mode and not terrain_text and not has_corner_elevations and min_site_slope_pct <= 0:
             manager.set_metric("grading_success", 0.0, category="grading")
             record_strict_stage_failure(
@@ -1468,12 +1466,10 @@ def run_grading_stage(
         grading_request = GradingRequest(
             create_project_objects=False,
             create_project_zones=False,
-            min_site_slope=max(0.002, min_site_slope_pct / 100.0) if min_site_slope_pct > 0 else 0.002,
-            max_parking_slope=max(0.01, max_parking_slope_pct / 100.0)
-            if max_parking_slope_pct > 0
-            else 0.05,
-            max_road_grade=max(0.02, max_road_grade_pct / 100.0) if max_road_grade_pct > 0 else 0.10,
-            max_walk_grade=max(0.01, max_ada_cross_slope_pct / 100.0) if max_ada_cross_slope_pct > 0 else 0.05,
+            min_site_slope=requested_grading_ratio(grading_profile, "min_slope_pct", 0.002),
+            max_parking_slope=requested_grading_ratio(grading_profile, "max_parking_slope_pct", 0.05),
+            max_road_grade=requested_grading_ratio(grading_profile, "max_road_grade_pct", 0.10),
+            max_walk_grade=requested_grading_ratio(grading_profile, "max_ada_cross_slope_pct", 0.05),
         )
         existing_surface = project.meta.get("existing_surface")
         if existing_surface is None:

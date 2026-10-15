@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+from copy import deepcopy
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 import json
 import time
 import uuid
 
 from .database import Database
+from .canonical_project import PROJECT_DOCUMENT_KEY, validate_project_document, validate_project_input
+from .canonical_canvas import reconcile_canvas_save
+from .canonical_results import bind_canvas_result, canvas_input_signature
+from .project_revision import check_revision, project_revision, merge_save_metadata
+from .canonical_record import seal_record, project_view, result_from_document
 
 
 def _now() -> float:
@@ -75,7 +81,7 @@ def _merge_project_input_value(existing: Any, incoming: Any) -> Any:
     if incoming is None:
         return existing
     if isinstance(existing, dict) and isinstance(incoming, dict):
-        return _merge_project_input(existing, incoming)
+        return _merge_project_input(existing, incoming, _canonical_root=False)
     if isinstance(existing, list) and isinstance(incoming, list):
         return incoming if incoming else existing
     if isinstance(existing, str) and isinstance(incoming, str):
@@ -92,19 +98,26 @@ def _merge_project_input_value(existing: Any, incoming: Any) -> Any:
     return incoming
 
 
-def _merge_project_input(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
+def _merge_project_input(existing: Dict[str, Any], incoming: Dict[str, Any], *, _canonical_root: bool = True) -> Dict[str, Any]:
     if not existing:
         return dict(incoming or {})
     if not incoming:
         return dict(existing or {})
     merged: Dict[str, Any] = {}
     for key in set(existing.keys()) | set(incoming.keys()):
-        if key not in incoming:
+        if _canonical_root and key == PROJECT_DOCUMENT_KEY and key in incoming:
+            merged[key] = validate_project_document(incoming[key])
+        elif key not in incoming:
             merged[key] = existing[key]
         elif key not in existing:
             merged[key] = incoming[key]
         else:
             merged[key] = _merge_project_input_value(existing[key], incoming[key])
+    if _canonical_root and isinstance(incoming.get("meta"), dict) and "edit_history_v1" in incoming["meta"]:
+        # A validated edit graph is an atomic value. Deep-merging an empty redo
+        # list with a prior branch creates an invalid cursor after Undo + Edit.
+        from .edit_transactions import validate_ledger
+        merged.setdefault("meta", {})["edit_history_v1"] = validate_ledger(incoming["meta"]["edit_history_v1"])
     return merged
 
 
@@ -185,9 +198,203 @@ def _role_allows(actual: str, required: str) -> bool:
     return ROLE_RANK.get(_normalize_role(actual), -1) >= ROLE_RANK.get(_normalize_role(required), 0)
 
 
+def _project_by_id_sql(storage_kind: str) -> str:
+    return "SELECT * FROM projects WHERE project_id = ? FOR UPDATE" if storage_kind == "postgres" else "SELECT * FROM projects WHERE project_id = ?"
+
+
+def _project_shell_sql(storage_kind: str) -> str:
+    # Select static statements, never splice identifiers or user data into SQL.
+    if storage_kind == "postgres":
+        return """SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
+                       p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
+                       p.project_input_json, p.session_state_json, p.metadata_json,
+                       COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
+                FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)
+                FOR UPDATE OF p"""
+    return """SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
+                       p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
+                       p.project_input_json, p.session_state_json, p.metadata_json,
+                       COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
+                FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)"""
+
+
 class ProjectStore:
     def __init__(self, db: Database) -> None:
         self.db = db
+
+    def update_project_metadata(
+        self, *, user_id: str, project_id: str,
+        update_metadata: Callable[[Dict[str, Any]], Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Merge workflow metadata against a locked project, without rewriting its design.
+
+        The callback must be local/pure: no database calls or external work while
+        the row is locked. Its snapshot is detached from stored JSON.
+        """
+        connection = self.db.connect()
+        try:
+            if self.db.storage_kind == "sqlite":
+                connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                _project_by_id_sql(self.db.storage_kind), (project_id,),
+            ).fetchone()
+            if row is None or row["deleted_at"] is not None:
+                connection.rollback()
+                return None
+            membership = connection.execute(
+                "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?", (project_id, user_id),
+            ).fetchone()
+            role = "owner" if row["user_id"] == user_id else (membership["role"] if membership else "viewer")
+            if row["user_id"] != user_id and not (membership and _role_allows(role, "editor")):
+                raise ValueError("You do not have editor access to that project.")
+            record = self._row_to_record(row)
+            record["access_role"] = role
+            metadata = update_metadata(record)
+            record["metadata"] = metadata
+            adopted = "project_record_v1" in (record.get("project_input", {}).get(PROJECT_DOCUMENT_KEY) or {}).get("extensions", {})
+            sealed = seal_record(record, previous=record, latest_result_supplied=False) if adopted else record
+            updated_at = _now()
+            connection.execute(
+                "UPDATE projects SET metadata_json = ?, project_input_json = ?, updated_at = ? WHERE project_id = ?",
+                (_json_dumps(metadata), _json_dumps(sealed["project_input"]), updated_at, project_id),
+            )
+            connection.commit()
+            # Return precisely the snapshot used at the commit boundary, not a
+            # later read that could hide this export's historical disposition.
+            record["metadata"] = metadata
+            record["project_input"] = sealed["project_input"]
+            record["updated_at"] = updated_at
+            return record
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def save_calculation_result(
+        self, *, user_id: str, project_id: str, source_input: Dict[str, Any], result: Dict[str, Any],
+        force_archive: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        """Archive every canvas calculation; activate only against locked current inputs.
+
+        None means a legacy input without a canonical canvas, whose existing
+        workflow remains responsible for saving. Never write job inputs over edits.
+        """
+        signature = canvas_input_signature(source_input)
+        if signature is None:
+            return None
+        if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="editor"):
+            raise ValueError("You do not have editor access to that project.")
+        connection = self.db.connect()
+        try:
+            if self.db.storage_kind == "sqlite":
+                connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                _project_by_id_sql(self.db.storage_kind),
+                (project_id,),
+            ).fetchone()
+            if row is None or row["deleted_at"] is not None:
+                raise ValueError("Project is unavailable. Restore it before saving calculations.")
+            membership = connection.execute(
+                "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?", (project_id, user_id),
+            ).fetchone()
+            if row["user_id"] != user_id and not (membership and _role_allows(membership["role"], "editor")):
+                raise ValueError("You do not have editor access to that project.")
+            current_input = json.loads(row["project_input_json"])
+            successful = result.get("success") is True
+            active = successful and not force_archive and canvas_input_signature(current_input) == signature
+            calculation_id = _new_id("calculation")
+            stored_result = bind_canvas_result(result, source_input)
+            stored_result.setdefault("metadata", {})["calculation_save_v1"] = {
+                "calculation_id": calculation_id, "disposition": "active" if active else "archived",
+                "reason": "matching_inputs" if active else "calculation_not_successful" if not successful else "project_inputs_changed",
+            }
+            created_at = _now()
+            connection.execute(
+                """INSERT INTO project_calculation_history
+                (calculation_id, project_id, created_at, input_signature, disposition, source_input_json, result_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (calculation_id, project_id, created_at, signature, "active" if active else "archived",
+                 _json_dumps(source_input), _json_dumps(stored_result)),
+            )
+            if active:
+                previous = self._row_to_record(row)
+                sealed = seal_record({**previous, "latest_result": stored_result}, previous=previous)
+                connection.execute(
+                    "UPDATE projects SET latest_result_json = ?, project_input_json = ?, has_result = 1, updated_at = ? WHERE project_id = ?",
+                    (_json_dumps(sealed["latest_result"]), _json_dumps(sealed["project_input"]), created_at, project_id),
+                )
+            connection.commit()
+            return stored_result
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def list_calculation_history(self, *, user_id: str, project_id: str, limit: int = 50) -> Optional[List[Dict[str, Any]]]:
+        project = self.get_project_shell(user_id=user_id, project_id=project_id)
+        if project is None:
+            return None
+        latest = self.get_project_latest_result(user_id=user_id, project_id=project_id) or {}
+        latest_id = (latest.get("metadata") or {}).get("calculation_save_v1", {}).get("calculation_id")
+        current_signature = canvas_input_signature(project.get("project_input") or {})
+        connection = self.db.connect()
+        try:
+            history_sql = """SELECT calculation_id, created_at, input_signature, disposition, (result_json::jsonb -> 'success') = 'true'::jsonb AS successful
+                FROM project_calculation_history WHERE project_id = ?
+                ORDER BY created_at DESC, calculation_id DESC LIMIT ?""" if self.db.storage_kind == "postgres" else """SELECT calculation_id, created_at, input_signature, disposition, json_type(result_json, '$.success') = 'true' AS successful
+                FROM project_calculation_history WHERE project_id = ?
+                ORDER BY created_at DESC, calculation_id DESC LIMIT ?"""
+            rows = connection.execute(
+                history_sql,
+                (project_id, min(100, max(1, limit))),
+            ).fetchall()
+            history = []
+            for row in rows:
+                entry = dict(row)
+                entry["successful"] = bool(entry["successful"])
+                entry["is_active"] = row["calculation_id"] == latest_id and row["input_signature"] == current_signature
+                history.append(entry)
+            return history
+        finally:
+            connection.close()
+
+    def get_last_successful_calculation_at(self, *, user_id: str, project_id: str) -> Optional[float]:
+        if self.get_project_shell(user_id=user_id, project_id=project_id) is None:
+            return None
+        last_success_sql = "SELECT created_at AS last_success FROM project_calculation_history WHERE project_id = ? AND (result_json::jsonb -> 'success') = 'true'::jsonb ORDER BY created_at DESC LIMIT 1" if self.db.storage_kind == "postgres" else "SELECT created_at AS last_success FROM project_calculation_history WHERE project_id = ? AND json_type(result_json, '$.success') = 'true' ORDER BY created_at DESC LIMIT 1"
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                last_success_sql,
+                (project_id,),
+            ).fetchone()
+            return row["last_success"] if row else None
+        finally:
+            connection.close()
+
+    def get_calculation_history(self, *, user_id: str, project_id: str, calculation_id: str) -> Optional[Dict[str, Any]]:
+        if self.get_project_shell(user_id=user_id, project_id=project_id) is None:
+            return None
+        connection = self.db.connect()
+        try:
+            row = connection.execute(
+                "SELECT * FROM project_calculation_history WHERE project_id = ? AND calculation_id = ?",
+                (project_id, calculation_id),
+            ).fetchone()
+            if row is None:
+                return None
+            entry = dict(row)
+            entry["source_input"] = json.loads(entry.pop("source_input_json"))
+            entry["result"] = json.loads(entry.pop("result_json"))
+            return entry
+        finally:
+            connection.close()
 
     def _public_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
         connection = self.db.connect()
@@ -462,7 +669,7 @@ class ProjectStore:
         try:
             row = connection.execute(
                 """
-                SELECT p.latest_result_json
+                SELECT p.latest_result_json, p.project_input_json
                 FROM projects p
                 LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
                 WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)
@@ -471,7 +678,11 @@ class ProjectStore:
             ).fetchone()
             if row is None:
                 return None
-            return dict(_json_loads(row["latest_result_json"], {}) or {})
+            result = dict(_json_loads(row["latest_result_json"], {}) or {})
+            document = (_json_loads(row["project_input_json"], {}) or {}).get("canonical_project_v1")
+            if isinstance(document, dict) and "project_record_v1" in document.get("extensions", {}):
+                return result_from_document(document, result)
+            return result
         finally:
             connection.close()
 
@@ -487,16 +698,10 @@ class ProjectStore:
 
         connection = self.db.connect()
         try:
+            if self.db.storage_kind == "sqlite":
+                connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                """
-                SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
-                       p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
-                       p.project_input_json, p.session_state_json, p.metadata_json,
-                       COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
-                FROM projects p
-                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-                WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)
-                """,
+                _project_shell_sql(self.db.storage_kind),
                 (user_id, user_id, project_id, user_id, user_id),
             ).fetchone()
             if row is None:
@@ -508,13 +713,19 @@ class ProjectStore:
             if not _role_allows(role, minimum_role):
                 raise ValueError(f"You do not have {minimum_role} access to that project.")
 
-            project_input = dict(_json_loads(row["project_input_json"], {}) or {})
+            previous = self._shell_row_to_record(row)
+            project_input = deepcopy(previous["project_input"])
             input_meta = dict(project_input.get("meta") or {})
             site_inputs = dict(input_meta.get("site_inputs") or {})
             site_inputs.update(_json_safe(candidate_state))
             input_meta["site_inputs"] = site_inputs
             project_input["meta"] = input_meta
             project_name = _project_name(row["name"], project_input)
+            if "project_record_v1" in (project_input.get(PROJECT_DOCUMENT_KEY) or {}).get("extensions", {}):
+                project_input = seal_record(
+                    {**previous, "name": project_name, "project_input": project_input},
+                    previous=previous, latest_result_supplied=False,
+                )["project_input"]
             updated_at = _now()
             connection.execute(
                 "UPDATE projects SET name = ?, project_input_json = ?, updated_at = ? WHERE project_id = ?",
@@ -546,21 +757,17 @@ class ProjectStore:
         metadata: Optional[Dict[str, Any]] = None,
         organization_id: Optional[str] = None,
         minimum_role: str = "editor",
+        expected_revision: Optional[str] = None,
+        replace_original: bool = False,
     ) -> Dict[str, Any]:
         """Update project shell state while preserving the generated result in place."""
 
         connection = self.db.connect()
         try:
+            if self.db.storage_kind == "sqlite":
+                connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                """
-                SELECT p.project_id, p.user_id, p.organization_id, p.name, p.description,
-                       p.created_at, p.updated_at, p.session_id, p.has_result, p.tags_json,
-                       p.project_input_json, p.session_state_json, p.metadata_json,
-                       COALESCE(pm.role, CASE WHEN p.user_id = ? THEN 'owner' ELSE '' END) AS access_role
-                FROM projects p
-                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
-                WHERE p.project_id = ? AND p.deleted_at IS NULL AND (p.user_id = ? OR pm.user_id = ?)
-                """,
+                _project_shell_sql(self.db.storage_kind),
                 (user_id, user_id, project_id, user_id, user_id),
             ).fetchone()
             if row is None:
@@ -572,8 +779,16 @@ class ProjectStore:
             if not _role_allows(role, minimum_role):
                 raise ValueError(f"You do not have {minimum_role} access to that project.")
 
+            existing_record = self._shell_row_to_record(row)
+            check_revision(existing_record, expected_revision)
+            if replace_original:
+                if expected_revision is None:
+                    raise ValueError("Replacing a project requires its current revision.")
+                result_row = connection.execute("SELECT latest_result_json FROM projects WHERE project_id = ?", (project_id,)).fetchone()
+                existing_record["latest_result"] = _json_loads(result_row["latest_result_json"], {})
+
             existing_project_input = dict(_json_loads(row["project_input_json"], {}) or {})
-            incoming_project_input = dict(project_input or {})
+            incoming_project_input = validate_project_input(dict(project_input or {}))
             merged_project_input = (
                 _merge_project_input(existing_project_input, incoming_project_input)
                 if incoming_project_input
@@ -584,12 +799,28 @@ class ProjectStore:
                 incoming_project_input,
                 merged_project_input,
             )
+            merged_project_input = reconcile_canvas_save(existing_project_input, incoming_project_input, merged_project_input)
+            merged_project_input = _preserve_newer_candidate_review_state(
+                existing_project_input, incoming_project_input, merged_project_input,
+            )
             project_name = _project_name(name, merged_project_input)
             updated_at = _now()
             resolved_organization_id = organization_id or row["organization_id"]
             resolved_tags = list(tags or [])
             resolved_session_state = dict(session_state or {})
-            resolved_metadata = dict(metadata or {})
+            resolved_metadata = merge_save_metadata(dict(existing_record.get("metadata") or {}), dict(metadata or {}),
+                                                   replaced_record=existing_record if replace_original else None)
+            migration = "project_record_v1" not in (existing_project_input.get(PROJECT_DOCUMENT_KEY) or {}).get("extensions", {})
+            if migration:
+                result_row = connection.execute("SELECT latest_result_json FROM projects WHERE project_id = ?", (project_id,)).fetchone()
+                existing_record["latest_result"] = _json_loads(result_row["latest_result_json"], {})
+                resolved_metadata.setdefault("legacy_project_backup_v1", deepcopy(existing_record))
+                from .canonical_record import migration_report
+                resolved_metadata["canonical_migration_v1"] = migration_report(existing_record)
+            sealed = seal_record({**existing_record, "name": project_name, "description": description or "",
+                                  "organization_id": resolved_organization_id, "project_input": merged_project_input,
+                                  "metadata": resolved_metadata}, previous=existing_record, latest_result_supplied=migration, actor_user_id=user_id)
+            merged_project_input = sealed["project_input"]
             connection.execute(
                 """
                 UPDATE projects
@@ -611,6 +842,9 @@ class ProjectStore:
                     project_id,
                 ),
             )
+            if migration:
+                connection.execute("UPDATE projects SET latest_result_json = ? WHERE project_id = ?",
+                                   (_json_dumps(sealed["latest_result"]), project_id))
             connection.commit()
 
             shell_row = dict(row)
@@ -634,8 +868,63 @@ class ProjectStore:
             connection.close()
 
     def save_project(
+        self, *, user_id: str, project_id: Optional[str], name: str,
+        description: str = "", session_id: Optional[str] = None,
+        tags: Optional[List[str]] = None, project_input: Optional[Dict[str, Any]] = None,
+        latest_result: Optional[Dict[str, Any]] = None, session_state: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None, organization_id: Optional[str] = None,
+        minimum_role: str = "editor", expected_revision: Optional[str] = None, replace_original: bool = False,
+        expected_result_revision: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        if not project_id and not organization_id:
+            organization_id = self.ensure_default_organization(user_id=user_id)["organization_id"]
+        connection = self.db.connect()
+        try:
+            if self.db.storage_kind == "sqlite":
+                connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(_project_by_id_sql(self.db.storage_kind), (project_id,)).fetchone() if project_id else None
+            existing = self._row_to_record(row) if row else None
+            role = "owner"
+            if row:
+                if row["deleted_at"] is not None:
+                    raise ValueError("This project is in Recently deleted. Restore it before saving.")
+                member = connection.execute("SELECT role FROM project_members WHERE project_id = ? AND user_id = ?", (project_id, user_id)).fetchone()
+                role = "owner" if row["user_id"] == user_id else (member["role"] if member else "viewer")
+                if row["user_id"] != user_id and not (member and _role_allows(role, minimum_role)):
+                    raise ValueError(f"You do not have {minimum_role} access to that project.")
+                check_revision(existing, expected_revision)
+                if expected_result_revision is not None:
+                    from .project_revision import result_revision, ProjectRevisionConflict
+                    if result_revision(existing) != expected_result_revision:
+                        raise ProjectRevisionConflict(project_revision(existing))
+            elif expected_revision is not None:
+                raise ValueError("Project not found.")
+            if replace_original and (not existing or expected_revision is None):
+                raise ValueError("Replacing a project requires its current revision.")
+            record = self._save_project_contents(
+                connection=connection, existing=existing, user_id=user_id, project_id=project_id, name=name,
+                description=description, session_id=session_id, tags=tags, project_input=project_input,
+                latest_result=latest_result, session_state=session_state,
+                metadata=merge_save_metadata(dict((existing or {}).get("metadata") or {}), dict(metadata or {}),
+                                             replaced_record=existing if replace_original else None),
+                organization_id=organization_id,
+            )
+            connection.commit()
+            record = project_view(record)
+            record["access_role"] = role
+            record["revision_token"] = project_revision(record)
+            return record
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def _save_project_contents(
         self,
         *,
+        connection: Any,
+        existing: Optional[Dict[str, Any]],
         user_id: str,
         project_id: Optional[str],
         name: str,
@@ -650,27 +939,11 @@ class ProjectStore:
         minimum_role: str = "editor",
     ) -> Dict[str, Any]:
         now = _now()
-        existing = self.get_project(user_id=user_id, project_id=project_id) if project_id else None
-        if project_id:
-            connection = self.db.connect()
-            try:
-                lifecycle_row = connection.execute(
-                    "SELECT user_id, deleted_at FROM projects WHERE project_id = ?",
-                    (project_id,),
-                ).fetchone()
-            finally:
-                connection.close()
-            if lifecycle_row is not None and lifecycle_row["deleted_at"] is not None:
-                raise ValueError("This project is in Recently deleted. Restore it before saving.")
-            if lifecycle_row is not None and not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role=minimum_role):
-                raise ValueError(f"You do not have {minimum_role} access to that project.")
-        elif not organization_id:
-            organization_id = self.ensure_default_organization(user_id=user_id)["organization_id"]
 
         existing_latest_result = dict((existing or {}).get("latest_result") or {})
         existing_project_input = dict((existing or {}).get("project_input") or {})
         incoming_latest_result = dict(latest_result or {})
-        incoming_project_input = dict(project_input or {})
+        incoming_project_input = validate_project_input(dict(project_input or {}))
         # Empty autosaves should never wipe a richer staged checkpoint that is
         # already persisted on the project record.
         if existing_latest_result and not incoming_latest_result:
@@ -684,9 +957,13 @@ class ProjectStore:
             )
         elif existing_project_input and not incoming_project_input:
             incoming_project_input = existing_project_input
+        incoming_project_input = reconcile_canvas_save(existing_project_input, dict(project_input or {}), incoming_project_input)
+        incoming_project_input = _preserve_newer_candidate_review_state(
+            existing_project_input, dict(project_input or {}), incoming_project_input,
+        )
         record = {
             "project_id": project_id or _new_id("project"),
-            "user_id": user_id,
+            "user_id": (existing or {}).get("user_id", user_id),
             "organization_id": organization_id or (existing or {}).get("organization_id"),
             "name": _project_name(name, incoming_project_input),
             "description": description or "",
@@ -695,12 +972,16 @@ class ProjectStore:
             "session_id": session_id,
             "tags": list(tags or []),
             "project_input": incoming_project_input,
-            "latest_result": incoming_latest_result,
+            "latest_result": _json_safe(incoming_latest_result),
             "session_state": dict(session_state or {}),
             "metadata": dict(metadata or {}),
         }
+        if existing and "project_record_v1" not in (existing_project_input.get(PROJECT_DOCUMENT_KEY) or {}).get("extensions", {}):
+            record["metadata"].setdefault("legacy_project_backup_v1", deepcopy(existing))
+            from .canonical_record import migration_report
+            record["metadata"]["canonical_migration_v1"] = migration_report(existing)
+        record = seal_record(record, previous=existing, actor_user_id=user_id)
 
-        connection = self.db.connect()
         try:
             connection.execute(
                 """
@@ -749,14 +1030,13 @@ class ProjectStore:
             self._ensure_owner_membership(
                 connection,
                 project_id=record["project_id"],
-                user_id=user_id,
+                user_id=record["user_id"],
                 organization_id=record["organization_id"],
             )
-            connection.commit()
             record["access_role"] = "owner"
             return record
-        finally:
-            connection.close()
+        except Exception:
+            raise
 
     def duplicate_project(
         self,
@@ -884,9 +1164,9 @@ class ProjectStore:
             raise ValueError("Project could not be restored.")
         return project
 
-    def invite_project_member(self, *, actor_user_id: str, project_id: str, email: str, role: str) -> Dict[str, Any]:
-        if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="admin"):
-            raise ValueError("You do not have admin access to that project.")
+    def invite_project_member(self, *, actor_user_id: str, project_id: str, email: str, role: str = "viewer") -> Dict[str, Any]:
+        if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="owner"):
+            raise ValueError("Only the project creator can manage access.")
         normalized_role = _normalize_role(role, default="viewer")
         if normalized_role == "owner":
             raise ValueError("Owner access cannot be granted by invite.")
@@ -962,8 +1242,8 @@ class ProjectStore:
             connection.close()
 
     def remove_project_member(self, *, actor_user_id: str, project_id: str, user_id: str) -> bool:
-        if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="admin"):
-            raise ValueError("You do not have admin access to that project.")
+        if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="owner"):
+            raise ValueError("Only the project creator can manage access.")
         if actor_user_id == user_id:
             raise ValueError("You cannot remove your own access from this admin endpoint.")
         target_role = self.project_role(user_id=user_id, project_id=project_id)
@@ -999,8 +1279,8 @@ class ProjectStore:
             connection.close()
 
     def update_project_member_role(self, *, actor_user_id: str, project_id: str, user_id: str, role: str) -> Dict[str, Any]:
-        if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="admin"):
-            raise ValueError("You do not have admin access to that project.")
+        if not self.has_project_permission(user_id=actor_user_id, project_id=project_id, minimum_role="owner"):
+            raise ValueError("Only the project creator can manage access.")
         normalized_role = _normalize_role(role, default="viewer")
         if normalized_role == "owner":
             raise ValueError("Owner access cannot be assigned from this endpoint.")
@@ -1145,7 +1425,7 @@ class ProjectStore:
                 "can_view": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="viewer"),
                 "can_review": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="reviewer"),
                 "can_edit": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="editor"),
-                "can_manage_access": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="admin"),
+                "can_manage_access": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="owner"),
                 "can_delete_project": self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="owner"),
             },
             "members": members,
@@ -1153,7 +1433,7 @@ class ProjectStore:
             "audit_log": self.project_audit_log(user_id=user_id, project_id=project_id, limit=50),
             "explanation": (
                 "Project access uses owner, admin, editor, reviewer, and viewer roles. "
-                "Admin-level users can add or remove non-owner project members; viewers keep read-only access."
+                "Only the project creator can change access; viewers keep read-only access."
             ),
         }
 
@@ -1464,7 +1744,7 @@ class ProjectStore:
             "permissions": {
                 "can_comment": _role_allows(role, "reviewer"),
                 "can_request_review": _role_allows(role, "editor"),
-                "can_manage_access": _role_allows(role, "admin"),
+                "can_manage_access": _role_allows(role, "owner"),
             },
             "presence": presence,
             "comments": comments,
@@ -1728,7 +2008,7 @@ class ProjectStore:
             connection.close()
 
     def _row_to_record(self, row: Any) -> Dict[str, Any]:
-        return {
+        record = {
             "project_id": row["project_id"],
             "user_id": row["user_id"],
             "organization_id": row["organization_id"] if "organization_id" in row.keys() else None,
@@ -1748,8 +2028,12 @@ class ProjectStore:
             "access_role": _normalize_role(row["access_role"], default="owner") if "access_role" in row.keys() else "owner",
         }
 
+        record = project_view(record)
+        record["revision_token"] = project_revision(record)
+        return record
+
     def _shell_row_to_record(self, row: Any) -> Dict[str, Any]:
-        return {
+        record = {
             "project_id": row["project_id"],
             "user_id": row["user_id"],
             "organization_id": row["organization_id"] if "organization_id" in row.keys() else None,
@@ -1768,6 +2052,10 @@ class ProjectStore:
             "deleted_at": row["deleted_at"] if "deleted_at" in row.keys() else None,
             "access_role": _normalize_role(row["access_role"], default="owner") if "access_role" in row.keys() else "owner",
         }
+
+        record = project_view(record, include_result=False)
+        record["revision_token"] = project_revision(record)
+        return record
 
     def _organization_row_to_record(self, row: Any) -> Dict[str, Any]:
         return {

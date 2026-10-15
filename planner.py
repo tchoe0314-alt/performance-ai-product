@@ -5957,17 +5957,24 @@ def _detect_coordination_conflicts(project: ProjectModel, manager: ProjectManage
     segments = _normalized_summary_segments(project, manager)
     obstacles = _expanded_obstacle_rectangles(project)
     conflicts: List[Dict[str, Any]] = []
+    # Cache only within this detection pass: candidate edits must never reuse
+    # stale paths or rules from a previous state. Pair ordering/math is unchanged.
+    sampled_paths = [_sample_coordination_path(safe_list(segment.get("path"))) for segment in segments]
+    pair_rules: Dict[Tuple[str, ...], Dict[str, Any]] = {}
 
     for idx, first in enumerate(segments):
-        path_a = _sample_coordination_path(safe_list(first.get("path")))
+        path_a = sampled_paths[idx]
         if len(path_a) < 2:
             continue
-        for second in segments[idx + 1 :]:
-            path_b = _sample_coordination_path(safe_list(second.get("path")))
+        for second_idx in range(idx + 1, len(segments)):
+            second = segments[second_idx]
+            path_b = sampled_paths[second_idx]
             if len(path_b) < 2 or safe_str(first.get("name")) == safe_str(second.get("name")):
                 continue
             pair = tuple(sorted([safe_str(first.get("system")), safe_str(second.get("system"))]))
-            rule = _crossing_rule_for(pair)
+            if pair not in pair_rules:
+                pair_rules[pair] = _crossing_rule_for(pair)
+            rule = pair_rules[pair]
             if not rule:
                 continue
             required_h = safe_float(rule.get("required_horizontal_clearance_ft"), 0.0)
@@ -6874,7 +6881,9 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
     storm["pipe_slope_invert_consistency"] = all(safe_float(rec.get("slope_pct"), 0.0) > 0.0 for rec in segments)
     storm["resized_segments"] = resized_segments
     drainage = safe_dict(project.meta.get("drainage_canonical"))
-    storm = _enrich_storm_production_depth(storm, drainage)
+    # storm and its segments were detached above; retain the isolated copies
+    # installed into manager/project below, but avoid copying this work twice.
+    storm = _enrich_storm_production_depth(storm, drainage, copy_input=False)
     storm["graph_validation"] = _merge_validation_payload(
         _validate_network_graph(
             {
@@ -7615,7 +7624,7 @@ def _apply_conflict_resolution(
         ignored_zone_names: Sequence[str] = (),
         source_mode: str = "",
     ) -> Dict[str, Any]:
-        _refresh_conflict_resolved_state(project, manager, changed_systems)
+        _refresh_conflict_resolved_state(project, manager, changed_systems, capture_snapshot=False)
         post_all = _detect_coordination_conflicts(project, manager)
         post_related = _matching_conflicts(post_all, conflict)
         validations = _post_reroute_validations(project, manager, changed_systems)
@@ -8128,6 +8137,8 @@ def _refresh_conflict_resolved_state(
     project: ProjectModel,
     manager: ProjectManager,
     changed_systems: Optional[Sequence[str]] = None,
+    *,
+    capture_snapshot: bool = True,
 ) -> Dict[str, Any]:
     changed = {safe_str(item) for item in safe_list(changed_systems) if safe_str(item)}
     if not changed:
@@ -8138,6 +8149,11 @@ def _refresh_conflict_resolved_state(
         _recompute_sanitary_summary(project, manager, prefer_cache=True)
     if changed.intersection({"utilities", "water", "gas", "electric", "telecom"}):
         _recompute_utility_summary(project, manager, prefer_cache=True)
+    # Candidate checks use the refreshed canonical state directly. Avoid copying
+    # all three engineering summaries when the caller discards the return value.
+    # Explicit snapshot callers retain the previous isolated-copy behavior.
+    if not capture_snapshot:
+        return {}
     return {
         "storm": deepcopy(safe_dict(manager.latest_outputs.get("storm_pipe_summary", project.meta.get("storm_pipe_summary", {})))),
         "sanitary": deepcopy(safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))),
@@ -9000,7 +9016,7 @@ def _solve_conflict_cluster(
                 if not assisted_mode:
                     break
 
-        _refresh_conflict_resolved_state(project, manager, sorted(candidate_changed_systems))
+        _refresh_conflict_resolved_state(project, manager, sorted(candidate_changed_systems), capture_snapshot=False)
         post_conflicts = _detect_coordination_conflicts(project, manager)
         remaining_related = _cluster_remaining_conflicts(post_conflicts, cluster)
         validations = _post_reroute_validations(project, manager, sorted(candidate_changed_systems))
@@ -9259,7 +9275,7 @@ def _solve_conflict_cluster_group(
                 changed_systems.update(safe_str(item) for item in safe_list(result.get("changed_systems")) if safe_str(item))
                 cluster_rows.extend(deepcopy(safe_list(result.get("resolution_rows"))))
 
-        _refresh_conflict_resolved_state(project, manager, sorted(changed_systems))
+        _refresh_conflict_resolved_state(project, manager, sorted(changed_systems), capture_snapshot=False)
         post_conflicts = _detect_coordination_conflicts(project, manager)
         remaining_related = _cluster_group_remaining_conflicts(post_conflicts, group)
         validations = _post_reroute_validations(project, manager, sorted(changed_systems))

@@ -70,7 +70,9 @@ class ExportPackagingRichnessTest(unittest.TestCase):
                 "setback": 15.0,
                 "street_edge": "bottom",
                 "layout_strategy": "balanced",
-                "site_plan": {"building_width": 120.0, "building_depth": 60.0, "parking_count": 0},
+                # This richness fixture requests parking; zero is now an
+                # explicit zero requirement, not a request for heuristic stalls.
+                "site_plan": {"building_width": 120.0, "building_depth": 60.0, "parking_count": 180},
                 "buildings": [
                     {"name": "Building 1", "use": "multifamily", "w": 120.0, "d": 60.0},
                     {"name": "Building 2", "use": "multifamily", "w": 120.0, "d": 60.0},

@@ -23,6 +23,7 @@ from backend.services.data_lifecycle import (
 from backend.services.database import Database
 from backend.services.project_store import ProjectStore
 from backend.services.support_store import SupportStore
+from backend.services.workspace_layout import DEFAULT_LAYOUT, save_layout
 
 
 class DataLifecycleAndBackupTests(unittest.TestCase):
@@ -67,6 +68,22 @@ class DataLifecycleAndBackupTests(unittest.TestCase):
             session_state={"active_panel": "draw"},
             metadata={"source": "data_lifecycle_test"},
         )
+
+    def test_workspace_preferences_export_and_delete_with_the_account(self) -> None:
+        layout = {**DEFAULT_LAYOUT, "mode": "professional", "leftWidth": 310}
+        save_layout(self.db, self.user["user_id"], layout)
+        exported = self.lifecycle.account_export(user_id=self.user["user_id"])
+        records = exported["data"]["workspace_layouts"]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(json.loads(records[0]["layout_json"]), layout)
+        self.lifecycle.delete_account(
+            user_id=self.user["user_id"], confirmation=ACCOUNT_DELETE_CONFIRMATION,
+        )
+        connection = self.db.connect()
+        try:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM user_workspace_layouts").fetchone()[0], 0)
+        finally:
+            connection.close()
 
     def test_support_request_is_persistent_and_redacts_secrets(self) -> None:
         project = self._create_project()

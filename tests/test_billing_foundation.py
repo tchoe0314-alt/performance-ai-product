@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from backend.services.billing import BillingConfig, build_billing_status, paid_pilot_access_gate, usage_gate
+from backend.services.billing import BillingConfig, StripeBillingProvider, build_billing_status, paid_pilot_access_gate, usage_gate
+import pytest
 
 
 def _config(**overrides):
@@ -68,6 +69,22 @@ def test_real_charging_flag_alone_is_not_enough() -> None:
     assert status["real_charging_enabled"] is False
     assert status["operational_state"] == "blocked"
     assert "provider_disabled" in status["blocked_reasons"]
+
+
+@pytest.mark.parametrize("paid_mode,user,roster,allowed", [
+    (False, {"user_id": "user_1", "email": "pilot@example.com"}, [], False),
+    (True, {}, [], False),
+    (True, {"user_id": "user_1", "email": "other@example.com"}, ["pilot@example.com"], False),
+    (True, {"user_id": "user_1", "email": "pilot@example.com"}, ["pilot@example.com"], True),
+])
+def test_charging_configuration_cannot_bypass_pilot_mode_identity_or_enrollment(paid_mode, user, roster, allowed) -> None:
+    provider = StripeBillingProvider("test-publishable", "test-secret", "test-price", "test-webhook")
+    status = build_billing_status(user=user, provider=provider, config=_config(paid_pilot_mode=paid_mode, charging_enabled=True, legal_docs_ready=True, pilot_emails=roster))
+    assert status["real_charging_enabled"] is allowed
+    assert status["charging_guard"]["real_charging_allowed"] is allowed
+    assert (status["operational_state"] == "enabled") is allowed
+    assert status["payment"]["status"] == ("configured_but_not_started" if allowed else "disabled")
+    assert status["provider"]["charging_enabled"] is False
 
 
 def test_usage_gate_is_hook_only_for_private_alpha() -> None:

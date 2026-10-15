@@ -48,6 +48,53 @@ def _runtime() -> dict:
 
 
 class HostedOperationalEvidenceTests(unittest.TestCase):
+    def test_full_hosted_identity_can_satisfy_exact_release_gate(self) -> None:
+        from backend.application.release_candidate_readiness import build_rc1_readiness_report
+
+        health = _health()
+        revision = "abcdef123456" + "0" * 28
+        health["deployment"]["full_commit_sha"] = revision
+        hosted = build_hosted_operational_evidence(health=health, runtime=_runtime(), expected_revision=revision, base_url="https://api.example.test")
+        self.assertEqual(hosted["hosted_revision"], revision)
+        release = build_rc1_readiness_report(hosted_operational_evidence=hosted, revision=revision, env={})
+        self.assertTrue(release["hosted_operational_evidence"]["accepted"])
+        health["deployment"]["full_commit_sha"] = "abcdef123456" + "1" * 28
+        hosted = build_hosted_operational_evidence(health=health, runtime=_runtime(), expected_revision=revision, base_url="https://api.example.test")
+        release = build_rc1_readiness_report(hosted_operational_evidence=hosted, revision=revision, env={})
+        self.assertFalse(release["hosted_operational_evidence"]["accepted"])
+
+    def test_ready_label_does_not_waive_missing_or_invalid_restore_record(self) -> None:
+        for field, value in [("restore_drill_at", "false"), ("restore_drill_at", None), ("retention_days", 0), ("retention_days", True)]:
+            with self.subTest(field=field, value=value):
+                runtime = _runtime()
+                runtime["recovery"][field] = value
+                report = build_hosted_operational_evidence(health=_health(), runtime=runtime, expected_revision="abcdef123456", base_url="https://api.example.test")
+                self.assertFalse(report["success"])
+                self.assertIn("backup_record_invalid", {item["code"] for item in report["operational_blockers"]})
+
+    def test_malformed_configuration_cannot_be_laundered_into_release_evidence(self) -> None:
+        from backend.application.release_candidate_readiness import build_rc1_readiness_report
+
+        for section, field, output in [
+            ("support", "support_contact_configured", "support_contact_configured"),
+            ("support", "bug_report_configured", "bug_report_configured"),
+            ("recovery", "provider_backups_enabled", "provider_backups_enabled"),
+            ("recovery", "owner_configured", "backup_owner_configured"),
+            ("recovery", "evidence_url_configured", "backup_evidence_url_configured"),
+            ("operations", "escalation_owner_configured", "escalation_owner_configured"),
+            ("operations", "monitoring_owner_configured", "monitoring_owner_configured"),
+            ("operations", "rollback_owner_configured", "rollback_owner_configured"),
+        ]:
+            for value in ["false", "true", 1, None]:
+                with self.subTest(section=section, field=field, value=value):
+                    health, runtime = _health(), _runtime()
+                    (health if section == "support" else runtime)[section][field] = value
+                    hosted = build_hosted_operational_evidence(health=health, runtime=runtime, expected_revision="abcdef123456", base_url="https://api.example.test")
+                    self.assertFalse(hosted["success"])
+                    self.assertIs(hosted["checks"][output], False)
+                    release = build_rc1_readiness_report(hosted_operational_evidence=hosted, revision="abcdef123456", env={})
+                    self.assertFalse(release["hosted_operational_evidence"]["accepted"])
+
     def test_exact_revision_healthy_runtime_and_recovery_are_ready(self) -> None:
         report = build_hosted_operational_evidence(
             health=_health(),

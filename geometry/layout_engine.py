@@ -69,6 +69,17 @@ def _safe_dict(value: Any) -> Dict[str, Any]:
     return {}
 
 
+def _explicit_parking_count(value: Any) -> Optional[int]:
+    """Do not collapse a zero program requirement into heuristic parking demand."""
+    if value is None or isinstance(value, bool) or isinstance(value, str) and not value.strip():
+        return None
+    try:
+        count = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return int(count) if math.isfinite(count) and count >= 0 and count.is_integer() else None
+
+
 def _generic_render_label(label: Any, layer: Any = None) -> Optional[str]:
     text = _safe_str(label, "").strip()
     if not text:
@@ -483,7 +494,7 @@ def _candidate_param_set(parsed: Dict[str, Any]) -> List[Dict[str, Any]]:
         "street_edge": _safe_str(parsed.get("street_edge"), "bottom"),
         "intensity": _safe_str(parsed.get("intensity"), "medium"),
         "site_type": _safe_str(parsed.get("site_type"), "commercial_pad"),
-        "parking_count": _safe_int((parsed.get("site_plan") or {}).get("parking_count"), 0) or None,
+        "parking_count": _explicit_parking_count((parsed.get("site_plan") or {}).get("parking_count")),
     }
 
     strategies = _candidate_strategy_pool(base_params["layout_strategy"])
@@ -614,7 +625,7 @@ def _score_layout(layout: Dict[str, Any], parsed: Dict[str, Any], issues: Sequen
 
     site_type = _safe_str(layout.get("site_type"), parsed.get("site_type") or "commercial_pad")
     intensity = _safe_str(layout.get("intensity"), parsed.get("intensity") or "medium")
-    requested_parking = _safe_int((parsed.get("site_plan") or {}).get("parking_count"), 0) or None
+    requested_parking = _explicit_parking_count((parsed.get("site_plan") or {}).get("parking_count"))
     desired_count = _parking_count_from_program(building_rect, site_type, intensity, requested_parking)
     achieved_count = _safe_int(layout.get("parking_count"), 0)
     if achieved_count <= 0 and parking_rect["w"] > 0 and parking_rect["h"] > 0:
@@ -781,7 +792,7 @@ def _parking_count_from_program(
     intensity: str,
     explicit_count: Optional[int],
 ) -> int:
-    if explicit_count is not None and explicit_count > 0:
+    if explicit_count is not None and explicit_count >= 0:
         return explicit_count
 
     defaults = _choose_program_defaults(site_type, intensity)
@@ -1552,7 +1563,7 @@ def generate_ai_guided_layout(parsed: Dict[str, Any]) -> Dict[str, Any]:
         street_edge=_safe_str(parsed.get("street_edge"), "bottom"),
         intensity=_safe_str(parsed.get("intensity"), "medium"),
         site_type=_safe_str(parsed.get("site_type"), "commercial_pad"),
-        parking_count=_safe_int(site_plan.get("parking_count"), 0) or None,
+        parking_count=_explicit_parking_count(site_plan.get("parking_count")),
     )
 
 
@@ -1797,6 +1808,9 @@ def _has_expanded_content(parsed: Dict[str, Any]) -> bool:
 
 
 def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List[Dict[str, Any]]:
+    # A zero target forbids inference, not deletion of positioned user objects.
+    if _explicit_parking_count((parsed.get("site_plan") or {}).get("building_count")) == 0:
+        return []
     buildable = _buildable_area(site_box, _safe_float(parsed.get("setback"), 10.0))
     bw = _safe_optional_float(parsed.get("building_width"))
     bd = _safe_optional_float(parsed.get("building_depth"))
@@ -2036,6 +2050,8 @@ def _infer_buildings_from_legacy(parsed: Dict[str, Any], site_box: Rect) -> List
 
 def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     site_plan = parsed.get("site_plan") or {}
+    if _explicit_parking_count(site_plan.get("parking_count")) == 0:
+        return []
     parking_count = _safe_int(site_plan.get("parking_count"), 0)
     if parking_count <= 0 and not buildings:
         return []
@@ -2225,7 +2241,7 @@ def _infer_parking_from_legacy(parsed: Dict[str, Any], site_box: Rect, buildings
         chosen = _choose_building_size(buildable, site_type, intensity)
         b = _position_building(buildable, chosen, street_edge, layout_strategy)
 
-    desired = _parking_count_from_program(b, site_type, intensity, parking_count or None)
+    desired = _parking_count_from_program(b, site_type, intensity, _explicit_parking_count(site_plan.get("parking_count")))
     parking_rect = _choose_best_parking(
         building=b,
         buildable=buildable,
@@ -2895,7 +2911,7 @@ def expand_plan(parsed: Dict[str, Any]) -> Dict[str, Any]:
     mode = _safe_str(parsed.get("mode"), "site_plan")
     lot = parsed.get("lot")
 
-    if _has_expanded_content(parsed):
+    if _has_expanded_content(parsed) or _explicit_parking_count((parsed.get("site_plan") or {}).get("building_count")) == 0:
         return _build_expanded_plan(parsed)
 
     should_use_layout = mode == "site_plan" or lot is not None

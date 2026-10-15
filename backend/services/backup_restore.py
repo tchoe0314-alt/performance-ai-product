@@ -18,6 +18,28 @@ from .database import Database
 BACKUP_REPORT_VERSION = "civora_backup_restore_drill_v1"
 
 
+def hosted_backup_checks_ready(checks: Mapping[str, Any]) -> bool:
+    """Validate imported backup facts without treating presence as approval."""
+    if any(checks.get(key) is not True for key in (
+        "provider_backups_enabled", "backup_owner_configured", "backup_evidence_url_configured",
+    )):
+        return False
+    retention = checks.get("backup_retention_days")
+    if type(retention) is not int or retention < 7:
+        return False
+    timestamp = checks.get("restore_drill_at")
+    if not isinstance(timestamp, str):
+        return False
+    try:
+        restored = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        if restored.tzinfo is None:
+            return False
+        age = (datetime.now(timezone.utc) - restored.astimezone(timezone.utc)).total_seconds()
+    except (ValueError, OverflowError):
+        return False
+    return -300 <= age <= 366 * 24 * 60 * 60
+
+
 def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 

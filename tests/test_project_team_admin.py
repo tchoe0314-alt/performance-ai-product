@@ -136,7 +136,7 @@ class ProjectTeamAdminTest(unittest.TestCase):
                 description="",
             )
 
-    def test_admin_can_remove_non_owner_member(self):
+    def test_only_creator_can_manage_access_even_when_member_is_admin(self):
         project = self.projects.save_project(
             user_id=self.owner["user_id"],
             project_id=None,
@@ -150,14 +150,22 @@ class ProjectTeamAdminTest(unittest.TestCase):
             role="admin",
         )
         self.projects.invite_project_member(
-            actor_user_id=self.editor["user_id"],
+            actor_user_id=self.owner["user_id"],
             project_id=project["project_id"],
             email=self.viewer["email"],
             role="viewer",
         )
 
+        with self.assertRaisesRegex(ValueError, "Only the project creator"):
+            self.projects.invite_project_member(actor_user_id=self.editor["user_id"], project_id=project["project_id"], email="other@example.test", role="editor")
+        with self.assertRaisesRegex(ValueError, "Only the project creator"):
+            self.projects.update_project_member_role(actor_user_id=self.editor["user_id"], project_id=project["project_id"], user_id=self.viewer["user_id"], role="editor")
+        with self.assertRaisesRegex(ValueError, "Only the project creator"):
+            self.projects.remove_project_member(actor_user_id=self.editor["user_id"], project_id=project["project_id"], user_id=self.viewer["user_id"])
+        self.assertFalse(self.projects.project_admin_surface(user_id=self.editor["user_id"], project_id=project["project_id"])["permissions"]["can_manage_access"])
+        self.assertEqual(self.projects.project_role(user_id=self.viewer["user_id"], project_id=project["project_id"]), "viewer")
         removed = self.projects.remove_project_member(
-            actor_user_id=self.editor["user_id"],
+            actor_user_id=self.owner["user_id"],
             project_id=project["project_id"],
             user_id=self.viewer["user_id"],
         )

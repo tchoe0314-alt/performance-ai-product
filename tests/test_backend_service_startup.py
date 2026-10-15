@@ -70,7 +70,7 @@ def _run_startup(tmp_path: Path, *, role: str, extra_env: dict[str, str] | None 
 @pytest.mark.parametrize("port", ["8080", "8123"])
 def test_alternate_api_checks_storage_and_preserves_uvicorn(tmp_path: Path, port: str) -> None:
     output = _run_startup(tmp_path, role="worker", start_script=API_SCRIPT, extra_env={"PORT": "" if port == "8080" else port})
-    assert output == f"python\n-m\nuvicorn\nbackend.api.app:app\n--host\n0.0.0.0\n--port\n{port}\n"
+    assert output == f"python\n-m\nuvicorn\nbackend.api.app:app\n--host\n0.0.0.0\n--port\n{port}\n--timeout-keep-alive\n65\n"
     assert (tmp_path / "data").is_dir()
     assert (tmp_path / "mpl").is_dir()
 
@@ -106,6 +106,17 @@ def test_web_service_keeps_configurable_request_workers(tmp_path: Path) -> None:
     assert "--workers\n3\n" in output
     assert "--max-requests\n400\n" in output
     assert "--max-requests-jitter\n40\n" in output
+    assert "--keep-alive\n65\n" in output
+
+
+@pytest.mark.parametrize("role", ["web", "combined"])
+@pytest.mark.parametrize("keepalive", ["65", "120"])
+def test_proxy_keepalive_is_consistent_and_can_be_overridden(tmp_path: Path, role: str, keepalive: str) -> None:
+    output = _run_startup(tmp_path, role=role, extra_env={
+        "DATABASE_URL": "", "CIVORA_COMBINED_PROCESS_ISOLATION": "false",
+        "WEB_KEEPALIVE_SECONDS": keepalive,
+    })
+    assert f"--keep-alive\n{keepalive}\n" in output
 
 
 def test_postgres_web_service_uses_isolated_worker_fallback_until_external_worker_is_confirmed(tmp_path: Path) -> None:

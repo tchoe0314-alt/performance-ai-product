@@ -35,6 +35,7 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             identity = TestClient(app).get("/api/health").json()["deployment"]
         self.assertEqual(identity["commit_sha"], "")
+        self.assertEqual(identity["full_commit_sha"], "")
         self.assertEqual(identity["build_status"], "unknown")
 
     def test_health_keeps_build_labels_separate_from_commit_identity(self) -> None:
@@ -48,6 +49,7 @@ class ApiReleaseSafetyTest(unittest.TestCase):
         with patch.dict(os.environ, {"GIT_COMMIT_SHA": "abcdef1234567890"}, clear=True):
             identity = TestClient(app).get("/api/health").json()["deployment"]
         self.assertEqual(identity["commit_sha"], "abcdef123456")
+        self.assertEqual(identity["full_commit_sha"], "abcdef1234567890")
         self.assertEqual(identity["build_status"], "known")
 
     def test_private_upload_requires_header_auth_and_rejects_other_users(self) -> None:

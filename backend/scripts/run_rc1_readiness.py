@@ -16,12 +16,17 @@ from backend.application.release_candidate_readiness import run_rc1_readiness
 
 def _revision() -> str:
     try:
-        return subprocess.check_output(
+        revision = subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
             cwd=ROOT,
             text=True,
             stderr=subprocess.DEVNULL,
         ).strip()
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=ROOT, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        return f"{revision}-dirty" if dirty else revision
     except Exception:
         return ""
 

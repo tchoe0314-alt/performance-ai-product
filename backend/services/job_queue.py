@@ -953,7 +953,7 @@ class JobQueueService:
 
     def _runtime_timeout_for_job(self, job_type: str) -> float:
         global_timeout = max(1.0, float(self._job_timeout_seconds or 900.0))
-        if str(job_type or "").strip().lower() in {"export_dxf", "export_pdf", "export_report"}:
+        if str(job_type or "").strip().lower() in {"export_dxf", "export_pdf", "export_report", "export_current_geometry_dxf", "export_current_geometry_pdf"}:
             return min(
                 global_timeout,
                 max(1.0, float(self._export_job_timeout_seconds or 180.0)),
@@ -1116,6 +1116,8 @@ class JobQueueService:
                     "download_path": artifact.get("download_path"),
                     "created_at": record.get("updated_at"),
                     "source_job_id": record.get("job_id"),
+                    "snapshot_status": artifact.get("snapshot_status", "unverified"),
+                    "calculation_reference": dict(artifact.get("calculation_reference") or {}),
                 }
             )
         metadata = dict(result.get("metadata") or {})
@@ -1289,7 +1291,14 @@ class JobQueueService:
                 previous_progress = dict(previous_result.get("job_progress") or {})
                 stage = str((current or {}).get("stage") or previous_progress.get("stage") or "Job Failed")
                 detail = str((current or {}).get("stage_detail") or previous_progress.get("detail") or "")
-                error_text = f"Job failed during {stage}: {str(exc)}"
+                exception_detail = getattr(exc, "detail", None)
+                historical_export = (
+                    job.get("job_type") in {"export_dxf", "export_report", "export_pdf", "export_review_pdf", "export_current_geometry_dxf", "export_current_geometry_pdf"}
+                    and isinstance(exception_detail, dict)
+                    and exception_detail.get("code") == "export_became_historical"
+                )
+                error_message = str(exception_detail.get("message") or str(exc)) if historical_export else str(exc)
+                error_text = f"Job failed during {stage}: {error_message}"
                 failed_result = dict(previous_result)
                 failed_result.update(
                     _job_progress_payload(
@@ -1299,13 +1308,23 @@ class JobQueueService:
                     )
                 )
                 failed_result["error_details"] = {
-                    "code": "job_runner_failed",
-                    "message": str(exc),
+                    "code": "export_became_historical" if historical_export else "job_runner_failed",
+                    "message": error_message,
                     "failed_stage": stage,
                     "last_detail": detail,
                     "review_only": True,
                     "construction_release_allowed": False,
                 }
+                if historical_export:
+                    failed_result["artifact"] = {
+                        "artifact_id": exception_detail.get("artifact_id"),
+                        "kind": job.get("job_type"),
+                        "filename": str(exception_detail.get("download_path") or "").rsplit("/", 1)[-1],
+                        "download_path": exception_detail.get("download_path"),
+                        "snapshot_status": "historical",
+                        "review_only": True,
+                        "construction_release_allowed": False,
+                    }
                 self._update_job_state(job_id, status="failed", result=failed_result, error=error_text)
             finally:
                 heartbeat_stop.set()

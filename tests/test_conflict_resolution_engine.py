@@ -52,6 +52,23 @@ def _manager_with_summaries():
 
 
 class ConflictResolutionEngineTest(unittest.TestCase):
+    def test_refresh_without_snapshot_keeps_recomputations_but_skips_discarded_copies(self):
+        project, manager = _manager_with_summaries()
+        with patch("planner._recompute_storm_summary") as storm, patch("planner._recompute_sanitary_summary") as sanitary, patch("planner._recompute_utility_summary") as utilities, patch("planner.deepcopy") as copied:
+            self.assertEqual(_refresh_conflict_resolved_state(project, manager, capture_snapshot=False), {})
+            storm.assert_called_once_with(project, manager)
+            sanitary.assert_called_once_with(project, manager, prefer_cache=True)
+            utilities.assert_called_once_with(project, manager, prefer_cache=True)
+            copied.assert_not_called()
+
+    def test_explicit_refresh_snapshot_remains_isolated(self):
+        project, manager = _manager_with_summaries()
+        manager.latest_outputs["sanitary"] = {"segments": [{"name": "S1"}]}
+        with patch("planner._recompute_sanitary_summary"):
+            snapshot = _refresh_conflict_resolved_state(project, manager, ["sanitary"])
+        snapshot["sanitary"]["segments"][0]["name"] = "changed snapshot"
+        self.assertEqual(manager.latest_outputs["sanitary"]["segments"][0]["name"], "S1")
+
     def test_storm_sanitary_crossing_is_detected_and_resolved(self) -> None:
         project, manager = _manager_with_summaries()
         storm = {

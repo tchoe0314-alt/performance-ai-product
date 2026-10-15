@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import math
 import uuid
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Optional
@@ -12,6 +13,41 @@ from backend.planning.release_gates import (
     final_plan_requires_construction_release,
 )
 from backend.planning.common import blocker_explanations
+from backend.services.canonical_canvas import resolve_canvas_input
+from backend.services.canonical_project import PROJECT_DOCUMENT_KEY, ProjectDocumentError
+from backend.services.canonical_results import bind_canvas_result
+from backend.services.site_objects import calculation_blockers
+
+
+def _canonical_calculation_payload(payload_data: Dict[str, Any]) -> Dict[str, Any]:
+    meta = payload_data.get("meta") or {}
+    target = str(meta.get("requested_system") or meta.get("generation_target") or "full").lower()
+    systems = [target] if target in ("roads", "parking", "grading", "drainage", "utilities") else None
+    if payload_data.get(PROJECT_DOCUMENT_KEY) is None:
+        try:
+            blockers = calculation_blockers((payload_data.get("manual_fields") or {}).get("site_objects") or [], systems)
+        except ProjectDocumentError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if blockers:
+            raise HTTPException(status_code=422, detail={"message": "Fix object outlines before calculating affected systems.", "objects": blockers})
+        return payload_data
+    try:
+        resolved = resolve_canvas_input(payload_data)
+    except ProjectDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    length_unit = dict(resolved.get("manual_fields") or {}).get("units")
+    document = resolved.get(PROJECT_DOCUMENT_KEY) or {}
+    if "canvas_workspace_v1" in dict(document.get("extensions") or {}) and not (isinstance(length_unit, str) and length_unit.strip()):
+        raise HTTPException(status_code=422, detail="Set project length units before running calculations.")
+    if isinstance(length_unit, str) and length_unit.strip():
+        resolved["units"] = length_unit
+    try:
+        blockers = calculation_blockers((resolved.get("manual_fields") or {}).get("site_objects") or [], systems)
+    except ProjectDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if blockers:
+        raise HTTPException(status_code=422, detail={"message": "Fix object outlines before calculating affected systems.", "objects": blockers})
+    return resolved
 
 
 def now_ts() -> float:
@@ -219,6 +255,7 @@ def prepare_reactive_orchestration_payload(
 ) -> Dict[str, Any]:
     """Attach canonical checkpoint state for focused reactive edit reruns."""
     payload = deepcopy(dict(payload_data or {}))
+    payload = _canonical_calculation_payload(payload)
     meta = dict(payload.get("meta") or {})
     requested_system = str(
         meta.get("requested_system")
@@ -685,6 +722,78 @@ def _apply_chat_command_execution(payload_data: Dict[str, Any]) -> tuple[Dict[st
     return payload, None
 
 
+def _apply_calculation_execution_scope(payload: Dict[str, Any]) -> Dict[str, Any]:
+    meta = dict(payload.get("meta") or {})
+    if "calculation_omit_fields_v1" not in meta:
+        return payload
+    expected = {
+        "roads": {"grading", "drainage", "utility_network"},
+        "parking": {"grading", "drainage", "utility_network"},
+        "grading": {"drainage", "utility_network"},
+        "drainage": {"utility_network"}, "utilities": {"drainage"}, "full": set(),
+    }
+    omitted = meta["calculation_omit_fields_v1"]
+    target = meta.get("requested_system")
+    if not isinstance(target, str) or target not in expected or not isinstance(omitted, list) or any(not isinstance(item, str) for item in omitted) or len(set(omitted)) != len(omitted) or set(omitted) != expected[target]:
+        raise HTTPException(status_code=422, detail="Invalid selective calculation scope.")
+    scoped = deepcopy(payload)
+    fields = dict(scoped.get("manual_fields") or {})
+    for field in omitted:
+        fields[field] = {"source": "omit", "value": None}
+    scoped["manual_fields"] = fields
+    return scoped
+
+
+def _apply_calculation_terrain_assumption(payload: Dict[str, Any]) -> tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    spec = (payload.get("meta") or {}).get("calculation_terrain_assumption_v1")
+    if spec is None:
+        return payload, None
+    slope = spec.get("slope_percent") if isinstance(spec, dict) else None
+    direction = spec.get("direction") if isinstance(spec, dict) else None
+    if (not isinstance(spec, dict) or type(spec.get("version")) is not int or spec.get("version") != 1 or isinstance(slope, bool)
+            or not isinstance(slope, (int, float)) or not math.isfinite(slope) or not 0 <= slope <= 100
+            or not isinstance(direction, str) or not direction.strip() or len(direction) > 100
+            or payload.get("allow_ai_fill_for_blanks") is not True
+            or payload.get("input_mode") != "assisted"
+            or (payload.get("meta") or {}).get("requested_system") not in {"grading", "drainage", "full"}):
+        raise HTTPException(status_code=422, detail="Invalid review-only terrain assumption.")
+    fields = payload.get("manual_fields") or {}
+    terrain = fields.get("terrain")
+    if isinstance(terrain, dict):
+        terrain = terrain.get("value")
+    report = {"version": 1, "slope_percent": slope, "direction": direction.strip(),
+              "source": "assumed", "review_required": True, "applied": False}
+    original_terrain = fields.get("terrain")
+    if isinstance(original_terrain, dict) and original_terrain.get("source") in {"user", "omit"}:
+        report["reason"] = "explicit_terrain_contract_preserved"
+        return payload, report
+    if terrain is not None and str(terrain).strip():
+        report["reason"] = "explicit_terrain_preserved"
+        return payload, report
+    working = deepcopy(payload)
+    working_fields = working.setdefault("manual_fields", {})
+    working_fields["terrain"] = f"First-pass assumed {slope:.2f}% slope toward {direction.strip()}"
+    grading = working_fields.get("grading")
+    if grading is None or isinstance(grading, dict) and "source" not in grading:
+        working_fields["grading"] = {**(grading or {}), "assumed_terrain_source": True, "assumed_terrain_slope_pct": slope}
+    report.update(applied=True, reason="missing_terrain_review_assumption")
+    return working, report
+
+
+def _without_runtime_resume_echo(value: Any) -> Any:
+    """Drop internal resume snapshots from input echoes, never engine inputs.
+
+    A resumed stage already returns its final_plan. Echoing the previous plan
+    twice in parsed metadata grows each poll/history record recursively.
+    """
+    if isinstance(value, dict):
+        return {key: _without_runtime_resume_echo(item) for key, item in value.items()
+                if key != "runtime_resume"}
+    if isinstance(value, list):
+        return [_without_runtime_resume_echo(item) for item in value]
+    return value
+
+
 def run_orchestration(
     payload_data: Dict[str, Any],
     *,
@@ -692,6 +801,13 @@ def run_orchestration(
     assess_design_readiness: Callable[[str, Optional[Dict[str, Any]]], Optional[Dict[str, Any]]],
     progress_callback: Optional[Callable[..., None]] = None,
 ) -> Dict[str, Any]:
+    payload_data = _canonical_calculation_payload(payload_data)
+    from backend.services.input_count_controls import validate_input_count_controls
+    validate_input_count_controls(payload_data.get("meta"))
+    # Bind to submitted inputs, before command execution mutates engine inputs.
+    source_input = deepcopy(payload_data)
+    payload_data, terrain_assumption = _apply_calculation_terrain_assumption(payload_data)
+    payload_data = _apply_calculation_execution_scope(payload_data)
     PlannerOrchestratorRequest, orchestrate_plan = load_orchestrator()
     payload_data, command_block = _apply_chat_command_execution(payload_data)
     if command_block:
@@ -807,12 +923,32 @@ def run_orchestration(
         "metadata": dict(result.metadata or {}),
     }
     result_payload["metadata"].setdefault("_workflow_run_id", new_workflow_id("run"))
+    if terrain_assumption is not None:
+        result_payload["metadata"]["calculation_terrain_assumption_v1"] = terrain_assumption
+        if terrain_assumption["applied"]:
+            result_payload["assumptions"].append({"field_name": "terrain",
+                "assumed_value": payload_data["manual_fields"]["terrain"],
+                "reason": "Review-only terrain assumption; survey/control is still required."})
+    parsed_echo = dict(result_payload.get("parsed_payload") or {})
+    if isinstance(parsed_echo.get("meta"), dict):
+        parsed_echo["meta"] = _without_runtime_resume_echo(parsed_echo["meta"])
+    result_payload["parsed_payload"] = parsed_echo
+    if isinstance(result_payload["metadata"].get("parsed_payload_meta"), dict):
+        result_payload["metadata"]["parsed_payload_meta"] = _without_runtime_resume_echo(
+            result_payload["metadata"]["parsed_payload_meta"]
+        )
     result_payload["metadata"].setdefault("input_mode", payload_data.get("input_mode", "assisted"))
+    if "calculation_omit_fields_v1" in (source_input.get("meta") or {}):
+        result_payload["metadata"]["calculation_scope_v1"] = {
+            "version": 1, "requested_system": source_input["meta"]["requested_system"],
+            "omitted_fields": deepcopy(source_input["meta"]["calculation_omit_fields_v1"]),
+        }
     if isinstance((payload_data.get("meta") or {}).get("chat_command_execution"), dict):
         result_payload["metadata"]["chat_command_execution"] = dict(payload_data["meta"]["chat_command_execution"])
     if isinstance(result_payload["metadata"].get("missing_requirements"), dict):
         result_payload["missing_requirements"] = dict(result_payload["metadata"]["missing_requirements"])
-    return result_payload
+    from backend.services.brief_requirements import attach_brief_requirement_review
+    return bind_canvas_result(attach_brief_requirement_review(result_payload, source_input), source_input)
 
 
 def count_unresolved_conflicts(final_plan: Dict[str, Any]) -> int:

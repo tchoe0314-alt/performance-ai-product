@@ -97,7 +97,7 @@ def build_web_command(source: Mapping[str, str] | None = None) -> list[str]:
         "--graceful-timeout",
         "10",
         "--keep-alive",
-        "3",
+        str(source.get("WEB_KEEPALIVE_SECONDS") or "65"),
         "--max-requests",
         "0",
         "--max-requests-jitter",

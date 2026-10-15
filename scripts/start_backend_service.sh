@@ -56,7 +56,7 @@ PY
     --workers "${WEB_CONCURRENCY:-2}" \
     --timeout "$timeout" \
     --graceful-timeout 10 \
-    --keep-alive 3 \
+    --keep-alive "${WEB_KEEPALIVE_SECONDS:-65}" \
     --max-requests "${WEB_MAX_REQUESTS:-250}" \
     --max-requests-jitter "${WEB_MAX_REQUESTS_JITTER:-25}" \
     --access-logfile /dev/null \
@@ -81,7 +81,7 @@ exec gunicorn backend.api.app:app \
   --workers 1 \
   --timeout "$timeout" \
   --graceful-timeout 10 \
-  --keep-alive 3 \
+  --keep-alive "${WEB_KEEPALIVE_SECONDS:-65}" \
   --max-requests 0 \
   --max-requests-jitter 0 \
   --access-logfile /dev/null \

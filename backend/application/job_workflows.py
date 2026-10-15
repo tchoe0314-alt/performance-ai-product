@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
+from backend.application.project_snapshot import save_project_snapshot
 from backend.application.design_workflows import prepare_reactive_orchestration_payload
 from backend.planning.common import blocker_explanations, lower_text, safe_dict, safe_float, safe_int, safe_list, safe_str
 from backend.planning.release_gates import (
@@ -64,6 +65,9 @@ class ProjectStoreProtocol(Protocol):
     def get_project(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
         ...
 
+    def save_calculation_result(self, *, user_id: str, project_id: str, source_input: Dict[str, Any], result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        ...
+
     def get_project_latest_result(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
         ...
 
@@ -82,6 +86,18 @@ class ProjectStoreProtocol(Protocol):
         metadata: Dict[str, Any],
     ) -> Dict[str, Any]:
         ...
+
+
+def _save_generated_calculation(project_store: ProjectStoreProtocol, **kwargs: Any) -> None:
+    saver = getattr(project_store, "save_calculation_result", None)
+    if callable(saver):
+        saved = saver(user_id=kwargs["user_id"], project_id=kwargs["project_id"],
+                      source_input=kwargs["project_input"], result=kwargs["latest_result"])
+        if saved is not None:
+            kwargs["latest_result"].clear()
+            kwargs["latest_result"].update(saved)
+            return
+    project_store.save_project(**kwargs)
 
 
 class ArtifactServiceProtocol(Protocol):
@@ -167,7 +183,7 @@ def queue_orchestrate_job(
             **dict(request_payload or {}),
             "request_payload": dict(request_payload or {}),
         }
-        project_store.save_project(
+        save_project_snapshot(project_store, existing,
             user_id=user_id,
             project_id=project_id,
             name=str(existing.get("name") or "Untitled Project"),
@@ -218,7 +234,7 @@ def queue_drainage_job(
             **dict(request_payload or {}),
             "request_payload": dict(request_payload or {}),
         }
-        project_store.save_project(
+        save_project_snapshot(project_store, existing,
             user_id=user_id,
             project_id=project_id,
             name=str(existing.get("name") or "Untitled Project"),
@@ -546,7 +562,7 @@ def revise_existing_job(
     revised_payload.update(project_input)
     revised_payload["project_id"] = project_id
 
-    project_store.save_project(
+    save_project_snapshot(project_store, project,
         user_id=user_id,
         project_id=project_id,
         name=str(project.get("name") or "Untitled Project"),
@@ -897,7 +913,7 @@ def build_orchestrate_job_runner(
         if "message" not in checkpoint_result:
             checkpoint_result["message"] = "Run is progressing through engineering phases."
 
-        project_store.save_project(
+        _save_generated_calculation(project_store,
             user_id=user_id,
             project_id=project_id,
             name=existing.get("name", "Untitled Project"),
@@ -1408,7 +1424,7 @@ def build_orchestrate_job_runner(
                     project_id=project_id,
                     fallback_project=existing,
                 )
-                project_store.save_project(
+                _save_generated_calculation(project_store,
                     user_id=user_id,
                     project_id=project_id,
                     name=existing.get("name", "Untitled Project"),
@@ -2614,7 +2630,7 @@ def build_drainage_job_runner(
         if project_id and user_id:
             existing = project_store.get_project(user_id=user_id, project_id=project_id)
             if existing is not None:
-                project_store.save_project(
+                _save_generated_calculation(project_store,
                     user_id=user_id,
                     project_id=project_id,
                     name=existing.get("name", "Untitled Project"),

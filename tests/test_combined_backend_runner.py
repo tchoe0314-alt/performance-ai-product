@@ -83,6 +83,12 @@ def test_combined_runner_builds_stable_single_web_process() -> None:
     assert command[command.index("--workers") + 1] == "1"
     assert command[command.index("--timeout") + 1] == "42"
     assert command[command.index("--max-requests") + 1] == "0"
+    assert command[command.index("--keep-alive") + 1] == "65"
+
+
+def test_combined_runner_preserves_keepalive_override() -> None:
+    command = build_web_command({"WEB_KEEPALIVE_SECONDS": "120"})
+    assert command[command.index("--keep-alive") + 1] == "120"
 
 
 def test_combined_runner_lowers_worker_priority_by_default() -> None:

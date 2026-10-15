@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
 
+from backend.services.backup_restore import hosted_backup_checks_ready
+
 
 HOSTED_OPERATIONAL_EVIDENCE_VERSION = "civora_hosted_operational_evidence_v2"
 
@@ -55,7 +57,7 @@ def build_hosted_operational_evidence(
     alpha_report = _mapping(runtime_payload.get("alpha_monitoring_report"))
     alpha_queue = _mapping(alpha_report.get("job_queue_monitoring_evidence"))
 
-    actual_revision = str(deployment.get("commit_sha") or deployment.get("build_version") or "").strip()
+    actual_revision = str(deployment.get("full_commit_sha") or deployment.get("commit_sha") or deployment.get("build_version") or "").strip()
     queue_status = str(
         alpha_queue.get("status")
         or queue_monitoring.get("status")
@@ -106,22 +108,30 @@ def build_hosted_operational_evidence(
         runtime_blockers.append(_record("previous_shutdown_unclean", "The previous hosted process did not record a clean shutdown.", area="process"))
 
     operational_blockers = []
-    if not bool(support.get("support_contact_configured")):
+    if support.get("support_contact_configured") is not True:
         operational_blockers.append(_record("support_contact_missing", "A user-visible support contact is not configured on the hosted backend.", area="support"))
-    if not bool(support.get("bug_report_configured")):
+    if support.get("bug_report_configured") is not True:
         operational_blockers.append(_record("bug_report_path_missing", "A user-visible bug report path is not configured on the hosted backend.", area="support"))
-    if str(recovery.get("status") or "").lower() != "ready" or not bool(recovery.get("provider_backups_enabled")):
+    if str(recovery.get("status") or "").lower() != "ready" or recovery.get("provider_backups_enabled") is not True:
         operational_blockers.append(_record("provider_backup_restore_not_proven", "Hosted provider backups and a restore drill are not proven.", area="recovery"))
-    if not bool(recovery.get("owner_configured")):
+    if recovery.get("owner_configured") is not True:
         operational_blockers.append(_record("backup_owner_missing", "A hosted database backup owner is not configured.", area="recovery"))
-    if not bool(recovery.get("evidence_url_configured")):
+    if recovery.get("evidence_url_configured") is not True:
         operational_blockers.append(_record("backup_evidence_url_missing", "Hosted backup evidence is not attached.", area="recovery"))
-    if not bool(operations.get("escalation_owner_configured")):
+    if operations.get("escalation_owner_configured") is not True:
         operational_blockers.append(_record("escalation_owner_missing", "A hosted escalation owner is not configured.", area="ownership"))
-    if not bool(operations.get("monitoring_owner_configured")):
+    if operations.get("monitoring_owner_configured") is not True:
         operational_blockers.append(_record("monitoring_owner_missing", "A hosted monitoring owner is not configured.", area="ownership"))
-    if not bool(operations.get("rollback_owner_configured")):
+    if operations.get("rollback_owner_configured") is not True:
         operational_blockers.append(_record("rollback_owner_missing", "A hosted rollback owner is not configured.", area="ownership"))
+    if not hosted_backup_checks_ready({
+        "provider_backups_enabled": recovery.get("provider_backups_enabled"),
+        "backup_owner_configured": recovery.get("owner_configured"),
+        "backup_evidence_url_configured": recovery.get("evidence_url_configured"),
+        "restore_drill_at": recovery.get("restore_drill_at"),
+        "backup_retention_days": recovery.get("retention_days"),
+    }):
+        operational_blockers.append(_record("backup_record_invalid", "Hosted recovery requires valid configured backup facts, at least seven days of retention and a recent timezone-qualified restore timestamp.", area="recovery"))
 
     runtime_ready = not runtime_blockers
     operations_ready = not operational_blockers
@@ -142,22 +152,22 @@ def build_hosted_operational_evidence(
             "health_reachable": health_payload.get("success") is True,
             "authenticated_runtime_reachable": str(runtime_payload.get("status") or "").lower() == "ok",
             "storage_kind": str(health_payload.get("storage") or runtime_payload.get("storage_kind") or ""),
-            "support_contact_configured": bool(support.get("support_contact_configured")),
-            "bug_report_configured": bool(support.get("bug_report_configured")),
+            "support_contact_configured": support.get("support_contact_configured") is True,
+            "bug_report_configured": support.get("bug_report_configured") is True,
             "queue_monitoring_status": queue_status,
             "queued_count": queued_count,
             "running_count": running_count,
             "failed_recent_count": failed_recent_count,
             "stale_job_count": stale_count,
             "previous_shutdown_clean": process.get("previous_shutdown_clean") if process else None,
-            "provider_backups_enabled": bool(recovery.get("provider_backups_enabled")),
-            "backup_owner_configured": bool(recovery.get("owner_configured")),
-            "backup_evidence_url_configured": bool(recovery.get("evidence_url_configured")),
+            "provider_backups_enabled": recovery.get("provider_backups_enabled") is True,
+            "backup_owner_configured": recovery.get("owner_configured") is True,
+            "backup_evidence_url_configured": recovery.get("evidence_url_configured") is True,
             "restore_drill_at": str(recovery.get("restore_drill_at") or ""),
             "backup_retention_days": recovery.get("retention_days"),
-            "escalation_owner_configured": bool(operations.get("escalation_owner_configured")),
-            "monitoring_owner_configured": bool(operations.get("monitoring_owner_configured")),
-            "rollback_owner_configured": bool(operations.get("rollback_owner_configured")),
+            "escalation_owner_configured": operations.get("escalation_owner_configured") is True,
+            "monitoring_owner_configured": operations.get("monitoring_owner_configured") is True,
+            "rollback_owner_configured": operations.get("rollback_owner_configured") is True,
         },
         "construction_ready": False,
         "truth_label": "This report proves selected hosted runtime and configuration facts without storing credentials. It cannot self-approve provider recovery, human ownership, legal terms, billing, professional review, or construction use.",

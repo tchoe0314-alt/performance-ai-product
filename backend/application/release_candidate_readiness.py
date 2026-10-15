@@ -8,7 +8,7 @@ import os
 import time
 
 from backend.application.production_env_validator_v1 import validate_production_env_v1
-from backend.services.backup_restore import hosted_backup_evidence
+from backend.services.backup_restore import hosted_backup_evidence, hosted_backup_checks_ready
 
 
 RC1_READINESS_VERSION = "civora_rc1_readiness_v1"
@@ -63,7 +63,11 @@ def _revision_matches(expected: str, actual: str) -> bool:
     actual_clean = str(actual or "").strip().lower()
     if len(expected_clean) < 7 or len(actual_clean) < 7:
         return False
-    return expected_clean.startswith(actual_clean) or actual_clean.startswith(expected_clean)
+    if expected_clean in {"unknown", "unavailable"} or actual_clean in {"unknown", "unavailable"}:
+        return False
+    if expected_clean.endswith("-dirty") or actual_clean.endswith("-dirty"):
+        return False
+    return expected_clean == actual_clean
 
 
 def build_rc1_readiness_report(
@@ -79,13 +83,16 @@ def build_rc1_readiness_report(
     report_revision = revision or str(manifest.get("revision") or "")
     hosted_expected_revision = str(hosted_report.get("expected_revision") or "")
     hosted_evidence_accepted = (
-        bool(hosted_report.get("success"))
-        and bool(hosted_report.get("revision_matches"))
+        hosted_report.get("success") is True
+        and hosted_report.get("revision_matches") is True
         and _revision_matches(report_revision, hosted_expected_revision)
+        and _revision_matches(report_revision, str(hosted_report.get("hosted_revision") or ""))
     )
     hosted_checks = dict(hosted_report.get("checks") or {}) if hosted_evidence_accepted else {}
     evidence = dict(manifest.get("evidence") or {})
     technical_blockers = []
+    if manifest and not _revision_matches(report_revision, str(manifest.get("revision") or "")):
+        technical_blockers.append(_record("technical_evidence_revision_mismatch", "Technical evidence must identify the same clean release checkpoint as this report."))
     for key in TECHNICAL_EVIDENCE_KEYS:
         record = dict(evidence.get(key) or {})
         if not record:
@@ -96,7 +103,7 @@ def build_rc1_readiness_report(
                     evidence_key=key,
                 )
             )
-        elif not bool(record.get("success")):
+        elif record.get("success") is not True:
             technical_blockers.append(
                 _record(
                     f"{key}_failed",
@@ -104,6 +111,8 @@ def build_rc1_readiness_report(
                     evidence_key=key,
                 )
             )
+        elif record.get("revision") is not None and not _revision_matches(report_revision, str(record.get("revision") or "")):
+            technical_blockers.append(_record(f"{key}_revision_mismatch", f"Technical evidence is from a different or unidentified checkpoint: {key.replace('_', ' ')}.", evidence_key=key))
 
     support_contact = _first(source_env, "CIVORA_SUPPORT_CONTACT_URL", "CIVORA_SUPPORT_EMAIL", "CIVORA_SUPPORT_CONTACT")
     bug_report = _first(source_env, "CIVORA_BUG_REPORT_URL", "CIVORA_BUG_REPORT_FORM_URL")
@@ -115,11 +124,11 @@ def build_rc1_readiness_report(
         "rollback_owner": bool(_first(source_env, "CIVORA_ROLLBACK_OWNER")),
     }
     hosted_operational_checks = {
-        "support_contact": bool(hosted_checks.get("support_contact_configured")),
-        "bug_report": bool(hosted_checks.get("bug_report_configured")),
-        "escalation_owner": bool(hosted_checks.get("escalation_owner_configured")),
-        "monitoring_owner": bool(hosted_checks.get("monitoring_owner_configured")),
-        "rollback_owner": bool(hosted_checks.get("rollback_owner_configured")),
+        "support_contact": hosted_checks.get("support_contact_configured") is True,
+        "bug_report": hosted_checks.get("bug_report_configured") is True,
+        "escalation_owner": hosted_checks.get("escalation_owner_configured") is True,
+        "monitoring_owner": hosted_checks.get("monitoring_owner_configured") is True,
+        "rollback_owner": hosted_checks.get("rollback_owner_configured") is True,
     }
     operational_checks = {
         key: bool(env_operational_checks[key] or hosted_operational_checks[key])
@@ -143,10 +152,7 @@ def build_rc1_readiness_report(
     backup = hosted_backup_evidence(source_env)
     hosted_backup_ready = bool(
         hosted_evidence_accepted
-        and hosted_checks.get("provider_backups_enabled")
-        and hosted_checks.get("backup_owner_configured")
-        and hosted_checks.get("backup_evidence_url_configured")
-        and hosted_checks.get("restore_drill_at")
+        and hosted_backup_checks_ready(hosted_checks)
     )
     if backup["status"] != "ready" and not hosted_backup_ready:
         operational_blockers.append(

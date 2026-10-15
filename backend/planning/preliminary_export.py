@@ -89,7 +89,9 @@ def review_integrity_blockers(meta: dict) -> list[str]:
     return sorted(set(blockers))
 
 
-def prepare_preliminary_snapshot(plan: dict, result: dict | None = None, *, notes: list | None = None) -> dict:
+def prepare_preliminary_snapshot(plan: dict, result: dict | None = None, *, notes: list | None = None, geometry_scope: str = "generated_or_saved_snapshot_not_unsaved_canvas") -> dict:
+    if geometry_scope not in {"generated_or_saved_snapshot_not_unsaved_canvas", "saved_current_geometry_only_no_calculations"}:
+        raise HTTPException(400, "Unsupported preliminary geometry scope.")
     plan = deepcopy(plan)
     geometry_hash = validate_review_geometry(plan)
     meta = _object(plan.get("meta"))
@@ -113,7 +115,7 @@ def prepare_preliminary_snapshot(plan: dict, result: dict | None = None, *, note
     disclosure = {
         "version": 1,
         "designation": "PRELIMINARY - REVIEW ONLY - NOT FOR CONSTRUCTION",
-        "geometry_scope": "generated_or_saved_snapshot_not_unsaved_canvas",
+        "geometry_scope": geometry_scope,
         "source_project_id": str(meta.get("project_id") or "not supplied"),
         "source_revision": str(meta.get("source_canonical_revision") or meta.get("canonical_revision") or meta.get("revision") or f"snapshot:{geometry_hash}"),
         "source_geometry_sha256": geometry_hash,
@@ -132,7 +134,8 @@ def prepare_preliminary_snapshot(plan: dict, result: dict | None = None, *, note
 
 
 def preliminary_disclosure_lines(disclosure: dict) -> list[str]:
-    lines = [disclosure["designation"], f"Geometry: {disclosure['geometry_scope']}", f"Project: {disclosure['source_project_id']}", f"Source revision: {disclosure['source_revision']}", f"Geometry SHA-256: {disclosure['source_geometry_sha256']}", f"Exported (UTC): {disclosure['export_timestamp']}", f"Drawing units: {disclosure['units']}", f"Verification: {disclosure['verification_status']}"]
+    scope = {"generated_or_saved_snapshot_not_unsaved_canvas": "Generated or saved snapshot; newer unsaved edits excluded.", "saved_current_geometry_only_no_calculations": "Current saved drawing; calculations excluded."}.get(disclosure["geometry_scope"], "Unknown snapshot scope.")
+    lines = [disclosure["designation"], f"Geometry: {scope}", f"Project: {disclosure['source_project_id']}", f"Source revision: {disclosure['source_revision']}", f"Geometry SHA-256: {disclosure['source_geometry_sha256']}", f"Exported (UTC): {disclosure['export_timestamp']}", f"Drawing units: {disclosure['units']}", f"Verification: {disclosure['verification_status']}"]
     for title, key in (("Stale/incomplete systems", "stale_systems"), ("Conflicts", "conflict_summary"), ("Assumptions", "assumption_log"), ("Warnings", "warnings")):
         lines.append(title + ":")
         for item in disclosure[key] or ["None recorded; not independently verified."]:

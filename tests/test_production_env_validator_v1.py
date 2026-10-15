@@ -8,6 +8,32 @@ from backend.application.production_env_validator_v1 import validate_production_
 
 
 class ProductionEnvValidatorV1Test(unittest.TestCase):
+    def test_blocks_browser_visible_private_credentials_without_echoing_values(self) -> None:
+        for name, value in (
+            ("NEXT_PUBLIC_OPENAI_API_KEY", "sk-test-private-example"),
+            ("NEXT_PUBLIC_DATABASE_URL", "postgresql://user:private-password@db.example.com/app"),
+            ("NEXT_PUBLIC_CUSTOM_SECRET", "private-custom-example"),
+            ("NEXT_PUBLIC_MAPBOX_TOKEN", "sk.private-mapbox-example"),
+            ("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "sk_live_private-example"),
+            ("NEXT_PUBLIC_UNEXPECTED_SETTING", "whsec_private-example"),
+        ):
+            with self.subTest(name=name):
+                report = validate_production_env_v1({name: value}, include_diagnostics=False)
+                findings = [item for item in report["blockers"] if item["code"] == "browser_visible_secret"]
+                self.assertEqual([item["env_vars"] for item in findings], [[name]])
+                self.assertTrue(report["release_blocked"])
+                self.assertNotIn(value, str(report))
+
+    def test_allows_public_map_and_billing_keys_and_empty_private_settings(self) -> None:
+        report = validate_production_env_v1({
+            "NEXT_PUBLIC_MAPBOX_TOKEN": "pk.public-mapbox-example",
+            "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_public-example",
+            "NEXT_PUBLIC_OPENAI_API_KEY": "",
+            "OPENAI_API_KEY": "sk-server-only-example",
+        })
+        self.assertNotIn("browser_visible_secret", {item["code"] for item in report["blockers"]})
+        self.assertNotIn("sk-server-only-example", str(report))
+
     def test_blocks_missing_required_production_config(self) -> None:
         report = validate_production_env_v1({"CIVORA_PRODUCT_MODE": "production"}, deployment_target="vercel")
 

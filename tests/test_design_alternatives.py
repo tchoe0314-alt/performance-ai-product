@@ -1,7 +1,7 @@
 import unittest
 
 from backend.application.chat_workflows import decide_chat
-from backend.application.project_workflows import update_project_design_alternatives
+from backend.application.project_workflows import update_project_design_alternatives, get_project_design_alternatives
 from backend.planning.design_alternatives import (
     append_revised_design_alternative,
     build_design_alternatives,
@@ -85,6 +85,39 @@ def _record():
 
 
 class DesignAlternativesTests(unittest.TestCase):
+    def test_existing_comparison_loses_quantity_availability_after_canonical_edit(self):
+        from backend.services.canonical_canvas import with_canvas_snapshot
+        from backend.services.canonical_results import bind_canvas_result
+        record = _record()
+        inputs = with_canvas_snapshot({"manual_fields": {"units": "ft", "setback": 20, "site_objects": []}})
+        record["project_input"] = inputs
+        record["latest_result"] = bind_canvas_result(record["latest_result"], inputs)
+        store = _FakeStore(record)
+        generated = update_project_design_alternatives(project_store=store, user_id="u1", project_id="project-1", action="generate")
+        self.assertTrue(generated["design_alternatives_v1"]["quantity_basis"]["available"])
+        store.record["project_input"] = with_canvas_snapshot({"manual_fields": {"units": "ft", "setback": 30, "site_objects": []}})
+        stale = get_project_design_alternatives(project_store=store, user_id="u1", project_id="project-1")
+        self.assertFalse(stale["design_alternatives_v1"]["quantity_basis"]["available"])
+        self.assertTrue(all(not row["quantity_available"] for row in stale["comparison"]["rows"]))
+        self.assertEqual(store.record["latest_result"]["final_plan"]["meta"]["quantities"]["totals"]["paving_area_sf"], 10000)
+
+    def test_unbound_saved_quantities_are_not_republished_as_current_strategy_deltas(self):
+        store = _FakeStore(_record())
+        generated = update_project_design_alternatives(project_store=store, user_id="u1", project_id="project-1", action="generate")
+        self.assertEqual(generated["design_alternatives_v1"]["alternative_count"], 5)
+        self.assertFalse(generated["design_alternatives_v1"]["quantity_basis"]["available"])
+        self.assertTrue(store.record["latest_result"]["final_plan"]["meta"]["quantities"]["totals"])
+        for row in generated["design_alternatives_v1"]["alternatives"]:
+            self.assertFalse(row["cost_quantity_comparison"]["available"])
+
+    def test_default_is_five_distinct_written_strategies_not_calculated_layouts(self):
+        alternatives = build_design_alternatives(_meta())
+        self.assertEqual(alternatives["alternative_count"], 5)
+        self.assertEqual(len({row["alternative_id"] for row in alternatives["alternatives"]}), 5)
+        self.assertEqual(alternatives["categories"], ["parking_layouts", "road_circulation_layouts", "basin_placement", "utility_routing", "grading_drainage_concepts", "site_organization"])
+        self.assertFalse(alternatives["geometry_generated"])
+        self.assertFalse(alternatives["feasibility_checked"])
+
     def test_builds_review_required_design_alternatives_with_all_categories(self) -> None:
         alternatives = build_design_alternatives(_meta(), requested_count=3)
 

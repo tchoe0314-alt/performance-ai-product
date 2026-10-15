@@ -165,7 +165,8 @@ def build_billing_status(
     user_id = str(user.get("user_id") or "").strip()
     email = str(user.get("email") or "").strip().lower()
     is_pilot_user = bool(
-        config.paid_pilot_mode
+        user_id
+        and config.paid_pilot_mode
         and (
             not config.pilot_user_ids
             and not config.pilot_emails
@@ -182,13 +183,13 @@ def build_billing_status(
     if not provider.configured():
         blocked_reasons.append(BLOCKED_PROVIDER_DISABLED)
 
-    real_charging_allowed = bool(config.charging_enabled and config.legal_docs_ready and provider.configured())
+    real_charging_allowed = bool(is_pilot_user and config.charging_enabled and config.legal_docs_ready and provider.configured())
     status = "active_manual" if is_pilot_user and config.legal_docs_ready else "blocked"
     if not is_pilot_user and config.paid_pilot_mode:
         status = "not_enrolled"
     if not config.paid_pilot_mode:
         status = "disabled"
-    operational_state = "enabled" if real_charging_allowed else "blocked" if blocked_reasons else "disabled"
+    operational_state = "enabled" if real_charging_allowed else "blocked" if blocked_reasons or not is_pilot_user else "disabled"
     charging_guard = {
         "state": operational_state,
         "real_charging_allowed": real_charging_allowed,

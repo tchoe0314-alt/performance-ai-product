@@ -1,9 +1,54 @@
 import unittest
+from copy import deepcopy
+from unittest.mock import patch
 
 import planner
+from core.project_manager import ProjectManager
+from backend.planning.production_depth import enrich_storm_production_depth
 
 
 class CoordinationPerformanceHelperTests(unittest.TestCase):
+    def test_owned_storm_enrichment_matches_isolated_default(self) -> None:
+        storm = {"segments": [{"pipe": "ST-1", "path": [[0, 0], [20, 0]], "diameter_in": 12, "flow_cfs": 1, "start_invert": 100, "end_invert": 99}], "source": "engine"}
+        drainage = {"basins": [{"name": "B-1", "area_ac": 0.5}], "coordination": {"preferred_outfall": {"name": "OUT", "x": 20, "y": 0}}}
+        original, original_drainage = deepcopy(storm), deepcopy(drainage)
+        expected = enrich_storm_production_depth(storm, drainage)
+        self.assertEqual(storm, original)
+        owned = deepcopy(storm)
+        actual = enrich_storm_production_depth(owned, drainage, copy_input=False)
+        self.assertIs(actual, owned)
+        self.assertEqual(actual, expected)
+        self.assertEqual(drainage, original_drainage)
+        actual["segments"][0]["path"][0][0] = 999
+        self.assertEqual(storm, original)
+        self.assertNotEqual(actual, expected)
+
+    def test_detection_prepares_each_path_and_pair_once_without_stale_reuse(self) -> None:
+        manager = ProjectManager()
+        rows = [
+            {"name": f"PIPE-{index}", "system": "water", "path": [[0, index], [20, index]], "start_invert": 0, "end_invert": 0}
+            for index in range(6)
+        ]
+        before = deepcopy(rows)
+        rule = {"required_horizontal_clearance_ft": 3, "required_vertical_clearance_ft": 2}
+        with patch.object(planner, "_normalized_summary_segments", return_value=rows), patch.object(planner, "_expanded_obstacle_rectangles", return_value=[]), patch.object(planner, "_crossing_rule_for", return_value=rule) as rules, patch.object(planner, "_sample_coordination_path", wraps=planner._sample_coordination_path) as sample:
+            first = planner._detect_coordination_conflicts(manager.project, manager)
+            self.assertEqual(sample.call_count, len(rows))
+            self.assertEqual(rules.call_count, 1)
+            self.assertTrue(first)
+            self.assertEqual(
+                [item["involved_objects"] for item in first],
+                [[f"PIPE-{a}", f"PIPE-{b}"] for a in range(6) for b in range(a + 1, 6) if b - a < 3],
+            )
+            self.assertEqual(rows, before)
+            self.assertEqual(rule, {"required_horizontal_clearance_ft": 3, "required_vertical_clearance_ft": 2})
+            rows[-1]["path"] = [[0, 100], [20, 100]]
+            second = planner._detect_coordination_conflicts(manager.project, manager)
+            self.assertEqual(sample.call_count, 2 * len(rows))
+            self.assertEqual(rules.call_count, 2)
+            self.assertLess(len(second), len(first))
+            self.assertFalse(any("PIPE-5" in item["involved_objects"] for item in second))
+
     def test_geometry_candidate_pruning_reduces_duplicates_and_caps_breadth(self) -> None:
         base_path = [[0.0, 0.0], [20.0, 0.0]]
         candidates = [

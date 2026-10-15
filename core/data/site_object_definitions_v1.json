@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "types": {
+    "site": {"geometry": ["rect", "polygon"], "layer": "C-SITE", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "setback_zone": {"geometry": ["rect", "polygon"], "layer": "C-CONSTRAINT", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "no_build_zone": {"geometry": ["rect", "polygon"], "layer": "C-CONSTRAINT", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "building": {"geometry": ["rect", "polygon"], "layer": "C-BUILDING", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "retail_building": {"geometry": ["rect", "polygon"], "layer": "C-BUILDING", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "multifamily_building": {"geometry": ["rect", "polygon"], "layer": "C-BUILDING", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "industrial_building": {"geometry": ["rect", "polygon"], "layer": "C-BUILDING", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "office_building": {"geometry": ["rect", "polygon"], "layer": "C-BUILDING", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "pad": {"geometry": ["rect", "polygon"], "layer": "C-PAD", "systems": ["grading", "drainage", "utilities"]},
+    "pool": {"geometry": ["rect", "polygon"], "layer": "C-AMENITY", "systems": ["grading", "drainage", "utilities"]},
+    "amenity": {"geometry": ["rect", "polygon"], "layer": "C-AMENITY", "systems": ["roads", "parking", "grading", "drainage"]},
+    "open_space": {"geometry": ["rect", "polygon"], "layer": "C-LANDSCAPE", "systems": ["grading", "drainage"]},
+    "landscape": {"geometry": ["rect", "polygon", "point"], "layer": "C-LANDSCAPE", "systems": ["grading", "drainage"]},
+    "entrance": {"geometry": ["rect", "polygon", "polyline", "point"], "layer": "C-ACCESS", "systems": ["roads", "parking", "grading"]},
+    "driveway": {"geometry": ["rect", "polygon", "polyline"], "layer": "C-ROAD", "systems": ["roads", "parking", "grading", "drainage"]},
+    "road": {"geometry": ["rect", "polygon", "polyline"], "layer": "C-ROAD", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "parking": {"geometry": ["rect", "polygon"], "layer": "C-PARKING", "systems": ["roads", "parking", "grading", "drainage"]},
+    "sidewalk": {"geometry": ["rect", "polygon", "polyline"], "layer": "C-WALK", "systems": ["roads", "parking", "grading", "drainage"]},
+    "basin": {"geometry": ["rect", "polygon"], "layer": "C-DRAINAGE", "systems": ["grading", "drainage", "utilities"]},
+    "outfall": {"geometry": ["point", "rect"], "layer": "C-DRAINAGE", "systems": ["drainage", "utilities"]},
+    "inlet": {"geometry": ["point", "rect"], "layer": "C-DRAINAGE", "systems": ["grading", "drainage", "utilities"]},
+    "manhole": {"geometry": ["point", "rect"], "layer": "C-UTILITY", "systems": ["drainage", "utilities"]},
+    "hydrant": {"geometry": ["point", "rect"], "layer": "C-UTILITY", "systems": ["utilities"]},
+    "utility_corridor": {"geometry": ["rect", "polygon", "polyline"], "layer": "C-UTILITY", "systems": ["grading", "drainage", "utilities"]},
+    "lot_block": {"geometry": ["rect", "polygon"], "layer": "C-PARCEL", "systems": ["roads", "parking", "grading", "drainage", "utilities"]},
+    "bridge": {"geometry": ["rect", "polygon", "polyline"], "layer": "C-STRUCTURE", "systems": ["roads", "grading", "drainage", "utilities"]},
+    "custom": {"geometry": ["rect", "polygon", "polyline", "point"], "layer": "C-DRAFT", "systems": []},
+    "group": {"geometry": ["rect"], "layer": "C-GROUP", "systems": [], "export": "organization_only"}
+  }
+}

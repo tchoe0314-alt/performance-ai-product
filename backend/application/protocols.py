@@ -29,6 +29,9 @@ class ArtifactServiceProtocol(Protocol):
     ) -> Path:
         ...
 
+    def export_landxml(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None, prefinalized: bool = False) -> Path:
+        ...
+
     def export_report_json(
         self,
         *,

@@ -761,10 +761,14 @@ def enrich_drainage_production_depth(drainage: Dict[str, Any]) -> Dict[str, Any]
     return enriched
 
 
-def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Attach HGL/EGL, tailwater, inlet checks, and summary context to storm truth."""
+def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict[str, Any]] = None, *, copy_input: bool = True) -> Dict[str, Any]:
+    """Attach HGL/EGL, tailwater, inlet checks, and summary context to storm truth.
 
-    enriched = deepcopy(safe_dict(storm))
+    By default the input remains isolated. Only callers owning an already
+    detached working summary may opt out of the redundant initial copy.
+    """
+
+    enriched = deepcopy(safe_dict(storm)) if copy_input else safe_dict(storm)
     drainage_meta = safe_dict(drainage)
     drainage_coordination = safe_dict(drainage_meta.get("coordination"))
     drainage_target = (

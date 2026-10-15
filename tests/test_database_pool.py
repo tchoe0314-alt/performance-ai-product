@@ -6,6 +6,48 @@ from backend.services.database import Database, _PostgresConnection
 
 
 class DatabasePoolTests(unittest.TestCase):
+    def test_open_or_failed_transaction_is_reset_before_returning_to_pool(self) -> None:
+        from psycopg.pq import TransactionStatus
+
+        for status in [TransactionStatus.INTRANS, TransactionStatus.INERROR]:
+            with self.subTest(status=status):
+                raw, pool = mock.Mock(), mock.Mock()
+                raw.info.transaction_status = status
+                events = mock.Mock()
+                events.attach_mock(raw.rollback, "rollback")
+                events.attach_mock(pool.putconn, "putconn")
+                connection = _PostgresConnection(raw, pool=pool)
+                connection.close()
+                connection.close()
+                self.assertEqual(events.mock_calls, [mock.call.rollback(), mock.call.putconn(raw)])
+                raw.commit.assert_not_called()
+                raw.close.assert_not_called()
+
+    def test_idle_or_closed_connection_does_not_start_a_cleanup_transaction(self) -> None:
+        from psycopg.pq import TransactionStatus
+
+        for status in [TransactionStatus.IDLE, TransactionStatus.UNKNOWN]:
+            with self.subTest(status=status):
+                raw, pool = mock.Mock(), mock.Mock()
+                raw.info.transaction_status = status
+                _PostgresConnection(raw, pool=pool).close()
+                raw.rollback.assert_not_called()
+                raw.commit.assert_not_called()
+                pool.putconn.assert_called_once_with(raw)
+
+    def test_failed_reset_discards_connection_and_returns_it_once(self) -> None:
+        from psycopg.pq import TransactionStatus
+
+        raw, pool = mock.Mock(), mock.Mock()
+        raw.info.transaction_status = TransactionStatus.INERROR
+        raw.rollback.side_effect = RuntimeError("Connection lost")
+        connection = _PostgresConnection(raw, pool=pool)
+        connection.close()
+        connection.close()
+        raw.close.assert_called_once_with()
+        pool.putconn.assert_called_once_with(raw)
+        raw.commit.assert_not_called()
+
     def test_pooled_connection_returns_raw_connection_once(self) -> None:
         raw_connection = mock.Mock()
         pool = mock.Mock()

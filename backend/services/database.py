@@ -68,7 +68,19 @@ class _PostgresConnection:
             return
         self._closed = True
         if self._pool is not None:
-            self._pool.putconn(self._connection)
+            from psycopg.pq import TransactionStatus
+
+            # Reads also start transactions with autocommit=False. End them
+            # explicitly before returning the connection, rather than making
+            # the pool's emergency reset path log a warning on every read.
+            try:
+                if self._connection.info.transaction_status in (TransactionStatus.INTRANS, TransactionStatus.INERROR):
+                    self._connection.rollback()
+            except Exception:
+                # A connection that cannot be reset must never be reused.
+                self._connection.close()
+            finally:
+                self._pool.putconn(self._connection)
             return
         self._connection.close()
 
@@ -205,6 +217,18 @@ class Database:
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS user_object_types (
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            type_id TEXT NOT NULL,
+            definition_json TEXT NOT NULL,
+            PRIMARY KEY (user_id, type_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS user_workspace_layouts (
+            user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+            layout_json TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS projects (
             project_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
@@ -224,6 +248,18 @@ class Database:
             deleted_at REAL,
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS project_calculation_history (
+            calculation_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            created_at REAL NOT NULL,
+            input_signature TEXT NOT NULL,
+            disposition TEXT NOT NULL,
+            source_input_json TEXT NOT NULL,
+            result_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_calculation_history_project
+        ON project_calculation_history(project_id, created_at DESC);
 
         CREATE INDEX IF NOT EXISTS idx_projects_user_updated
         ON projects(user_id, updated_at DESC);
@@ -450,6 +486,18 @@ class Database:
             last_used_at DOUBLE PRECISION NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS user_object_types (
+            user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            type_id TEXT NOT NULL,
+            definition_json TEXT NOT NULL,
+            PRIMARY KEY (user_id, type_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS user_workspace_layouts (
+            user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+            layout_json TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS projects (
             project_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -468,6 +516,18 @@ class Database:
             archived_at DOUBLE PRECISION,
             deleted_at DOUBLE PRECISION
         );
+
+        CREATE TABLE IF NOT EXISTS project_calculation_history (
+            calculation_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+            created_at DOUBLE PRECISION NOT NULL,
+            input_signature TEXT NOT NULL,
+            disposition TEXT NOT NULL,
+            source_input_json TEXT NOT NULL,
+            result_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_calculation_history_project
+        ON project_calculation_history(project_id, created_at DESC);
 
         CREATE INDEX IF NOT EXISTS idx_projects_user_updated
         ON projects(user_id, updated_at DESC);

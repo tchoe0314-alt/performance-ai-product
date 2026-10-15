@@ -37,6 +37,7 @@ _JSON_COLUMNS = {
     "value_json": "value",
     "payload_json": "payload",
     "result_json": "result",
+    "source_input_json": "source_input",
     "client_context_json": "client_context",
 }
 
@@ -292,6 +293,11 @@ class DataLifecycleService:
         data = {
             "account": account,
             "owned_projects": owned_projects,
+            "calculation_history": self._rows(
+                """SELECT h.* FROM project_calculation_history h
+                JOIN projects p ON p.project_id = h.project_id WHERE p.user_id = ?
+                ORDER BY h.created_at DESC""", (user_id,),
+            ),
             "shared_project_memberships": shared_memberships,
             "organizations": organizations,
             "comments": comments,
@@ -301,6 +307,8 @@ class DataLifecycleService:
             "engineering_memory": memory,
             "jobs": jobs,
             "support_requests": support_requests,
+            "object_types": self._rows("SELECT type_id, definition_json FROM user_object_types WHERE user_id = ? ORDER BY type_id", (user_id,)),
+            "workspace_layouts": self._rows("SELECT layout_json FROM user_workspace_layouts WHERE user_id = ?", (user_id,)),
             "chat_learning_records": self._learning_records(user_id),
             "file_manifest": resolved_manifest,
         }
