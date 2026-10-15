@@ -345,10 +345,18 @@ def analyze_water_pressure_graph(
         if not isinstance(source_node, str) or not source_node.strip():
             raise ValueError("A source node is required.")
         normalized = []
+        parents = {}
+        children = {}
         for segment in segments:
             segment = dict(segment)
-            if not (segment.get("start_node") or segment.get("from_node")) or not (segment.get("end_node") or segment.get("to_node")):
+            start = segment.get("start_node") or segment.get("from_node")
+            end = segment.get("end_node") or segment.get("to_node")
+            if not isinstance(start, str) or not start.strip() or not isinstance(end, str) or not end.strip():
                 raise ValueError("Water segment start/end nodes are required.")
+            if end == source_node or end in parents or start == end:
+                raise ValueError("Pressure analysis supports a directed supply tree only; loops or multiple supply paths require a network solver.")
+            parents[end] = start
+            children.setdefault(start, []).append(end)
             for primary, alias, default, positive, signed in (
                 ("flow_gpm", "assigned_flow_gpm", None, False, False),
                 ("diameter_in", "assigned_size_in", None, True, False),
@@ -358,6 +366,15 @@ def analyze_water_pressure_graph(
                 value = segment.get(primary) if primary in segment else segment.get(alias, default)
                 segment[primary] = _water_number(value, primary, positive=positive, signed=signed)
             normalized.append(segment)
+        reachable = {source_node}
+        pending = [source_node]
+        while pending:
+            for child in children.get(pending.pop(), []):
+                if child not in reachable:
+                    reachable.add(child)
+                    pending.append(child)
+        if any(node not in reachable for node in parents):
+            raise ValueError("Water pressure graph contains unreachable segments or a disconnected cycle.")
     except (ValueError, TypeError) as exc:
         return {"success": False, "source_node": source_node, "node_pressures_psi": {},
                 "segments": [], "min_pressure_psi": None, "warnings": [str(exc)],
@@ -417,7 +434,7 @@ def analyze_water_pressure_graph(
         "segments": solved,
         "min_pressure_psi": round(min(node_pressure.values()), 3) if node_pressure else 0.0,
         "warnings": warnings,
-        "truth_label": "Hazen-Williams steady pressure graph; does not replace calibrated fire-flow modeling.",
+        "truth_label": "Hazen-Williams directed supply-tree pressure estimate; not a looped-network or calibrated fire-flow model.",
     }
 
 
@@ -438,8 +455,8 @@ def analyze_fire_flow_residual(
 
     The calculation routes added fire demand over the shortest available path
     from source to hydrant and applies Hazen-Williams losses to the increased
-    path flows. This is intentionally conservative for looped systems because
-    it does not split fire demand across parallel paths.
+    path flows. Looped or multiply supplied systems are unsupported and rejected
+    by pressure-graph validation; this is not a network equilibrium solver.
     """
 
     clean_segments = [dict(seg) for seg in segments]
@@ -486,6 +503,7 @@ def analyze_fire_flow_residual(
     high = min(high, max(max_search_gpm, required_fire_flow_gpm, 1.0))
     low = 0.0
     best_graph = solve(0.0)
+    warnings.extend(best_graph.get("warnings") or [])
     best_residual = float(best_graph.get("node_pressures_psi", {}).get(hydrant_node, -1.0))
     if best_residual < min_residual_pressure_psi:
         available = 0.0
