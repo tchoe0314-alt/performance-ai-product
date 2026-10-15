@@ -24,6 +24,10 @@ from backend.services.canonical_results import canvas_result_freshness
 
 
 def assert_current_export_result(*, project_store: Any, user_id: str, project_id: Optional[str], result_data: Dict[str, Any]) -> None:
+    from backend.services.canonical_results import has_current_engine_revision
+    plan_meta = (result_data.get("final_plan") or {}).get("meta") or {}
+    if any(key in plan_meta for key in ("grading", "earthwork", "drainage", "hydrology", "storm_pipe_summary")) and not has_current_engine_revision(result_data):
+        raise HTTPException(status_code=409, detail="Engineering calculation predates current methods or has no method identity. Recalculate before exporting it as current.")
     archived = dict(dict(result_data.get("metadata") or {}).get("calculation_save_v1") or {}).get("disposition") == "archived"
     if archived:
         raise HTTPException(status_code=409, detail="This calculation is archived. Recalculate before exporting the current plan.")
@@ -34,7 +38,7 @@ def assert_current_export_result(*, project_store: Any, user_id: str, project_id
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     freshness = canvas_result_freshness(result_data, dict(project.get("project_input") or {}))
-    if freshness and freshness.get("status") == "stale":
+    if freshness and freshness.get("status") in {"stale", "unverified"}:
         raise HTTPException(status_code=409, detail="Calculation is out of date. Recalculate before exporting the current plan.")
 
 

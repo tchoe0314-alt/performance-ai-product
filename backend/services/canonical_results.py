@@ -12,6 +12,11 @@ from backend.services.canonical_canvas import resolve_canvas_input
 from backend.services.canonical_project import PROJECT_DOCUMENT_KEY, ProjectDocumentError
 
 BINDING_KEY = "canvas_result_binding_v1"
+ENGINE_REVISION = "engineering_core_2026_10_v2"
+
+
+def has_current_engine_revision(result: dict) -> bool:
+    return (result.get("metadata") or {}).get("calculation_engine_revision") == ENGINE_REVISION
 
 
 def canvas_live_input_signature(project_input: dict) -> str:
@@ -59,11 +64,19 @@ def canvas_input_signature(project_input: dict) -> str | None:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def bind_canvas_result(result: dict, project_input: dict) -> dict:
+def bind_canvas_result(result: dict, project_input: dict, *, calculation_executed: bool = False) -> dict:
+    # Only the actual execution boundary may stamp the build. Storage, imports,
+    # viewing and re-binding must never recertify an old result automatically.
+    result = deepcopy(result)
+    if calculation_executed:
+        result.setdefault("metadata", {})["calculation_engine_revision"] = ENGINE_REVISION
+        plan = result.get("final_plan")
+        if isinstance(plan, dict):
+            plan.setdefault("meta", {})["calculation_engine_revision"] = ENGINE_REVISION
     signature = canvas_input_signature(project_input)
     if signature is None:
         return result
-    bound = deepcopy(result)
+    bound = result
     bound.setdefault("metadata", {})[BINDING_KEY] = {
         "version": 1, "scope": "canvas_manual_fields_and_site_inputs", "input_signature": signature,
         "live_input_key_v1": canvas_live_input_signature(project_input),
@@ -89,5 +102,7 @@ def canvas_result_freshness(result: dict, project_input: dict) -> dict | None:
     binding = (result.get("metadata") or {}).get(BINDING_KEY)
     if not isinstance(binding, dict) or binding.get("version") != 1 or binding.get("scope") != "canvas_manual_fields_and_site_inputs":
         return {"version": 1, "status": "unverified", "reason": "missing_input_binding"}
+    if binding.get("input_signature") == signature and not has_current_engine_revision(result):
+        return {"version": 1, "status": "unverified", "reason": "calculation_engine_revision_unknown_or_obsolete"}
     return {"version": 1, "status": "current" if binding.get("input_signature") == signature else "stale",
             "scope": binding["scope"]}

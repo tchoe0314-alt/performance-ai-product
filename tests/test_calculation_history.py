@@ -6,7 +6,7 @@ import pytest
 from backend.application.job_workflows import _save_generated_calculation
 from backend.services.auth_store import AuthStore
 from backend.services.canonical_canvas import with_canvas_snapshot
-from backend.services.canonical_results import canvas_result_freshness
+from backend.services.canonical_results import ENGINE_REVISION, canvas_result_freshness
 from backend.services.database import Database
 from backend.services.project_store import ProjectStore
 
@@ -24,7 +24,21 @@ def setup(tmp_path):
 
 
 def result(label):
-    return {"success": True, "message": label, "metadata": {}, "final_plan": {"meta": {"quantities": {"area": 1200}}}}
+    # Synthetic completed execution. Unstamped legacy results are tested below.
+    return {"success": True, "message": label, "metadata": {"calculation_engine_revision": ENGINE_REVISION}, "final_plan": {"meta": {"quantities": {"area": 1200}}}}
+
+
+def test_unstamped_or_obsolete_result_is_preserved_but_never_activated(setup):
+    _, store, user, project_id, source = setup
+    active = store.save_calculation_result(user_id=user, project_id=project_id, source_input=source, result=result("current"))
+    for stamp in (None, "obsolete-method"):
+        legacy = result("legacy")
+        legacy["metadata"] = {} if stamp is None else {"calculation_engine_revision": stamp}
+        saved = store.save_calculation_result(user_id=user, project_id=project_id, source_input=source, result=legacy)
+        assert saved["metadata"]["calculation_save_v1"]["reason"] == "engine_revision_unverified"
+        assert saved["metadata"]["calculation_save_v1"]["disposition"] == "archived"
+        assert store.get_project(user_id=user, project_id=project_id)["latest_result"] == active
+        assert saved["metadata"].get("calculation_engine_revision") == stamp
 
 
 def test_header_history_distinguishes_success_without_exposing_results(setup):

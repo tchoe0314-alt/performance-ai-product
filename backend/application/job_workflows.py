@@ -1889,12 +1889,14 @@ def build_drainage_job_runner(
         }
         final_plan["meta"] = final_meta
 
+        from backend.services.canonical_results import ENGINE_REVISION
         result = {
             "project_input": parsed,
             "request_metadata": {"project_input": parsed},
             "final_plan": final_plan,
             "issues": deepcopy(safe_list(drainage_canonical.get("issues"))),
             "metadata": {
+                "calculation_engine_revision": ENGINE_REVISION,
                 "runtime_should_continue": False,
                 "runtime_phase_checkpoint": {},
                 "job_context": {

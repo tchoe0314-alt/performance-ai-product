@@ -4,6 +4,7 @@ from backend.services.artifact_service import ArtifactService
 from backend.planning.landxml_io import import_landxml
 from backend.application.artifact_workflows import export_dxf_artifact
 from test_atomic_export_finalization import setup, edit
+from backend.services.canonical_results import ENGINE_REVISION
 
 def pipe_plan():
     return {"project_name":"Pipe review","units":"ft","actions":[{"task":"polyline","layer":"STORM","points":[[0,0],[100,0]]}],"meta":{"storm_pipes":{"segments":[{"id":"p1","length_ft":100,"diameter_in":18,"slope_ft_ft":0.01,"path":[[0,0],[100,0]]}]}}}
@@ -22,7 +23,7 @@ def test_landxml_artifact_validates_supported_data_and_round_trips(tmp_path):
 
 def test_workspace_landxml_uses_current_result_and_atomic_history(setup,tmp_path,monkeypatch):
     _,store,_,user,pid,source,_=setup
-    result=store.save_calculation_result(user_id=user,project_id=pid,source_input=source,result={"success":True,"metadata":{},"final_plan":pipe_plan()})
+    result=store.save_calculation_result(user_id=user,project_id=pid,source_input=source,result={"success":True,"metadata":{"calculation_engine_revision":ENGINE_REVISION},"final_plan":pipe_plan()})
     service=ArtifactService(tmp_path)
     path=export_dxf_artifact(artifact_service=service,project_store=store,user_id=user,project_id=pid,result_data=result,export_scope="review",export_format="landxml")
     assert path.suffix==".landxml" and path.exists()

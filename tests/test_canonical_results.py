@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from backend.application.design_workflows import run_orchestration
 from backend.application.project_workflows import get_project_result
 from backend.services.canonical_canvas import with_canvas_snapshot
-from backend.services.canonical_results import bind_canvas_result, canvas_input_signature, canvas_result_freshness, canvas_live_input_signature
+from backend.services.canonical_results import ENGINE_REVISION, bind_canvas_result, canvas_input_signature, canvas_result_freshness, canvas_live_input_signature
 
 
 def test_portable_live_input_signature_matches_browser_unicode_decimal_fixture():
@@ -20,11 +20,22 @@ def fixture():
 def test_binding_is_detached_and_reload_stable():
     source = fixture()
     original = {"success": True, "metadata": {}, "final_plan": {"meta": {"quantities": {"area": 1200}}}}
-    bound = bind_canvas_result(original, source)
+    # Simulate the actual computation boundary, not a storage/import rebind.
+    bound = bind_canvas_result(original, source, calculation_executed=True)
     assert original["metadata"] == {}
     assert canvas_result_freshness(bound, deepcopy(source))["status"] == "current"
     source["manual_fields"]["site_objects"][0]["x"] = 999
     assert canvas_result_freshness(bound, source)["status"] == "current"  # canonical wins
+
+
+def test_rebinding_old_results_does_not_certify_new_engine_execution():
+    source = fixture()
+    for metadata in ({}, {"calculation_engine_revision": "older-engine"}):
+        original = {"success": True, "metadata": deepcopy(metadata)}
+        bound = bind_canvas_result(original, source)
+        assert canvas_result_freshness(bound, source)["status"] == "unverified"
+        assert original["metadata"] == metadata
+        assert bound["metadata"].get("calculation_engine_revision") == metadata.get("calculation_engine_revision")
 
 
 def test_geometry_units_and_sources_invalidate_results():
@@ -63,6 +74,7 @@ def test_engine_result_is_bound_and_result_endpoint_checks_saved_geometry():
     def engine(request):
         return SimpleNamespace(success=True, message="ok", parsed_payload={}, final_plan={}, warnings=[], errors=[], issues=[], assumptions=[], metadata={})
     result = run_orchestration(source, load_orchestrator=lambda: (SimpleNamespace, engine), assess_design_readiness=lambda *_: None)
+    assert canvas_result_freshness(result, source)["status"] == "current"
     changed = deepcopy(source)
     changed["manual_fields"]["site_objects"][0]["x"] = 200
     changed = with_canvas_snapshot(changed)
@@ -70,3 +82,13 @@ def test_engine_result_is_bound_and_result_endpoint_checks_saved_geometry():
     response = get_project_result(project_store=store, user_id="owner", project_id="pilot")
     assert response["result_freshness_v1"]["status"] == "stale"
     assert response["latest_result"]["metadata"] == result["metadata"]
+
+
+def test_partial_execution_cannot_recertify_legacy_checkpoint():
+    def engine(request):
+        return SimpleNamespace(success=True,message="partial",parsed_payload={},final_plan={},warnings=[],errors=[],issues=[],assumptions=[],metadata={})
+    for stamp, expected in ((None,"unverified"),(ENGINE_REVISION,"current")):
+        source=fixture()
+        source["meta"]={"orchestrator_meta":{"runtime_resume":{"final_plan":{"actions":[],"meta":{} if stamp is None else {"calculation_engine_revision":stamp}}}}}
+        result=run_orchestration(source,load_orchestrator=lambda:(SimpleNamespace,engine),assess_design_readiness=lambda *_:None)
+        assert canvas_result_freshness(result,source)["status"] == expected

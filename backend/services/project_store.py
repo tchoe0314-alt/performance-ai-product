@@ -306,12 +306,14 @@ class ProjectStore:
                 raise ValueError("You do not have editor access to that project.")
             current_input = json.loads(row["project_input_json"])
             successful = result.get("success") is True
-            active = successful and not force_archive and canvas_input_signature(current_input) == signature
+            from .canonical_results import has_current_engine_revision
+            current_method = has_current_engine_revision(result)
+            active = successful and current_method and not force_archive and canvas_input_signature(current_input) == signature
             calculation_id = _new_id("calculation")
             stored_result = bind_canvas_result(result, source_input)
             stored_result.setdefault("metadata", {})["calculation_save_v1"] = {
                 "calculation_id": calculation_id, "disposition": "active" if active else "archived",
-                "reason": "matching_inputs" if active else "calculation_not_successful" if not successful else "project_inputs_changed",
+                "reason": "matching_inputs" if active else "calculation_not_successful" if not successful else "engine_revision_unverified" if not current_method else "project_inputs_changed",
             }
             created_at = _now()
             connection.execute(

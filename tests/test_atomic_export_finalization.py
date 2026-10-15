@@ -15,6 +15,7 @@ from backend.services.canonical_canvas import with_canvas_snapshot
 from backend.services.database import Database
 from backend.services.project_store import ProjectStore
 from backend.services.job_queue import JobQueueService
+from backend.services.canonical_results import ENGINE_REVISION
 
 
 @pytest.fixture
@@ -29,7 +30,7 @@ def setup(tmp_path):
     project = store.save_project(user_id=user, project_id=None, name="Pilot", project_input=source,
                                  metadata={"note": "preserve"}, session_state={"note": "session"})
     result = store.save_calculation_result(user_id=user, project_id=project["project_id"], source_input=source,
-        result={"success": True, "metadata": {}, "final_plan": {"project_name": "Pilot", "units": "ft", "actions": [], "meta": {}}})
+        result={"success": True, "metadata": {"calculation_engine_revision": ENGINE_REVISION}, "final_plan": {"project_name": "Pilot", "units": "ft", "actions": [], "meta": {}}})
     return db, store, auth, user, project["project_id"], source, result
 
 
@@ -40,7 +41,7 @@ def edit(store, user, project_id, source):
     store.save_project_shell(user_id=user, project_id=project_id, name="New name", project_input=changed,
                              session_state={"note": "new session"}, metadata={"note": "new note"})
     result = store.save_calculation_result(user_id=user, project_id=project_id, source_input=changed,
-        result={"success": True, "message": "new calculation", "metadata": {}, "final_plan": {"meta": {}}})
+        result={"success": True, "message": "new calculation", "metadata": {"calculation_engine_revision": ENGINE_REVISION}, "final_plan": {"meta": {}}})
     return changed, result
 
 

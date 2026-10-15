@@ -948,7 +948,16 @@ def run_orchestration(
     if isinstance(result_payload["metadata"].get("missing_requirements"), dict):
         result_payload["missing_requirements"] = dict(result_payload["metadata"]["missing_requirements"])
     from backend.services.brief_requirements import attach_brief_requirement_review
-    return bind_canvas_result(attach_brief_requirement_review(result_payload, source_input), source_input)
+    # A partial rerun must not recertify inherited old-method disciplines.
+    from backend.services.canonical_results import ENGINE_REVISION
+    request_meta = dict(req.meta or {})
+    resume = dict(dict(request_meta.get("orchestrator_meta") or {}).get("runtime_resume") or request_meta.get("runtime_resume") or {})
+    checkpoint = resume.get("final_plan") or request_meta.get("reactive_checkpoint_final_plan") or {}
+    inherited_current = not checkpoint or dict(checkpoint.get("meta") or {}).get("calculation_engine_revision") == ENGINE_REVISION
+    if not inherited_current:
+        result_payload["metadata"].pop("calculation_engine_revision", None)
+        result_payload["metadata"]["engine_revision_status"] = "unverified_inherited_checkpoint_requires_full_run"
+    return bind_canvas_result(attach_brief_requirement_review(result_payload, source_input), source_input, calculation_executed=inherited_current)
 
 
 def count_unresolved_conflicts(final_plan: Dict[str, Any]) -> int:

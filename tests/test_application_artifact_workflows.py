@@ -10,6 +10,7 @@ from backend.application.artifact_workflows import (
 )
 from backend.application.design_workflows import final_plan_from_result
 from backend.services.artifact_service import HeavyExportBlockedError
+from backend.services.canonical_results import ENGINE_REVISION
 from fastapi import HTTPException
 
 
@@ -536,6 +537,8 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
             user_id="u1",
             project_id="p1",
             result_data={
+                # Synthetic current-method execution with a thin drawing view.
+                "metadata": {"calculation_engine_revision": ENGINE_REVISION},
                 "final_plan": {
                     "project_name": "Thin DXF Result",
                     "actions": [
@@ -596,6 +599,13 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
                 },
             },
         }
+        # Preserve the old unstamped input as a negative acceptance case first.
+        with self.assertRaises(HTTPException) as rejected:
+            export_dxf_artifact(artifact_service=service,project_store=store,user_id="u1",project_id="p1",result_data=result_data)
+        self.assertEqual(rejected.exception.status_code,409)
+        self.assertIsNone(service.dxf_export)
+        # Layout compatibility is distinct from old calculation acceptance.
+        result_data["metadata"] = {"calculation_engine_revision":ENGINE_REVISION}
         path = export_dxf_artifact(
             artifact_service=service,
             project_store=store,
