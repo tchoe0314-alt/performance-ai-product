@@ -60,6 +60,28 @@ production/customer data used. This targeted rerun does not replace the failed
 GL report or constitute a new all-green full suite. Remediation-only current
 qualification and final unified candidate acceptance remain outstanding.
 
+### Current remediation and evidence harness qualification
+
+Source revision e88f68e7 (same application code443451ee, updated enrollment
+policy regression). remediation-62 ran tests/remediation excluding only
+test_p01_evidence.py:179 tests+77 subtests passed in3.32seconds, one existing
+httpx deprecation warning. Includes original reconstructed24 assertions, core
+repairs, compatibility and newer numerical/security/persistence/terrain cases.
+XML SHA256: `efa1f023a5be66b487ff99324ae0a1e7057169aee842adb4d804f7a6798700e2`.
+
+harness-63 separately ran test_p01_evidence.py:18 tests+4 subtests passed in
+0.09seconds. Its writes/tamper cases are disposable fake bundles, not edits to
+original evidence. These two selections do not overlap. No original audit
+expectation or recorded failure was erased. No network, production/customer data,
+paid service or deployment used. Python guards denied subprocess and outside
+writes throughout these two checks.
+
+All top-level alphabetical backend partitions have now completed at the same
+application source, with one documented obsolete policy-test failure followed
+by its stronger57-test contract rerun. This is not a single all-green run on a
+final frozen release. Browser, PostgreSQL, performance/recovery, independent
+engineering/security review and unfinished implementation remain required.
+
 ## Isolation / cleanup
 
 Existing disposable Python runtime and tracked-source copy; env-i with explicit
