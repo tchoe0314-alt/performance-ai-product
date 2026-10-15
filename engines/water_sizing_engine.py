@@ -372,7 +372,7 @@ class WaterSizingEngine:
             name, start_pressure = pending.pop()
             segment = lookup[name]
             end_pressure = (start_pressure - segment.friction_loss_psi
-                            - max(0.0, segment.elevation_gain) * request.static_loss_per_ft_psi)
+                            - segment.elevation_gain * request.static_loss_per_ft_psi)
             segment.residual_pressure_psi = round(end_pressure, 3)
             segment.calculated_residual_pressure_psi = end_pressure
             pressures.append(end_pressure)
@@ -480,7 +480,7 @@ def _analyze_water_pressure_graph(
             elevation_gain_ft = seg["elevation_gain_ft"]
             loss_100 = engine._hazen_williams_loss_psi_per_100ft(flow_gpm, diameter_in, c_factor=hazen_williams_c)
             friction_loss = (max(0.0, length_ft) / 100.0) * loss_100
-            static_loss = max(0.0, elevation_gain_ft) * static_loss_per_ft_psi
+            static_loss = elevation_gain_ft * static_loss_per_ft_psi
             end_pressure = node_pressure[start] - friction_loss - static_loss
             if end not in node_pressure or end_pressure > node_pressure[end]:
                 node_pressure[end] = end_pressure
