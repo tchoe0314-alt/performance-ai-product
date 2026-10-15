@@ -13,15 +13,26 @@ completed count or pass. Cause of termination is unknown. The log is preserved.
 Do not restart solely on observation timeout; process absence and missing session
 were directly checked before starting separately reported batches.
 
-## Completed batch
+## Completed batches
 
 backend-rz-56: `tests/test_[r-z]*.py`,327 tests+76 subtests passed in13.12seconds,
 39 existing dependency deprecation warnings. XML SHA256:
 `5389f2642ef8d1fe4480a163f5bff6129935fa14d9c8f4d1c2056029d5a5b03f`.
 This is an alphabetical partition, not a representative reliability percentage.
-The remaining alphabetical modules and remediation suite still need completed
-current-candidate reports. backend-mq-57 was started separately; its completion
-must be inspected, not inferred from this document.
+backend-mq-57: `tests/test_[m-q]*.py`,397 tests+25 subtests passed in132.28seconds,
+24 existing dependency deprecation warnings. XML SHA256:
+`f3bc9fa96f6a30b75b65ff8cb3fd0528bf50cd3ebdff8beb1a59fcf70b00156f`.
+The process returned exit0. A one-second diagnostic sample during execution
+recorded201.3MB physical footprint/278.9MB observed peak; this is not a workload
+capacity or memory-leak qualification. Sample retained alongside the report.
+
+backend-ab-58: `tests/test_[a-b]*.py`,501 tests+10 subtests passed in31.46seconds,
+24 existing dependency deprecation warnings; process exit0.
+
+These three completed alphabetical selections do not overlap:1225 tests and111
+subtests passed. Remaining C–L modules and remediation tests still need completed
+current-candidate reports. backend-cf-59 has been started separately and is not
+certified by this document. No full-backend or release pass is claimed.
 
 ## Isolation / cleanup
 
