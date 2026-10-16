@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Drawing-unit takeoffs: metric drawing measures convert before imperial aggregation;
+explicit imperial summaries remain unchanged.112 affected tests passed across two
+non-overlapping suites. Build v7 retains old results unverified. See
+`QUANTITY_DRAWING_UNITS_2026-10-15.md`; stage route-point units, mixed units,
+full numerical qualification and independent review remain open.0/5 release gates.
+
 Polygon takeoff follow-up: replaced bounding-box area with validated enclosed
 simple-ring area.98 affected tests passed after18 original failures. Build v6
 retains older results as unverified; see `QUANTITY_POLYGON_AREA_2026-10-15.md`.

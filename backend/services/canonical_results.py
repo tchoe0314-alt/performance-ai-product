@@ -12,9 +12,9 @@ from backend.services.canonical_canvas import resolve_canvas_input
 from backend.services.canonical_project import PROJECT_DOCUMENT_KEY, ProjectDocumentError
 
 BINDING_KEY = "canvas_result_binding_v1"
-# v6 replaces polygon bounding-box takeoffs with validated enclosed areas.
+# v7 converts drawing-derived metric takeoffs before imperial aggregation.
 # Older outputs remain historical, not recertified by saving or viewing them.
-ENGINE_REVISION = "engineering_core_2026_10_v6"
+ENGINE_REVISION = "engineering_core_2026_10_v7"
 
 
 def has_current_engine_revision(result: dict) -> bool:

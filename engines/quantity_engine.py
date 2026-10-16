@@ -350,6 +350,17 @@ class QuantityEngine:
                 warnings=["Invalid plan payload passed to quantity engine."],
             )
 
+        # Legacy plans without a units key use feet. An explicitly unknown unit
+        # must not silently acquire an imperial engineering interpretation.
+        raw_units = plan.get("units", "ft")
+        units = raw_units.strip().lower() if isinstance(raw_units, str) else ""
+        factors = {"ft": 1.0, "foot": 1.0, "feet": 1.0,
+                   "m": 1 / 0.3048, "meter": 1 / 0.3048, "meters": 1 / 0.3048,
+                   "metre": 1 / 0.3048, "metres": 1 / 0.3048}
+        if units not in factors:
+            return QuantityResult(success=False, message="Unsupported or missing drawing units.",
+                                  warnings=["Quantity takeoff requires feet or metres; no totals published."])
+        drawing_to_ft = factors[units]
         actions = [a for a in _safe_list(plan.get("actions")) if isinstance(a, dict)]
         meta = _safe_dict(plan.get("meta"))
         manager_metrics = _manager_metrics(plan)
@@ -474,6 +485,11 @@ class QuantityEngine:
                 length = _polyline_length(points + points[:1]) if len(points) >= 3 else 0.0
             elif task in {"polyline"}:
                 length = _polyline_length(points)
+
+            # Only drawing-derived measures use the drawing scale. Stage-summary
+            # values with explicit _ft/_sf/_cy names already have imperial units.
+            area *= drawing_to_ft ** 2
+            length *= drawing_to_ft
 
             if discipline == "building":
                 counts["building_count"] += 1
@@ -900,7 +916,7 @@ class QuantityEngine:
             "assumptions_involved": bool(quantity_audit.get("sidewalk_area_sf", {}).get("assumptions_involved")),
         }
 
-        lot_area_sf = self._extract_lot_area(actions)
+        lot_area_sf = self._extract_lot_area(actions) * drawing_to_ft ** 2
         lot_area_sf = max(lot_area_sf, _metric_value(manager_metrics, "lot_area_sf", 0.0))
         if lot_area_sf > 0:
             impervious_ratio = areas["estimated_impervious_area_sf"] / lot_area_sf
@@ -1049,6 +1065,9 @@ class QuantityEngine:
             "meta_summary": {
                 "project_name": _safe_str(plan.get("project_name"), "Generated Plan"),
                 "units": _safe_str(plan.get("units"), "ft"),
+                "drawing_to_ft": drawing_to_ft,
+                "quantity_units": {"length": "ft", "area": "sf", "volume": "cy"},
+                "legacy_units_assumed": "units" not in plan,
                 "planner_score_total": _safe_float(_safe_dict(meta.get("planner_score")).get("total"), 0.0),
                 "canonical_coordination_used": bool(coordination_meta),
                 "quantity_traceability_complete": True,
