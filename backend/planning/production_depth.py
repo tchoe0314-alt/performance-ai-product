@@ -894,6 +894,7 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
         # Preserve the invalid-input disposition, but never emit NaN/Infinity
         # as a hydraulic elevation or substitute a different geometric value.
         enriched["tailwater_elev_ft"] = None
+    prior_profile_evidence = safe_dict(enriched.get("hydraulic_profile_evidence"))
     profile_evidence = _storm_profile_evidence_from_segments(enriched, segments)
     if not continuous_chain:
         profile_evidence["confidence"] = "review_required"
@@ -906,12 +907,24 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
     egl_profile = profile_evidence["egl_profile"]
     segment_hydraulics = profile_evidence["segment_hydraulics"]
     enriched["hydraulic_profile_evidence"] = profile_evidence
+    profile_views = {}
+    for key, current_profile in (("hgl_profile", hgl_profile), ("egl_profile", egl_profile)):
+        previous_view = safe_list(enriched.get(key))
+        owned_cache = isinstance(prior_profile_evidence.get(key), list) and previous_view == prior_profile_evidence[key]
+        if not previous_view or owned_cache:
+            if current_profile or key in enriched:
+                enriched[key] = current_profile
+            profile_views[key] = {"status": "generated_current" if current_profile else "unavailable",
+                                  "path": f"hydraulic_profile_evidence.{key}", "review_required": True}
+        else:
+            # Unknown/imported evidence is not ours to overwrite. The freshly
+            # computed view has a separate explicit path and does not verify it.
+            profile_views[key] = {"status": "provided_unverified",
+                                  "current_calculated_path": f"hydraulic_profile_evidence.{key}",
+                                  "review_required": True}
+    enriched["hydraulic_profile_views"] = profile_views
     if segments:
         enriched["segments"] = segments
-        if hgl_profile and not safe_list(enriched.get("hgl_profile")):
-            enriched["hgl_profile"] = hgl_profile
-        if egl_profile and not safe_list(enriched.get("egl_profile")):
-            enriched["egl_profile"] = egl_profile
         segment_sources = {
             safe_str(segment.get("hydraulic_depth_source"))
             for segment in segments

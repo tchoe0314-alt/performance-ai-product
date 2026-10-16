@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Generated storm profile views now refresh on elevation edits and clear when source
+segments disappear;provided profiles remain preserved/unverified.448 remediation
+tests/81 subtests pass;affected acceptance26 passed/3 known failures. See
+`STORM_GENERATED_PROFILE_REFRESH_2026-10-15.md`. Full network methods, other cached
+summaries/nodes and UI ownership still open.Original24 audit100%;release0/5 (0%).
+
 Unqualified branched-network backwater now reports a method blocker without
 fabricated adjusted HGL/surcharge values.444 remediation tests/81 subtests pass;
 affected acceptance still16 passed/4 known failures. No network solver/readiness
