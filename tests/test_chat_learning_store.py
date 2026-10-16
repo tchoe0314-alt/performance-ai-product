@@ -19,7 +19,7 @@ class ChatLearningStoreTest(unittest.TestCase):
             }
             with patch.dict(os.environ, env, clear=False):
                 self.assertTrue(chat_learning_enabled())
-                append_chat_interaction_event({"message": "hello"}, consent={"global_learning_enabled":True})
+                append_chat_interaction_event({"user_id": "synthetic-user", "message": "hello"}, consent={"global_learning_enabled":True})
 
             rows = [json.loads(line) for line in path.read_text().splitlines()]
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import time
 from pathlib import Path
 from typing import Any, Dict
@@ -37,10 +38,23 @@ def _append_jsonl(record: Dict[str, Any], *, consent: Dict[str, Any] | None = No
     # copied out of the message/training payload. Missing consent fails closed.
     if _chat_learning_disabled() or not isinstance(consent, dict) or consent.get("global_learning_enabled") is not True:
         return
+    owner = record.get("user_id")
+    if not isinstance(owner, str) or not owner.strip():
+        return  # Unowned personal data cannot be exported/deleted reliably.
+    serialized = json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n"
+    # POSIX deployments: fail closed rather than follow links or write a FIFO.
+    # This does not enable collection or substitute for server consent lookup.
+    import fcntl
     path = _learning_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise ValueError("Learning log must be a regular file.")
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        os.fchmod(handle.fileno(), 0o600)
+        handle.write(serialized)
+        handle.flush()
 
 
 def append_chat_learning_event(payload: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:

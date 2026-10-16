@@ -6,6 +6,11 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Optional learning storage: owner attribution, finite JSON, private regular-file
+append and symlink rejection;54 tests/40 subtests pass. Collection is not enabled.
+See `LEARNING_LOG_STORAGE_SAFETY_2026-10-15.md`. Consent/deletion races, organization
+policy/retention and independent privacy review remain open.0/5 gates (0%).
+
 Tailwater inputs/provenance: explicit hydraulic boundaries survive enrichment;
 invalid inputs cannot silently fall back, and legacy outfall fallback is labeled
 assumed.48 focused tests pass; depth suite16 passed/2 known looped-water failures.

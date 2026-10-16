@@ -248,7 +248,7 @@ class StorageSecurityTests(OfflineTestCase):
             self.assertFalse(path.exists())
             learning.append_chat_learning_event({"message":"synthetic"},consent={"global_learning_enabled":False})
             self.assertFalse(path.exists())
-            learning.append_chat_learning_event({"message":"synthetic"},consent={"global_learning_enabled":True})
+            learning.append_chat_learning_event({"user_id":"synthetic-user","message":"synthetic"},consent={"global_learning_enabled":True})
             self.assertEqual(len(path.read_text().splitlines()),1)
     def test_operator_allowlist_and_untrusted_forwarded_identity(self):
         ns={"os":SimpleNamespace(getenv=lambda _:"operator-id"),"HTTPException":HTTPException}
