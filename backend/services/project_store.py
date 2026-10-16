@@ -1802,6 +1802,17 @@ class ProjectStore:
         company_enabled: bool,
         global_learning_enabled: bool,
     ) -> Dict[str, Any]:
+        from contextlib import nullcontext
+        from .chat_learning_store import chat_learning_enabled, learning_log_lock, _learning_path
+        # Same log -> database lock order as collection/deletion. A completed
+        # withdrawal cannot be overtaken by an already-authorized append.
+        with learning_log_lock(_learning_path()) if chat_learning_enabled() else nullcontext():
+            return self._update_memory_consent_locked(user_id=user_id,
+                personal_enabled=personal_enabled, company_enabled=company_enabled,
+                global_learning_enabled=global_learning_enabled)
+
+    def _update_memory_consent_locked(self, *, user_id: str, personal_enabled: bool,
+                                      company_enabled: bool, global_learning_enabled: bool) -> Dict[str, Any]:
         now = _now()
         connection = self.db.connect()
         try:

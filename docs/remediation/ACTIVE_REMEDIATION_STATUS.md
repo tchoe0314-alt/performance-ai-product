@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Live learning authority: a stale snapshot no longer authorizes collection; a
+matching active account/current opt-in lookup is required under the stable lock.
+69 tests/40 subtests pass; collection stays disabled/disconnected. See
+`LEARNING_LIVE_CONSENT_2026-10-15.md`. Organization/retention/privacy and distributed
+operations qualification remain open. Release approval:0/5 gates (0%).
+
 Learning deletion/rollback race: stable per-path locks prevent unrelated appends
 being erased by file replacement or backup restore.56 tests/40 subtests pass;
 collection remains disabled. See `LEARNING_REDACTION_SERIALIZATION_2026-10-15.md`.

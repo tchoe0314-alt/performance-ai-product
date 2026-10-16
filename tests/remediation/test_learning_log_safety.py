@@ -15,7 +15,8 @@ def log_path(tmp_path, monkeypatch):
 
 
 def append(payload):
-    append_chat_learning_event(payload, consent={"global_learning_enabled": True})
+    append_chat_learning_event(payload, consent={"global_learning_enabled": True},
+        consent_lookup=lambda owner:{"user_id":owner,"account_active":True,"global_learning_enabled":True})
 
 
 def test_learning_log_is_owner_only_even_when_existing_file_is_public(log_path):

@@ -6,7 +6,7 @@ import stat
 import time
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Any, Dict
+from typing import Any, Dict, Callable
 
 
 _DEFAULT_LEARNING_PATH = Path(__file__).resolve().parents[2] / "data" / "chat_learning.jsonl"
@@ -53,10 +53,28 @@ def learning_log_lock(path: Path):
         yield
 
 
-def _append_jsonl(record: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:
+def database_learning_consent(db: Any) -> Callable[[str], Dict[str, Any]]:
+    """Server-owned lookup; a request/payload flag is never a consent authority."""
+    def lookup(user_id: str) -> Dict[str, Any]:
+        connection = db.connect()
+        try:
+            row = connection.execute(
+                "SELECT u.user_id, c.global_learning_enabled FROM users u "
+                "LEFT JOIN memory_consents c ON c.user_id = u.user_id WHERE u.user_id = ?",
+                (user_id,),
+            ).fetchone()
+            return {"user_id": user_id, "account_active": row is not None,
+                    "global_learning_enabled": bool(row and row["global_learning_enabled"])}
+        finally:
+            connection.close()
+    return lookup
+
+
+def _append_jsonl(record: Dict[str, Any], *, consent: Dict[str, Any] | None = None,
+                  consent_lookup: Callable[[str], Dict[str, Any]] | None = None) -> None:
     # Consent is supplied by the server's account-consent lookup, never a flag
     # copied out of the message/training payload. Missing consent fails closed.
-    if _chat_learning_disabled() or not isinstance(consent, dict) or consent.get("global_learning_enabled") is not True:
+    if _chat_learning_disabled() or not isinstance(consent, dict) or consent.get("global_learning_enabled") is not True or not callable(consent_lookup):
         return
     owner = record.get("user_id")
     if not isinstance(owner, str) or not owner.strip():
@@ -67,6 +85,11 @@ def _append_jsonl(record: Dict[str, Any], *, consent: Dict[str, Any] | None = No
     import fcntl
     path = _learning_path()
     with learning_log_lock(path):
+        current = consent_lookup(owner)
+        if (_chat_learning_disabled() or not isinstance(current, dict)
+                or current.get("user_id") != owner or current.get("account_active") is not True
+                or current.get("global_learning_enabled") is not True):
+            return
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
         with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
             if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
@@ -77,31 +100,34 @@ def _append_jsonl(record: Dict[str, Any], *, consent: Dict[str, Any] | None = No
             handle.flush()
 
 
-def append_chat_learning_event(payload: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:
+def append_chat_learning_event(payload: Dict[str, Any], *, consent: Dict[str, Any] | None = None,
+                               consent_lookup: Callable[[str], Dict[str, Any]] | None = None) -> None:
     try:
         event = dict(payload)
         event["ts"] = time.time()
-        _append_jsonl(event, consent=consent)
+        _append_jsonl(event, consent=consent, consent_lookup=consent_lookup)
     except Exception:
         # Learning log failures should never break the user flow.
         return
 
 
-def append_chat_interaction_event(payload: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:
+def append_chat_interaction_event(payload: Dict[str, Any], *, consent: Dict[str, Any] | None = None,
+                                  consent_lookup: Callable[[str], Dict[str, Any]] | None = None) -> None:
     try:
         event = dict(payload)
         event["ts"] = time.time()
         event.setdefault("event_type", "interaction")
-        _append_jsonl(event, consent=consent)
+        _append_jsonl(event, consent=consent, consent_lookup=consent_lookup)
     except Exception:
         return
 
 
-def append_chat_training_example(example: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:
+def append_chat_training_example(example: Dict[str, Any], *, consent: Dict[str, Any] | None = None,
+                                 consent_lookup: Callable[[str], Dict[str, Any]] | None = None) -> None:
     try:
         record = dict(example)
         record["ts"] = time.time()
         record["event_type"] = "training_example"
-        _append_jsonl(record, consent=consent)
+        _append_jsonl(record, consent=consent, consent_lookup=consent_lookup)
     except Exception:
         return

@@ -51,7 +51,8 @@ def test_account_redaction_cannot_erase_another_users_concurrent_append(tmp_path
     def append():
         started.set()
         learning.append_chat_learning_event({"user_id": "remaining-user", "message": "retain me"},
-                                             consent={"global_learning_enabled": True})
+                                             consent={"global_learning_enabled": True},
+                                             consent_lookup=lambda owner:{"user_id":owner,"account_active":True,"global_learning_enabled":True})
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         deletion = pool.submit(service.delete_account, user_id=actor["user_id"], confirmation=ACCOUNT_DELETE_CONFIRMATION)
