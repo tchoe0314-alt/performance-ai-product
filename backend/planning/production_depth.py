@@ -152,6 +152,32 @@ def _storm_hydraulic_request_from_summary(storm: Dict[str, Any], segments: Seque
     )
 
 
+def _ordered_storm_chain(segments: Sequence[Dict[str, Any]]) -> tuple[list[Dict[str, Any]], bool]:
+    """Connectivity, not serialization order, defines one continuous profile."""
+    outgoing = {}
+    incoming = set()
+    for segment in segments:
+        start = _node_name_from_segment(segment, "from", "")
+        end = _node_name_from_segment(segment, "to", "")
+        if not start or not end or start == end or start in outgoing or end in incoming:
+            return list(segments), False
+        outgoing[start] = (end, segment)
+        incoming.add(end)
+    starts = set(outgoing) - incoming
+    if len(starts) != 1:
+        return list(segments), False
+    current = next(iter(starts))
+    ordered = []
+    visited = set()
+    while current in outgoing:
+        if current in visited:
+            return list(segments), False
+        visited.add(current)
+        current, segment = outgoing[current]
+        ordered.append(segment)
+    return (ordered, True) if len(ordered) == len(segments) else (list(segments), False)
+
+
 def _storm_profile_evidence_from_segments(storm: Dict[str, Any], segments: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     hgl_profile: List[Dict[str, Any]] = []
     egl_profile: List[Dict[str, Any]] = []
@@ -792,6 +818,12 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
     if target_valid and drainage_target:
         enriched["target_outfall"] = {**drainage_target, "truth_source": "drainage_target_validation"}
     segments = [safe_dict(item) for item in safe_list(enriched.get("segments"))]
+    segments, continuous_chain = _ordered_storm_chain(segments)
+    enriched["profile_stationing"] = {
+        "continuous_chain": continuous_chain,
+        "method": "directed_chain" if continuous_chain else "network_stationing_unverified",
+        "review_required": True,
+    }
     enriched["hydrology_hydraulics_evidence"] = _storm_hydrology_hydraulics_evidence(enriched, drainage_meta, segments)
     hydraulic_request = _storm_hydraulic_request_from_summary(enriched, segments)
     if hydraulic_request is not None:
@@ -895,7 +927,9 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
             if max_above_crown > 0.05:
                 surcharged_segments.append(payload)
         enriched["backwater_validation"] = {
-            "valid": not surcharged_segments,
+            "valid": continuous_chain and not surcharged_segments,
+            "network_stationing_verified": continuous_chain,
+            "missing_inputs": [] if continuous_chain else ["qualified_network_backwater_method"],
             "tailwater_controls_hgl": surcharge > 0.01,
             "tailwater_elev_ft": round(tailwater, 3),
             "terminal_hgl_ft": round(terminal_hgl, 3),

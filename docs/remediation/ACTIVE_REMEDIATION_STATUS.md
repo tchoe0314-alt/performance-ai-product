@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Storm profile order defect: simple chains now follow node connectivity rather than
+serialized pipe order;38 focused tests pass. Branched/disconnected profiles cannot
+claim qualified linear stationing. Depth suite:17 passed/2 known looped-water
+failures; broader manual hydraulic failures and full network-method qualification
+remain open. See `STORM_PROFILE_CONNECTIVITY_2026-10-15.md`.0/5 gates (0%).
+
 Route producer propagation: storm pre-coordination now refreshes existing
 hydraulics/length summaries; utility segment lengths and water derived views use
 current accepted routes.130 focused tests pass. Broader planner run remains
