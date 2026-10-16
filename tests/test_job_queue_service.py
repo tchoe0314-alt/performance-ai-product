@@ -799,6 +799,7 @@ class JobQueueServiceTest(unittest.TestCase):
             project_id=saved["project_id"],
             name="Summary Demo",
             latest_result={"final_plan": {"project_name": "Summary Demo"}},
+            expected_revision=saved["revision_token"],
         )
         summaries = store.list_projects(user_id=self.user_id)
         self.assertTrue(summaries[0]["has_result"])
@@ -822,6 +823,7 @@ class JobQueueServiceTest(unittest.TestCase):
             project_id=saved["project_id"],
             name="Checkpoint Demo",
             latest_result={},
+            expected_revision=saved["revision_token"],
         )
 
         loaded = store.get_project_latest_result(

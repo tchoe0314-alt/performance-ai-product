@@ -6,6 +6,13 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Current broader evidence at692759fd:617 tests/77 subtests and separate18 harness
+tests/4 subtests pass; all24 reconstructed audit cases pass (100%). Full remaining
+backend run:2,209 passed/56 failed (47 isolation-blocked,2 obsolete revision fixtures,
+7 engineering failures). Two fixtures now corrected;56 targeted tests pass. No
+engineering oracle relaxed. See `CURRENT_BACKEND_REGRESSION_2026-10-15.md` for hashes,
+all failed cases and next lanes. Release gates remain0/5 (0%), not overall completion.
+
 Active storage projections: adopted canonical state may omit exactly reconstructable
 shadows; unknown/legacy data remains.188 affected tests pass.20-object/3-edit fixture
 uses20.38% fewer input bytes with identical reopened geometry/history/token. See
