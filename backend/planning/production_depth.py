@@ -872,10 +872,28 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
         total_capacity += capacity
         total_area_sf += max(0.0, safe_float(segment.get("tributary_area_sf"), safe_float(segment.get("upstream_cumulative_area_sf"), 0.0)))
     target = safe_dict(enriched.get("target_outfall")) or safe_dict(enriched.get("outfall_target_metadata")) or safe_dict(drainage_meta.get("coordination", {}).get("preferred_outfall"))
-    tailwater = safe_float(target.get("z"), float("nan")) if target.get("z") is not None else float("nan")
+    explicit_tailwater = "tailwater_elev_ft" in enriched
+    raw_tailwater = enriched.get("tailwater_elev_ft") if explicit_tailwater else target.get("z")
+    try:
+        tailwater = float(raw_tailwater) if not isinstance(raw_tailwater, bool) else float("nan")
+    except (ValueError, TypeError, OverflowError):
+        tailwater = float("nan")
+    enriched["tailwater_input_validation"] = {
+        "finite": math.isfinite(tailwater),
+        "explicit": explicit_tailwater,
+        "assumed_from_outfall": not explicit_tailwater and math.isfinite(tailwater),
+        "review_required": True,
+    }
     if math.isfinite(tailwater):
         enriched["tailwater_elev_ft"] = round(tailwater, 3)
-        enriched["tailwater_source"] = "selected_outfall_elevation"
+        enriched["tailwater_source"] = (
+            safe_str(enriched.get("tailwater_source"), "provided_tailwater_unverified")
+            if explicit_tailwater else "selected_outfall_elevation"
+        )
+    elif explicit_tailwater:
+        # Preserve the invalid-input disposition, but never emit NaN/Infinity
+        # as a hydraulic elevation or substitute a different geometric value.
+        enriched["tailwater_elev_ft"] = None
     profile_evidence = _storm_profile_evidence_from_segments(enriched, segments)
     hgl_profile = profile_evidence["hgl_profile"]
     egl_profile = profile_evidence["egl_profile"]

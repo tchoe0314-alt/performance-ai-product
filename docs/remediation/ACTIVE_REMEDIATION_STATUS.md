@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Tailwater inputs/provenance: explicit hydraulic boundaries survive enrichment;
+invalid inputs cannot silently fall back, and legacy outfall fallback is labeled
+assumed.48 focused tests pass; depth suite16 passed/2 known looped-water failures.
+See `STORM_TAILWATER_PROVENANCE_2026-10-15.md`. Boundary/datum qualification,
+network solver and manual hydraulic acceptance remain open.0/5 release gates (0%).
+
 Storm profile order defect: simple chains now follow node connectivity rather than
 serialized pipe order;38 focused tests pass. Branched/disconnected profiles cannot
 claim qualified linear stationing. Depth suite:17 passed/2 known looped-water

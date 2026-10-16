@@ -12,9 +12,9 @@ from backend.services.canonical_canvas import resolve_canvas_input
 from backend.services.canonical_project import PROJECT_DOCUMENT_KEY, ProjectDocumentError
 
 BINDING_KEY = "canvas_result_binding_v1"
-# v12 derives simple storm profile stationing from connectivity, not list order.
+# v13 preserves explicit tailwater values/provenance and rejects invalid inputs.
 # Older outputs remain historical, not recertified by saving or viewing them.
-ENGINE_REVISION = "engineering_core_2026_10_v12"
+ENGINE_REVISION = "engineering_core_2026_10_v13"
 
 
 def has_current_engine_revision(result: dict) -> bool:
