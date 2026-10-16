@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Route summary consistency: contradictory stage/stat/complete-segment lengths now
+fail without partial totals rather than selecting first/max.151 non-overlapping
+affected tests pass; build v9. See `QUANTITY_ROUTE_CONSISTENCY_2026-10-15.md`.
+Incomplete measurements/producer scope and independent qualification remain open.
+Release approval remains0/5 gates (0%).
+
 Route-length evidence: explicit zero preserved, metre route points converted,
 ambiguous/invalid dimensional inputs reject without partial totals.137 scoped
 tests pass; build v8 keeps prior calculations historical. See

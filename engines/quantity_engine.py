@@ -100,6 +100,31 @@ def _route_length_ft(item: dict, *, legacy_feet: bool) -> float:
         raise QuantityInputError("Calculated route length exceeds the numeric domain.")
     return length
 
+def _reconciled_route_total(stage: dict, segments: list, *, legacy_feet: bool) -> float | None:
+    lengths = [_route_length_ft(item, legacy_feet=legacy_feet) for item in segments]
+    complete = bool(segments) and all(
+        "length_ft" in item or bool(item.get("path") or item.get("route_points"))
+        for item in segments
+    )
+    values = []
+    for source in (stage, _safe_dict(stage.get("stats"))):
+        if "total_length_ft" in source:
+            values.append(_route_length_ft({"length_ft": source["total_length_ft"]}, legacy_feet=True))
+    if complete:
+        try:
+            total = math.fsum(lengths)
+        except OverflowError as exc:
+            raise QuantityInputError("Route length total exceeds the numeric domain.") from exc
+        if not math.isfinite(total):
+            raise QuantityInputError("Route length total exceeds the numeric domain.")
+        values.append(total)
+    # Existing stage lengths and quantity tables report to three decimal places.
+    # This is data-consistency checking at that precision, not design tolerance.
+    if values and any(round(value, 3) != round(values[0], 3) for value in values[1:]):
+        raise QuantityInputError("Conflicting route total_length_ft and segment measurements; rerun the source stage.")
+    return values[0] if values else None
+
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         if value is None:
@@ -824,24 +849,10 @@ class QuantityEngine:
         if storm_meta:
             storm_segments = [_safe_dict(item) for item in _safe_list(storm_meta.get("segments"))]
             if storm_segments:
-                segment_pipe_length = sum(
-                    _route_length_ft(item, legacy_feet=drawing_to_ft == 1.0)
-                    for item in storm_segments
-                )
-                canonical_pipe_length = next(
-                    (
-                        value
-                        for value in (
-                            _safe_float(storm_meta.get("total_length_ft"), 0.0),
-                            _safe_float(storm_stats.get("total_length_ft"), 0.0),
-                            segment_pipe_length,
-                        )
-                        if value > 0.0
-                    ),
-                    0.0,
-                )
+                canonical_pipe_length = _reconciled_route_total(
+                    storm_meta, storm_segments, legacy_feet=drawing_to_ft == 1.0)
                 counts["pipe_feature_count"] = len(storm_segments)
-                if canonical_pipe_length > 0.0 or all("length_ft" in item for item in storm_segments):
+                if canonical_pipe_length is not None:
                     lengths["pipe_length_ft"] = canonical_pipe_length
                 quantity_audit["pipe_length_ft"] = {
                     "source_object_ids": [
@@ -903,17 +914,11 @@ class QuantityEngine:
             ]
             if not utility_segments:
                 utility_segments = [_safe_dict(item) for item in _safe_list(utilities_meta.get("segments")) if _safe_dict(item)]
-            canonical_utility_length = max(
-                _safe_float(utilities_meta.get("total_length_ft"), 0.0),
-                _safe_float(utilities_stats.get("total_length_ft"), 0.0),
-                sum(
-                    _route_length_ft(item, legacy_feet=drawing_to_ft == 1.0)
-                    for item in utility_segments
-                ),
-            )
+            canonical_utility_length = _reconciled_route_total(
+                utilities_meta, utility_segments, legacy_feet=drawing_to_ft == 1.0)
             if utility_segments:
                 counts["utility_feature_count"] = len(utility_segments)
-                if canonical_utility_length > 0.0 or all("length_ft" in item for item in utility_segments):
+                if canonical_utility_length is not None:
                     lengths["utility_length_ft"] = canonical_utility_length
                 quantity_audit["utility_length_ft"] = {
                     "source_object_ids": [

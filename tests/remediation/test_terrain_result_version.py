@@ -7,7 +7,7 @@ from backend.services.canonical_results import (
 )
 
 
-@pytest.mark.parametrize("old_revision", ["engineering_core_2026_10_v2", "engineering_core_2026_10_v3", "engineering_core_2026_10_v4", "engineering_core_2026_10_v5", "engineering_core_2026_10_v6", "engineering_core_2026_10_v7"])
+@pytest.mark.parametrize("old_revision", [f"engineering_core_2026_10_v{version}" for version in range(2, 9)])
 def test_old_terrain_method_is_unverified_despite_matching_geometry(old_revision):
     inputs=with_canvas_snapshot({"manual_fields":{"units":"ft","site_objects":[
         {"id":"building","type":"office_building","x":0,"y":0,"w":10,"d":10}]}})
@@ -22,5 +22,5 @@ def test_old_terrain_method_is_unverified_despite_matching_geometry(old_revision
     # Only the execution boundary may identify a new result. This stamp is not
     # professional accuracy certification and must never be used for migration.
     new=bind_canvas_result({"success":True},inputs,calculation_executed=True)
-    assert ENGINE_REVISION == "engineering_core_2026_10_v8"
+    assert ENGINE_REVISION == "engineering_core_2026_10_v9"
     assert canvas_result_freshness(new,inputs)["status"] == "current"
