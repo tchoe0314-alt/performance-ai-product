@@ -54,6 +54,52 @@ class QuantityResult:
 # SMALL HELPERS
 # =============================================================================
 
+LENGTH_FACTORS_TO_FT = {"ft": 1.0, "foot": 1.0, "feet": 1.0,
+    "m": 1 / 0.3048, "meter": 1 / 0.3048, "meters": 1 / 0.3048,
+    "metre": 1 / 0.3048, "metres": 1 / 0.3048}
+
+
+class QuantityInputError(ValueError):
+    """Invalid dimensional evidence: publish no partial engineering totals."""
+
+
+def _route_length_ft(item: dict, *, legacy_feet: bool) -> float:
+    if "length_ft" in item:
+        value = item["length_ft"]
+        if isinstance(value, bool):
+            raise QuantityInputError("Route length_ft must be finite and nonnegative.")
+        try:
+            length = float(value)
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise QuantityInputError("Route length_ft must be finite and nonnegative.") from exc
+        if not math.isfinite(length) or length < 0:
+            raise QuantityInputError("Route length_ft must be finite and nonnegative.")
+        return length
+    points = item.get("path") or item.get("route_points")
+    if not points:
+        return 0.0  # Legacy source-ID-only stage records defer to drawing takeoff.
+    units = item.get("units", "ft" if legacy_feet else None)
+    factor = LENGTH_FACTORS_TO_FT.get(units.strip().lower()) if isinstance(units, str) else None
+    if factor is None:
+        raise QuantityInputError("Route coordinates require explicit feet or metre units.")
+    if not isinstance(points, (list, tuple)) or len(points) < 2:
+        raise QuantityInputError("Route coordinates require at least two points.")
+    coordinates = []
+    for point in points:
+        if not isinstance(point, (list, tuple)) or len(point) < 2 or any(isinstance(v, bool) for v in point[:2]):
+            raise QuantityInputError("Route coordinates must be finite x/y pairs.")
+        try:
+            pair = (float(point[0]), float(point[1]))
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise QuantityInputError("Route coordinates must be finite x/y pairs.") from exc
+        if not all(math.isfinite(v) for v in pair):
+            raise QuantityInputError("Route coordinates must be finite x/y pairs.")
+        coordinates.append(pair)
+    length = _polyline_length(coordinates) * factor
+    if not math.isfinite(length):
+        raise QuantityInputError("Calculated route length exceeds the numeric domain.")
+    return length
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         if value is None:
@@ -341,6 +387,13 @@ class QuantityEngine:
     PIPE_DEFAULT_TRENCH_WIDTH_FT = 4.0
 
     def compute(self, plan: Dict[str, Any]) -> QuantityResult:
+        try:
+            return self._compute(plan)
+        except QuantityInputError as exc:
+            return QuantityResult(success=False, message=str(exc),
+                warnings=["Invalid route evidence; no partial quantity totals published."])
+
+    def _compute(self, plan: Dict[str, Any]) -> QuantityResult:
         if not isinstance(plan, dict):
             return QuantityResult(
                 success=False,
@@ -354,9 +407,7 @@ class QuantityEngine:
         # must not silently acquire an imperial engineering interpretation.
         raw_units = plan.get("units", "ft")
         units = raw_units.strip().lower() if isinstance(raw_units, str) else ""
-        factors = {"ft": 1.0, "foot": 1.0, "feet": 1.0,
-                   "m": 1 / 0.3048, "meter": 1 / 0.3048, "meters": 1 / 0.3048,
-                   "metre": 1 / 0.3048, "metres": 1 / 0.3048}
+        factors = LENGTH_FACTORS_TO_FT
         if units not in factors:
             return QuantityResult(success=False, message="Unsupported or missing drawing units.",
                                   warnings=["Quantity takeoff requires feet or metres; no totals published."])
@@ -774,8 +825,7 @@ class QuantityEngine:
             storm_segments = [_safe_dict(item) for item in _safe_list(storm_meta.get("segments"))]
             if storm_segments:
                 segment_pipe_length = sum(
-                    _safe_float(item.get("length_ft"), 0.0)
-                    or _polyline_length(_safe_list(item.get("path") or item.get("route_points")))
+                    _route_length_ft(item, legacy_feet=drawing_to_ft == 1.0)
                     for item in storm_segments
                 )
                 canonical_pipe_length = next(
@@ -791,7 +841,7 @@ class QuantityEngine:
                     0.0,
                 )
                 counts["pipe_feature_count"] = len(storm_segments)
-                if canonical_pipe_length > 0.0:
+                if canonical_pipe_length > 0.0 or all("length_ft" in item for item in storm_segments):
                     lengths["pipe_length_ft"] = canonical_pipe_length
                 quantity_audit["pipe_length_ft"] = {
                     "source_object_ids": [
@@ -857,14 +907,13 @@ class QuantityEngine:
                 _safe_float(utilities_meta.get("total_length_ft"), 0.0),
                 _safe_float(utilities_stats.get("total_length_ft"), 0.0),
                 sum(
-                    _safe_float(item.get("length_ft"), 0.0)
-                    or _polyline_length(_safe_list(item.get("route_points") or item.get("path")))
+                    _route_length_ft(item, legacy_feet=drawing_to_ft == 1.0)
                     for item in utility_segments
                 ),
             )
             if utility_segments:
                 counts["utility_feature_count"] = len(utility_segments)
-                if canonical_utility_length > 0.0:
+                if canonical_utility_length > 0.0 or all("length_ft" in item for item in utility_segments):
                     lengths["utility_length_ft"] = canonical_utility_length
                 quantity_audit["utility_length_ft"] = {
                     "source_object_ids": [

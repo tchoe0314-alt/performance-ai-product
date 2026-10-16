@@ -12,9 +12,9 @@ from backend.services.canonical_canvas import resolve_canvas_input
 from backend.services.canonical_project import PROJECT_DOCUMENT_KEY, ProjectDocumentError
 
 BINDING_KEY = "canvas_result_binding_v1"
-# v7 converts drawing-derived metric takeoffs before imperial aggregation.
+# v8 validates route units and preserves explicit zero-length measurements.
 # Older outputs remain historical, not recertified by saving or viewing them.
-ENGINE_REVISION = "engineering_core_2026_10_v7"
+ENGINE_REVISION = "engineering_core_2026_10_v8"
 
 
 def has_current_engine_revision(result: dict) -> bool:

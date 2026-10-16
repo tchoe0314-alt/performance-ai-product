@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Route-length evidence: explicit zero preserved, metre route points converted,
+ambiguous/invalid dimensional inputs reject without partial totals.137 scoped
+tests pass; build v8 keeps prior calculations historical. See
+`QUANTITY_ROUTE_UNITS_2026-10-15.md`. Stage inheritance/summary consistency and
+independent qualification remain open. Release approval:0/5 gates (0%).
+
 Drawing-unit takeoffs: metric drawing measures convert before imperial aggregation;
 explicit imperial summaries remain unchanged.112 affected tests passed across two
 non-overlapping suites. Build v7 retains old results unverified. See
