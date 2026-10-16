@@ -1197,7 +1197,9 @@ def enrich_water_production_depth(summary: Dict[str, Any]) -> Dict[str, Any]:
     enriched = deepcopy(safe_dict(summary))
     hooks = safe_dict(enriched.get("conflict_hooks"))
     default_system = safe_str(hooks.get("utility_system_type")).lower()
-    raw_segments = safe_list(enriched.get("water_segments")) or safe_list(enriched.get("segments")) or safe_list(hooks.get("utility_segments"))
+    # Conflict hooks own the accepted routed utility geometry. The top-level
+    # water/segment lists are derived views and may predate a coordination reroute.
+    raw_segments = safe_list(hooks.get("utility_segments")) or safe_list(enriched.get("water_segments")) or safe_list(enriched.get("segments"))
     water_segments: List[Dict[str, Any]] = []
     graph_rows: List[Dict[str, Any]] = []
     velocity_checks: List[Dict[str, Any]] = []

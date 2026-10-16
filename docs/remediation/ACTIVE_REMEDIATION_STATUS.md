@@ -6,6 +6,13 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Route producer propagation: storm pre-coordination now refreshes existing
+hydraulics/length summaries; utility segment lengths and water derived views use
+current accepted routes.130 focused tests pass. Broader planner run remains
+15 passed/6 FAILED:quantity consistency restored, refreshed hydraulic/backwater
+acceptance still fails. See `ROUTE_PRODUCER_PROPAGATION_2026-10-15.md`.
+No integration success or release closure claimed;0/5 gates (0%).
+
 Primitive takeoff validation: invalid/nonfinite rectangles, circles, linework and
 aggregate overflow now fail without totals;167 focused tests passed. Broader
 planner integration:15 passed/6 FAILED due to contradictory published route

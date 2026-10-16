@@ -6425,6 +6425,9 @@ def _precoordinate_vertical_hierarchy(project: ProjectModel, manager: ProjectMan
         manager.latest_outputs["storm_pipe_summary"] = deepcopy(storm)
         project.meta["storm_pipe_summary"] = deepcopy(storm)
 
+        # Reroutes/depth changes invalidate length, slope and hydraulic summaries.
+        _recompute_storm_summary(project, manager)
+
     sanitary = safe_dict(manager.latest_outputs.get("sanitary", project.meta.get("sanitary_summary", {})))
     sanitary_changed = False
     for rec in safe_list(sanitary.get("segments")):
@@ -6835,7 +6838,7 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
             resized_segments.append({"pipe": safe_str(rec.get("pipe"), safe_str(rec.get("name"), "PIPE")), "new_diameter_in": diameter_in, "reason": "post_reroute_capacity_check"})
         capacity = _manning_full_capacity_cfs(diameter_in, slope_ft_ft)
         ratio = flow / max(capacity, 1e-9) if capacity > 0.0 else 0.0
-        rec["length_ft"] = round(length_ft, 1)
+        rec["length_ft"] = round(length_ft, 3)
         rec["slope_pct"] = round(slope_ft_ft * 100.0, 3)
         rec["slope_ft_ft"] = round(slope_ft_ft, 5)
         rec["capacity_cfs"] = round(capacity, 3)
@@ -6858,7 +6861,7 @@ def _recompute_storm_summary(project: ProjectModel, manager: ProjectManager) -> 
                     "missing_fields": dedupe_keep_order(missing_fields),
                 }
             )
-        total_length += length_ft
+        total_length += rec["length_ft"]
         total_capacity += capacity
         total_flow += flow
         if ratio >= max_ratio:
@@ -7268,7 +7271,8 @@ def _recompute_utility_summary(project: ProjectModel, manager: ProjectManager, *
     total_length = 0.0
     for rec in segments:
         path = [[safe_float(pt[0], 0.0), safe_float(pt[1], 0.0)] for pt in safe_list(rec.get("route_points")) if isinstance(pt, (list, tuple)) and len(pt) >= 2]
-        total_length += polyline_length(path)
+        rec["length_ft"] = round(polyline_length(path), 3)
+        total_length += rec["length_ft"]
     summary["route_count"] = len(segments)
     summary["total_length_ft"] = round(total_length, 3)
     hooks["utility_segments"] = segments

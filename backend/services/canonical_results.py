@@ -12,9 +12,9 @@ from backend.services.canonical_canvas import resolve_canvas_input
 from backend.services.canonical_project import PROJECT_DOCUMENT_KEY, ProjectDocumentError
 
 BINDING_KEY = "canvas_result_binding_v1"
-# v10 rejects invalid primitive dimensions and nonfinite geometric takeoffs.
+# v11 refreshes route producer measurements and hydraulics after coordination.
 # Older outputs remain historical, not recertified by saving or viewing them.
-ENGINE_REVISION = "engineering_core_2026_10_v10"
+ENGINE_REVISION = "engineering_core_2026_10_v11"
 
 
 def has_current_engine_revision(result: dict) -> bool:
