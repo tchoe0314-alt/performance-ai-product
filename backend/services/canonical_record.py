@@ -211,6 +211,27 @@ def portable_document(record: dict) -> dict:
     return validate_project_document(document)
 
 
+def storage_project_input(inputs: dict) -> dict:
+    """Omit duplicate shadows only when canonical rehydration is exactly lossless.
+
+    No schema change or history pruning: legacy/non-equivalent inputs stay intact.
+    """
+    document = inputs.get(PROJECT_DOCUMENT_KEY)
+    if not isinstance(document, dict) or OWNER not in document.get("extensions", {}):
+        return deepcopy(inputs)
+    from .canonical_canvas import resolve_canvas_input
+    compact = {PROJECT_DOCUMENT_KEY: validate_project_document(document)}
+    hydrated = resolve_canvas_input(compact)
+    # Even ignored legacy/raw fields must not be silently discarded. Canonical
+    # authority for rendering does not authorize deleting unmodeled source data.
+    if any(key != PROJECT_DOCUMENT_KEY and (key not in hydrated or value != hydrated[key])
+           for key, value in inputs.items()):
+        return deepcopy(inputs)
+    if hydrated != resolve_canvas_input(inputs):
+        return deepcopy(inputs)
+    return compact
+
+
 def project_view(record: dict, *, include_result: bool = True) -> dict:
     document = (record.get("project_input") or {}).get(PROJECT_DOCUMENT_KEY)
     if not isinstance(document, dict) or OWNER not in document.get("extensions", {}):

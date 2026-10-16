@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Active storage projections: adopted canonical state may omit exactly reconstructable
+shadows; unknown/legacy data remains.188 affected tests pass.20-object/3-edit fixture
+uses20.38% fewer input bytes with identical reopened geometry/history/token. See
+`CANONICAL_STORAGE_PROJECTIONS_2026-10-15.md`. Full history/checkpoint/RSS budgets
+and release qualification remain open;0/5 gates (0%).
+
 Live learning authority: a stale snapshot no longer authorizes collection; a
 matching active account/current opt-in lookup is required under the stable lock.
 69 tests/40 subtests pass; collection stays disabled/disconnected. See

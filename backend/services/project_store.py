@@ -13,7 +13,7 @@ from .canonical_project import PROJECT_DOCUMENT_KEY, validate_project_document, 
 from .canonical_canvas import reconcile_canvas_save
 from .canonical_results import bind_canvas_result, canvas_input_signature
 from .project_revision import check_revision, project_revision, merge_save_metadata
-from .canonical_record import seal_record, project_view, result_from_document
+from .canonical_record import seal_record, project_view, result_from_document, storage_project_input
 
 
 def _now() -> float:
@@ -267,7 +267,7 @@ class ProjectStore:
             updated_at = _now()
             connection.execute(
                 "UPDATE projects SET metadata_json = ?, project_input_json = ?, updated_at = ? WHERE project_id = ?",
-                (_json_dumps(metadata), _json_dumps(sealed["project_input"]), updated_at, project_id),
+                (_json_dumps(metadata), _json_dumps(storage_project_input(sealed["project_input"])), updated_at, project_id),
             )
             connection.commit()
             # Return precisely the snapshot used at the commit boundary, not a
@@ -338,7 +338,7 @@ class ProjectStore:
                 sealed = seal_record({**previous, "latest_result": stored_result}, previous=previous)
                 connection.execute(
                     "UPDATE projects SET latest_result_json = ?, project_input_json = ?, has_result = 1, updated_at = ? WHERE project_id = ?",
-                    (_json_dumps(sealed["latest_result"]), _json_dumps(sealed["project_input"]), created_at, project_id),
+                    (_json_dumps(sealed["latest_result"]), _json_dumps(storage_project_input(sealed["project_input"])), created_at, project_id),
                 )
             connection.commit()
             return stored_result
@@ -748,13 +748,13 @@ class ProjectStore:
             updated_at = _now()
             connection.execute(
                 "UPDATE projects SET name = ?, project_input_json = ?, metadata_json = ?, updated_at = ? WHERE project_id = ?",
-                (project_name, _json_dumps(project_input), _json_dumps(metadata), updated_at, project_id),
+                (project_name, _json_dumps(storage_project_input(project_input)), _json_dumps(metadata), updated_at, project_id),
             )
             connection.commit()
 
             shell_row = dict(row)
             shell_row["name"] = project_name
-            shell_row["project_input_json"] = _json_dumps(project_input)
+            shell_row["project_input_json"] = _json_dumps(storage_project_input(project_input))
             shell_row["metadata_json"] = _json_dumps(metadata)
             shell_row["updated_at"] = updated_at
             record = self._shell_row_to_record(shell_row)
@@ -810,7 +810,7 @@ class ProjectStore:
                 result_row = connection.execute("SELECT latest_result_json FROM projects WHERE project_id = ?", (project_id,)).fetchone()
                 existing_record["latest_result"] = _json_loads(result_row["latest_result_json"], {})
 
-            existing_project_input = dict(_json_loads(row["project_input_json"], {}) or {})
+            existing_project_input = deepcopy(existing_record["project_input"])
             incoming_project_input = validate_project_input(dict(project_input or {}))
             merged_project_input = (
                 _merge_project_input(existing_project_input, incoming_project_input)
@@ -861,7 +861,7 @@ class ProjectStore:
                     updated_at,
                     session_id,
                     _json_dumps(resolved_tags),
-                    _json_dumps(merged_project_input),
+                    _json_dumps(storage_project_input(merged_project_input)),
                     _json_dumps(resolved_session_state),
                     _json_dumps(resolved_metadata),
                     project_id,
@@ -881,7 +881,7 @@ class ProjectStore:
                     "updated_at": updated_at,
                     "session_id": session_id,
                     "tags_json": _json_dumps(resolved_tags),
-                    "project_input_json": _json_dumps(merged_project_input),
+                    "project_input_json": _json_dumps(storage_project_input(merged_project_input)),
                     "session_state_json": _json_dumps(resolved_session_state),
                     "metadata_json": _json_dumps(resolved_metadata),
                 }
@@ -1056,7 +1056,7 @@ class ProjectStore:
                     record["session_id"],
                     1 if record["latest_result"] else 0,
                     _json_dumps(record["tags"]),
-                    _json_dumps(record["project_input"]),
+                    _json_dumps(storage_project_input(record["project_input"])),
                     _json_dumps(record["latest_result"]),
                     _json_dumps(record["session_state"]),
                     _json_dumps(record["metadata"]),

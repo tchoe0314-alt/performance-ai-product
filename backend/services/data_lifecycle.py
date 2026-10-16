@@ -62,6 +62,9 @@ def _public_row(row: Any) -> Dict[str, Any]:
             continue
         default: Any = [] if target in {"tags", "mentions"} else {}
         record[target] = _safe_json_loads(record.pop(source), default)
+    if "project_input" in record and "latest_result" in record:
+        from .canonical_record import project_view
+        return project_view(record)
     return record
 
 
