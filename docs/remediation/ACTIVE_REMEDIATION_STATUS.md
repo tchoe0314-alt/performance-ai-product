@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Polygon takeoff follow-up: replaced bounding-box area with validated enclosed
+simple-ring area.98 affected tests passed after18 original failures. Build v6
+retains older results as unverified; see `QUANTITY_POLYGON_AREA_2026-10-15.md`.
+Metric/mixed-unit quantities, broader engine qualification and independent review
+remain open. Release approval progress:0/5 gates (0%), not coding completion.
+
 Displayed review evidence now must match the selected candidates in the saved
 project associated with its revision. Offline actual-action/builder checks and
 TypeScript pass; see `REVIEW_DISPLAYED_EVIDENCE_2026-10-15.md`. Full browser races,

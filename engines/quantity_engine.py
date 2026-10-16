@@ -181,16 +181,29 @@ def _circle_area(action: Dict[str, Any]) -> float:
     return math.pi * r * r
 
 
-def _bbox_area_from_polygon(points: Sequence[Sequence[Any]]) -> float:
-    xs: List[float] = []
-    ys: List[float] = []
+def _polygon_area(points: Sequence[Sequence[Any]]) -> float:
+    """Enclosed area of one simple planar ring, never its bounding-box proxy."""
+    from shapely.geometry import Polygon
+    coordinates = []
     for p in points:
-        if isinstance(p, (list, tuple)) and len(p) >= 2:
-            xs.append(_safe_float(p[0], 0.0))
-            ys.append(_safe_float(p[1], 0.0))
-    if not xs or not ys:
-        return 0.0
-    return max(0.0, (max(xs) - min(xs)) * (max(ys) - min(ys)))
+        if not isinstance(p, (list, tuple)) or len(p) < 2:
+            raise ValueError("Polygon coordinates must contain x and y.")
+        if any(isinstance(value, bool) for value in p[:2]):
+            raise ValueError("Polygon coordinates must be finite numbers.")
+        try:
+            pair = (float(p[0]), float(p[1]))
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise ValueError("Polygon coordinates must be finite numbers.") from exc
+        if not all(math.isfinite(value) for value in pair):
+            raise ValueError("Polygon coordinates must be finite numbers.")
+        coordinates.append(pair)
+    if len(set(coordinates)) < 3:
+        raise ValueError("Polygon requires at least three distinct vertices.")
+    polygon = Polygon(coordinates)
+    area = float(polygon.area)
+    if not polygon.is_valid or not math.isfinite(area) or area <= 0:
+        raise ValueError("Polygon must be simple with a finite positive enclosed area.")
+    return area
 
 
 def _action_center(action: Dict[str, Any]) -> Tuple[float, float]:
@@ -452,7 +465,12 @@ class QuantityEngine:
             elif task == "circle":
                 area = _circle_area(action)
             elif task in {"polygon"}:
-                area = _bbox_area_from_polygon(points)
+                try:
+                    area = _polygon_area(points)
+                except ValueError as exc:
+                    return QuantityResult(success=False,
+                        message=f"Invalid polygon {canonical_id}: {exc}",
+                        warnings=["Polygon takeoff rejected; no partial totals are published."])
                 length = _polyline_length(points + points[:1]) if len(points) >= 3 else 0.0
             elif task in {"polyline"}:
                 length = _polyline_length(points)
