@@ -1,4 +1,5 @@
 import { getJson, postJson } from "../../lib/api";
+import { buildCandidateReviewInbox } from "./reviewWorkflowData";
 import type {
   CandidateReviewCorrection,
   CandidateReviewDecision,
@@ -11,6 +12,7 @@ import type {
   PlanResponse,
   ProjectInput,
   ProjectRecord,
+  SiteInputs,
 } from "../types";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
@@ -116,6 +118,7 @@ export async function runDashboardCandidateReviewDecision({
   action,
   candidateIds,
   currentProject,
+  displayedInbox,
   siteScaleLocked,
   currentProjectId,
   projectId,
@@ -128,6 +131,7 @@ export async function runDashboardCandidateReviewDecision({
   action: CandidateReviewDecision;
   candidateIds: string | string[];
   currentProject: ProjectRecord | null;
+  displayedInbox: CandidateReviewInbox;
   siteScaleLocked: boolean;
   currentProjectId?: string;
   projectId: string;
@@ -152,6 +156,31 @@ export async function runDashboardCandidateReviewDecision({
   const expectedRevision = currentProject?.revision_token;
   if (currentProject?.project_id !== activeProjectId || !expectedRevision) {
     setStatusMessage("Reload the project before reviewing candidates.");
+    return null;
+  }
+  const savedInbox = buildCandidateReviewInbox(
+    currentProject.project_input?.meta?.site_inputs as SiteInputs | undefined,
+    currentProject.latest_result?.final_plan?.meta ?? {},
+  );
+  // The revision must describe the evidence displayed, not merely the latest
+  // project record held elsewhere in React state. Compare order-independent JSON
+  // fields, preserving array order and every candidate evidence field.
+  const snapshotKey = (value: unknown): string => {
+    if (Array.isArray(value)) return `[${value.map(snapshotKey).join(",")}]`;
+    if (value !== null && typeof value === "object") {
+      return `{${Object.entries(value).filter(([, item]) => item !== undefined)
+        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([key, item]) => `${JSON.stringify(key)}:${snapshotKey(item)}`).join(",")}}`;
+    }
+    return JSON.stringify(value) ?? "null";
+  };
+  const matchesSavedEvidence = reviewedCandidateIds.length > 0 && reviewedCandidateIds.every((id) => {
+    const shown = (displayedInbox.candidates ?? []).filter((item) => item.candidate_id === id);
+    const saved = (savedInbox.candidates ?? []).filter((item) => item.candidate_id === id);
+    return shown.length === 1 && saved.length === 1 && snapshotKey(shown[0]) === snapshotKey(saved[0]);
+  });
+  if (!matchesSavedEvidence) {
+    setStatusMessage("Save and reload the project before reviewing changed candidates.");
     return null;
   }
   try {

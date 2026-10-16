@@ -6,6 +6,11 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Displayed review evidence now must match the selected candidates in the saved
+project associated with its revision. Offline actual-action/builder checks and
+TypeScript pass; see `REVIEW_DISPLAYED_EVIDENCE_2026-10-15.md`. Full browser races,
+usability and PostgreSQL validation remain open.
+
 Browser review preconditions: public review requests require the loaded project's
 revision and reject stale-before-request decisions.93 non-overlapping backend
 cases, offline actual-action checks and TypeScript passed. See

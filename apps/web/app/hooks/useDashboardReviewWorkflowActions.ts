@@ -4,6 +4,7 @@ import type {
   BuildingPlacement,
   CandidateReviewCorrection,
   CandidateReviewDecision,
+  CandidateReviewInbox,
   PlanResponse,
   ProjectRecord,
   SiteInputs,
@@ -20,6 +21,7 @@ type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 
 type DashboardReviewWorkflowActionsOptions = {
   currentProject: ProjectRecord | null;
+  displayedInbox: CandidateReviewInbox;
   currentProjectId?: string;
   designAlternativeCount: number;
   projectId: string;
@@ -36,6 +38,7 @@ type DashboardReviewWorkflowActionsOptions = {
 
 export function useDashboardReviewWorkflowActions({
   currentProject,
+  displayedInbox,
   currentProjectId,
   designAlternativeCount,
   projectId,
@@ -69,6 +72,7 @@ export function useDashboardReviewWorkflowActions({
           action,
           candidateIds: normalizedCandidateIds,
           currentProject,
+          displayedInbox,
           siteScaleLocked,
           currentProjectId,
           projectId,
@@ -101,6 +105,7 @@ export function useDashboardReviewWorkflowActions({
     [
       currentProjectId,
       currentProject,
+      displayedInbox,
       projectId,
       setBackendResult,
       setBuildingPlacements,

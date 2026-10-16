@@ -1097,6 +1097,7 @@ function PerformanceAIDashboardView({
   const { candidateDecisionInFlight, handleCandidateReviewDecision, handleExportVisionLearning, handleDesignAlternativesAction } =
     useDashboardReviewWorkflowActions({
       currentProject,
+      displayedInbox: candidateReviewInbox,
       currentProjectId: currentProject?.project_id,
       designAlternativeCount: designAlternativeItems.length,
       projectId,
