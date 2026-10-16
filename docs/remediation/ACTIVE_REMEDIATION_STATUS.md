@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Isolation-blocked follow-up atd0894243:reviewed service/tooling lanes pass28 and22
+tests (plus7 subtests). Exact XML names match all41 previously blocked parent
+cases/47 failed outcomes;zero unmatched. No application change or hosted execution.
+See `ISOLATED_SERVICE_TOOLING_VERIFICATION_2026-10-15.md`.7 engineering failures
+remain open;original24 audit checks100% passed,release gates0/5 (0%).
+
 Current broader evidence at692759fd:617 tests/77 subtests and separate18 harness
 tests/4 subtests pass; all24 reconstructed audit cases pass (100%). Full remaining
 backend run:2,209 passed/56 failed (47 isolation-blocked,2 obsolete revision fixtures,
