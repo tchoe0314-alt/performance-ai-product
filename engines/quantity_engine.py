@@ -215,16 +215,34 @@ def _coordination_meta(plan: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _polyline_length(points: Sequence[Sequence[Any]]) -> float:
-    if len(points) < 2:
-        return 0.0
-    total = 0.0
-    for i in range(1, len(points)):
-        x1 = _safe_float(points[i - 1][0], 0.0)
-        y1 = _safe_float(points[i - 1][1], 0.0)
-        x2 = _safe_float(points[i][0], 0.0)
-        y2 = _safe_float(points[i][1], 0.0)
-        total += math.hypot(x2 - x1, y2 - y1)
-    return total
+    if not isinstance(points, (list, tuple)) or len(points) < 2:
+        raise QuantityInputError("Polyline requires at least two finite x/y points.")
+    coordinates = []
+    for point in points:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            raise QuantityInputError("Polyline requires finite x/y pairs.")
+        coordinates.append((_quantity_number(point[0], "Polyline x"),
+                            _quantity_number(point[1], "Polyline y")))
+    try:
+        length = math.fsum(math.hypot(b[0] - a[0], b[1] - a[1])
+                           for a, b in zip(coordinates, coordinates[1:]))
+    except OverflowError as exc:
+        raise QuantityInputError("Polyline length exceeds the numeric domain.") from exc
+    if not math.isfinite(length):
+        raise QuantityInputError("Polyline length exceeds the numeric domain.")
+    return length
+
+
+def _quantity_number(value: Any, name: str, *, nonnegative: bool = False) -> float:
+    if isinstance(value, bool):
+        raise QuantityInputError(f"{name} must be a finite number.")
+    try:
+        number = float(value)
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise QuantityInputError(f"{name} must be a finite number.") from exc
+    if not math.isfinite(number) or (nonnegative and number < 0):
+        raise QuantityInputError(f"{name} must be finite" + (" and nonnegative." if nonnegative else "."))
+    return number
 
 
 def _primary_engineered_basins(drainage_meta: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -244,12 +262,19 @@ def _primary_engineered_basins(drainage_meta: Dict[str, Any]) -> List[Dict[str, 
 
 
 def _rect_area(action: Dict[str, Any]) -> float:
-    return max(0.0, _safe_float(action.get("width"), 0.0)) * max(0.0, _safe_float(action.get("height"), 0.0))
+    area = (_quantity_number(action.get("width"), "Rectangle width", nonnegative=True)
+            * _quantity_number(action.get("height"), "Rectangle height", nonnegative=True))
+    if not math.isfinite(area):
+        raise QuantityInputError("Rectangle area exceeds the numeric domain.")
+    return area
 
 
 def _circle_area(action: Dict[str, Any]) -> float:
-    r = max(0.0, _safe_float(action.get("radius"), 0.0))
-    return math.pi * r * r
+    r = _quantity_number(action.get("radius"), "Circle radius", nonnegative=True)
+    area = math.pi * r * r
+    if not math.isfinite(area):
+        raise QuantityInputError("Circle area exceeds the numeric domain.")
+    return area
 
 
 def _polygon_area(points: Sequence[Sequence[Any]]) -> float:
@@ -416,7 +441,7 @@ class QuantityEngine:
             return self._compute(plan)
         except QuantityInputError as exc:
             return QuantityResult(success=False, message=str(exc),
-                warnings=["Invalid route evidence; no partial quantity totals published."])
+                warnings=["Invalid dimensional evidence; no partial quantity totals published."])
 
     def _compute(self, plan: Dict[str, Any]) -> QuantityResult:
         if not isinstance(plan, dict):
@@ -566,6 +591,8 @@ class QuantityEngine:
             # values with explicit _ft/_sf/_cy names already have imperial units.
             area *= drawing_to_ft ** 2
             length *= drawing_to_ft
+            if not math.isfinite(area) or not math.isfinite(length):
+                raise QuantityInputError("Converted geometry exceeds the numeric domain.")
 
             if discipline == "building":
                 counts["building_count"] += 1
@@ -972,11 +999,16 @@ class QuantityEngine:
 
         lot_area_sf = self._extract_lot_area(actions) * drawing_to_ft ** 2
         lot_area_sf = max(lot_area_sf, _metric_value(manager_metrics, "lot_area_sf", 0.0))
+        if any(not math.isfinite(value) or value < 0
+               for value in [*areas.values(), *lengths.values(), lot_area_sf]):
+            raise QuantityInputError("Quantity aggregates must be finite and nonnegative.")
         if lot_area_sf > 0:
             impervious_ratio = areas["estimated_impervious_area_sf"] / lot_area_sf
         else:
             impervious_ratio = 0.0
             warnings.append("Lot area could not be determined from plan actions; coverage ratio may be incomplete.")
+        if not math.isfinite(impervious_ratio):
+            raise QuantityInputError("Quantity coverage ratio exceeds the numeric domain.")
 
         # ---------------------------------------------------------------------
         # Tables

@@ -6,6 +6,13 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Primitive takeoff validation: invalid/nonfinite rectangles, circles, linework and
+aggregate overflow now fail without totals;167 focused tests passed. Broader
+planner integration:15 passed/6 FAILED due to contradictory published route
+summaries/segments exposed by prior reconciliation. These failures remain open;
+next repair targets producer/canonical projection, not weakened quantity checks.
+See `QUANTITY_PRIMITIVE_VALIDATION_2026-10-15.md`. Release approval:0/5 gates (0%).
+
 Route summary consistency: contradictory stage/stat/complete-segment lengths now
 fail without partial totals rather than selecting first/max.151 non-overlapping
 affected tests pass; build v9. See `QUANTITY_ROUTE_CONSISTENCY_2026-10-15.md`.
