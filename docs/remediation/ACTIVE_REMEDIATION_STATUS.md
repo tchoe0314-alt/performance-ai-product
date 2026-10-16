@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Learning deletion/rollback race: stable per-path locks prevent unrelated appends
+being erased by file replacement or backup restore.56 tests/40 subtests pass;
+collection remains disabled. See `LEARNING_REDACTION_SERIALIZATION_2026-10-15.md`.
+Live consent/account revalidation, retention and multi-host/privacy review remain
+open. Release approval remains0/5 gates (0%).
+
 Optional learning storage: owner attribution, finite JSON, private regular-file
 append and symlink rejection;54 tests/40 subtests pass. Collection is not enabled.
 See `LEARNING_LOG_STORAGE_SAFETY_2026-10-15.md`. Consent/deletion races, organization

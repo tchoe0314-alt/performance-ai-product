@@ -5,6 +5,7 @@ import os
 import stat
 import time
 from pathlib import Path
+from contextlib import contextmanager
 from typing import Any, Dict
 
 
@@ -33,6 +34,25 @@ def _learning_path() -> Path:
     return _DEFAULT_LEARNING_PATH
 
 
+@contextmanager
+def learning_log_lock(path: Path):
+    """Stable lock inode shared by append, export and deletion/rollback.
+
+    Never unlink the sidecar: replacing the log must not change the lock identity.
+    """
+    import fcntl
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_name(f".{path.name}.lock")
+    descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    with os.fdopen(descriptor, "a") as lock:
+        if not stat.S_ISREG(os.fstat(lock.fileno()).st_mode):
+            raise ValueError("Learning lock must be a regular file.")
+        os.fchmod(lock.fileno(), 0o600)
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        yield
+
+
 def _append_jsonl(record: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:
     # Consent is supplied by the server's account-consent lookup, never a flag
     # copied out of the message/training payload. Missing consent fails closed.
@@ -46,15 +66,15 @@ def _append_jsonl(record: Dict[str, Any], *, consent: Dict[str, Any] | None = No
     # This does not enable collection or substitute for server consent lookup.
     import fcntl
     path = _learning_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
-    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
-        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-            raise ValueError("Learning log must be a regular file.")
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        os.fchmod(handle.fileno(), 0o600)
-        handle.write(serialized)
-        handle.flush()
+    with learning_log_lock(path):
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+        with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise ValueError("Learning log must be a regular file.")
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            os.fchmod(handle.fileno(), 0o600)
+            handle.write(serialized)
+            handle.flush()
 
 
 def append_chat_learning_event(payload: Dict[str, Any], *, consent: Dict[str, Any] | None = None) -> None:

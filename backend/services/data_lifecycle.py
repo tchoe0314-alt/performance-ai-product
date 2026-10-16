@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from contextlib import ExitStack
 from typing import Any, Dict, Iterable, List, Optional
 import hashlib
 import json
@@ -13,6 +14,7 @@ import uuid
 import zipfile
 
 from .database import Database
+from .chat_learning_store import learning_log_lock
 
 
 ACCOUNT_EXPORT_VERSION = "civora_account_export_v1"
@@ -175,7 +177,8 @@ class DataLifecycleService:
             if not path.is_file():
                 continue
             try:
-                lines = path.read_text(encoding="utf-8").splitlines()
+                with learning_log_lock(path):
+                    lines = path.read_text(encoding="utf-8").splitlines()
             except Exception:
                 continue
             for line in lines:
@@ -557,6 +560,17 @@ class DataLifecycleService:
             raise RuntimeError(f"Could not restore account learning logs: {', '.join(failures)}")
 
     def delete_account(self, *, user_id: str, confirmation: str) -> Dict[str, Any]:
+        if str(confirmation or "").strip() != ACCOUNT_DELETE_CONFIRMATION:
+            raise ValueError(f"Type {ACCOUNT_DELETE_CONFIRMATION} to confirm account deletion.")
+        # Hold stable per-path locks through redaction, database commit and any
+        # restoration. Otherwise rollback/atomic replace can erase other users'
+        # appends even when individual file writes have an inode lock.
+        with ExitStack() as locks:
+            for path in sorted(self.learning_paths, key=str):
+                locks.enter_context(learning_log_lock(path))
+            return self._delete_account_locked(user_id=user_id, confirmation=confirmation)
+
+    def _delete_account_locked(self, *, user_id: str, confirmation: str) -> Dict[str, Any]:
         if str(confirmation or "").strip() != ACCOUNT_DELETE_CONFIRMATION:
             raise ValueError(f"Type {ACCOUNT_DELETE_CONFIRMATION} to confirm account deletion.")
         readiness = self.deletion_readiness(user_id=user_id)
