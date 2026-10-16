@@ -12,9 +12,9 @@ from backend.services.canonical_canvas import resolve_canvas_input
 from backend.services.canonical_project import PROJECT_DOCUMENT_KEY, ProjectDocumentError
 
 BINDING_KEY = "canvas_result_binding_v1"
-# v13 preserves explicit tailwater values/provenance and rejects invalid inputs.
+# v14 suppresses unqualified network backwater numbers, retaining explicit blockers.
 # Older outputs remain historical, not recertified by saving or viewing them.
-ENGINE_REVISION = "engineering_core_2026_10_v13"
+ENGINE_REVISION = "engineering_core_2026_10_v14"
 
 
 def has_current_engine_revision(result: dict) -> bool:

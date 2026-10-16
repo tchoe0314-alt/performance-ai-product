@@ -895,6 +895,13 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
         # as a hydraulic elevation or substitute a different geometric value.
         enriched["tailwater_elev_ft"] = None
     profile_evidence = _storm_profile_evidence_from_segments(enriched, segments)
+    if not continuous_chain:
+        profile_evidence["confidence"] = "review_required"
+        profile_evidence["labels"].append("network_stationing_unverified")
+        for profile in (profile_evidence["hgl_profile"], profile_evidence["egl_profile"]):
+            for row in profile:
+                row["stationing_source"] = "serialized_preview_only"
+                row["network_profile_verified"] = False
     hgl_profile = profile_evidence["hgl_profile"]
     egl_profile = profile_evidence["egl_profile"]
     segment_hydraulics = profile_evidence["segment_hydraulics"]
@@ -914,7 +921,7 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
             enriched["hydraulic_depth_source"] = "storm_hydraulic_engine"
         else:
             enriched.setdefault("hydraulic_depth_source", "storm_hydraulic_engine_or_concept_proxy")
-    if math.isfinite(tailwater):
+    if math.isfinite(tailwater) and continuous_chain:
         terminal_hgl = safe_float(hgl_profile[-1].get("hgl_ft"), tailwater) if hgl_profile else tailwater
         surcharge = max(tailwater - terminal_hgl, 0.0)
         total_station = max((safe_float(row.get("station_ft"), 0.0) for row in hgl_profile), default=0.0)
@@ -955,6 +962,16 @@ def enrich_storm_production_depth(storm: Dict[str, Any], drainage: Optional[Dict
             "surcharged_segments": surcharged_segments,
             "profile": backwater_rows,
             "truth_label": "Tailwater/backwater check compares terminal HGL against pipe crown using supplied or selected outfall elevation.",
+        }
+    elif math.isfinite(tailwater):
+        enriched["backwater_validation"] = {
+            "valid": False,
+            "network_stationing_verified": False,
+            "missing_inputs": ["qualified_network_backwater_method"],
+            "tailwater_elev_ft": round(tailwater, 3),
+            "profile": [],
+            "surcharged_segments": [],
+            "truth_label": "Network backwater method is unqualified; no adjusted HGL or surcharge values are published.",
         }
     else:
         enriched["backwater_validation"] = {

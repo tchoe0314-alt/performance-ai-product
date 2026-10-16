@@ -6,6 +6,12 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Unqualified branched-network backwater now reports a method blocker without
+fabricated adjusted HGL/surcharge values.444 remediation tests/81 subtests pass;
+affected acceptance still16 passed/4 known failures. No network solver/readiness
+gap closed. See `UNQUALIFIED_NETWORK_BACKWATER_OUTPUT_2026-10-15.md`.
+Original audit24/24 (100%);release0/5 gates (0%);overall completion not claimed.
+
 Isolation-blocked follow-up atd0894243:reviewed service/tooling lanes pass28 and22
 tests (plus7 subtests). Exact XML names match all41 previously blocked parent
 cases/47 failed outcomes;zero unmatched. No application change or hosted execution.
