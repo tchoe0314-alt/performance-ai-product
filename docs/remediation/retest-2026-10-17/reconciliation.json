@@ -1,0 +1,238 @@
+{
+  "source_revision": "099e1b524472447b292f2a16044216a5aa495531",
+  "blocked_parent_cases": 36,
+  "blocked_outcomes": 42,
+  "blocked_with_passing_lane": 36,
+  "unmatched_blocked": [],
+  "engineering_failures": [
+    "test_benchmark_suite_regression::test_controlled_benchmarks_preserve_truthful_trust_scores",
+    "test_depth_validators::test_water_depth_requires_pressure_fire_flow_looping_and_velocity",
+    "test_engine_depth_audit::test_complete_water_fixture_proves_water_depth_without_construction_release",
+    "test_manual_mode_validation::test_manual_mode_exposes_ready_storm_export_after_verified_overflow",
+    "test_production_depth_artifacts::test_water_depth_calculates_available_fire_flow_from_residual_pressure",
+    "test_production_depth_artifacts::test_water_depth_validates_pressure_fire_flow_hydrants_and_velocity",
+    "test_water_fire_flow_preview::test_ui_payload_extracts_hydrant_spacing_pressure_zone_and_fire_flow"
+  ],
+  "new_engineering_failures": [],
+  "previous_engineering_failures_no_longer_failing": [],
+  "original_audit_cases": 24,
+  "original_audit_all_pass": true,
+  "blocked_mapping": [
+    {
+      "class": "tests.test_backend_keepalive_integration",
+      "name": "test_uvicorn_worker_connection_survives_proxy_reuse_window[3-False]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_keepalive_integration",
+      "name": "test_uvicorn_worker_connection_survives_proxy_reuse_window[65-True]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_startup_rejects_runtime_path_that_is_a_file[start_script0-PERFORMANCE_AI_STORAGE_DIR]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_startup_rejects_runtime_path_that_is_a_file[start_script0-MPLCONFIGDIR]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_startup_rejects_runtime_path_that_is_a_file[start_script1-PERFORMANCE_AI_STORAGE_DIR]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_startup_rejects_runtime_path_that_is_a_file[start_script1-MPLCONFIGDIR]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_startup_rejects_read_only_runtime_directory[start_script0-PERFORMANCE_AI_STORAGE_DIR]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_startup_rejects_read_only_runtime_directory[start_script0-MPLCONFIGDIR]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_startup_rejects_read_only_runtime_directory[start_script1-PERFORMANCE_AI_STORAGE_DIR]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_startup_rejects_read_only_runtime_directory[start_script1-MPLCONFIGDIR]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_alternate_api_checks_storage_and_preserves_uvicorn[8080]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_alternate_api_checks_storage_and_preserves_uvicorn[8123]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_combined_service_keeps_one_stable_worker_process",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_web_service_keeps_configurable_request_workers",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_proxy_keepalive_is_consistent_and_can_be_overridden[65-web]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_proxy_keepalive_is_consistent_and_can_be_overridden[65-combined]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_proxy_keepalive_is_consistent_and_can_be_overridden[120-web]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_proxy_keepalive_is_consistent_and_can_be_overridden[120-combined]",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_postgres_web_service_uses_isolated_worker_fallback_until_external_worker_is_confirmed",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_postgres_web_service_keeps_recovery_worker_after_external_worker_confirmation",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_postgres_web_service_can_disable_recovery_worker_after_external_worker_confirmation",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_postgres_web_service_falls_back_when_confirmation_has_no_health_url",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_worker_service_runs_dedicated_job_worker",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_backend_service_startup",
+      "name": "test_postgres_combined_service_uses_process_isolated_runner",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_export_vision_ground_truth_dataset.ExportVisionGroundTruthDatasetTests",
+      "name": "test_cli_fails_closed_on_permanent_split_conflict",
+      "outcomes": 1,
+      "verified_lane": "tooling"
+    },
+    {
+      "class": "tests.test_export_vision_ground_truth_dataset.ExportVisionGroundTruthDatasetTests",
+      "name": "test_cli_merges_deduplicates_and_writes_coverage",
+      "outcomes": 1,
+      "verified_lane": "tooling"
+    },
+    {
+      "class": "tests.test_hosted_gauntlet_script",
+      "name": "test_full_hosted_gauntlet_blocks_when_authenticated_proof_is_skipped",
+      "outcomes": 1,
+      "verified_lane": "tooling"
+    },
+    {
+      "class": "tests.test_hosted_gauntlet_script",
+      "name": "test_full_hosted_gauntlet_passes_only_when_all_authenticated_slices_pass",
+      "outcomes": 1,
+      "verified_lane": "tooling"
+    },
+    {
+      "class": "tests.test_job_worker_health",
+      "name": "test_worker_health_server_reports_safe_aggregate_status",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_job_worker_health",
+      "name": "test_worker_health_server_rejects_unknown_paths",
+      "outcomes": 1,
+      "verified_lane": "service"
+    },
+    {
+      "class": "tests.test_phase0_inventory.Phase0InventoryTests",
+      "name": "test_inventory_is_read_only_and_fingerprint_tracks_uncommitted_source",
+      "outcomes": 1,
+      "verified_lane": "tooling"
+    },
+    {
+      "class": "tests.test_phase0_inventory.Phase0InventoryTests",
+      "name": "test_unique_branch_patches_are_not_mistaken_for_integrated_features",
+      "outcomes": 1,
+      "verified_lane": "tooling"
+    },
+    {
+      "class": "tests.test_release_regression_cleanup_guard.ReleaseCleanupGuardTests",
+      "name": "test_broad_traversal_and_absolute_targets_fail_before_running_steps",
+      "outcomes": 7,
+      "verified_lane": "tooling"
+    },
+    {
+      "class": "tests.test_release_regression_cleanup_guard.ReleaseCleanupGuardTests",
+      "name": "test_existing_directory_and_its_contents_are_preserved",
+      "outcomes": 1,
+      "verified_lane": "tooling"
+    },
+    {
+      "class": "tests.test_release_regression_cleanup_guard.ReleaseCleanupGuardTests",
+      "name": "test_existing_symlink_is_not_followed_or_deleted",
+      "outcomes": 1,
+      "verified_lane": "tooling"
+    },
+    {
+      "class": "tests.test_vision_ai_review_assist.VisionAiReviewAssistTests",
+      "name": "test_cli_writes_verified_artifacts_and_cleans_stale_generated_files",
+      "outcomes": 1,
+      "verified_lane": "tooling"
+    }
+  ]
+}

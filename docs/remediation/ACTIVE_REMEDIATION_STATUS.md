@@ -6,6 +6,14 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Fresh broad rerun at099e1b52:2,216 passed/49 failed outcomes in strict backend;
+42 blocked outcomes/36 parent cases all match passing reviewed service/tooling
+checks (28+22). Same7 engineering failures remain, no new/closed engineering
+failures.454 remediation tests/81 subtests pass,including24/24 original assertions;
+17 offline auth scenarios andTypeScript pass. No app changes. Compressed raw
+reports and exact reconciliation retained. See `BROAD_RETEST_2026-10-17.md`.
+Original audit100%;release gates0/5 (0%);no overall completion claim.
+
 Auth response ownership: six stale-response/unmount failures reproduced; request
 generations now protect restore, authentication and logout publication.10 ordering
 and7 prior restore scenarios pass;TypeScript and3 real Chromium workflow repeats
