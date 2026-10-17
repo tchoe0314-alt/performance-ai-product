@@ -1,0 +1,10 @@
+PASS: old restore 401 cannot overwrite new sign-in
+PASS: old restore 200 cannot overwrite new sign-in
+PASS: old restore 429 cannot overwrite new sign-in
+PASS: restore after logout cannot restore user or refresh old data
+PASS: pending sign-in cannot undo logout
+PASS: newest sign-in attempt wins out-of-order responses
+PASS: unmounted restore has no state or refresh side effects
+PASS: delayed logout completion cannot clear a later sign-in
+PASS: old sign-in failure cannot replace newer success or loading state
+PASS: unmounted pending sign-in has no state or refresh side effects

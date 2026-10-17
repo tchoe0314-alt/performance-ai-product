@@ -1,0 +1,8 @@
+
+Running 3 tests using 1 worker
+
+  ✓  1 tests/live/remediation-candidate-review.spec.ts:7:5 › saved candidate review persists and stale browser decisions conflict (6.4s)
+  ✓  2 tests/live/remediation-candidate-review.spec.ts:7:5 › saved candidate review persists and stale browser decisions conflict (2.9s)
+  ✓  3 tests/live/remediation-candidate-review.spec.ts:7:5 › saved candidate review persists and stale browser decisions conflict (3.0s)
+
+  3 passed (14.2s)

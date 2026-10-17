@@ -6,6 +6,13 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Auth response ownership: six stale-response/unmount failures reproduced; request
+generations now protect restore, authentication and logout publication.10 ordering
+and7 prior restore scenarios pass;TypeScript and3 real Chromium workflow repeats
+pass. See `AUTH_RESPONSE_ORDERING_2026-10-17.md`. Already-started project/job refresh
+ownership and full browser/tenant qualification remain open. Original audit last
+verified24/24 (100%);release gates0/5 (0%).
+
 Real local Chromium candidate acceptance/stale-edit409/reload workflow passes
 three final repeats. Repeat testing exposed transient auth restore erasing valid
 tab credentials; repaired without weakening rate limits or401 handling. Seven

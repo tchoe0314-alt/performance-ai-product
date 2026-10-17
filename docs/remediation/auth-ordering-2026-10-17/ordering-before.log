@@ -1,0 +1,84 @@
+FAIL: old restore 401 cannot overwrite new sign-in AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+'' !== 'new-token'
+
+    at /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:56:12
+    at async /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:86:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: '',
+  expected: 'new-token',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+FAIL: old restore 200 cannot overwrite new sign-in AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+'old' !== 'new'
+
+    at /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:57:12
+    at async /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:86:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'old',
+  expected: 'new',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+FAIL: restore after logout cannot restore user or refresh old data AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ {
++   user_id: 'old'
++ }
+- null
+
+    at /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:62:71
+    at async /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:86:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [Object],
+  expected: null,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+FAIL: pending sign-in cannot undo logout AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+'new-token' !== ''
+
+    at /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:68:12
+    at async /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:86:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'new-token',
+  expected: '',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+FAIL: newest sign-in attempt wins out-of-order responses AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ 'first-token'
+- 'second-token'
+
+    at /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:74:12
+    at async /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:86:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'first-token',
+  expected: 'second-token',
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+FAIL: unmounted restore has no state or refresh side effects AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+3 !== 1
+
+    at cases (/private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:80:12)
+    at async /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-request-ordering.cjs:86:10 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 3,
+  expected: 1,
+  operator: 'strictEqual',
+  diff: 'simple'
+}

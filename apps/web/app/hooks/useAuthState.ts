@@ -57,6 +57,7 @@ export default function useAuthState({
   const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authStatusError, setAuthStatusError] = useState("");
+  const authGenerationRef = useRef(0);
 
   const refreshProjectsRef = useRef(onRefreshProjects);
   const refreshJobsRef = useRef(onRefreshJobs);
@@ -84,8 +85,7 @@ export default function useAuthState({
       const data = await getJson<{ user: UserRecord }>("/api/auth/me", {
         token: authToken,
       });
-      setUser(data.user);
-      setAuthStatusError("");
+      return data.user;
     } catch (error) {
       if (classifyApiError(error) === "auth_expired") {
         throw new Error("Session expired. Sign in again.");
@@ -94,13 +94,15 @@ export default function useAuthState({
     }
   }, []);
 
-  const loadAuthStatus = useCallback(async () => {
+  const loadAuthStatus = useCallback(async (isCurrent: () => boolean = () => true) => {
     try {
       const data = await getJson<AuthStatus>("/api/auth/status");
+      if (!isCurrent()) return;
       setAuthStatus(data);
       if (data.public_registration_enabled === false) setAuthMode("login");
       setAuthStatusError("");
     } catch (error) {
+      if (!isCurrent()) return;
       setAuthStatus(null);
       const kind = classifyApiError(error);
       setAuthStatusError(
@@ -114,6 +116,7 @@ export default function useAuthState({
   }, []);
 
   const handleAuth = useCallback(async () => {
+    const generation = ++authGenerationRef.current;
     setAuthLoading(true);
     setAuthError("");
     setAuthStatusError("");
@@ -139,6 +142,7 @@ export default function useAuthState({
       const data = authMode === "login"
         ? await retryTransientLogin(() => withLoginDeadline(signal => postJson<{ token: string; user: UserRecord }>(path, body, { signal })))
         : await submit();
+      if (generation !== authGenerationRef.current) return;
       setToken(data.token);
       setStoredToken(data.token);
       setUser(data.user);
@@ -147,6 +151,7 @@ export default function useAuthState({
         refreshProjectsRef.current(data.token),
         refreshJobsRef.current(data.token, { suppressError: true }),
       ]);
+      if (generation !== authGenerationRef.current) return;
       const refreshNeedsRetry = refreshResults.some((result) => result.status === "rejected");
       onStatusMessage(
         refreshNeedsRetry
@@ -154,6 +159,7 @@ export default function useAuthState({
           : `Signed in to Civora AI as ${data.user.name}.`,
       );
     } catch (error) {
+      if (generation !== authGenerationRef.current) return;
       const kind = classifyApiError(error);
       setAuthError(
         authMode === "login" && isTransientLoginError(error)
@@ -165,11 +171,22 @@ export default function useAuthState({
             : apiErrorMessage(error, "Authentication failed."),
       );
     } finally {
-      setAuthLoading(false);
+      if (generation === authGenerationRef.current) setAuthLoading(false);
     }
   }, [authMode, authName, authEmail, authPassword, authInvitationToken, authStatus, onStatusMessage]);
 
   const handleLogout = useCallback(async () => {
+    // Invalidate pending restore/sign-in before awaiting server revocation.
+    // Nothing from this old logout may clear a subsequent sign-in either.
+    ++authGenerationRef.current;
+    clearStoredToken();
+    setToken("");
+    setUser(null);
+    setAuthLoading(false);
+    setAuthMode("login");
+    setAuthPassword(""); setAuthInvitationToken(""); setAuthError("");
+    onLogoutCleanup();
+    onStatusMessage("Signed out.");
     try {
       if (token) {
         await postJson("/api/auth/logout", {}, { token });
@@ -177,13 +194,6 @@ export default function useAuthState({
     } catch {
       // Ignore logout API errors and clear local state anyway.
     }
-    clearStoredToken();
-    setToken("");
-    setUser(null);
-    setAuthMode("login");
-    setAuthPassword(""); setAuthInvitationToken(""); setAuthError("");
-    onLogoutCleanup();
-    onStatusMessage("Signed out.");
   }, [onLogoutCleanup, onStatusMessage, token]);
 
   useLayoutEffect(() => {
@@ -200,24 +210,35 @@ export default function useAuthState({
   }, [skipStoredAuthRestore, token]);
 
   useEffect(() => {
+    const generation = ++authGenerationRef.current;
+    let cancelled = false;
+    const isCurrent = () => !cancelled && generation === authGenerationRef.current;
+    const cleanup = () => {
+      cancelled = true;
+      ++authGenerationRef.current;
+    };
     if (!skipInitialAuthStatus) {
-      void loadAuthStatus();
+      void loadAuthStatus(isCurrent);
     }
     const shouldSkipStoredRestore =
       skipStoredAuthRestore ||
       !shouldRestoreStoredToken() ||
       Boolean(shouldSkipStoredAuthRestoreRef.current?.());
     const stored = shouldSkipStoredRestore ? "" : getStoredToken();
-    if (!stored) return;
+    if (!stored) return cleanup;
     setToken(stored);
     void loadMe(stored)
-      .then(() => {
+      .then((restoredUser) => {
+        if (!isCurrent()) return;
+        setUser(restoredUser);
+        setAuthStatusError("");
         void Promise.allSettled([
           refreshProjectsRef.current(stored),
           refreshJobsRef.current(stored, { suppressError: true }),
         ]);
       })
       .catch((error) => {
+        if (!isCurrent()) return;
         // A rate limit/outage is not evidence that the credential expired.
         // Keep tab-scoped credentials for recovery; the server still authorizes
         // every operation. Only a genuine authentication rejection clears them.
@@ -234,6 +255,7 @@ export default function useAuthState({
             : apiErrorMessage(error, "Backend connection needs attention. Sign in after the backend is available."),
         );
       });
+    return cleanup;
   }, [
     loadAuthStatus,
     loadMe,
