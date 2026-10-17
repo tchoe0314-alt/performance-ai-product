@@ -130,32 +130,47 @@ class AuthStore:
 
         connection = self.db.connect()
         try:
-            now = _now()
             row = connection.execute(
                 """
-                SELECT u.user_id, u.email, u.name, u.created_at, u.updated_at
+                SELECT u.user_id, u.email, u.name, u.created_at, u.updated_at,
+                    t.created_at AS session_created_at, t.last_used_at AS session_last_used_at
                 FROM auth_tokens t
                 JOIN users u ON u.user_id = t.user_id
-                WHERE t.token = ? AND t.created_at > ? AND t.created_at <= ?
-                    AND t.last_used_at > ? AND t.last_used_at <= ?
+                WHERE t.token = ?
                 """,
-                (_session_digest(token_value), now - self.session_ttl_seconds, now,
-                 now - self.session_idle_seconds, now),
+                (_session_digest(token_value),),
             ).fetchone()
             if row is None:
                 return None
 
+            # Read the clock AFTER the snapshot: another request may have touched
+            # this session while our SELECT was waiting. Keep future/expiry checks
+            # strict without treating that legitimate concurrent activity as future.
+            now = _now()
+            created_at = row["session_created_at"]
+            last_used_at = row["session_last_used_at"]
+            if not (
+                now - self.session_ttl_seconds < created_at <= now
+                and now - self.session_idle_seconds < last_used_at <= now
+            ):
+                return None
+
             try:
                 connection.execute(
-                    "UPDATE auth_tokens SET last_used_at = ? WHERE token = ?",
-                    (_now(), _session_digest(token_value)),
+                    """UPDATE auth_tokens SET last_used_at =
+                        CASE WHEN last_used_at < ? THEN ? ELSE last_used_at END
+                        WHERE token = ?""",
+                    (now, now, _session_digest(token_value)),
                 )
                 connection.commit()
             except Exception as exc:
                 # Avoid turning transient storage lock contention into auth 500s.
                 if "locked" not in str(exc).lower():
                     raise
-            return dict(row)
+            user = dict(row)
+            user.pop("session_created_at")
+            user.pop("session_last_used_at")
+            return user
         finally:
             connection.close()
 

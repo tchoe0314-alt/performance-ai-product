@@ -6,6 +6,15 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+October17 session concurrency: a delayed read no longer rejects valid concurrent
+activity as future, and an older touch cannot move the idle timestamp backwards.
+Two reproduced failures repaired;31 affected tests plus2 API tests pass in offline
+disposable storage. See `SESSION_CONCURRENCY_2026-10-17.md`, including preserved
+before/after reports. Browser causal link and PostgreSQL/rotation interleavings
+remain unverified. Prior temporary evidence directory disappeared across environment
+resumption; historical committed summaries/hashes remain, not fresh acceptance.
+Original audit last verified24/24 (100%);release gates0/5 (0%).
+
 Generated storm profile views now refresh on elevation edits and clear when source
 segments disappear;provided profiles remain preserved/unverified.448 remediation
 tests/81 subtests pass;affected acceptance26 passed/3 known failures. See

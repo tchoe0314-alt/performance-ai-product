@@ -46,6 +46,90 @@ class SessionSecurityTests(unittest.TestCase):
         self.now.return_value=999
         self.assertIsNone(self.auth.authenticate_token(self.token))
 
+    def test_future_activity_rejected_and_session_fields_not_exposed(self):
+        connection = self.db.connect()
+        try:
+            connection.execute("UPDATE auth_tokens SET last_used_at = ?", (1001,))
+            connection.commit()
+        finally:
+            connection.close()
+        self.assertIsNone(self.auth.authenticate_token(self.token))
+        self.now.return_value = 1001
+        user = self.auth.authenticate_token(self.token)
+        self.assertEqual(set(user), {"user_id", "email", "name", "created_at", "updated_at"})
+
+    def test_session_expiring_while_select_waits_is_rejected(self):
+        connection = self.db.connect()
+        now = self.now
+
+        class DelayedRead:
+            def execute(self, sql, parameters=()):
+                if "SELECT u.user_id" in sql:
+                    now.return_value = 1030
+                return connection.execute(sql, parameters)
+
+            def __getattr__(self, name):
+                return getattr(connection, name)
+
+        self.now.return_value = 1029
+        with patch.object(self.db, "connect", return_value=DelayedRead()):
+            self.assertIsNone(self.auth.authenticate_token(self.token))
+
+    def test_parallel_activity_before_select_does_not_expire_valid_session(self):
+        """Reproduce a request delayed between its clock read and SQL read."""
+        connect = self.db.connect
+        connection = connect()
+        auth = self.auth
+        now = self.now
+        token = self.token
+
+        class DelayedRead:
+            def execute(self, sql, parameters=()):
+                if "SELECT u.user_id" in sql:
+                    now.return_value = 1021
+                    # A second request finishes before the delayed SELECT runs.
+                    with patch.object(auth.db, "connect", side_effect=connect):
+                        self_result = auth.authenticate_token(token)
+                    if self_result is None:
+                        raise AssertionError("Concurrent request must be valid")
+                    now.return_value = 1022
+                return connection.execute(sql, parameters)
+
+            def __getattr__(self, name):
+                return getattr(connection, name)
+
+        self.now.return_value = 1020
+        with patch.object(self.db, "connect", return_value=DelayedRead()):
+            self.assertIsNotNone(self.auth.authenticate_token(self.token))
+
+    def test_parallel_touch_cannot_move_idle_timestamp_backwards(self):
+        connect = self.db.connect
+        connection = connect()
+        token = self.token
+        auth = self.auth
+        now = self.now
+
+        class DelayedTouch:
+            def execute(self, sql, parameters=()):
+                if "UPDATE auth_tokens SET last_used_at" in sql:
+                    now.return_value = 1025
+                    with patch.object(auth.db, "connect", side_effect=connect):
+                        if auth.authenticate_token(token) is None:
+                            raise AssertionError("Concurrent request must be valid")
+                return connection.execute(sql, parameters)
+
+            def __getattr__(self, name):
+                return getattr(connection, name)
+
+        self.now.return_value = 1020
+        with patch.object(self.db, "connect", return_value=DelayedTouch()):
+            self.assertIsNotNone(self.auth.authenticate_token(self.token))
+        connection = connect()
+        try:
+            self.assertEqual(connection.execute("SELECT last_used_at FROM auth_tokens").fetchone()[0], 1025)
+        finally:
+            connection.close()
+
     def test_rotation_has_one_winner_and_does_not_extend_absolute_expiry(self):
         self.now.return_value=1020
         def rotate(_):

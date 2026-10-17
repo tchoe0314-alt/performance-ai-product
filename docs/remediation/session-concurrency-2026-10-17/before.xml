@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="7" time="0.342" timestamp="2026-10-17T02:36:23.139964-05:00" hostname="Tommys-Laptop.local"><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_exact_idle_expiry_and_absolute_expiry" time="0.038" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_future_session_cannot_authenticate" time="0.027" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_only_hashes_stored_and_legacy_raw_tokens_rejected" time="0.028" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_parallel_activity_before_select_does_not_expire_valid_session" time="0.027"><failure message="AssertionError: unexpectedly None">self = &lt;test_session_security.SessionSecurityTests testMethod=test_parallel_activity_before_select_does_not_expire_valid_session&gt;
+
+    def test_parallel_activity_before_select_does_not_expire_valid_session(self):
+        """Reproduce a request delayed between its clock read and SQL read."""
+        connect = self.db.connect
+        connection = connect()
+        auth = self.auth
+        now = self.now
+        token = self.token
+    
+        class DelayedRead:
+            def execute(self, sql, parameters=()):
+                if "SELECT u.user_id" in sql:
+                    now.return_value = 1021
+                    # A second request finishes before the delayed SELECT runs.
+                    with patch.object(auth.db, "connect", side_effect=connect):
+                        self_result = auth.authenticate_token(token)
+                    if self_result is None:
+                        raise AssertionError("Concurrent request must be valid")
+                    now.return_value = 1022
+                return connection.execute(sql, parameters)
+    
+            def __getattr__(self, name):
+                return getattr(connection, name)
+    
+        self.now.return_value = 1020
+        with patch.object(self.db, "connect", return_value=DelayedRead()):
+&gt;           self.assertIsNotNone(self.auth.authenticate_token(self.token))
+E           AssertionError: unexpectedly None
+
+tests/remediation/test_session_security.py:74: AssertionError</failure></testcase><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_parallel_touch_cannot_move_idle_timestamp_backwards" time="0.028"><failure message="AssertionError: 1020.0 != 1025">self = &lt;test_session_security.SessionSecurityTests testMethod=test_parallel_touch_cannot_move_idle_timestamp_backwards&gt;
+
+    def test_parallel_touch_cannot_move_idle_timestamp_backwards(self):
+        connect = self.db.connect
+        connection = connect()
+        token = self.token
+        auth = self.auth
+        now = self.now
+    
+        class DelayedTouch:
+            def execute(self, sql, parameters=()):
+                if "UPDATE auth_tokens SET last_used_at" in sql:
+                    now.return_value = 1025
+                    with patch.object(auth.db, "connect", side_effect=connect):
+                        if auth.authenticate_token(token) is None:
+                            raise AssertionError("Concurrent request must be valid")
+                return connection.execute(sql, parameters)
+    
+            def __getattr__(self, name):
+                return getattr(connection, name)
+    
+        self.now.return_value = 1020
+        with patch.object(self.db, "connect", return_value=DelayedTouch()):
+            self.assertIsNotNone(self.auth.authenticate_token(self.token))
+        connection = connect()
+        try:
+&gt;           self.assertEqual(connection.execute("SELECT last_used_at FROM auth_tokens").fetchone()[0], 1025)
+E           AssertionError: 1020.0 != 1025
+
+tests/remediation/test_session_security.py:100: AssertionError</failure></testcase><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_revoke_all_needs_password_and_does_not_revoke_other_user" time="0.099" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_rotation_has_one_winner_and_does_not_extend_absolute_expiry" time="0.031" /></testsuite></testsuites>
