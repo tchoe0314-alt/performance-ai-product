@@ -6,6 +6,14 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Real local Chromium candidate acceptance/stale-edit409/reload workflow passes
+three final repeats. Repeat testing exposed transient auth restore erasing valid
+tab credentials; repaired without weakening rate limits or401 handling. Seven
+offline actual-hook scenarios and readonly TypeScript pass. Failed/interrupted
+runs preserved. See `BROWSER_SESSION_RESTORE_2026-10-17.md`. Full browser/hosted,
+old-response/new-login races and independent acceptance remain open. Local servers
+stopped. Original audit last verified100%;release gates0/5 (0%).
+
 Session rotation now validates after obtaining storage locks, preventing false
 expiry after concurrent activity and rotation of a session expiring during its
 wait. Two new failures reproduced, repaired;35 affected tests pass, including

@@ -60,6 +60,7 @@ export default function useAuthState({
 
   const refreshProjectsRef = useRef(onRefreshProjects);
   const refreshJobsRef = useRef(onRefreshJobs);
+  const statusMessageRef = useRef(onStatusMessage);
   const shouldSkipStoredAuthRestoreRef = useRef(shouldSkipStoredAuthRestore);
 
   useEffect(() => {
@@ -69,6 +70,10 @@ export default function useAuthState({
   useEffect(() => {
     refreshJobsRef.current = onRefreshJobs;
   }, [onRefreshJobs]);
+
+  useEffect(() => {
+    statusMessageRef.current = onStatusMessage;
+  }, [onStatusMessage]);
 
   useEffect(() => {
     shouldSkipStoredAuthRestoreRef.current = shouldSkipStoredAuthRestore;
@@ -213,8 +218,16 @@ export default function useAuthState({
         ]);
       })
       .catch((error) => {
-        clearStoredToken();
-        setToken("");
+        // A rate limit/outage is not evidence that the credential expired.
+        // Keep tab-scoped credentials for recovery; the server still authorizes
+        // every operation. Only a genuine authentication rejection clears them.
+        const expired = classifyApiError(error) === "auth_expired";
+        if (expired) {
+          clearStoredToken();
+          setToken("");
+        } else {
+          statusMessageRef.current(apiErrorMessage(error, "Session check unavailable. Retry shortly."));
+        }
         setAuthStatusError(
           error instanceof Error && error.message === "Session expired. Sign in again."
             ? "Session expired. Sign in again."

@@ -1,0 +1,15 @@
+AssertionError [ERR_ASSERTION]: 429 must not erase a potentially valid session
++ actual - expected
+
++ ''
+- 'synthetic-tab-token'
+
+    at scenario (/private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-restore-failures.cjs:67:12)
+    at async /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/auth-restore-failures.cjs:76:67 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: '',
+  expected: 'synthetic-tab-token',
+  operator: 'strictEqual',
+  diff: 'simple'
+}

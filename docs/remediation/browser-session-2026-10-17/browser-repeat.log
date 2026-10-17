@@ -1,0 +1,40 @@
+
+Running 3 tests using 1 worker
+
+  ✓  1 tests/live/remediation-candidate-review.spec.ts:7:5 › saved candidate review persists and stale browser decisions conflict (3.4s)
+  ✓  2 tests/live/remediation-candidate-review.spec.ts:7:5 › saved candidate review persists and stale browser decisions conflict (3.3s)
+  ✘  3 tests/live/remediation-candidate-review.spec.ts:7:5 › saved candidate review persists and stale browser decisions conflict (1.0m)
+
+
+  1) tests/live/remediation-candidate-review.spec.ts:7:5 › saved candidate review persists and stale browser decisions conflict 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByTestId('workspace-canvas-shell')
+    Expected: visible
+    Timeout: 60000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 60000ms[22m
+    [2m  - waiting for getByTestId('workspace-canvas-shell')[22m
+
+
+      48 |     localStorage.setItem("civora.activeProjectId", projectId);
+      49 |   }, { token, projectId: project.project_id });
+    > 50 |   await page.goto("/");
+         |                        ^
+      51 |   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 60_000 });
+      52 |   await expect(page.getByRole("button", { name: "Projects", exact: true })).toContainText("Disposable review test");
+      53 |   await openWorkspaceTool(page, "Setup");
+        at /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/live/remediation-candidate-review.spec.ts:50:60
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../tmp/civora-session-verification.pW76oM/results/browser-repeat/remediation-candidate-revi-f2efa--browser-decisions-conflict-repeat2/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../tmp/civora-session-verification.pW76oM/results/browser-repeat/remediation-candidate-revi-f2efa--browser-decisions-conflict-repeat2/error-context.md
+
+  1 failed
+    tests/live/remediation-candidate-review.spec.ts:7:5 › saved candidate review persists and stale browser decisions conflict 
+  2 passed (1.2m)

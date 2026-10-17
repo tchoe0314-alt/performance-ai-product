@@ -1,0 +1,194 @@
+{
+  "config": {
+    "configFile": "/tmp/civora-session-verification.pW76oM/browser-repeat.config.cjs",
+    "rootDir": "/tmp/civora-session-verification.pW76oM/source/apps/web/tests/live",
+    "forbidOnly": true,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/tmp/civora-session-verification.pW76oM/results/browser-repeat",
+        "repeatEach": 3,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/tmp/civora-session-verification.pW76oM/source/apps/web/tests/live",
+        "testIgnore": [],
+        "testMatch": [
+          "/remediation-candidate-review\\.spec\\.ts/"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "/tmp/civora-session-verification.pW76oM/results/browser-repeat.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "remediation-candidate-review.spec.ts",
+      "file": "remediation-candidate-review.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "saved candidate review persists and stale browser decisions conflict",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3363,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T07:39:36.032Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            },
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3277,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T07:39:40.374Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            },
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 60855,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('workspace-canvas-shell')\nExpected: visible\nTimeout: 60000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 60000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('workspace-canvas-shell')\u001b[22m\n",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('workspace-canvas-shell')\nExpected: visible\nTimeout: 60000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 60000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('workspace-canvas-shell')\u001b[22m\n\n    at /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/live/remediation-candidate-review.spec.ts:50:60",
+                    "location": {
+                      "file": "/private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/live/remediation-candidate-review.spec.ts",
+                      "column": 60,
+                      "line": 50
+                    },
+                    "snippet": "  48 |     localStorage.setItem(\"civora.activeProjectId\", projectId);\n  49 |   }, { token, projectId: project.project_id });\n> 50 |   await page.goto(\"/\");\n     |                        ^\n  51 |   await expect(page.getByTestId(\"workspace-canvas-shell\")).toBeVisible({ timeout: 60_000 });\n  52 |   await expect(page.getByRole(\"button\", { name: \"Projects\", exact: true })).toContainText(\"Disposable review test\");\n  53 |   await openWorkspaceTool(page, \"Setup\");"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/live/remediation-candidate-review.spec.ts",
+                        "column": 60,
+                        "line": 50
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByTestId('workspace-canvas-shell')\nExpected: visible\nTimeout: 60000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" with timeout 60000ms\u001b[22m\n\u001b[2m  - waiting for getByTestId('workspace-canvas-shell')\u001b[22m\n\n\n  48 |     localStorage.setItem(\"civora.activeProjectId\", projectId);\n  49 |   }, { token, projectId: project.project_id });\n> 50 |   await page.goto(\"/\");\n     |                        ^\n  51 |   await expect(page.getByTestId(\"workspace-canvas-shell\")).toBeVisible({ timeout: 60_000 });\n  52 |   await expect(page.getByRole(\"button\", { name: \"Projects\", exact: true })).toContainText(\"Disposable review test\");\n  53 |   await openWorkspaceTool(page, \"Setup\");\n    at /private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/live/remediation-candidate-review.spec.ts:50:60"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T07:39:44.175Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/tmp/civora-session-verification.pW76oM/results/browser-repeat/remediation-candidate-revi-f2efa--browser-decisions-conflict-repeat2/test-failed-1.png"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/tmp/civora-session-verification.pW76oM/results/browser-repeat/remediation-candidate-revi-f2efa--browser-decisions-conflict-repeat2/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/live/remediation-candidate-review.spec.ts",
+                    "column": 60,
+                    "line": 50
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1d6bb6b501a38a2e4106-95b06e3fff3a1bf39ea0",
+          "file": "../../../../../../../private/tmp/civora-session-verification.pW76oM/source/apps/web/tests/live/remediation-candidate-review.spec.ts",
+          "line": 7,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-17T07:39:35.738Z",
+    "duration": 69442.239,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}
