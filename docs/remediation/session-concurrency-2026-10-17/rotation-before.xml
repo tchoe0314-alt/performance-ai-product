@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="11" time="0.474" timestamp="2026-10-17T02:38:09.417121-05:00" hostname="Tommys-Laptop.local"><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_exact_idle_expiry_and_absolute_expiry" time="0.033" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_future_activity_rejected_and_session_fields_not_exposed" time="0.032" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_future_session_cannot_authenticate" time="0.027" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_only_hashes_stored_and_legacy_raw_tokens_rejected" time="0.030" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_parallel_activity_before_select_does_not_expire_valid_session" time="0.029" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_parallel_touch_cannot_move_idle_timestamp_backwards" time="0.028" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_revoke_all_needs_password_and_does_not_revoke_other_user" time="0.101" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_rotation_expiring_while_waiting_on_storage_is_rejected" time="0.032"><failure message="AssertionError: ValueError not raised">self = &lt;test_session_security.SessionSecurityTests testMethod=test_rotation_expiring_while_waiting_on_storage_is_rejected&gt;
+
+    def test_rotation_expiring_while_waiting_on_storage_is_rejected(self):
+        connection = self.db.connect()
+        now = self.now
+    
+        class DelayedRotation:
+            def execute(self, sql, parameters=()):
+                now.return_value = 1030
+                return connection.execute(sql, parameters)
+    
+            def __getattr__(self, name):
+                return getattr(connection, name)
+    
+        self.now.return_value = 1029
+        with patch.object(self.db, "connect", return_value=DelayedRotation()):
+&gt;           with self.assertRaisesRegex(ValueError, "invalid or expired"):
+E           AssertionError: ValueError not raised
+
+tests/remediation/test_session_security.py:191: AssertionError</failure></testcase><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_rotation_has_one_winner_and_does_not_extend_absolute_expiry" time="0.045" /><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_rotation_waiting_on_storage_accepts_concurrent_activity" time="0.031"><failure message="ValueError: Session is invalid or expired.">self = &lt;test_session_security.SessionSecurityTests testMethod=test_rotation_waiting_on_storage_accepts_concurrent_activity&gt;
+
+    def test_rotation_waiting_on_storage_accepts_concurrent_activity(self):
+        connect = self.db.connect
+        connection = connect()
+        auth = self.auth
+        now = self.now
+        token = self.token
+    
+        class DelayedRotation:
+            delayed = False
+    
+            def execute(self, sql, parameters=()):
+                if not self.delayed:
+                    self.delayed = True
+                    now.return_value = 1021
+                    with patch.object(auth.db, "connect", side_effect=connect):
+                        if auth.authenticate_token(token) is None:
+                            raise AssertionError("Concurrent activity must be valid")
+                    now.return_value = 1022
+                return connection.execute(sql, parameters)
+    
+            def __getattr__(self, name):
+                return getattr(connection, name)
+    
+        self.now.return_value = 1020
+        with patch.object(self.db, "connect", return_value=DelayedRotation()):
+&gt;           replacement = self.auth.rotate_session(self.token)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/remediation/test_session_security.py:173: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;backend.services.auth_store.AuthStore object at 0x1073550d0&gt;
+token = 'hv9477uPm_e4dpfwUfjmF_a-zslYwSP0pqbJmV4-o-4'
+
+    def rotate_session(self, token: str) -&gt; str:
+        """Single-winner rotation; preserve original absolute session lifetime."""
+        now = _now()
+        replacement = secrets.token_urlsafe(32)
+        connection = self.db.connect()
+        try:
+            cursor = connection.execute(
+                """UPDATE auth_tokens SET token = ?, last_used_at = ?
+                WHERE token = ? AND created_at &gt; ? AND created_at &lt;= ?
+                    AND last_used_at &gt; ? AND last_used_at &lt;= ?""",
+                (_session_digest(replacement), now, _session_digest(str(token or "")),
+                 now-self.session_ttl_seconds, now, now-self.session_idle_seconds, now),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+&gt;               raise ValueError("Session is invalid or expired.")
+E               ValueError: Session is invalid or expired.
+
+backend/services/auth_store.py:202: ValueError</failure></testcase><testcase classname="tests.remediation.test_session_security.SessionSecurityTests" name="test_session_expiring_while_select_waits_is_rejected" time="0.027" /></testsuite></testsuites>

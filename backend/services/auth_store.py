@@ -186,10 +186,25 @@ class AuthStore:
 
     def rotate_session(self, token: str) -> str:
         """Single-winner rotation; preserve original absolute session lifetime."""
-        now = _now()
         replacement = secrets.token_urlsafe(32)
         connection = self.db.connect()
         try:
+            # Serialize validation and replacement with activity updates. Read
+            # time only after obtaining the row/write lock, not before waiting.
+            if self.db.storage_kind != "postgres":
+                connection.execute("BEGIN IMMEDIATE")
+            suffix = " FOR UPDATE" if self.db.storage_kind == "postgres" else ""
+            row = connection.execute(
+                "SELECT created_at, last_used_at FROM auth_tokens WHERE token = ?" + suffix,
+                (_session_digest(str(token or "")),),
+            ).fetchone()
+            now = _now()
+            if row is None or not (
+                now - self.session_ttl_seconds < row["created_at"] <= now
+                and now - self.session_idle_seconds < row["last_used_at"] <= now
+            ):
+                connection.rollback()
+                raise ValueError("Session is invalid or expired.")
             cursor = connection.execute(
                 """UPDATE auth_tokens SET token = ?, last_used_at = ?
                 WHERE token = ? AND created_at > ? AND created_at <= ?

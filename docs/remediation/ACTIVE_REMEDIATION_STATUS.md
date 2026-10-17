@@ -6,6 +6,13 @@ passed. Local commits are not deployed or pushed.
 
 ## Committed repair groups
 
+Session rotation now validates after obtaining storage locks, preventing false
+expiry after concurrent activity and rotation of a session expiring during its
+wait. Two new failures reproduced, repaired;35 affected tests pass, including
+single-winner and unchanged expiry/revocation behavior. See
+`SESSION_ROTATION_SERIALIZATION_2026-10-17.md`. PostgreSQL and load qualification
+remain open. Original audit last verified100%;release gates0/5 (0%).
+
 October17 session concurrency: a delayed read no longer rejects valid concurrent
 activity as future, and an older touch cannot move the idle timestamp backwards.
 Two reproduced failures repaired;31 affected tests plus2 API tests pass in offline

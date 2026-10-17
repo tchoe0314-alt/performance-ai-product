@@ -145,6 +145,54 @@ class SessionSecurityTests(unittest.TestCase):
         self.now.return_value=1100
         self.assertIsNone(self.auth.authenticate_token(winners[0]))
 
+    def test_rotation_waiting_on_storage_accepts_concurrent_activity(self):
+        connect = self.db.connect
+        connection = connect()
+        auth = self.auth
+        now = self.now
+        token = self.token
+
+        class DelayedRotation:
+            delayed = False
+
+            def execute(self, sql, parameters=()):
+                if not self.delayed:
+                    self.delayed = True
+                    now.return_value = 1021
+                    with patch.object(auth.db, "connect", side_effect=connect):
+                        if auth.authenticate_token(token) is None:
+                            raise AssertionError("Concurrent activity must be valid")
+                    now.return_value = 1022
+                return connection.execute(sql, parameters)
+
+            def __getattr__(self, name):
+                return getattr(connection, name)
+
+        self.now.return_value = 1020
+        with patch.object(self.db, "connect", return_value=DelayedRotation()):
+            replacement = self.auth.rotate_session(self.token)
+        self.assertIsNone(self.auth.authenticate_token(self.token))
+        self.assertIsNotNone(self.auth.authenticate_token(replacement))
+
+    def test_rotation_expiring_while_waiting_on_storage_is_rejected(self):
+        connection = self.db.connect()
+        now = self.now
+
+        class DelayedRotation:
+            def execute(self, sql, parameters=()):
+                now.return_value = 1030
+                return connection.execute(sql, parameters)
+
+            def __getattr__(self, name):
+                return getattr(connection, name)
+
+        self.now.return_value = 1029
+        with patch.object(self.db, "connect", return_value=DelayedRotation()):
+            with self.assertRaisesRegex(ValueError, "invalid or expired"):
+                self.auth.rotate_session(self.token)
+        self.now.return_value = 1029
+        self.assertIsNotNone(self.auth.authenticate_token(self.token))
+
     def test_revoke_all_needs_password_and_does_not_revoke_other_user(self):
         second=self.auth.login(email="test@example.test",password="Synthetic-password-123")["token"]
         other=self.auth.register_user(email="other@example.test",password="Synthetic-password-456",name="Other")["token"]
