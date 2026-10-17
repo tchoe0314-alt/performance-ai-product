@@ -38,7 +38,10 @@ deployment or environment-file modifications.
   authentication/health/session workflows and identity proof tests.
 - `api.xml`: **2 passed**, 1.03s. Session rotation/revocation and identity API flows.
   One existing Starlette/httpx deprecation warning; dependencies not changed.
-- `git diff --check`: passed.
+- Source/test diff whitespace check: passed. The final staged check reported
+  trailing whitespace in the preserved pytest traceback blank lines in
+  `before.log` and `before.xml`. Those historical output bytes were deliberately
+  not stripped. This warning is not a test failure or a clean all-files check.
 
 Preserved original report hashes:
 
