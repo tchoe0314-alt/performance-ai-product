@@ -616,7 +616,7 @@ export function buildPlacementPreview3DItems({
         w: Math.max(1, item.w),
         h: Math.max(1, item.d),
         height: isBuilding
-          ? Math.max(8, Number(item.h ?? 28))
+          ? Math.max(8, Number(item.h ?? SITE_OBJECT_CATALOG[item.type ?? "building"]?.defaultH ?? SITE_OBJECT_CATALOG.building.defaultH))
           : isDrainage
             ? 3
           : isRoad

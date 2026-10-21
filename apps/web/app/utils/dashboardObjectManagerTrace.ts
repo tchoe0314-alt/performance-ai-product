@@ -194,14 +194,36 @@ export function createObjectManagerScaleUpdateEntries(
   editable: BuildingPlacement[],
   factor: number,
 ): ObjectManagerUpdateEntry[] {
-  return editable.map((item) => ({
-    item,
-    updates: {
-      w: Math.max(1, item.w * factor),
-      d: Math.max(1, item.d * factor),
-      h: typeof item.h === "number" ? Math.max(0, item.h * factor) : item.h,
-    },
-  }));
+  return editable.map((item) => {
+    const geometry = normalizeGeometryPoints(item.geometry);
+    const bounds = geometry?.length ? getGeometryBounds(geometry) : null;
+    const width = bounds && bounds.width > 0 ? bounds.width : item.w;
+    const depth = bounds && bounds.depth > 0 ? bounds.depth : item.d;
+    const w = Math.max(1, width * factor);
+    const d = Math.max(1, depth * factor);
+    // Match the existing one-foot minimum without leaving the true footprint
+    // unchanged. Zero-span line axes remain zero-span, not a filled rectangle.
+    const scaleX = width > 0 ? w / width : factor;
+    const scaleY = depth > 0 ? d / depth : factor;
+    const originX = bounds?.minX ?? item.x ?? 0;
+    const originY = bounds?.minY ?? item.y ?? 0;
+    return {
+      item,
+      updates: {
+        w,
+        d,
+        h: typeof item.h === "number" ? Math.max(0, item.h * factor) : item.h,
+        ...(geometry?.length ? {
+          x: originX,
+          y: originY,
+          geometry: geometry.map(([x, y]) => [
+            originX + (x - originX) * scaleX,
+            originY + (y - originY) * scaleY,
+          ] as [number, number]),
+        } : {}),
+      },
+    };
+  });
 }
 
 export function createObjectManagerRotateUpdateEntries(
