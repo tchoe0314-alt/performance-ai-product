@@ -169,6 +169,9 @@ export function createObjectManagerMoveUpdateEntries(
     updates: {
       x: (item.x ?? 0) + dx,
       y: (item.y ?? 0) + dy,
+      ...(item.geometry?.length ? {
+        geometry: item.geometry.map(([x, y]) => [x + dx, y + dy] as [number, number]),
+      } : {}),
     },
   }));
 }

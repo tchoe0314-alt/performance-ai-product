@@ -577,7 +577,7 @@ export function buildPlacementPreview3DItems({
   }
   items.push(...buildReviewContourTerrainSamples(buildingPlacements));
   buildingPlacements
-    .filter((item) => item.type !== "site" && item.placed)
+    .filter((item) => item.type !== "site" && item.placed && !item.meta?.ui_hidden)
     .forEach((item) => {
       const confidenceEntry = sourceConfidenceByObjectId.get(item.id);
       const metaConfidence =
