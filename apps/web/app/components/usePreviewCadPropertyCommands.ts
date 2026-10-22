@@ -4,6 +4,7 @@ import type { CadDimensionMode, CadSymbolKind } from "../utils/cadToolTypes";
 import { clampValue } from "../utils/previewCadObjectHelpers";
 import { parseCadNumber } from "../utils/previewCadCommandParsing";
 import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
+import { automaticCadDimensionLabel } from "../utils/cadDimensionBinding";
 import type { buildSelectedCadMetrics } from "../utils/previewCadDerivedObjects";
 import type { CadCommandHistoryEntry, PreviewPanelProps } from "./previewPanelTypes";
 
@@ -56,17 +57,22 @@ export function usePreviewCadPropertyCommands({
       pushCadCommandFeedback("DIM", "blocked", "DIM blocked: select one editable line/polyline draft object first.");
       return;
     }
-    const defaultLabel =
-      cadDimensionMode === "linear"
-        ? `${selectedCadMetrics.firstLength.toFixed(1)} ft`
-        : `${selectedCadMetrics.firstLength.toFixed(1)} ft @ ${selectedCadMetrics.firstAngle.toFixed(1)} deg`;
+    const defaultLabel = automaticCadDimensionLabel({ ...selectedCadObject, meta: { ...selectedCadObject.meta, cad_dimension_mode: cadDimensionMode } });
+    if (defaultLabel === null) {
+      pushCadCommandFeedback("DIM", "blocked", "DIM blocked: dimension geometry is not finite.");
+      return;
+    }
+    const enteredLabel = cadDimensionLabelDraft.trim();
+    const automatic = !enteredLabel || enteredLabel === defaultLabel || (selectedCadObject.meta?.cad_dimension_auto === true && enteredLabel === selectedCadObject.meta?.cad_dimension_label);
     updateCadObject(
       selectedCadObject,
       {
         meta: {
           ...(selectedCadObject.meta ?? {}),
           cad_dimension_mode: cadDimensionMode,
-          cad_dimension_label: cadDimensionLabelDraft.trim() || defaultLabel,
+          cad_dimension_label: automatic ? defaultLabel : enteredLabel,
+          cad_dimension_auto: automatic,
+          cad_dimension_review_required: false,
         },
       },
       "Dimension",

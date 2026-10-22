@@ -16,7 +16,7 @@
     const exports={}; cache.set(filename,exports);
     const code=ts.transpileModule(fs.readFileSync(filename,'utf8'),{fileName:filename,compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
     vm.runInThisContext(`(function(exports,require){${code}\n})`,{filename})(exports,name=>{
-      if (filename.endsWith('useDashboardExistingConditionsUpload.ts') && name==='react') return {useCallback:f=>f};
+      if ((filename.endsWith('useDashboardExistingConditionsUpload.ts') || filename.endsWith('usePreviewCadPropertyCommands.ts')) && name==='react') return {useCallback:f=>f};
       if (filename.endsWith('useDashboardExistingConditionsUpload.ts') && name==='../../lib/api') return {postForm:async()=>{calls.push('upload');if(transportError)throw transportError;return response;}};
       return name.startsWith('.')?load(path.resolve(path.dirname(filename),name)):createRequire(filename)(name);
     }); return exports;
@@ -24,6 +24,10 @@
   const root=path.join(__dirname,'../app');
   const interference=load(`${root}/utils/siteInterference`);
   const hook=load(`${root}/hooks/useDashboardExistingConditionsUpload`).useDashboardExistingConditionsUpload;
+  const dimension=load(`${root}/utils/cadDimensionBinding`);
+  const trace=load(`${root}/utils/dashboardObjectManagerTrace`);
+  const dimensionCommands=load(`${root}/components/usePreviewCadPropertyCommands`).usePreviewCadPropertyCommands;
+  const dimensionLine={id:'dimension-line',type:'custom',x:0,y:0,w:40,d:5,placed:true,geometryType:'polyline',geometry:[[0,0],[40,0]],meta:{cad_dimension_label:'40.0 ft',cad_dimension_mode:'linear',cad_dimension_auto:true}};
   const originalPoints=[[0,0,102],[220,0,101.4],[0,160,100.8],[220,160,100]];
   const valid={success:true,file_type:'csv',stored_filename:'new.csv',canonical_existing_conditions:{survey:{points:originalPoints.map(([x,y,z])=>({x,y,z})),point_count:4}},existing_conditions_package:{status:'review_required'},warnings:['Coordinate metadata incomplete']};
   const originalInput={meta:{site_inputs:{survey_file:{stored_filename:'original.csv'},survey_points:originalPoints,survey_point_count:4}}};
@@ -37,6 +41,11 @@
   const owner={id:'owner',label:'Grouped building',type:'building',x:20,y:20,w:40,d:40,geometryType:'polygon',geometry:square,placed:true,meta:{combined_from_object_ids:['e0','e1','e2','e3']}};
   const edges=square.map((p,i)=>({id:`e${i}`,label:`Edge${i}`,type:'custom',x:Math.min(p[0],square[(i+1)%4][0]),y:Math.min(p[1],square[(i+1)%4][1]),w:5,d:5,geometryType:'polyline',geometry:[p,square[(i+1)%4]],placed:true,meta:{ui_hidden:true,combined_into_object_id:'owner'}}));
   const cases=[
+    ['new DIM default explicitly binds to source geometry',()=>{let updates;const commands=dimensionCommands({buildingPlacements:[dimensionLine],selectedCadIds:[dimensionLine.id],selectedCadObject:dimensionLine,selectedCadMetrics:{firstLength:40,firstAngle:0},cadDimensionMode:'linear',cadDimensionLabelDraft:'',cadPropertyDraft:{},cadCoordinateDraft:{},pushCadCommandFeedback:()=>{},updateCadObject:(_item,value)=>{updates=value;}});commands.applySelectedCadDimension();assert.equal(updates.meta.cad_dimension_auto,true);assert.equal(updates.meta.cad_dimension_label,'40.0 ft');}],
+    ['dimension follows40→60 scale in stored model and renderer',()=>{const next=trace.cloneBuildingPlacementWithUpdatesForUndo(dimensionLine,trace.createObjectManagerScaleUpdateEntries([dimensionLine],1.5)[0].updates);assert.equal(next.meta.cad_dimension_label,'60.0 ft');assert.equal(dimension.displayedCadDimensionLabel(JSON.parse(JSON.stringify(next))),'60.0 ft');assert.equal(dimensionLine.meta.cad_dimension_label,'40.0 ft');}],
+    ['inverse edit restores dimension and aligned angle follows geometry',()=>{const next=trace.cloneBuildingPlacementWithUpdatesForUndo(dimensionLine,{geometry:[[0,0],[0,60]],meta:{cad_dimension_mode:'aligned'}});assert.equal(next.meta.cad_dimension_label,'60.0 ft @ 90.0 deg');assert.equal(dimension.automaticCadDimensionLabel({...dimensionLine,meta:{...dimensionLine.meta,coordinate_units:'m'}}),'40.0 m');}],
+    ['custom and legacy captions are preserved and flagged after geometry edits',()=>{for(const auto of [false,undefined]){const manual={...dimensionLine,meta:{...dimensionLine.meta,cad_dimension_label:'FIELD CHECK',cad_dimension_auto:auto}};const next=trace.cloneBuildingPlacementWithUpdatesForUndo(manual,{geometry:[[0,0],[60,0]]});assert.equal(next.meta.cad_dimension_label,'FIELD CHECK');assert.equal(next.meta.cad_dimension_review_required,true);assert.match(dimension.displayedCadDimensionLabel(next),/review/);}}],
+    ['invalid automatic dimension cannot display a numeric success',()=>{const next={...dimensionLine,geometry:[[0,0],[NaN,0]]};assert.match(dimension.displayedCadDimensionLabel(next),/unavailable.*review/i);}],
     ['same verified outline has no internal contact warnings',()=>assert.equal(interference.assessSiteInterference([owner,...edges]).length,0)],
     ['independent building still contacts hidden outline',()=>assert.ok(interference.assessSiteInterference([owner,...edges,{...owner,id:'other',label:'Other',meta:{}}]).some(r=>r.objectIds.includes('other')))],
     ['dangling or one-sided contributor IDs do not suppress checks',()=>assert.ok(interference.assessSiteInterference([{...owner,meta:{combined_from_object_ids:['e0']}},...edges]).length>0)],

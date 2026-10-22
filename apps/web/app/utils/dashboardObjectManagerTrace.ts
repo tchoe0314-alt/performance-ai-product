@@ -1,6 +1,7 @@
 import type { BuildingPlacement } from "../types";
 import type { DraftUndoAction } from "./dashboardTypes";
 import { getGeometryBounds, normalizeGeometryPoints } from "./objectGeometry";
+import { synchronizeCadDimension } from "./cadDimensionBinding";
 
 export type ObjectManagerBounds = {
   minX: number;
@@ -307,14 +308,14 @@ export function cloneBuildingPlacementWithUpdatesForUndo(
   item: BuildingPlacement,
   updates: Partial<BuildingPlacement>,
 ): BuildingPlacement {
-  return cloneBuildingPlacementForUndo({
+  return synchronizeCadDimension(item, cloneBuildingPlacementForUndo({
     ...item,
     ...updates,
     meta: updates.meta ? { ...(item.meta ?? {}), ...updates.meta } : item.meta,
     capabilities: updates.capabilities
       ? { ...(item.capabilities ?? {}), ...updates.capabilities }
       : item.capabilities,
-  });
+  }));
 }
 
 export function createDraftCopyWithTrace({
