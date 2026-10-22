@@ -116,6 +116,7 @@ export function GeneratePanel({
   const isActiveJobRunning = ["queued", "running", "cancelling"].includes(normalizedJobStatus);
   const isApprovalBusy = approvalState !== "idle";
   const actionBusy = busy || isActiveJobRunning || isApprovalBusy;
+  const needsSystemInput = systemReadinessRows.some((row) => row.blockers.length > 0);
   const reviewCheckpointLabel = approvalCheckpointLabel || "current phase";
   const issueActions = Array.from(
     issues
@@ -169,8 +170,8 @@ export function GeneratePanel({
             <p className="text-sm font-semibold text-slate-950">Generate systems</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">Uses your site, objects, and accepted context.</p>
           </div>
-          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-            missingSite
+          <span data-testid="generate-readiness" className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+            missingSite || (!isAwaitingApproval && !actionBusy && needsSystemInput)
               ? "bg-amber-50 text-amber-700"
               : isAwaitingApproval
                 ? "bg-violet-50 text-violet-700"
@@ -178,7 +179,7 @@ export function GeneratePanel({
                   ? "bg-blue-50 text-blue-700"
                   : "bg-emerald-50 text-emerald-700"
           }`}>
-            {missingSite ? "Needs site" : isAwaitingApproval ? "Review step" : actionBusy ? "Running" : "Ready"}
+            {missingSite ? "Needs site" : isAwaitingApproval ? "Review step" : actionBusy ? "Running" : needsSystemInput ? "Needs input" : "Ready"}
           </span>
         </div>
         <button

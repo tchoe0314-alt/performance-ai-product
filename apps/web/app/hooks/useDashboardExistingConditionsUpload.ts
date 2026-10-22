@@ -72,14 +72,12 @@ export function useDashboardExistingConditionsUpload({
     const supportedSurveyPattern = /\.(csv|geojson|json|dxf|shp|zip|gpkg|tif|tiff|las|laz|xml|landxml)$/i;
     if (!supportedSurveyPattern.test(file.name)) {
       const message = "Survey/topo upload failed: Unsupported file. Use CSV, DXF, LAS/LAZ, GeoTIFF, GeoJSON, SHP/ZIP, GPKG, XML, or LandXML.";
-      setSurveyFileName(file.name);
       setSurveyUploadMessage(message);
       setStatusMessage(message);
       return;
     }
     if (!token) {
       const message = "Survey/topo upload failed: Sign in/connect backend to upload existing-condition files.";
-      setSurveyFileName(file.name);
       setSurveyUploadMessage(message);
       setStatusMessage(message);
       return;
@@ -97,24 +95,19 @@ export function useDashboardExistingConditionsUpload({
       const survey = canonical.survey && typeof canonical.survey === "object" ? canonical.survey as Record<string, unknown> : {};
       const surveyPoints = Array.isArray(survey.points)
         ? (survey.points as Array<Record<string, unknown>>)
+            .filter((point) => [point.x, point.y, point.z].every((value) => typeof value === "number" && Number.isFinite(value)))
             .map((point) => [Number(point.x), Number(point.y), Number(point.z)])
             .filter((point) => point.every((value) => Number.isFinite(value)))
         : [];
-      setSurveyFileName(storedFilename);
-      setSourceEffectRows(sourceEffectRows);
-      setSurveyPoints(surveyPoints);
-      setSurveyPreviewPoints(mapSurveyPointsToSite(surveyPoints, lotWidthValue, lotHeightValue));
-      setSurveyDiagnostics({
-        fileType: data.file_type,
-        parseSuccess: Boolean(data.success && surveyPoints.length),
-        pointCount: Number(survey.point_count ?? surveyPoints.length ?? 0),
-        contourCount: Number(survey.breakline_count ?? 0),
-        recognizedColumns: {},
-        invalidRows: 0,
-        bounds: survey.bounds as UploadSurveyResponse["bounds"],
-        elevationRange: survey.elevation_range as UploadSurveyResponse["elevation_range"],
-        warnings: data.warnings,
-      });
+      // A stored file is not an accepted replacement. Preserve the active source
+      // (including its warnings and points) when parsing fails.
+      if (data.success !== true || ((data.file_type === "csv" || /\.csv$/i.test(file.name)) && surveyPoints.length < 3)) {
+        const detail = data.message || "No usable survey/source data was recognized.";
+        const message = `Survey/topo upload failed: ${detail} Active source unchanged.`;
+        setSurveyUploadMessage(message);
+        setStatusMessage(message);
+        return;
+      }
       const currentInput = currentProject?.project_input ?? payloadPreview;
       const nextSiteInputs = {
         ...(currentInput?.meta?.site_inputs ?? {}),
@@ -142,7 +135,7 @@ export function useDashboardExistingConditionsUpload({
           package_status: String(data.existing_conditions_package?.status ?? "unknown"),
         },
       };
-      await saveProject({
+      const saved = await saveProject({
         silent: true,
         projectInputOverride: {
           ...currentInput,
@@ -162,6 +155,27 @@ export function useDashboardExistingConditionsUpload({
           },
         },
       });
+      if (!saved) {
+        const message = "Survey/topo upload not applied: project save failed. Active source unchanged.";
+        setSurveyUploadMessage(message);
+        setStatusMessage(message);
+        return;
+      }
+      setSurveyFileName(storedFilename);
+      setSourceEffectRows(sourceEffectRows);
+      setSurveyPoints(surveyPoints);
+      setSurveyPreviewPoints(mapSurveyPointsToSite(surveyPoints, lotWidthValue, lotHeightValue));
+      setSurveyDiagnostics({
+        fileType: data.file_type,
+        parseSuccess: Boolean(surveyPoints.length),
+        pointCount: surveyPoints.length,
+        contourCount: Number(survey.breakline_count ?? 0),
+        recognizedColumns: {},
+        invalidRows: 0,
+        bounds: survey.bounds as UploadSurveyResponse["bounds"],
+        elevationRange: survey.elevation_range as UploadSurveyResponse["elevation_range"],
+        warnings: data.warnings,
+      });
       appendChatMessage("assistant", summarizeExistingConditionsUpload(data), "status");
       setSurveyUploadMessage(
         data.existing_conditions_package?.status === "ready"
@@ -174,13 +188,7 @@ export function useDashboardExistingConditionsUpload({
           : "Existing conditions imported; review needs are recorded.",
       );
     } catch (error) {
-      setSurveyFileName(file.name);
       const message = uploadStatusMessage("survey", error);
-      setSourceEffectRows([
-        `${file.name}: upload did not complete.`,
-        message,
-        "No project geometry, source confidence, or generated output was changed.",
-      ]);
       setSurveyUploadMessage(message);
       setStatusMessage(message);
     }

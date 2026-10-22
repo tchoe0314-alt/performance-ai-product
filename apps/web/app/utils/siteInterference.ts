@@ -90,11 +90,28 @@ export function footprintInside(boundary: FootprintPoint[], footprint: Footprint
 }
 /** Draft coordination rules, not a claim of regulatory or engineering approval. */
 export function assessSiteInterference(objects: BuildingPlacement[]): InterferenceResult[] {
+  const linkedOwner = (item: BuildingPlacement) => {
+    const owner = objects.find(candidate => candidate.id === item.meta?.combined_into_object_id);
+    return owner && Array.isArray(owner.meta?.combined_from_object_ids) && owner.meta.combined_from_object_ids.includes(item.id) ? owner : undefined;
+  };
+  // Only literal linework edges of the same retained outline are one object.
+  // Do not exempt arbitrary components, interior crossings, or hidden objects.
+  const outlineOwner = (item: BuildingPlacement) => {
+    const owner = linkedOwner(item);
+    if (item.meta?.occupied_components_v1 || item.meta?.pipe_profile_v1 || item.meta?.coordination_envelope_v1 || item.meta?.asset_kind || item.meta?.network) return undefined;
+    if (!owner || item.type !== "custom" || item.geometryType !== "polyline" || !item.geometry || item.geometry.length < 2 || owner.geometryType !== "polygon" || !owner.geometry || owner.geometry.length < 3 || (item.meta?.coordinate_units ?? "ft") !== (owner.meta?.coordinate_units ?? "ft")) return undefined;
+    const same = (a: FootprintPoint, b: FootprintPoint) => a.every((value, index) => Number.isFinite(value) && Math.abs(value - b[index]) < 1e-7);
+    const polygon = owner.geometry;
+    return item.geometry.slice(1).every((end, index) => polygon.some((start, i) => {
+      const next = polygon[(i + 1) % polygon.length], from = item.geometry![index];
+      return (same(from, start) && same(end, next)) || (same(from, next) && same(end, start));
+    })) ? owner : undefined;
+  };
   // Keep physical source IDs/geometry for checks, but make a converted object's
   // current name discoverable. Verify both sides of the source relationship.
   const displayName = (item: BuildingPlacement) => {
-    const owner = objects.find(candidate => candidate.id === item.meta?.combined_into_object_id);
-    return owner && Array.isArray(owner.meta?.combined_from_object_ids) && owner.meta.combined_from_object_ids.includes(item.id)
+    const owner = linkedOwner(item);
+    return owner
       ? `${owner.label} (source: ${item.label})`
       : item.label;
   };
@@ -103,6 +120,7 @@ export function assessSiteInterference(objects: BuildingPlacement[]): Interferen
   const candidates = objects.filter(o => o.placed && Number.isFinite(o.x) && Number.isFinite(o.y) && category(o) !== "container" && !(Array.isArray(o.meta?.combined_from_object_ids) && o.meta.combined_from_object_ids.length > 0));
   const results: InterferenceResult[] = [];
   const shapes = new Map(candidates.map(o => [o, [...objectFootprints(o), ...reviewedComponentFootprints(o)]]));
+  const outlineOwners = new Map(candidates.map(o => [o, outlineOwner(o)]));
   for (const o of candidates) {
     const error = o.meta?.occupied_components_v1 ? validateComponentModel(o.meta.occupied_components_v1, o) : o.meta?.pipe_profile_v1 ? validatePipeProfile(o.meta.pipe_profile_v1, o) : null;
     if (error) results.push({ severity: "review", code: "detailed_evidence_invalid", objectIds: [o.id], message: `${displayName(o)}: ${error}` });
@@ -119,6 +137,7 @@ export function assessSiteInterference(objects: BuildingPlacement[]): Interferen
     results.push({ severity: "review", code: "pipe_size_unknown", objectIds: [o.id], message: `${displayName(o)}: outside diameter is missing. The displayed centerline is not enough to establish clearance.` });
   }
   candidates.forEach((a, i) => candidates.slice(i + 1).forEach(b => {
+    if (outlineOwners.get(a) && outlineOwners.get(a) === outlineOwners.get(b)) return;
     const A = category(a), B = category(b);
     const objectIds = [a.id, b.id], names = `${displayName(a)} / ${displayName(b)}`;
     const result = (severity: InterferenceResult["severity"], code: string, detail: string) => results.push({ severity, code, objectIds, message: `${names}: ${detail}` });
