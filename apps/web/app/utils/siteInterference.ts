@@ -115,12 +115,18 @@ export function assessSiteInterference(objects: BuildingPlacement[]): Interferen
       ? `${owner.label} (source: ${item.label})`
       : item.label;
   };
-  // A combined object's hull is an editing wrapper, not another occupied volume.
-  // Keep its underlying sources (including hidden ones) as the physical objects.
-  const candidates = objects.filter(o => o.placed && Number.isFinite(o.x) && Number.isFinite(o.y) && category(o) !== "container" && !(Array.isArray(o.meta?.combined_from_object_ids) && o.meta.combined_from_object_ids.length > 0));
+  const outlineOwners = new Map(objects.map(o => [o, outlineOwner(o)]));
+  const isLineworkFootprint = (o: BuildingPlacement) => o.placed && category(o) !== "container" && o.meta?.semantic_source_mode === "linework" && o.geometryType === "polygon" && Boolean(o.geometry && o.geometry.length >= 3 && o.geometry.every(p => p.every(Number.isFinite)));
+  // A linework conversion occupies the whole resulting polygon, not just its
+  // perimeter strokes. Other assembly hulls remain wrappers around their sources.
+  const candidates = objects.filter(o => {
+    if (!o.placed || !Number.isFinite(o.x) || !Number.isFinite(o.y) || category(o) === "container") return false;
+    if (Array.isArray(o.meta?.combined_from_object_ids) && o.meta.combined_from_object_ids.length > 0) return isLineworkFootprint(o);
+    const owner = outlineOwners.get(o);
+    return !owner || !isLineworkFootprint(owner);
+  });
   const results: InterferenceResult[] = [];
   const shapes = new Map(candidates.map(o => [o, [...objectFootprints(o), ...reviewedComponentFootprints(o)]]));
-  const outlineOwners = new Map(candidates.map(o => [o, outlineOwner(o)]));
   for (const o of candidates) {
     const error = o.meta?.occupied_components_v1 ? validateComponentModel(o.meta.occupied_components_v1, o) : o.meta?.pipe_profile_v1 ? validatePipeProfile(o.meta.pipe_profile_v1, o) : null;
     if (error) results.push({ severity: "review", code: "detailed_evidence_invalid", objectIds: [o.id], message: `${displayName(o)}: ${error}` });
