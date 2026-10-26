@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import os
 import sys
+from uuid import uuid4
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,14 +24,20 @@ def main() -> None:
         help="SQLite database path. Hosted PostgreSQL uses DATABASE_URL and requires provider evidence env vars.",
     )
     parser.add_argument("--output-dir", default="reports/release/backup")
-    parser.add_argument("--report", default="reports/release/backup_restore_report.json")
+    parser.add_argument(
+        "--report", default=None,
+        help="New report path (existing paths are rejected). Default: unique report inside --output-dir.",
+    )
     parser.add_argument("--fail-on-blocked", action="store_true")
     args = parser.parse_args()
+    report_path = Path(args.report) if args.report else Path(args.output_dir) / f"backup_restore_report-{uuid4().hex}.json"
+    if os.path.lexists(report_path):
+        parser.error("Report destination already exists; choose a new --report path.")
 
     db = Database(Path(args.db_path), database_url=os.getenv("DATABASE_URL"))
     report = DatabaseBackupService(db).run_restore_drill(
         output_dir=Path(args.output_dir),
-        report_path=Path(args.report),
+        report_path=report_path,
     )
     print(
         json.dumps(
@@ -39,7 +46,7 @@ def main() -> None:
                 "status": report["status"],
                 "storage_kind": report["storage_kind"],
                 "local_restore_drill_performed": report["local_restore_drill_performed"],
-                "report": args.report,
+                "report": str(report_path),
             },
             sort_keys=True,
         )

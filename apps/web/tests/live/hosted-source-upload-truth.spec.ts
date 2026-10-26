@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 import path from "node:path";
 
 import { setPreviewQuality } from "./testUiHelpers";
+import { openWorkspacePanelByName } from "./helpers/workspaceNavigation";
 
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
@@ -36,11 +37,7 @@ async function seedAuth(page: Page, token: string) {
 }
 
 async function openPanel(page: Page, name: RegExp | string, expected: RegExp | string) {
-  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
-  if (await workspaceButton.isVisible().catch(() => false)) {
-    await workspaceButton.click();
-  }
-  await page.getByRole("button", { name }).filter({ visible: true }).first().click();
+  await openWorkspacePanelByName(page, name);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 15_000 });
 }
 

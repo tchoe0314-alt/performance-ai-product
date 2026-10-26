@@ -16,6 +16,7 @@ import type {
   GenerateFlowSummary,
 } from "../utils/dashboardDataTypes";
 import { parseDashboardDirectSiteSetupCommand } from "../utils/dashboardChatCommandParsing";
+import { resolveSiteSetupProgramKind } from "../utils/siteSetupProgramIntent";
 import {
   normalizeDashboardChatIntent,
   userFacingWorkflowNeeds,
@@ -621,12 +622,9 @@ export function useDashboardPowerCommandHandler({
       const requestedParkingCount = message.match(
         /\b(\d{1,4})\s*(?:parking\s+)?(?:spaces?|stalls?)\b/i,
       )?.[1];
-      const wantsSubdivisionCadPlan =
-        /\b(recreate|copy|like the image|like this image|subdivision|master plan|lots?|parcels?|contours?|cad screenshot|as many)\b/i.test(message) &&
-        /\b(image|plan|site|cad|subdivision|lots?|parcels?|contours?|dense|stuff)\b/i.test(message);
-      const wantsUrbanizationCampusPlan =
-        /\b(urbanization|campus|boulevard|plaza|municipal|park|parks|master plan|site model|3d massing|massing|community|civic)\b/i.test(message) &&
-        /\b(plan|site|layout|model|3d|buildings?|roads?|paths?|parking|trees?|plaza|like this|image)\b/i.test(message);
+      const programKind = resolveSiteSetupProgramKind(message);
+      const wantsSubdivisionCadPlan = programKind === "subdivision";
+      const wantsUrbanizationCampusPlan = programKind === "campus";
       setSiteAddress(directSiteSetup.address);
       setLotWidth(String(Math.round(directSiteSetup.width)));
       setLotHeight(String(Math.round(directSiteSetup.height)));
@@ -652,7 +650,7 @@ export function useDashboardPowerCommandHandler({
             : createDenseCommercialConceptPlacements({
                 w: directSiteSetup.width,
                 h: directSiteSetup.height,
-              })
+              }, parseCommercialConceptSpec(message))
         ).map((item) => ({
           ...item,
           meta: {

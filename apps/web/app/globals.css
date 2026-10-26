@@ -673,10 +673,7 @@ body,
 .civora-motion-right-panel,
 .civora-motion-bottom-panel,
 .civora-motion-command-bar {
-	  will-change: opacity, transform;
-	  transition:
-	    opacity 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
-	    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 160ms ease-out;
   backface-visibility: hidden;
 }
 
@@ -689,7 +686,7 @@ body,
 .civora-motion-sidebar[data-motion-state="closed"] {
   opacity: 0;
   pointer-events: none;
-  transform: translateX(-14px);
+  transform: none;
 }
 
 .civora-motion-right-panel {
@@ -701,7 +698,7 @@ body,
 .civora-motion-right-panel[data-motion-state="closed"] {
   opacity: 0;
   pointer-events: none;
-  transform: translateX(32px);
+  transform: none;
 }
 
 .civora-motion-bottom-panel {
@@ -713,7 +710,7 @@ body,
 .civora-motion-bottom-panel[data-motion-state="closed"] {
   opacity: 0;
   pointer-events: none;
-  transform: translateY(10px);
+  transform: none;
 }
 
 .civora-motion-command-bar {
@@ -743,7 +740,7 @@ body,
 
 @media (max-width: 1023px) {
   .civora-motion-right-panel[data-motion-state="closed"] {
-    transform: translateY(8px);
+    transform: none;
   }
 }
 
@@ -762,11 +759,39 @@ body,
   .civora-motion-right-panel[data-motion-state="closed"],
   .civora-motion-bottom-panel,
   .civora-motion-bottom-panel[data-motion-state="closed"] {
-    opacity: 1;
     transform: none;
   }
 
   .civora-motion-command-bar {
     transform: translateY(0);
   }
+}
+
+/* Fade surfaces only: drawing objects and pointer-driven edits stay immediate. */
+@keyframes civora-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+[data-testid="workspace-layout-root"],
+.civora-layout-left-panel,
+.civora-layout-right-panel,
+.civora-layout-delta {
+  animation: civora-fade-in 160ms ease-out;
+}
+
+/* Discrete transitions retain the dialog top layer until its exit fade ends. */
+.civora-dialog {
+  opacity: 0;
+  transition: opacity 160ms ease-out, display 160ms allow-discrete, overlay 160ms allow-discrete;
+}
+.civora-dialog[open] { opacity: 1; }
+@starting-style {
+  .civora-dialog[open] { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-testid="workspace-layout-root"],
+  .civora-layout-left-panel,
+  .civora-layout-right-panel,
+  .civora-layout-delta { animation: none; }
+  .civora-dialog { transition: none; }
 }

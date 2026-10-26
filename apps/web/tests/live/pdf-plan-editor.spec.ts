@@ -49,7 +49,7 @@ async function loginAndSeedToken(request: APIRequestContext, page: Page) {
 
 async function openPdfPanel(page: Page) {
   await page.goto("/?debugPreview=1", { waitUntil: "domcontentloaded" });
-  await page.waitForLoadState("networkidle").catch(() => null);
+  await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
   const workflow = page.getByTestId("plan-pdf-workflow");
   if (await workflow.isVisible().catch(() => false)) {
@@ -61,58 +61,11 @@ async function openPdfPanel(page: Page) {
     await workspaceButton.click();
   }
 
-  const directPanels = [
-    page.getByRole("button", { name: /^Deliver$/ }).first(),
-    page.getByRole("button", { name: /^(Brief|Setup)$/ }).first(),
-    page.getByRole("button", { name: /^Import$/ }).first(),
-  ];
-  for (const panelButton of directPanels) {
-    if (await panelButton.isVisible().catch(() => false)) {
-      await panelButton.click();
-      await page.waitForTimeout(150);
-      for (const sectionName of ["Survey / Terrain / Sources", "Auto Site Context Results"]) {
-        const section = page.getByText(sectionName, { exact: true }).first();
-        if (await section.isVisible().catch(() => false)) {
-          await section.click();
-          await page.waitForTimeout(150);
-        }
-      }
-      for (const panelName of [/Files \/ PDFs/i, /Online Sources/i, /Plan PDF/i]) {
-        const nestedButton = page.getByRole("button", { name: panelName }).first();
-        if (await nestedButton.isVisible().catch(() => false)) {
-          await nestedButton.click();
-          await page.waitForTimeout(150);
-          const details = page.getByText("Detailed source evidence and import tools", { exact: true }).first();
-          if (await details.isVisible().catch(() => false)) {
-            await details.click();
-          }
-          if (await workflow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-            return workflow;
-          }
-        }
-      }
-    }
-  }
-
-  for (const name of [/Survey \/ Import/i, /Files \/ PDFs/i, /Files/i, /Plan PDF visual editor/i, /^Plan PDF$/i, /^Data$/i, /Data/i]) {
-    const button = page.getByRole("button", { name }).first();
-    if ((await button.count().catch(() => 0)) > 0) {
-      await button.scrollIntoViewIfNeeded().catch(() => null);
-      await button.click({ force: true }).catch(() => null);
-      const planPdfButton = page.getByRole("button", { name: /Plan PDF visual editor|^Plan PDF$/i }).first();
-      if ((await planPdfButton.count().catch(() => 0)) > 0) {
-        await planPdfButton.scrollIntoViewIfNeeded().catch(() => null);
-        await planPdfButton.click({ force: true }).catch(() => null);
-      }
-      const details = page.getByText("Detailed source evidence and import tools", { exact: true }).first();
-      if ((await details.count().catch(() => 0)) > 0) {
-        await details.scrollIntoViewIfNeeded().catch(() => null);
-        await details.click({ force: true }).catch(() => null);
-      }
-      if (await workflow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        return workflow;
-      }
-    }
+  // Current stage navigation, not removed panel buttons or forced hidden clicks.
+  await page.getByTestId("workspace-stage-brief").click();
+  await page.getByTestId("workspace-stage-panel").selectOption("data");
+  if (!(await workflow.isVisible())) {
+    await page.getByText("Detailed source evidence and import tools", { exact: true }).click();
   }
 
   await expect(workflow).toBeVisible({ timeout: 30_000 });
@@ -237,6 +190,15 @@ test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", a
   await workflow.getByRole("button", { name: "Export JSON" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toContain("plan_pdf_extraction_report.json");
+  const downloadedPath = await download.path();
+  expect(downloadedPath).toBeTruthy();
+  const report = JSON.parse(fs.readFileSync(downloadedPath!, "utf8")) as {
+    construction_release_allowed?: boolean;
+    changed_elements?: { elements?: Array<{ text?: string; bbox?: { x0?: number; y0?: number }; review_status?: string }> };
+  };
+  const savedEdit = report.changed_elements?.elements?.find((item) => item.text === "PDF PLAN EDITOR REVIEW TEXT");
+  expect(savedEdit).toMatchObject({ bbox: { x0: 120, y0: 640 }, review_status: "accepted" });
+  expect(report.construction_release_allowed).toBe(false);
 
   const popupPromise = page.waitForEvent("popup");
   await workflow.getByRole("button", { name: "Export PDF" }).click();
@@ -252,6 +214,9 @@ test("PDF Plan Editor imports, edits, reviews, exports, and chats truthfully", a
   await askChatApi(request, token, projectId, "show unreadable text", /Unreadable or blocked PDF text|ocr|raster/i);
   await askChatApi(request, token, projectId, "change pool deck elevation", /exact replacement|imported_pdf_review_required/i);
   await askChatApi(request, token, projectId, "move this PDF label", /explicit target x0\/y0/i);
+
+  const restoredWorkflow = await openPdfPanel(page);
+  await expect(restoredWorkflow.getByTestId("plan-pdf-changed-elements")).toContainText("PDF PLAN EDITOR REVIEW TEXT");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalPageOverflow(page);

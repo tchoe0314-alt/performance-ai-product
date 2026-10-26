@@ -44,10 +44,11 @@ class AuthStoreProtocol(Protocol):
 MI_B = 1024 * 1024
 IMAGE_ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 IMAGE_ALLOWED_CONTENT_TYPES = {"image/png", "image/jpeg", "image/webp", "application/octet-stream"}
-SURVEY_ALLOWED_EXTENSIONS = {".csv"}
+SURVEY_ALLOWED_EXTENSIONS = {".csv", ".txt"}
 SURVEY_ALLOWED_CONTENT_TYPES = {"text/csv", "application/csv", "application/vnd.ms-excel", "text/plain", "application/octet-stream"}
 EXISTING_CONDITIONS_ALLOWED_EXTENSIONS = {
     ".csv",
+    ".txt",
     ".geojson",
     ".json",
     ".dxf",
@@ -63,6 +64,7 @@ EXISTING_CONDITIONS_ALLOWED_EXTENSIONS = {
 }
 EXISTING_CONDITIONS_ALLOWED_CONTENT_TYPES = {
     "text/csv",
+    "text/plain",
     "application/csv",
     "application/geo+json",
     "application/json",
@@ -310,7 +312,7 @@ def upload_existing_conditions_file(
 
     if not classification.get("supported"):
         imports.append(dependency_blocked_existing_conditions_import(target, classification))
-    elif suffix == ".csv":
+    elif suffix in {".csv", ".txt"}:
         try:
             survey = import_survey_csv(target)
             imports.append(survey)

@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { AlertCircle, Clock3, Eye, EyeOff, FolderOpen, LifeBuoy, Map, Sparkles } from "lucide-react";
 
 import type { AuthStatus } from "../types";
@@ -57,14 +57,16 @@ export default function AuthScreen({
   onClearAuthError,
   onSubmit,
 }: AuthScreenProps) {
+  const reduceMotion = useReducedMotion();
   const registrationClosed = authStatus?.public_registration_enabled === false;
   const registrationBlocked = registrationClosed && authMode === "register" && !authInvitationToken.trim();
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f8fafc_0%,#e2e8f0_100%)] p-6">
       <div className="mx-auto grid min-h-[90vh] max-w-6xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+          initial={{ opacity: reduceMotion ? 1 : 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: reduceMotion ? 0 : 0.16 }}
           className="space-y-6"
         >
           <div className="space-y-4">
@@ -147,7 +149,7 @@ export default function AuthScreen({
           </div>
         </motion.div>
 
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <motion.div initial={{ opacity: reduceMotion ? 1 : 0 }} animate={{ opacity: 1 }} transition={{ duration: reduceMotion ? 0 : 0.16 }}>
           <Card className="rounded-[28px]">
             <CardHeader>
               <SectionTitle

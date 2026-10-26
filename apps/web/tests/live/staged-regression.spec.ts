@@ -1,4 +1,4 @@
-import { openWorkspaceTool } from "./helpers/workspaceNavigation";
+import { openWorkspaceTool, workspaceCommandButton } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import fs from "node:fs/promises";
@@ -146,7 +146,7 @@ test("staged regression flow", async ({ page, request, baseURL }) => {
 
   const composer = await waitForComposer(page);
   await composer.fill(prompt);
-  await page.getByRole("button", { name: "Send" }).click();
+  await workspaceCommandButton(page).click({ timeout: 10000 });
 
   await expectNoGenericDesignClarification(page);
   await page.screenshot({

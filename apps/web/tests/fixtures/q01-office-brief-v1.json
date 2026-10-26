@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "id": "q01-office-brief-v1",
+  "purpose": "Synthetic command/persistence acceptance, not a surveyed design or engineering benchmark",
+  "command": "Set up an office site at 20525 Margo St, Gretna, NE on a 1000 ft by 1000 ft lot with a 28000 sf office building and 140 parking stalls.",
+  "expected": {
+    "units": "ft",
+    "lot_width_ft": 1000,
+    "lot_height_ft": 1000,
+    "building_program_sf": 28000,
+    "parking_count": 140
+  },
+  "external_context": "Address is parser text only. Local geocode and map style fixtures are synthetic; no live source accuracy claim.",
+  "unsupported_claims": ["verified survey control", "calculated drainage", "verified utility depths", "construction approval"]
+}

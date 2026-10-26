@@ -29,8 +29,16 @@ export async function revealPreviewCanvas(page: Page) {
   // early misses it, leaving the subsequently mounted panel over the toolbar.
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
   if ((page.viewportSize()?.width ?? 1440) < 1024) {
-    const closePanel = page.getByRole("button", { name: "Close panel", exact: true }).filter({ visible: true }).first();
-    if (await closePanel.isVisible()) await closePanel.click();
+    // Shell visibility can precede the default drawer's hydration. Recheck its
+    // real lifecycle until the toolbar is actionable, not just visually present.
+    await expect(async () => {
+      const closePanel = page.getByRole("button", { name: "Close panel", exact: true }).filter({ visible: true }).first();
+      if (await closePanel.isVisible()) {
+        await closePanel.click({ timeout: 1000 });
+        await expect(page.getByTestId("workspace-right-panel")).toBeHidden({ timeout: 1000 });
+      }
+      await page.getByLabel("Preview view options", { exact: true }).click({ trial: true, timeout: 500 });
+    }).toPass({ timeout: 15000 });
   }
 }
 

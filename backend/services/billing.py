@@ -180,10 +180,12 @@ def build_billing_status(
         blocked_reasons.append(BLOCKED_LEGAL_DOCS)
     if not config.paid_pilot_mode:
         blocked_reasons.append(BLOCKED_PILOT_MODE_DISABLED)
-    if not provider.configured():
+    provider_status = provider.status()
+    provider_can_charge = provider.configured() and provider_status.get("charging_enabled") is True
+    if not provider_can_charge:
         blocked_reasons.append(BLOCKED_PROVIDER_DISABLED)
 
-    real_charging_allowed = bool(is_pilot_user and config.charging_enabled and config.legal_docs_ready and provider.configured())
+    real_charging_allowed = bool(is_pilot_user and config.charging_enabled and config.legal_docs_ready and provider_can_charge)
     status = "active_manual" if is_pilot_user and config.legal_docs_ready else "blocked"
     if not is_pilot_user and config.paid_pilot_mode:
         status = "not_enrolled"
@@ -234,7 +236,7 @@ def build_billing_status(
             "monthly_jobs": config.monthly_job_limit,
             "enforcement": "hook_only",
         },
-        "provider": provider.status(),
+        "provider": provider_status,
         "invoice": provider.invoice_placeholder(),
         "payment": {
             "status": "disabled" if not real_charging_allowed else "configured_but_not_started",

@@ -2,6 +2,8 @@ import { expect, test, type APIRequestContext, type Page, type TestInfo } from "
 import path from "node:path";
 
 import { setPreviewQuality } from "./testUiHelpers";
+import { openWorkspacePanelByName } from "./helpers/workspaceNavigation";
+import { auditProjectHistoryRequests } from "./helpers/projectHistoryRequestAudit";
 
 const TOKEN_KEY = "civora-ai-token";
 const SESSION_RESTORE_KEY = "civora-ai-session-auth-restore";
@@ -39,11 +41,7 @@ async function shot(page: Page, testInfo: TestInfo, name: string) {
 }
 
 async function openPanel(page: Page, name: RegExp | string, expected: RegExp | string) {
-  const workspaceButton = page.getByRole("button", { name: "Open workspace controls" });
-  if (await workspaceButton.isVisible().catch(() => false)) {
-    await workspaceButton.click();
-  }
-  await page.getByRole("button", { name }).filter({ visible: true }).first().click();
+  await openWorkspacePanelByName(page, name);
   await expect(page.getByTestId("workspace-right-panel")).toContainText(expected, { timeout: 20_000 });
 }
 
@@ -77,6 +75,7 @@ test("hosted real user can set up site, upload real sources, generate, and deliv
 
   const token = await login(request);
   await seedAuth(page, token);
+  const historyAudit = await auditProjectHistoryRequests(page, apiBaseUrl, token);
   await page.goto(appUrl, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
 
@@ -129,6 +128,8 @@ test("hosted real user can set up site, upload real sources, generate, and deliv
   expect(pageErrors).toEqual([]);
   expect(consoleErrors.filter((line) => !/401|auth|favicon|rate limit/i.test(line))).toEqual([]);
   expect(
-    failedRequests.filter((line) => !/401|auth|favicon|rate limit|api\.mapbox\.com\/.*ERR_ABORTED/i.test(line)),
+    await historyAudit.unexpectedFailures(
+      failedRequests.filter((line) => !/401|auth|favicon|rate limit|api\.mapbox\.com\/.*ERR_ABORTED/i.test(line)), request,
+    ),
   ).toEqual([]);
 });

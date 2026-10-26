@@ -34,6 +34,7 @@ export default function WorkspaceRightPanel({
       data-command-bar-visible={commandBarVisible}
       data-mobile-navigation-visible={mobileNavigationVisible}
       aria-hidden={!visible}
+      inert={!visible}
       className="civora-motion-right-panel civora-workspace-drawer fixed inset-x-0 top-auto z-[700] order-3 flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden rounded-t-[10px] border border-slate-200/90 bg-white shadow-[0_-24px_70px_-46px_rgba(15,23,42,0.48)] sm:inset-x-3 sm:rounded-[10px] lg:inset-x-auto lg:left-auto lg:right-0 lg:top-[52px] lg:h-auto lg:rounded-none lg:border-y-0 lg:border-r-0 lg:shadow-[-18px_0_52px_-44px_rgba(15,23,42,0.5)]"
     >
       <div className="civora-panel-header flex shrink-0 items-center justify-between gap-3 border-b border-slate-200/80">

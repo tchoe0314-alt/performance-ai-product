@@ -748,6 +748,49 @@ class Database:
                 );
                 CREATE INDEX IF NOT EXISTS idx_rate_limit_buckets_expiry
                     ON rate_limit_buckets(expires_at);
+                CREATE TABLE IF NOT EXISTS catalog_libraries (
+                    scope_type TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    owner_user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
+                    owner_organization_id TEXT REFERENCES organizations(organization_id) ON DELETE CASCADE,
+                    owner_project_id TEXT REFERENCES projects(project_id) ON DELETE CASCADE,
+                    revision INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    updated_by TEXT NOT NULL,
+                    PRIMARY KEY (scope_type, scope_id, kind),
+                    CHECK (
+                        (scope_type = 'user' AND owner_user_id = scope_id AND owner_user_id IS NOT NULL AND owner_organization_id IS NULL AND owner_project_id IS NULL)
+                        OR (scope_type = 'organization' AND owner_organization_id = scope_id AND owner_organization_id IS NOT NULL AND owner_user_id IS NULL AND owner_project_id IS NULL)
+                        OR (scope_type = 'project' AND owner_project_id = scope_id AND owner_project_id IS NOT NULL AND owner_user_id IS NULL AND owner_organization_id IS NULL)
+                    )
+                );
+                CREATE TABLE IF NOT EXISTS catalog_library_versions (
+                    scope_type TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    updated_by TEXT NOT NULL,
+                    created_at DOUBLE PRECISION NOT NULL,
+                    PRIMARY KEY (scope_type, scope_id, kind, revision),
+                    FOREIGN KEY (scope_type, scope_id, kind)
+                        REFERENCES catalog_libraries(scope_type, scope_id, kind) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS catalog_template_selections (
+                    scope_type TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    selector_id TEXT NOT NULL,
+                    kind TEXT NOT NULL DEFAULT 'templates' CHECK (kind = 'templates'),
+                    personal_user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
+                    template_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    PRIMARY KEY (scope_type, scope_id, selector_id),
+                    FOREIGN KEY (scope_type, scope_id, kind)
+                        REFERENCES catalog_libraries(scope_type, scope_id, kind) ON DELETE CASCADE
+                );
                 """)
                 connection.commit()
             finally:

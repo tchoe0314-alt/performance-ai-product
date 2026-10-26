@@ -23,6 +23,7 @@ export function WorkspaceLeftRail({
       data-testid="left-sidebar"
       data-motion-state={visible ? "open" : "closed"}
       aria-hidden={!visible}
+      inert={!visible}
       className="civora-motion-sidebar civora-left-mode-rail fixed inset-x-2 bottom-2 z-[760] flex min-w-0 shrink-0 flex-col overflow-y-auto rounded-[14px] border border-slate-200/90 bg-white/95 p-1.5 shadow-[0_18px_54px_-34px_rgba(15,23,42,0.42)] backdrop-blur-xl lg:bottom-0 lg:left-0 lg:right-auto lg:top-[52px] lg:rounded-none lg:border-y-0 lg:border-l-0 lg:p-1.5 lg:pt-3 lg:shadow-none"
     >
       <span data-testid="workspace-restore-status" className="sr-only">{restoreTruthLabel}</span>

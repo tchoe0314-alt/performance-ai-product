@@ -142,7 +142,7 @@ export function SetupSurveyTerrainSection({
       <input
         ref={surveyInputRef}
         type="file"
-        accept=".csv,.geojson,.json,.dxf,.shp,.zip,.gpkg,.tif,.tiff,.las,.laz,.xml,.landxml"
+        accept=".csv,.txt,.geojson,.json,.dxf,.shp,.zip,.gpkg,.tif,.tiff,.las,.laz,.xml,.landxml"
         className="hidden"
         onChange={async (event) => {
           const input = event.currentTarget;

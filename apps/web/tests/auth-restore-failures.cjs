@@ -1,10 +1,11 @@
 // Offline execution of the actual restore hook and API error classifier.
 // The hook adapter observes state/effects; only fetch and browser storage are fake.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const ts = require("typescript");
-const vm = require("node:vm");
+(async () => {
+const { default: assert } = await import("node:assert/strict");
+const { default: fs } = await import("node:fs");
+const { default: path } = await import("node:path");
+const { default: ts } = await import("typescript");
+const { default: vm } = await import("node:vm");
 
 function load(relative, bindings) {
   const exports = {};
@@ -78,4 +79,5 @@ async function scenario(status) {
 
 (async () => {
   for (const status of [429, 500, 503, 403, "network", 401, 200]) await scenario(status);
+})().catch(error => {console.error(error); process.exitCode = 1;});
 })().catch(error => {console.error(error); process.exitCode = 1;});

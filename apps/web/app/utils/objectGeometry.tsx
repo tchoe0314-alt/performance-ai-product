@@ -665,7 +665,7 @@ export const buildCanonicalGeometryHandoffV1 = (
     },
     created_at: typeof metadata.created_at === "string" ? metadata.created_at : undefined,
     updated_at: typeof metadata.updated_at === "string" ? metadata.updated_at : undefined,
-    source_ui_mode: sourceIsDetected ? "candidate_review_acceptance" : "canvas_draw",
+    source_ui_mode: source === "generated" ? "generated_review_concept" : sourceIsDetected ? "candidate_review_acceptance" : "canvas_draw",
     canonical_object_type: typeof metadata.canonical_object_type === "string" ? metadata.canonical_object_type : itemType,
     creation_method: typeof metadata.semantic_object_model === "string"
       ? "semantic_conversion"
@@ -831,8 +831,8 @@ export function CustomGeometryHandoffDetails({
       <p>Geometry ID: {handoff.geometry_id}</p>
       <p>Type: {handoff.geometry_type} · Name: {handoff.object_name}</p>
       <p>{formatCustomGeometryMetrics(item)}</p>
-      <p>Source: manual_drawn · UI: canvas_draw</p>
-      <p>Confidence: user_drawn_review_required</p>
+      <p>Source: {handoff.source} · UI: {handoff.source_ui_mode}</p>
+      <p>Confidence: {handoff.confidence}</p>
       <p>Engineering status: draft_review_required</p>
       {!handoff.valid ? (
         <p className="text-amber-600">Handoff needs review: {blockerText}</p>

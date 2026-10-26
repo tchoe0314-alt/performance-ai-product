@@ -87,7 +87,7 @@ from backend.application.plan_pdf_workflows import (
     upload_plan_pdf_file as application_upload_plan_pdf_file,
 )
 from backend.planning.alpha_monitoring import build_alpha_monitoring_report
-from backend.planning.utility_catalogs import GLOBAL_UTILITY_CATALOG_MANAGER
+from backend.services.catalog_library_store import CatalogLibraryStore, LibraryAccessError
 from backend.application.job_workflows import (
     build_artifact_export_job_runner as application_build_artifact_export_job_runner,
     build_drainage_job_runner as application_build_drainage_job_runner,
@@ -309,6 +309,7 @@ from backend.services.identity_proofs import IdentityProofStore
 IDENTITY_PROOFS = IdentityProofStore(DB)
 OBJECT_TYPE_STORE = ObjectTypeStore(DB)
 PROJECT_STORE = ProjectStore(DB)
+CATALOG_LIBRARY_STORE = CatalogLibraryStore(DB)
 JOB_QUEUE = JobQueueService(DB, worker_count=0 if PROCESS_ROLE == "web" else None)
 ARTIFACTS = ArtifactService(ARTIFACT_DIR)
 SUPPORT_STORE = SupportStore(DB)
@@ -1920,13 +1921,31 @@ def controlled_single_source_lookup(
     )
 
 
+def catalog_library_call(
+    scope_type: str = "user",
+    scope_id: str = "",
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Explicit shared scope; omission always selects the authenticated user."""
+    def call(kind, operation, payload=None, **kwargs):
+        try:
+            return CATALOG_LIBRARY_STORE.run(
+                user_id=current_user["user_id"], kind=kind, operation=operation,
+                payload=payload, scope_type=scope_type, scope_id=scope_id, **kwargs,
+            )
+        except LibraryAccessError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Invalid library request.") from exc
+    return call
+
+
 @app.get("/api/utility-catalogs")
 def utility_catalogs(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    return GLOBAL_UTILITY_CATALOG_MANAGER.snapshot()
+    return library("utilities", "snapshot")
 
 
 @app.get("/api/utility-catalogs/pipe-sizes")
@@ -1934,11 +1953,10 @@ def utility_catalog_pipe_sizes(
     network: str = "",
     material: str = "",
     accepted_only: bool = False,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    return GLOBAL_UTILITY_CATALOG_MANAGER.available_pipe_sizes(
+    return library("utilities", "available_pipe_sizes",
         network=network,
         material=material,
         accepted_only=accepted_only,
@@ -1948,11 +1966,10 @@ def utility_catalog_pipe_sizes(
 @app.post("/api/utility-catalogs/pipes")
 def utility_catalog_add_pipe(
     payload: UtilityPipeCatalogPayload,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    result = GLOBAL_UTILITY_CATALOG_MANAGER.add_pipe_catalog(_model_to_dict(payload))
+    result = library("utilities", "add_pipe_catalog", _model_to_dict(payload))
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result)
     return result
@@ -1961,11 +1978,10 @@ def utility_catalog_add_pipe(
 @app.post("/api/utility-catalogs/parts")
 def utility_catalog_add_part(
     payload: UtilityPartCatalogPayload,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    result = GLOBAL_UTILITY_CATALOG_MANAGER.add_part_catalog(_model_to_dict(payload))
+    result = library("utilities", "add_part_catalog", _model_to_dict(payload))
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result)
     return result
@@ -1974,49 +1990,44 @@ def utility_catalog_add_part(
 @app.post("/api/utility-catalogs/validate-network")
 def utility_catalog_validate_network(
     payload: UtilityCatalogValidationPayload,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    return GLOBAL_UTILITY_CATALOG_MANAGER.validate_network(_model_to_dict(payload))
+    return library("utilities", "validate_network", _model_to_dict(payload))
 
 
 @app.get("/api/customer-templates")
 def customer_template_registry(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    return application_customer_template_registry_response()
+    return application_customer_template_registry_response(library=library)
 
 
 @app.get("/api/customer-templates/export")
 def customer_template_export(
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    return application_export_customer_templates_response()
+    return application_export_customer_templates_response(library=library)
 
 
 @app.get("/api/customer-templates/missing")
 def customer_template_missing(
     template_id: str = "",
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    return application_explain_missing_customer_template_response(template_id)
+    return application_explain_missing_customer_template_response(template_id, library=library)
 
 
 @app.post("/api/customer-templates/import")
 def customer_template_import(
     payload: CustomerTemplateImportPayload,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    result = application_import_customer_template_response(_model_to_dict(payload))
+    result = application_import_customer_template_response(_model_to_dict(payload), library=library)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result)
     return result
@@ -2025,11 +2036,10 @@ def customer_template_import(
 @app.post("/api/customer-templates/activate")
 def customer_template_activate(
     payload: CustomerTemplateActivatePayload,
-    current_user: Dict[str, Any] = Depends(get_current_user),
+    library: Any = Depends(catalog_library_call),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
-    _ = current_user
-    result = application_activate_customer_template_response(payload.template_id)
+    result = application_activate_customer_template_response(payload.template_id, library=library)
     if not result.get("success"):
         raise HTTPException(status_code=404, detail=result)
     return result

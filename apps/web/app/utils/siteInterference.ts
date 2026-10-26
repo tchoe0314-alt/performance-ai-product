@@ -91,6 +91,31 @@ export function footprintInside(boundary: FootprintPoint[], footprint: Footprint
 }
 /** Draft coordination rules, not a claim of regulatory or engineering approval. */
 export function assessSiteInterference(objects: BuildingPlacement[]): InterferenceResult[] {
+  const linkedOwner = (item: BuildingPlacement) => {
+    const owner = objects.find(candidate => candidate.id === item.meta?.combined_into_object_id);
+    return owner && Array.isArray(owner.meta?.combined_from_object_ids) && owner.meta.combined_from_object_ids.includes(item.id) ? owner : undefined;
+  };
+  // Only literal linework edges of the same retained outline are one object.
+  // Do not exempt arbitrary components, interior crossings, or hidden objects.
+  const outlineOwner = (item: BuildingPlacement) => {
+    const owner = linkedOwner(item);
+    if (item.meta?.occupied_components_v1 || item.meta?.pipe_profile_v1 || item.meta?.coordination_envelope_v1 || item.meta?.asset_kind || item.meta?.network) return undefined;
+    if (!owner || item.type !== "custom" || item.geometryType !== "polyline" || !item.geometry || item.geometry.length < 2 || owner.geometryType !== "polygon" || !owner.geometry || owner.geometry.length < 3 || (item.meta?.coordinate_units ?? "ft") !== (owner.meta?.coordinate_units ?? "ft")) return undefined;
+    const same = (a: FootprintPoint, b: FootprintPoint) => a.every((value, index) => Number.isFinite(value) && Math.abs(value - b[index]) < 1e-7);
+    const polygon = owner.geometry;
+    return item.geometry.slice(1).every((end, index) => polygon.some((start, i) => {
+      const next = polygon[(i + 1) % polygon.length], from = item.geometry![index];
+      return (same(from, start) && same(end, next)) || (same(from, next) && same(end, start));
+    })) ? owner : undefined;
+  };
+  // Keep physical source IDs/geometry for checks, but make a converted object's
+  // current name discoverable. Verify both sides of the source relationship.
+  const displayName = (item: BuildingPlacement) => {
+    const owner = linkedOwner(item);
+    return owner
+      ? `${owner.label} (source: ${item.label})`
+      : item.label;
+  };
   // A linework conversion is physical geometry. Program/block bounds are only
   // editing wrappers: their source objects remain physical, even when hidden.
   // Hiding an ordinary object never makes an engineering conflict disappear.
@@ -100,24 +125,26 @@ export function assessSiteInterference(objects: BuildingPlacement[]): Interferen
   });
   const results: InterferenceResult[] = [];
   const shapes = new Map(candidates.map(o => [o, [...objectFootprints(o), ...reviewedComponentFootprints(o)]]));
+  const outlineOwners = new Map(candidates.map(o => [o, outlineOwner(o)]));
   for (const o of candidates) {
     const error = o.meta?.occupied_components_v1 ? validateComponentModel(o.meta.occupied_components_v1, o) : o.meta?.pipe_profile_v1 ? validatePipeProfile(o.meta.pipe_profile_v1, o) : null;
-    if (error) results.push({ severity: "review", code: "detailed_evidence_invalid", objectIds: [o.id], message: `${o.label}: ${error}` });
+    if (error) results.push({ severity: "review", code: "detailed_evidence_invalid", objectIds: [o.id], message: `${displayName(o)}: ${error}` });
   }
-  for (const o of candidates) if (o.meta?.coordination_envelope_v1 && !readCoordinationEnvelope(o)) results.push({ severity: "review", code: "coordination_envelope_unreviewed", objectIds: [o.id], message: `${o.label}: horizontal protection/access buffer is incomplete or unreviewed; it has not been used to establish clearance.` });
+  for (const o of candidates) if (o.meta?.coordination_envelope_v1 && !readCoordinationEnvelope(o)) results.push({ severity: "review", code: "coordination_envelope_unreviewed", objectIds: [o.id], message: `${displayName(o)}: horizontal protection/access buffer is incomplete or unreviewed; it has not been used to establish clearance.` });
   const site = objects.find(o => o.type === "site" && o.placed);
   if (site) {
     const boundary = objectFootprints(site)[0];
     for (const o of candidates) if (shapes.get(o)!.some(p => !footprintInside(boundary, p))) {
-      results.push({ severity: "review", code: "outside_site_boundary", objectIds: [site.id, o.id], message: `${o.label}: modeled geometry extends beyond the current site boundary; review placement and boundary evidence.` });
+      results.push({ severity: "review", code: "outside_site_boundary", objectIds: [site.id, o.id], message: `${displayName(o)}: modeled geometry extends beyond the current site boundary; review placement and boundary evidence.` });
     }
   }
   for (const o of candidates) if (isLinearUtility(o) && !(typeof o.meta?.pipe_diameter_ft === "number" && Number.isFinite(o.meta.pipe_diameter_ft) && o.meta.pipe_diameter_ft > 0)) {
-    results.push({ severity: "review", code: "pipe_size_unknown", objectIds: [o.id], message: `${o.label}: outside diameter is missing. The displayed centerline is not enough to establish clearance.` });
+    results.push({ severity: "review", code: "pipe_size_unknown", objectIds: [o.id], message: `${displayName(o)}: outside diameter is missing. The displayed centerline is not enough to establish clearance.` });
   }
   candidates.forEach((a, i) => candidates.slice(i + 1).forEach(b => {
+    if (outlineOwners.get(a) && outlineOwners.get(a) === outlineOwners.get(b)) return;
     const A = category(a), B = category(b);
-    const objectIds = [a.id, b.id], names = `${a.label} / ${b.label}`;
+    const objectIds = [a.id, b.id], names = `${displayName(a)} / ${displayName(b)}`;
     const result = (severity: InterferenceResult["severity"], code: string, detail: string) => results.push({ severity, code, objectIds, message: `${names}: ${detail}` });
     if ((a.meta?.coordinate_units ?? "ft") !== (b.meta?.coordinate_units ?? "ft")) { result("review", "coordinate_units_mismatch", "coordinate units differ; normalize the objects before evaluating interference."); return; }
     const zone = a.type === "setback_zone" ? a : b.type === "setback_zone" ? b : null;
@@ -146,7 +173,7 @@ export function assessSiteInterference(objects: BuildingPlacement[]): Interferen
     if (A === "surface" && B === "surface") {
       const frame = culDeSacFrame(a) ?? culDeSacFrame(b), other = culDeSacFrame(a) ? b : a;
       if (frame && shapes.get(other)!.some(p => checkFootprint(frame.layout, p.map(frame.toLocal)).island)) {
-        results.push({ severity: "review", code: "access_crosses_island", objectIds: [a.id, b.id], message: `${a.label} / ${b.label}: access surface crosses the landscaped island; review curb and access geometry.` });
+        results.push({ severity: "review", code: "access_crosses_island", objectIds: [a.id, b.id], message: `${names}: access surface crosses the landscaped island; review curb and access geometry.` });
       } else if (!hasReviewedConnection(a, b)) result("review", "surface_connection_unverified", "overlapping access surfaces need a reviewed intentional connection; confirm junction, stall, curb and accessibility geometry.");
       return;
     }

@@ -315,6 +315,28 @@ class DataLifecycleService:
             "support_requests": support_requests,
             "object_types": self._rows("SELECT type_id, definition_json FROM user_object_types WHERE user_id = ? ORDER BY type_id", (user_id,)),
             "workspace_layouts": self._rows("SELECT layout_json FROM user_workspace_layouts WHERE user_id = ?", (user_id,)),
+            # Only owned scopes, never an unrelated firm's library or another
+            # member's personal organization selection. FKs handle deletion in
+            # the existing account/project/organization transaction.
+            "catalog_libraries": self._rows(
+                "SELECT l.* FROM catalog_libraries l WHERE l.owner_user_id = ? "
+                "OR l.owner_project_id IN (SELECT project_id FROM projects WHERE user_id = ?) "
+                "OR l.owner_organization_id IN (SELECT organization_id FROM organizations WHERE created_by_user_id = ?)",
+                (user_id, user_id, user_id),
+            ),
+            "catalog_library_versions": self._rows(
+                "SELECT v.* FROM catalog_library_versions v JOIN catalog_libraries l "
+                "ON l.scope_type = v.scope_type AND l.scope_id = v.scope_id AND l.kind = v.kind "
+                "WHERE l.owner_user_id = ? "
+                "OR l.owner_project_id IN (SELECT project_id FROM projects WHERE user_id = ?) "
+                "OR l.owner_organization_id IN (SELECT organization_id FROM organizations WHERE created_by_user_id = ?)",
+                (user_id, user_id, user_id),
+            ),
+            "catalog_template_selections": self._rows(
+                "SELECT s.* FROM catalog_template_selections s WHERE s.personal_user_id = ? "
+                "OR (s.scope_type = 'project' AND s.scope_id IN (SELECT project_id FROM projects WHERE user_id = ?))",
+                (user_id, user_id),
+            ),
             "chat_learning_records": self._learning_records(user_id),
             "file_manifest": resolved_manifest,
         }

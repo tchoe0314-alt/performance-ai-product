@@ -7,7 +7,8 @@ import { panelErrorMessage } from "../utils/dashboardStatus";
 import { ACTIVE_PROJECT_STORAGE_KEY } from "../utils/workflowConstants";
 import type { ProjectStatusSummary } from "../utils/workspaceShell";
 import { enqueueDashboardProjectSave, type DashboardProjectSaveQueue } from "../utils/dashboardProjectSaveQueue";
-import { withCanonicalCanvasSnapshot } from "../utils/canonicalCanvasProject";
+import { withCanonicalCanvasSnapshot, resolveCanonicalCanvasInput } from "../utils/canonicalCanvasProject";
+import { reconcileAcknowledgedSiteInputs } from "../utils/siteInputAcknowledgement";
 import { useProjectTabBranch } from "./useProjectTabBranch";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
@@ -80,6 +81,12 @@ export function useDashboardProjectSave({
   const [saveProgress, setSaveProgress] = useState<{generation:number; state:"saving"|"failed"|"idle"}>({generation:-1,state:"idle"});
   const revisionRef = useRef<{ generation: number; projectId: string; revision?: string } | null>(null);
   const forkRef = useRef<{ generation: number; original: string; copy: string } | null>(null);
+  const waitForPendingProjectSaves = useCallback(async (id: string) => {
+    if (resolvedProjectIdRef.current !== id) return;
+    // Opening the same project invalidates queued old-generation work, but an
+    // already-sent write can still commit. Read only after that queue settles.
+    await saveQueueRef.current?.tail;
+  }, [resolvedProjectIdRef]);
   const getLiveInput = useCallback(() => payloadPreviewRef.current, [payloadPreviewRef]);
   const tabBranch = useProjectTabBranch(currentProject?.project_id ?? "", getLiveInput, projectLoadRequestRef.current);
   const { hasEdits, beforeSave, choose, markSaved } = tabBranch;
@@ -125,6 +132,7 @@ export function useDashboardProjectSave({
       const initialChoice = effectiveProjectId ? await beforeSave(effectiveProjectId, silent, proposed) : null;
       if (initialChoice === "cancel" || projectLoadRequestRef.current !== workspaceGeneration) return null;
       const liveInput = payloadPreviewRef.current;
+      const sourceInputsAtSaveStart = structuredClone(liveInput.meta?.site_inputs ?? {});
       const resolvedName = (nameOverride ?? liveInput.manual_fields?.project_name ?? siteName).trim();
       const resolvedFileName = (fileNameOverride ?? liveInput.manual_fields?.file_name ?? fileName).trim();
       if (effectiveDemoWorkspaceEnabled && isSeededDemoProjectId(effectiveProjectId)) {
@@ -263,6 +271,14 @@ export function useDashboardProjectSave({
           setSiteName(data.project.name);
         }
         setProjectId(data.project.project_id);
+        if (silent) {
+          const acceptedSources = resolveCanonicalCanvasInput(data.project.project_input ?? {}).meta?.site_inputs ?? {};
+          const latestLive = payloadPreviewRef.current;
+          // Publish source metadata to queued saves immediately, not only after
+          // React renders. Retain source fields edited while this request ran.
+          payloadPreviewRef.current = { ...latestLive, meta: { ...latestLive.meta,
+            site_inputs: reconcileAcknowledgedSiteInputs(sourceInputsAtSaveStart, latestLive.meta?.site_inputs ?? {}, acceptedSources) } };
+        }
         setCurrentProject((existing) => {
           if (!silent || !existing || existing.project_id !== data.project.project_id) {
             return data.project;
@@ -351,5 +367,5 @@ export function useDashboardProjectSave({
     upsertProjectSummary,
   ]);
 
-  return { saveProject, tabBranch, saveState:saveProgress.generation===projectLoadRequestRef.current?saveProgress.state:"idle" };
+  return { saveProject, waitForPendingProjectSaves, tabBranch, saveState:saveProgress.generation===projectLoadRequestRef.current?saveProgress.state:"idle" };
 }

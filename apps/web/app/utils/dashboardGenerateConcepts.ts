@@ -65,8 +65,18 @@ export function buildGenerateConceptPlacements({
   };
   const concept: BuildingPlacement[] = [];
   const addConcept = (item: BuildingPlacement) => {
+    // Explicit geometry is in site coordinates. Its selection bounds must not
+    // cover the entire site merely because it was generated from the site.
+    const points = item.geometry;
+    const bounds = points?.length ? {
+      x: Math.min(...points.map(point => point[0])),
+      y: Math.min(...points.map(point => point[1])),
+      w: Math.max(...points.map(point => point[0])) - Math.min(...points.map(point => point[0])),
+      d: Math.max(...points.map(point => point[1])) - Math.min(...points.map(point => point[1])),
+    } : {};
     concept.push({
       ...item,
+      ...bounds,
       generated: true,
       placed: true,
       source: "generated",

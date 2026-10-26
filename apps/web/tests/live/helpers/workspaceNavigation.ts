@@ -13,6 +13,12 @@ export function workspaceToolButton(page:Page,tool:keyof typeof destinations) {
   return page.getByTestId("left-sidebar").getByRole("button",{name:labels[tool]});
 }
 
+export function workspaceCommandButton(page: Page) {
+  // Current pinned composer and the prior deployed interface. Anchored labels
+  // must not match unrelated send-invitation or support actions.
+  return page.getByRole("button", { name: /^(Run Civora command|Send)$/ }).filter({ visible: true }).first();
+}
+
 export async function openWorkspacePanelByName(page:Page,name:string|RegExp) {
   const tool=(Object.keys(destinations) as Array<keyof typeof destinations>).find(label=>typeof name==="string"?name===label:name.test(label));
   if(tool)return openWorkspaceTool(page,tool);

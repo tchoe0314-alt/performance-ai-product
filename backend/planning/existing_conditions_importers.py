@@ -544,12 +544,19 @@ def _production_requirement(field: str, ready: bool, reason: str, *, evidence: A
     return rec
 
 
+def _point_table_reader(handle):
+    """Read headered comma/tab point files without guessing coordinate order."""
+    header = handle.readline()
+    handle.seek(0)
+    return csv.DictReader(handle, delimiter="\t" if "\t" in header and "," not in header else ",")
+
+
 def import_survey_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     points: List[Dict[str, Any]] = []
     warnings: List[str] = []
     invalid_rows = 0
     with Path(path).open("r", newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
+        reader = _point_table_reader(handle)
         fields = _normalized_field_map(reader.fieldnames or [])
         x_col = _first_column(fields, SURVEY_X_COLUMNS)
         y_col = _first_column(fields, SURVEY_Y_COLUMNS)
@@ -582,6 +589,9 @@ def import_survey_csv(path: Path, *, coordinate_system: Optional[Dict[str, Any]]
                     "description": safe_str(row.get(desc_col), "") if desc_col else "",
                 }
             except Exception:
+                invalid_rows += 1
+                continue
+            if not all(isfinite(point[axis]) for axis in ("x", "y", "z")):
                 invalid_rows += 1
                 continue
             points.append(point)
@@ -649,7 +659,7 @@ def _read_xyz_rows(path: Path) -> Tuple[List[Dict[str, float]], Dict[str, str], 
     rows: List[Dict[str, float]] = []
     invalid_rows = 0
     with path.open("r", newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
+        reader = _point_table_reader(handle)
         fields = _normalized_field_map(reader.fieldnames or [])
         x_col = _first_column(fields, SURVEY_X_COLUMNS)
         y_col = _first_column(fields, SURVEY_Y_COLUMNS)
@@ -658,7 +668,11 @@ def _read_xyz_rows(path: Path) -> Tuple[List[Dict[str, float]], Dict[str, str], 
             return [], {"x": x_col, "y": y_col, "z": z_col}, 0
         for row in reader:
             try:
-                rows.append({"x": float(row.get(x_col, "")), "y": float(row.get(y_col, "")), "z": float(row.get(z_col, ""))})
+                point = {"x": float(row.get(x_col, "")), "y": float(row.get(y_col, "")), "z": float(row.get(z_col, ""))}
+                if not all(isfinite(value) for value in point.values()):
+                    invalid_rows += 1
+                    continue
+                rows.append(point)
             except Exception:
                 invalid_rows += 1
     return rows, {"x": x_col, "y": y_col, "z": z_col}, invalid_rows
@@ -835,7 +849,7 @@ def _classify_geojson_layer(feature: Dict[str, Any], *, layer_hint: str = "") ->
 
 def classify_existing_conditions_file(path: Path) -> Dict[str, Any]:
     suffix = Path(path).suffix.lower()
-    if suffix == ".csv":
+    if suffix in {".csv", ".txt"}:
         return {"supported": True, "format": "csv", "mode": "survey_or_surface_xyz"}
     if suffix in {".geojson", ".json"}:
         return {"supported": True, "format": "geojson", "mode": "gis_features"}

@@ -14,6 +14,7 @@ type UpdateProjectStatus = (updates: Omit<ProjectStatusSummary, "updatedAt">) =>
 
 type UseDashboardProjectLoadOptions = {
   cancelPendingRun: () => void;
+  waitForPendingProjectSaves: (projectId: string) => Promise<void>;
   activeJob: JobSummary | null | undefined;
   activeJobId: string;
   applyProjectInput: (projectInput: ProjectInput) => void;
@@ -46,6 +47,7 @@ type UseDashboardProjectLoadOptions = {
 
 export function useDashboardProjectLoad({
   cancelPendingRun,
+  waitForPendingProjectSaves,
   activeJob,
   activeJobId,
   applyProjectInput,
@@ -99,6 +101,8 @@ export function useDashboardProjectLoad({
         detail: "Loading the saved project workspace from the backend.",
         nextAction: "Wait for the project drawer to restore the workspace or show a blocker.",
       });
+      await waitForPendingProjectSaves(id);
+      if (projectLoadRequestRef.current !== requestId) return;
       const data = await getJson<{ project: ProjectRecord }>(
         `/api/projects/${id}`,
         { token },
@@ -192,6 +196,7 @@ export function useDashboardProjectLoad({
     }
   }, [
     cancelPendingRun,
+    waitForPendingProjectSaves,
     activeJob?.project_id,
     activeJobId,
     applyProjectInput,

@@ -734,7 +734,10 @@ def _sheet_change_summary(elements: List[Dict[str, Any]], change_log: List[Dict[
 
 
 def update_editable_sheet_element(meta: Dict[str, Any], element_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
-    updated = dict(meta or {})
+    # Sheet/analysis views may share nested elements. Preserve the loaded tree
+    # for revision preconditions and leave it untouched on partial validation
+    # failure as well as successful edits. Do not change global safe_dict rules.
+    updated = deepcopy(meta or {})
     sheet = safe_dict(updated.get("plan_pdf_editable_sheet_v1"))
     if not sheet:
         raise ValueError("No editable PDF sheet is available on this project.")

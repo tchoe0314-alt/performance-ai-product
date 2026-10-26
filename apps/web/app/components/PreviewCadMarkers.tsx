@@ -1,5 +1,6 @@
 import type { BuildingPlacement } from "../types";
 import type { CadSymbolKind } from "../utils/cadToolTypes";
+import { displayedCadDimensionLabel } from "../utils/cadDimensionBinding";
 
 type PreviewRect = {
   left: number;
@@ -141,7 +142,7 @@ export function PreviewCadMarkers({
               <circle cx={x1} cy={y1} r={0.42} fill="#0f766e" />
               <circle cx={x2} cy={y2} r={0.42} fill="#0f766e" />
               <text x={labelX} y={Math.max(labelY, 3)} textAnchor="middle" fontSize="2.2" fill="#0f766e" fontWeight={800}>
-                {String(item.meta?.cad_dimension_label).slice(0, 24)}
+                {displayedCadDimensionLabel(item).slice(0, 48)}
               </text>
             </g>
           );

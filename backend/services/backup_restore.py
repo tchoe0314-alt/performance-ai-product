@@ -18,6 +18,21 @@ from .database import Database
 BACKUP_REPORT_VERSION = "civora_backup_restore_drill_v1"
 
 
+def _publish_report(path: Path, report: Mapping[str, Any]) -> None:
+    """Publish complete JSON without replacing any existing directory entry."""
+    path = Path(path).absolute()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=".civora-report-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(report, stream, indent=2, sort_keys=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.link(temporary, path)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
 def hosted_backup_checks_ready(checks: Mapping[str, Any]) -> bool:
     """Validate imported backup facts without treating presence as approval."""
     if any(checks.get(key) is not True for key in (
@@ -209,6 +224,10 @@ class DatabaseBackupService:
         env: Optional[Mapping[str, str]] = None,
     ) -> Dict[str, Any]:
         started_at = time.time()
+        # lexists rejects dangling symlinks too; publication repeats this check
+        # atomically via link(), so a competing writer cannot bypass preflight.
+        if report_path is not None and os.path.lexists(report_path):
+            raise FileExistsError("Backup report destination already exists.")
         output_root = Path(output_dir).resolve()
         output_root.mkdir(parents=True, exist_ok=True)
         if self.db.storage_kind != "sqlite":
@@ -229,8 +248,7 @@ class DatabaseBackupService:
                 "elapsed_seconds": round(time.time() - started_at, 3),
             }
             if report_path is not None:
-                Path(report_path).parent.mkdir(parents=True, exist_ok=True)
-                Path(report_path).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+                _publish_report(report_path, report)
             return report
 
         source_path = Path(self.db.db_path).resolve()
@@ -267,23 +285,39 @@ class DatabaseBackupService:
                 "truth_label": "No backup or restore copy was started; disk capacity is a preflight check, not recovery proof.",
             }
             if report_path is not None:
-                Path(report_path).parent.mkdir(parents=True, exist_ok=True)
-                Path(report_path).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+                _publish_report(report_path, report)
             return report
-        backup_path = output_root / f"civora-backup-{int(started_at)}.sqlite3"
-        source_connection = sqlite3.connect(source_path)
-        backup_connection = sqlite3.connect(backup_path)
+        # Allocate exclusively; timestamp precision alone cannot prevent races.
+        descriptor, staging_name = tempfile.mkstemp(prefix=".civora-backup-", dir=output_root)
+        os.close(descriptor)
+        staging_path = Path(staging_name)
+        backup_path = output_root / f"civora-backup-{int(started_at)}-{staging_path.name.removeprefix('.civora-backup-')}.sqlite3"
         try:
-            source_connection.backup(backup_connection)
+            source_connection = sqlite3.connect(source_path.as_uri() + "?mode=ro", uri=True)
+            try:
+                backup_connection = sqlite3.connect(staging_path)
+                try:
+                    source_connection.backup(backup_connection)
+                finally:
+                    backup_connection.close()
+            finally:
+                source_connection.close()
+            with staging_path.open("rb") as stream:
+                os.fsync(stream.fileno())
+            # Same-filesystem atomic publication: never replace an old backup.
+            os.link(staging_path, backup_path)
         finally:
-            backup_connection.close()
-            source_connection.close()
+            staging_path.unlink(missing_ok=True)
 
-        source_evidence = self._sqlite_table_evidence(source_path)
+        # sqlite3.backup captures a consistent source snapshot. Live source reads
+        # after it completes can describe a newer database, not that snapshot.
+        # Retain the legacy source_* fields as snapshot evidence and state that
+        # boundary explicitly; verify the independently restored copy against it.
+        source_evidence = self._sqlite_table_evidence(backup_path)
         backup_evidence = self._sqlite_table_evidence(backup_path)
-        source_schema_sha256 = self._sqlite_schema_sha256(source_path)
+        source_schema_sha256 = self._sqlite_schema_sha256(backup_path)
         backup_schema_sha256 = self._sqlite_schema_sha256(backup_path)
-        source_integrity = self._sqlite_integrity(source_path)
+        source_integrity = self._sqlite_integrity(backup_path)
         backup_integrity = self._sqlite_integrity(backup_path)
         with tempfile.TemporaryDirectory(prefix="civora-restore-drill-") as temp_dir:
             restored_path = Path(temp_dir) / "restored.sqlite3"
@@ -307,6 +341,7 @@ class DatabaseBackupService:
             "backup_sha256": backup_sha256,
             "table_count": len(source_evidence),
             "source_table_evidence": source_evidence,
+            "source_evidence_scope": "consistent_sqlite_backup_snapshot",
             "backup_table_evidence": backup_evidence,
             "restored_table_evidence": restored_evidence,
             "exact_table_evidence_match": table_evidence_matched,
@@ -330,8 +365,7 @@ class DatabaseBackupService:
             "truth_label": "This proves an isolated SQLite backup and restore roundtrip for the recorded database only. Hosted PostgreSQL recovery requires separate provider evidence.",
         }
         if report_path is not None:
-            Path(report_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(report_path).write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+            _publish_report(report_path, report)
         return report
 
 

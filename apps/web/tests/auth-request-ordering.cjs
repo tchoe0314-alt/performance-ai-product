@@ -1,9 +1,10 @@
 // Actual hook/API code, controlled asynchronous responses, no network or clocks.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const ts = require("typescript");
-const vm = require("node:vm");
+(async () => {
+const { default: assert } = await import("node:assert/strict");
+const { default: fs } = await import("node:fs");
+const { default: path } = await import("node:path");
+const { default: ts } = await import("typescript");
+const { default: vm } = await import("node:vm");
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const response = (status, body) => ({status, ok: status === 200, json: async () => body});
 function deferred() { let resolve; const promise = new Promise(done => {resolve = done;}); return {promise, resolve}; }
@@ -107,4 +108,5 @@ const cases = [
     try {await check(); console.log(`PASS: ${name}`);} catch (error) {failed++; console.error(`FAIL: ${name}`, error);}
   }
   if (failed) process.exitCode = 1;
+})().catch(error => {console.error(error); process.exitCode = 1;});
 })().catch(error => {console.error(error); process.exitCode = 1;});

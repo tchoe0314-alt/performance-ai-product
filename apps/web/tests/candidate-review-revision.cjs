@@ -1,9 +1,10 @@
 // Offline behavioral test of the actual UI action; no browser/server or API calls.
-const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const ts = require("typescript");
-const vm = require("node:vm");
+(async () => {
+const { default: assert } = await import("node:assert/strict");
+const { default: fs } = await import("node:fs");
+const { default: path } = await import("node:path");
+const { default: ts } = await import("typescript");
+const { default: vm } = await import("node:vm");
 const filename = path.resolve(__dirname, "../app/utils/dashboardReviewWorkflowActions.ts");
 const compiled = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
@@ -60,4 +61,5 @@ vm.runInNewContext(compiled, {
   assert.equal(updates, 0);
   assert.match(statuses.at(-1), /Reload/);
   console.log("PASS: missing/mismatched projects and candidate evidence blocked; equivalent fields accepted; source token sent; conflict preserves state");
+})().catch(error => { console.error(error); process.exitCode = 1; });
 })().catch(error => { console.error(error); process.exitCode = 1; });

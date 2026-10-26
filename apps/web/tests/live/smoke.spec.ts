@@ -1,4 +1,4 @@
-import { openWorkspaceTool } from "./helpers/workspaceNavigation";
+import { openWorkspaceTool, workspaceToolButton, workspaceCommandButton } from "./helpers/workspaceNavigation";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -146,7 +146,8 @@ test("live civora flow", async ({ page, request, baseURL }, testInfo) => {
   });
 
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
-  await expect(page.getByRole("banner").getByRole("button", { name: "Open workspace controls" })).toBeVisible();
+  await expect(workspaceToolButton(page, "Setup")).toBeVisible();
+  await workspaceToolButton(page, "Setup").click({ trial: true });
   await expect(page.getByTestId("header-projects-button")).toBeVisible();
   await expect(page.getByTestId("header-chat-button")).toBeVisible();
   await expect(page.getByRole("banner").getByRole("button", { name: "Help" })).toBeVisible();
@@ -156,7 +157,7 @@ test("live civora flow", async ({ page, request, baseURL }, testInfo) => {
 
     const composer = await waitForComposer(page);
     await composer.fill(prompt);
-    await page.getByRole("button", { name: "Send" }).click();
+    await workspaceCommandButton(page).click({ timeout: 10000 });
 
     await expectNoGenericDesignClarification(page);
     await expect(page.getByTestId("workspace-right-panel")).toContainText(
@@ -183,7 +184,7 @@ test("live civora flow", async ({ page, request, baseURL }, testInfo) => {
       fullPage: true,
     });
 
-    await page.getByRole("button", { name: /^Deliver$/ }).first().click();
+    await openWorkspaceTool(page, "Deliver");
     await expect(page.getByTestId("workspace-right-panel")).toContainText(/Deliver|Review package/i, {
       timeout: 15_000,
     });

@@ -279,7 +279,6 @@ import {
   isDashboardDisciplinePanel,
   projectStatusDisplayLabel,
   resolveDashboardControlsHealthStatus,
-  resolveDashboardSidebarModeStatus,
   resolveSidePanelForRender,
   sidePanelCopy,
   type ProjectStatusSummary,
@@ -2572,7 +2571,7 @@ function PerformanceAIDashboardView({
     updateProjectStatus,
   });
 
-  const { saveProject, tabBranch, saveState } = useDashboardProjectSave({
+  const { saveProject, waitForPendingProjectSaves, tabBranch, saveState } = useDashboardProjectSave({
     exportDraftHistory,
     chatMessagesRef,
     currentProject,
@@ -2702,6 +2701,7 @@ function PerformanceAIDashboardView({
 
   const { loadProject } = useDashboardProjectLoad({
     cancelPendingRun,
+    waitForPendingProjectSaves,
     activeJob,
     activeJobId,
     applyProjectInput,
@@ -4647,13 +4647,6 @@ function PerformanceAIDashboardView({
       customerTemplateBlockerCount,
       customerTemplates,
       utilityCatalog,
-    });
-  const sidebarModeStatus = (mode: WorkspaceMode): SidebarStatus =>
-    resolveDashboardSidebarModeStatus({
-      mode,
-      panelStatus,
-      siteScaleLocked,
-      previewReleaseStatus: previewReview?.release_status,
     });
   const workspaceStages = useWorkspaceStages({account:effectiveUser?.user_id??"",project:currentProject?.project_id??"",generation:projectLoadRequestRef.current,panel:activeSidePanel,onOpenPanel:handleOpenSidePanel});
   const activePrimaryWorkflowKey = resolveActivePrimaryWorkflowKey({
