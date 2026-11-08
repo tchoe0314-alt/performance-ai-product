@@ -3,6 +3,10 @@ name: Hosted canary
 on:
   workflow_dispatch:
     inputs:
+      expected_revision:
+        description: Full deployed commit to verify (blank uses approved production revision)
+        required: false
+        type: string
       require_authenticated:
         description: Require configured authenticated canary credentials
         required: false
@@ -15,7 +19,7 @@ on:
       - main
 
 concurrency:
-  group: civora-hosted-canary
+  group: civora-hosted-canary-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -34,13 +38,15 @@ jobs:
 
       - name: Wait for deployment and run hosted canary
         env:
+          CANARY_EXPECTED_REVISION: ${{ inputs.expected_revision }}
           CIVORA_CANARY_EMAIL: ${{ secrets.CIVORA_CANARY_EMAIL }}
           CIVORA_CANARY_PASSWORD: ${{ secrets.CIVORA_CANARY_PASSWORD }}
         run: |
+          expected_revision=$(python backend/scripts/canary_revision.py)
           args=(
             --frontend-url https://civoraai.com
             --api-base-url https://api.civoraai.com
-            --expected-revision "$GITHUB_SHA"
+            --expected-revision "$expected_revision"
             --expected-product-mode private_alpha
             --attempts 12
             --retry-delay-seconds 10

@@ -51,6 +51,7 @@ def build_hosted_canary_report(
     storage_pool = _mapping(health_record.get("storage_pool"))
     operational_summary = _mapping(health_record.get("operational_summary"))
     actual_revision = str(deployment.get("commit_sha") or deployment.get("build_version") or "").strip()
+    frontend_revision = str(frontend_record.get("revision") or "").strip()
     frontend_origin = f"{urlparse(frontend_url).scheme}://{urlparse(frontend_url).netloc}"
 
     public_blockers = []
@@ -70,6 +71,8 @@ def build_hosted_canary_report(
         public_blockers.append(_record("product_mode_mismatch", "The hosted product mode does not match the canary expectation.", area="release"))
     if not _revision_matches(expected_revision, actual_revision):
         public_blockers.append(_record("hosted_revision_mismatch", "The hosted backend revision does not match the canary revision.", area="revision"))
+    if not _revision_matches(expected_revision, frontend_revision):
+        public_blockers.append(_record("frontend_revision_mismatch", "The hosted website revision is missing or does not match the canary revision.", area="revision"))
     if deployment.get("backend_status") != "online" or deployment.get("api_status") != "configured":
         public_blockers.append(_record("deployment_not_ready", "The hosted deployment summary is not online and configured.", area="deployment"))
     if operational_summary.get("ready_for_ui") is not True:
@@ -109,6 +112,8 @@ def build_hosted_canary_report(
         "api_base_url": str(api_base_url or "").rstrip("/"),
         "expected_revision": str(expected_revision or ""),
         "hosted_revision": actual_revision,
+        "frontend_revision": frontend_revision,
+        "frontend_revision_matches": _revision_matches(expected_revision, frontend_revision),
         "revision_matches": _revision_matches(expected_revision, actual_revision),
         "expected_product_mode": str(expected_product_mode or ""),
         "hosted_product_mode": str(health_record.get("product_mode") or ""),

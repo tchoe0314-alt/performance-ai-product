@@ -91,6 +91,15 @@ def _capture(
         "status": frontend_status,
         "body_has_civora": b"civora" in frontend_body.lower(),
     }
+    identity_status, _identity_headers, identity_body, timings["frontend_identity"] = _request(
+        f"{frontend_url}/api/release-identity", timeout=timeout,
+    )
+    # Legacy sites stay unverified without aborting the remaining checks.
+    try:
+        identity = _json(identity_body, endpoint="frontend identity") if identity_status == 200 else {}
+    except RuntimeError:
+        identity = {}  # A 200 HTML fallback is not identity evidence either.
+    frontend["revision"] = str(identity.get("revision") or "") if identity.get("service") == "civora-web" else ""
     health_status, _health_headers, health_body, timings["health"] = _request(f"{api_base_url}/api/health", timeout=timeout)
     if health_status != 200:
         raise RuntimeError(f"Hosted health returned HTTP {health_status}.")
