@@ -29,6 +29,8 @@ def test_combined_runner_externalizes_heavy_jobs_and_keeps_file_jobs_local() -> 
         "drainage_only",
         "export_dxf",
         "export_pdf",
+        "export_current_geometry_dxf",
+        "export_current_geometry_pdf",
         "export_report",
         "orchestrate",
         "plan_pdf_analysis",
@@ -103,3 +105,16 @@ def test_combined_runner_allows_explicit_worker_priority_override() -> None:
 
     assert command[0] != "nice"
     assert command[-2:] == ["-m", "backend.scripts.run_job_worker"]
+
+
+def test_drawing_exports_have_a_live_process_owner():
+    """An accepting web API with zero workers must route both drawing exports."""
+    web, worker = build_process_environments({
+        'DATABASE_URL': 'postgresql://example.invalid/disposable',
+        'CIVORA_PROCESS_ROLE': 'combined',
+        'CIVORA_DISABLED_JOB_TYPES': 'source_context',
+    })
+    assert web['PERFORMANCE_AI_JOB_WORKERS'] == '0'
+    eligible = set(worker['CIVORA_ENABLED_JOB_TYPES'].split(','))
+    for job in ('export_current_geometry_pdf', 'export_current_geometry_dxf'):
+        assert job in eligible, f'{job} accepted by web but has no worker owner'

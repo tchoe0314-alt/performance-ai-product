@@ -111,7 +111,7 @@ export function useDashboardApplySiteAction({
       setSiteScaleLocked(false);
     }
     applyingSiteRef.current = true;
-    const currentInput = currentProject?.project_input ?? payloadPreview;
+    let currentInput = currentProject?.project_input ?? payloadPreview;
     const visibleWidth = parsePositiveNumber(lotWidth);
     const visibleHeight = parsePositiveNumber(lotHeight);
     const invalidVisibleWidth = Boolean(lotWidth.trim()) && !visibleWidth;
@@ -160,6 +160,19 @@ export function useDashboardApplySiteAction({
       nextAction: "Wait for the boundary to lock, then review source context results.",
     });
     const existingSite = buildingPlacements.find((item) => item.type === "site");
+    // Save the same boundary that the UI applies. React state updates below
+    // are asynchronous; saving only lot dimensions retained the old square
+    // site object, which overwrote those dimensions when the project reopened.
+    const appliedSiteId = existingSite?.id ?? `site-${Date.now()}`;
+    const appliedSite: BuildingPlacement = {
+      ...existingSite, id: appliedSiteId, label: existingSite?.label ?? "Site Boundary",
+      type: "site", x: existingSite?.x ?? 0, y: existingSite?.y ?? 0,
+      w: width, d: height, placed: true, locked: true,
+    };
+    currentInput = { ...currentInput, manual_fields: {
+      ...(currentInput?.manual_fields ?? {}),
+      site_objects: [appliedSite, ...buildingPlacements.filter((item) => item.type !== "site")],
+    } };
     if (existingSite && !existingSite.locked) {
       const existingBoundarySource = currentInput?.meta?.site_inputs?.site_boundary_source ?? existingSite.source;
       const normalizedBoundarySource: SiteInputs["site_boundary_source"] =
@@ -207,6 +220,8 @@ export function useDashboardApplySiteAction({
           item.type === "site"
             ? {
                 ...item,
+                w: width,
+                d: height,
                 locked: true,
                 meta: {
                   ...(item.meta ?? {}),
@@ -274,7 +289,7 @@ export function useDashboardApplySiteAction({
       applyingSiteRef.current = false;
       return;
     }
-    autoFitSite(width, height, "Site Boundary", undefined, false, true);
+    autoFitSite(width, height, "Site Boundary", appliedSiteId, false, true);
     setShowSiteBounds(false);
     setSiteScaleLocked(true);
     // Commit the Setup close before persistence begins. A slow project save must

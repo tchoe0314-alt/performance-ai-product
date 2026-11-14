@@ -1034,6 +1034,8 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(progress_updates[2]["detail"], "Running grading phase.")
 
     def test_build_orchestrate_job_runner_passes_runtime_controls_through_orchestrator_meta(self):
+        from backend.services.canonical_record import seal_record
+        from backend.application.design_workflows import _canonical_calculation_payload
         existing_final_plan = {
             "project_name": "Demo",
             "meta": {
@@ -1062,6 +1064,7 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
 
         def run_orchestration(payload, progress_callback=None):
             nonlocal seen_meta
+            payload = _canonical_calculation_payload(payload)
             seen_meta = dict(payload.get("meta") or {})
             return {
                 "success": True,
@@ -1116,6 +1119,7 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
                 "user_id": "u1",
                 "project_id": "p1",
                 "payload": {
+                    **seal_record({"name": "Demo", "project_input": {"prompt_text": "run", "meta": {}}})["project_input"],
                     "prompt_text": "run",
                     "meta": {
                         "orchestrator_meta": {

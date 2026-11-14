@@ -24,6 +24,22 @@ from backend.planning.runtime import sanitize_plan
 
 
 class ApiEngineeringGuardsTest(unittest.TestCase):
+    def test_worker_uses_verified_checkpoint_and_progress_callback(self):
+        api = importlib.import_module("backend.api.app")
+        captured = {}
+        def builder(**kwargs):
+            captured.update(kwargs)
+            return lambda job: None
+        with patch.object(api, "_register_job_handler"), patch.object(api, "application_build_orchestrate_job_runner", side_effect=builder):
+            api.register_job_handlers()
+        payload = {"meta": {"runtime_resume": {"final_plan": {"project_name": "checkpoint"}}}}
+        progress = lambda *args, **kwargs: None
+        with patch.object(api, "application_run_orchestration", return_value={"success": True}) as engine, patch.object(api, "application_prepare_reactive_orchestration_payload") as http_prepare:
+            captured["run_orchestration"](payload, progress_callback=progress)
+        http_prepare.assert_not_called()
+        self.assertEqual(engine.call_args.args[0], payload)
+        self.assertIs(engine.call_args.kwargs["progress_callback"], progress)
+
     def test_candidate_review_route_forwards_vision_correction_fields(self) -> None:
         corrected_geometry = {
             "type": "Polygon",

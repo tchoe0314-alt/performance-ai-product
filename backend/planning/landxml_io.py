@@ -51,6 +51,13 @@ def import_landxml(path: Path) -> Dict[str, Any]:
             "warnings": ["LandXML parsing failed or unsafe XML constructs were rejected."],
         }
 
+    # Standard LandXML stores northing/easting; old unnamespaced Civora
+    # report files used XY. Preserve that historical import convention only.
+    standard_order = root.tag.startswith("{http://www.landxml.org/schema/")
+    def parse_point(text):
+        point = _parse_point_text(text)
+        return (point[1], point[0], point[2]) if point and standard_order else point
+
     point_lookup: Dict[str, Dict[str, Any]] = {}
     points: List[Dict[str, Any]] = []
     surfaces: List[Dict[str, Any]] = []
@@ -61,7 +68,7 @@ def import_landxml(path: Path) -> Dict[str, Any]:
     for elem in root.iter():
         if _tag_name(elem).lower() not in {"cgpoint", "p"}:
             continue
-        parsed = _parse_point_text(elem.text or "")
+        parsed = parse_point(elem.text or "")
         if parsed is None:
             continue
         pid = _point_id(elem, f"P-{len(points) + 1}")
@@ -78,7 +85,7 @@ def import_landxml(path: Path) -> Dict[str, Any]:
         for child in surface_elem.iter():
             tag = _tag_name(child).lower()
             if tag in {"p", "cgpoint"}:
-                parsed = _parse_point_text(child.text or "")
+                parsed = parse_point(child.text or "")
                 if parsed is not None:
                     surface_points.append({"id": _point_id(child, f"SP-{len(surface_points) + 1}"), "x": parsed[0], "y": parsed[1], "z": parsed[2]})
             elif tag == "pntref":
@@ -110,7 +117,7 @@ def import_landxml(path: Path) -> Dict[str, Any]:
         alignment_points: List[List[float]] = []
         for child in align_elem.iter():
             if _tag_name(child).lower() in {"start", "end", "pnt", "p"}:
-                parsed = _parse_point_text(child.text or "")
+                parsed = parse_point(child.text or "")
                 if parsed is not None:
                     alignment_points.append([parsed[0], parsed[1], parsed[2]])
         alignments.append(
@@ -163,6 +170,11 @@ def import_landxml(path: Path) -> Dict[str, Any]:
 
 
 def build_landxml_pipe_network(plan: Dict[str, Any], *, network_name: str = "Civora Pipe Network") -> str:
+    """Legacy internal report serialization, not the downloadable CAD exchange.
+
+    ArtifactService uses landxml_exchange.build_landxml_exchange with strict
+    geometry validation. Kept to read/test historical report contracts.
+    """
     meta = safe_dict(plan.get("meta"))
     storm = safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))
     sanitary = safe_dict(meta.get("sanitary") or meta.get("sanitary_summary"))

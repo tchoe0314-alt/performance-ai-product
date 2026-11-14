@@ -1390,6 +1390,11 @@ def build_orchestrate_job_runner(
             run_meta["runtime_approved_stages"] = approved_stages[-20:]
         run_meta["runtime_phase_batch_limit"] = requested_batch_limit
         run_payload["meta"] = run_meta
+        # This runner has resolved the checkpoint and approvals from server
+        # storage. Refresh the aggregate projection before canonical resolution
+        # would otherwise restore the older saved execution metadata.
+        from backend.services.canonical_record import with_model_snapshot
+        run_payload = with_model_snapshot(run_payload)
         run_signature = inspect.signature(run_orchestration)
         if "progress_callback" in run_signature.parameters:
             result = run_orchestration(run_payload, progress_callback=_phase_progress_callback)

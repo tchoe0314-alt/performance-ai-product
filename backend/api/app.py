@@ -306,7 +306,8 @@ from backend.services.rate_limit_store import RateLimitStore
 RATE_LIMIT_STORE = RateLimitStore(DB)
 AUTH_STORE = AuthStore(DB)
 from backend.services.identity_proofs import IdentityProofStore
-IDENTITY_PROOFS = IdentityProofStore(DB)
+from backend.services.email_delivery import configured_email_sender
+IDENTITY_PROOFS = IdentityProofStore(DB, sender=configured_email_sender())
 OBJECT_TYPE_STORE = ObjectTypeStore(DB)
 PROJECT_STORE = ProjectStore(DB)
 CATALOG_LIBRARY_STORE = CatalogLibraryStore(DB)
@@ -1226,6 +1227,17 @@ def _register_job_handler(job_type: str, runner: Callable[[Dict[str, Any]], Dict
 
 
 def register_job_handlers() -> None:
+    def run_verified_job_orchestration(payload, progress_callback=None):
+        # The job runner has already loaded the authorized project's checkpoint.
+        # The HTTP wrapper has no current_user in a worker and would replace it
+        # with an empty checkpoint. Browser requests still use that wrapper.
+        return application_run_orchestration(
+            payload,
+            load_orchestrator=_load_orchestrator,
+            assess_design_readiness=assess_design_readiness,
+            progress_callback=progress_callback,
+        )
+
     for export_format in ("dxf", "pdf"):
         _register_job_handler(f"export_current_geometry_{export_format}", build_current_geometry_export_runner(artifact_service=ARTIFACTS, project_store=PROJECT_STORE, update_job_progress=JOB_QUEUE.update_job_progress, export_format=export_format))
     _register_job_handler(
@@ -1233,7 +1245,7 @@ def register_job_handlers() -> None:
         application_build_orchestrate_job_runner(
             project_store=PROJECT_STORE,
             update_job_progress=JOB_QUEUE.update_job_progress,
-            run_orchestration=_run_orchestration,
+            run_orchestration=run_verified_job_orchestration,
             build_run_summary=_build_run_summary,
             merge_project_metadata=_merge_project_metadata,
             final_plan_from_result=application_final_plan_from_result,

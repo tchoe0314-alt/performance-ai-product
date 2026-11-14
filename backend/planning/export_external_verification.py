@@ -514,6 +514,9 @@ def verify_landxml_export(xml_text: str, *, plan: Optional[Dict[str, Any]] = Non
     try:
         root = DefusedET.fromstring(xml_text)
         DefusedET.fromstring(ET.tostring(root, encoding="unicode"))
+        from .landxml_exchange import NS, verify_exchange
+        if root.tag == f"{{{NS}}}LandXML":
+            return verify_exchange(root)
         pipe_count = len(root.findall(".//Pipe"))
         struct_count = len(root.findall(".//Struct"))
         network = root.find(".//PipeNetwork")

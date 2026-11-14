@@ -13,6 +13,8 @@ EXTERNAL_JOB_TYPES = (
     "drainage_only",
     "export_dxf",
     "export_pdf",
+    "export_current_geometry_dxf",
+    "export_current_geometry_pdf",
     "export_report",
     "orchestrate",
     "plan_pdf_analysis",

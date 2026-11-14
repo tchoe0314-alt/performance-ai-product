@@ -478,7 +478,7 @@ class ArtifactService:
 
     def export_landxml(self, *, user_id: str, final_plan: Dict[str, Any], stem: Optional[str] = None, prefinalized: bool = False) -> Path:
         import math
-        from backend.planning.landxml_io import build_landxml_pipe_network
+        from backend.planning.landxml_exchange import build_landxml_exchange
         from backend.planning.export_external_verification import verify_landxml_export
         if str(final_plan.get("units") or "").lower() not in {"ft", "feet"}:
             raise ValueError("LandXML pipe-network export currently supports feet only.")
@@ -492,7 +492,7 @@ class ArtifactService:
                         raise ValueError()
                 except (KeyError, TypeError, ValueError):
                     raise ValueError("LandXML pipe segments need known positive length and diameter.") from None
-        xml = build_landxml_pipe_network(final_plan)
+        xml = build_landxml_exchange(final_plan)
         verification = verify_landxml_export(xml, plan=final_plan)
         if verification.get("failures"):
             raise ValueError("LandXML review export needs supported pipe-network data: " + ", ".join(verification["failures"]))

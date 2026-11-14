@@ -776,14 +776,47 @@ def _nearest_z(x: float, y: float, rows: List[Dict[str, float]]) -> float:
     return nearest["z"]
 
 
+def _valid_geojson_geometry(geometry: Any) -> bool:
+    """Validate coordinate structure before a source can become active."""
+    if not isinstance(geometry, dict):
+        return False
+    kind, coords = geometry.get("type"), geometry.get("coordinates")
+    if not isinstance(kind, str):
+        return False
+    def position(value):
+        return isinstance(value, list) and len(value) >= 2 and all(
+            type(n) in (int, float) and isfinite(n) for n in value)
+    def line(value):
+        return isinstance(value, list) and len(value) >= 2 and all(position(p) for p in value)
+    def polygon(value):
+        return isinstance(value, list) and bool(value) and all(
+            line(ring) and len(ring) >= 4 and ring[0] == ring[-1] for ring in value)
+    validators = {"Point": position, "LineString": line, "Polygon": polygon}
+    if kind in validators:
+        return validators[kind](coords)
+    multi = {"MultiPoint": position, "MultiLineString": line, "MultiPolygon": polygon}
+    if kind in multi:
+        return isinstance(coords, list) and bool(coords) and all(multi[kind](v) for v in coords)
+    if kind == "GeometryCollection":
+        children = geometry.get("geometries")
+        return isinstance(children, list) and bool(children) and all(_valid_geojson_geometry(g) for g in children)
+    return False
+
+
 def import_geojson(path: Path, *, layer_hint: str = "", coordinate_system: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     warnings: List[str] = []
     with Path(path).open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
-    features = safe_list(payload.get("features"))
+    payload = safe_dict(payload)
+    features = safe_list(payload.get("features")) if payload.get("type") == "FeatureCollection" else []
     if safe_str(payload.get("type")) == "Feature":
         features = [payload]
     layers: Dict[str, List[Dict[str, Any]]] = {layer: [] for layer in REQUIRED_GIS_LAYERS}
+    if any(not isinstance(f, dict) or f.get("type") != "Feature" or not _valid_geojson_geometry(f.get("geometry")) for f in features):
+        return {"success": False, "source": str(path), "source_type": "geojson",
+                "feature_count": 0, "layers": layers, "warnings": ["Invalid GeoJSON geometry; source was not accepted."],
+                "canonical_import": _canonical_import_record(canonicalized=False, targets=(), metadata_only=True,
+                    reason="Invalid GeoJSON geometry.")}
     unknown: List[Dict[str, Any]] = []
     for index, feature in enumerate(features, start=1):
         rec = safe_dict(feature)

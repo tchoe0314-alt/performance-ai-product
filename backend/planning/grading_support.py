@@ -801,6 +801,7 @@ def canonical_grading_payload(
     grade_elements: Optional[List[GradeElement]] = None,
     normalize_vector: Any,
 ) -> Dict[str, Any]:
+    from .landxml_exchange import snapshot_grid
     proposed_surface = getattr(result, "proposed_surface", None)
     checks = safe_list(getattr(result, "checks", []))
     low_points = safe_list(getattr(result, "low_points", []))
@@ -895,6 +896,7 @@ def canonical_grading_payload(
         "message": safe_str(getattr(result, "message", "Grading stage completed.")),
         "warnings": [safe_str(item) for item in safe_list(getattr(result, "warnings", [])) if safe_str(item)],
         "existing_surface": {
+            "exchange_grid_v1": snapshot_grid(existing_surface),
             "nrows": safe_int(getattr(existing_surface, "nrows", 0), 0) if existing_surface is not None else 0,
             "ncols": safe_int(getattr(existing_surface, "ncols", 0), 0) if existing_surface is not None else 0,
             "cell_size": safe_float(getattr(existing_surface, "cell_size", 0.0), 0.0) if existing_surface is not None else 0.0,
@@ -907,6 +909,7 @@ def canonical_grading_payload(
             "low_points": existing_low_points,
         },
         "proposed_surface": {
+            "exchange_grid_v1": snapshot_grid(proposed_surface),
             "nrows": safe_int(getattr(proposed_surface, "nrows", 0), 0) if proposed_surface is not None else 0,
             "ncols": safe_int(getattr(proposed_surface, "ncols", 0), 0) if proposed_surface is not None else 0,
             "cell_size": safe_float(getattr(proposed_surface, "cell_size", 0.0), 0.0) if proposed_surface is not None else 0.0,

@@ -74,9 +74,9 @@ class ExistingConditionsImporterTests(unittest.TestCase):
                     {
                         "type": "FeatureCollection",
                         "features": [
-                            {"type": "Feature", "properties": {"layer": "parcel"}, "geometry": {"type": "Polygon", "coordinates": []}},
-                            {"type": "Feature", "properties": {"type": "wetland"}, "geometry": {"type": "Polygon", "coordinates": []}},
-                            {"type": "Feature", "properties": {"name": "existing water utility"}, "geometry": {"type": "LineString", "coordinates": []}},
+                            {"type": "Feature", "properties": {"layer": "parcel"}, "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [10, 0], [10, 10], [0, 0]]]}},
+                            {"type": "Feature", "properties": {"type": "wetland"}, "geometry": {"type": "Polygon", "coordinates": [[[2, 2], [3, 2], [3, 3], [2, 2]]]}},
+                            {"type": "Feature", "properties": {"name": "existing water utility"}, "geometry": {"type": "LineString", "coordinates": [[0, 0], [10, 0]]}},
                         ],
                         "crs": {"type": "name", "properties": {"name": "EPSG:2276"}},
                     }

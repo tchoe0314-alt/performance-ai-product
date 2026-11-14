@@ -61,6 +61,17 @@ export function buildDashboardGradingEarthworkUx({
   gradingSourceSummary: string;
   hasGradingSurface: boolean;
 }): GradingEarthworkUx {
+  if (!hasGradingSurface) {
+    return {
+      heatmapCells: [],
+      surfaceComparison: { existing: gradingSourceSummary, proposed: "Not calculated",
+        deltaLabel: "Surface comparison not calculated", confidence: "Calculate grading before reviewing earthwork." },
+      padTieIns: [],
+      retainingWall: { triggered: false, label: "Not assessed", tradeoff: "Grading results required.", risk: "low" },
+      haulBalance: { netCf: null, cutCf: null, fillCf: null, balancePct: 0,
+        direction: "unknown", label: "Haul pending" },
+    };
+  }
   const width = Math.max(lotBounds.w || DEFAULT_BLANK_SITE_WIDTH_FT, 1);
   const height = Math.max(lotBounds.h || DEFAULT_BLANK_SITE_DEPTH_FT, 1);
   const surfaceControls =

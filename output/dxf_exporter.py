@@ -986,7 +986,19 @@ def _draw_polyline(msp, action: Dict[str, Any], layer: str) -> None:
     closed = _safe_closed(action, False)
     if len(pts) < 2:
         return
-    msp.add_lwpolyline(pts, close=closed, dxfattribs={"layer": _legacy_to_standard_layer(layer, action)})
+    raw = action.get("points") or []
+    has_z = any(isinstance(p, (list, tuple)) and len(p) >= 3 or isinstance(p, dict) and "z" in p for p in raw)
+    if has_z:
+        import math
+        xyz = []
+        for p in raw:
+            values = [p.get(k) for k in ("x", "y", "z")] if isinstance(p, dict) else list(p)
+            if len(values) < 3 or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values[:3]):
+                raise ValueError("3D DXF polyline requires finite XYZ at every vertex.")
+            xyz.append(tuple(values[:3]))
+        msp.add_polyline3d(xyz, close=closed, dxfattribs={"layer": _legacy_to_standard_layer(layer, action)})
+    else:
+        msp.add_lwpolyline(pts, close=closed, dxfattribs={"layer": _legacy_to_standard_layer(layer, action)})
     if label and layer not in SUPPRESSED_AUTO_LABEL_LAYERS:
         cx, cy = _polyline_center(pts)
         add_text(msp, label, cx, cy, 1.0, "LABEL")
