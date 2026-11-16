@@ -1,9 +1,11 @@
 import unittest
+import xml.etree.ElementTree as ET
 from unittest.mock import patch
 
 import planner
 from core.project_manager import ProjectManager
 from backend.planning.finalization import produced_deliverables
+from backend.planning.landxml_exchange import build_landxml_exchange, verify_exchange
 from planner import _recompute_sanitary_summary, build_plan
 
 
@@ -95,6 +97,66 @@ def _complete_sanitary_fixture():
 
 
 class SanitaryStageTest(unittest.TestCase):
+    def test_saved_canvas_building_survives_recompute_and_exports_landxml(self) -> None:
+        payload = _manual_sanitary_payload(
+            meta={"input_mode": "assisted", "orchestrator_meta": {"requested_system": "full"}},
+            site_plan={"building_program_sf": 2400.0, "building_type": "office", "parking_count": 12},
+            buildings=[{
+                "id": "office", "name": "Saved office", "type": "office_building",
+                "x": 80.0, "y": 40.0, "w": 60.0, "d": 40.0, "placed": True,
+            }],
+        )
+        sanitary = (build_plan(payload).get("meta") or {}).get("sanitary") or {}
+
+        snapshot = sanitary.get("exchange_network_v1") or {}
+        self.assertGreater(len(snapshot.get("segments") or []), 0)
+        self.assertGreater(len(snapshot.get("structures") or []), 0)
+        xml = build_landxml_exchange({"units": "ft", "meta": {"sanitary": sanitary}})
+        verified = verify_exchange(ET.fromstring(xml))
+        self.assertTrue(verified["local_contract_verified"], verified)
+        self.assertGreater(verified["pipe_count"], 0)
+
+    def test_saved_canvas_building_drives_sanitary_and_utility_destinations(self) -> None:
+        payload = _manual_sanitary_payload(
+            meta={
+                "input_mode": "assisted",
+                "source_input_mode": "manual",
+                "orchestrator_meta": {"requested_system": "full"},
+            },
+            site_plan={"building_program_sf": 2400.0, "building_type": "office"},
+            buildings=[{
+                "id": "office", "name": "Saved office", "type": "office_building",
+                "x": 80.0, "y": 40.0, "w": 60.0, "d": 40.0,
+                "placed": True, "source": "manual_drawn",
+            }],
+        )
+
+        self.assertTrue(planner._sanitary_requested(payload))
+        plan = build_plan(payload)
+        meta = plan.get("meta") or {}
+        sanitary = meta.get("sanitary") or {}
+        utilities = meta.get("utilities") or {}
+
+        self.assertGreater(sanitary.get("route_count") or 0, 0)
+        self.assertEqual(sanitary.get("service_count"), 1)
+        self.assertEqual(sanitary.get("missing_service_buildings"), [])
+        self.assertEqual(utilities.get("route_count"), 1)
+        self.assertGreater(len((utilities.get("conflict_hooks") or {}).get("utility_segments") or []), 0)
+
+    def test_saved_canvas_service_point_uses_exact_building_bounds(self) -> None:
+        parsed = {"buildings": [{
+            "id": "office", "name": "Saved office", "type": "office_building",
+            "x": 80.0, "y": 40.0, "w": 60.0, "d": 40.0, "placed": True,
+        }]}
+        project = ProjectManager().project
+
+        bottom = planner._sanitary_building_nodes(project, "bottom", parsed)
+        right = planner._sanitary_building_nodes(project, "right", parsed)
+
+        self.assertEqual(bottom[0]["service_point"], [110.0, 40.0])
+        self.assertEqual(right[0]["service_point"], [140.0, 60.0])
+        self.assertEqual(bottom[0]["centroid"], [110.0, 60.0])
+
     def test_manual_mode_generates_canonical_sanitary_system(self) -> None:
         plan = build_plan(_manual_sanitary_payload())
         meta = plan.get("meta") or {}

@@ -187,6 +187,7 @@ from backend.planning.hydrology_stage_runners import (
     run_storm_pipe_stage as _run_storm_pipe_stage_impl,
 )
 from backend.planning.infrastructure_stage_runners import (
+    _sanitary_exchange_snapshot,
     run_sanitary_stage as _run_sanitary_stage_impl,
     run_utility_stage as _run_utility_stage_impl,
 )
@@ -391,6 +392,22 @@ def _sanitary_requested(parsed: Dict[str, Any]) -> bool:
         safe_float(site_plan.get("building_width"), 0.0) > 0.0
         and safe_float(site_plan.get("building_depth"), 0.0) > 0.0
     ) or safe_int(site_plan.get("building_count"), 0) > 0
+    parsed_meta = safe_dict(parsed.get("meta"))
+    requested_system = lower_text(
+        parsed.get("requested_system")
+        or parsed_meta.get("requested_system")
+        or safe_dict(parsed_meta.get("orchestrator_meta")).get("requested_system")
+    )
+    if not has_building_program and requested_system in {"full", "all", "utilities", "sanitary"}:
+        has_building_program = any(
+            lower_text(safe_dict(item).get("type")) in {
+                "building", "building_pad", "office_building", "commercial_building",
+                "industrial_building", "residential_building",
+            }
+            and bool(safe_dict(item).get("placed", True))
+            for item in safe_list(parsed.get("buildings") or parsed.get("site_objects"))
+            if isinstance(item, dict)
+        )
     if has_building_program and not field_path_is_omitted(parsed, "sanitary"):
         return True
     return False
@@ -3786,7 +3803,11 @@ def _sanitary_min_slope(segment_role: str, diameter_in: float) -> float:
     return 0.02
 
 
-def _sanitary_building_nodes(project: ProjectModel, street_edge: str) -> List[Dict[str, Any]]:
+def _sanitary_building_nodes(
+    project: ProjectModel,
+    street_edge: str,
+    parsed: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     nodes: List[Dict[str, Any]] = []
     seen: set[str] = set()
     for zone in project.zones.values():
@@ -3816,6 +3837,51 @@ def _sanitary_building_nodes(project: ProjectModel, street_edge: str) -> List[Di
                 } if bbox is not None else None,
             }
         )
+    for item in safe_list(safe_dict(parsed).get("buildings") or safe_dict(parsed).get("site_objects")):
+        rec = safe_dict(item)
+        object_type = lower_text(rec.get("type"))
+        if object_type not in {
+            "building", "building_pad", "office_building", "commercial_building",
+            "industrial_building", "residential_building",
+        } or not bool(rec.get("placed", True)):
+            continue
+        key = safe_str(rec.get("id"), safe_str(rec.get("name"), f"BUILDING-{len(nodes)+1}"))
+        if key in seen:
+            continue
+        x = safe_float(rec.get("x"), 0.0)
+        y = safe_float(rec.get("y"), 0.0)
+        width = safe_float(rec.get("w"), 0.0)
+        depth = safe_float(rec.get("d"), 0.0)
+        if width <= 0.0 or depth <= 0.0:
+            continue
+        bounds = (x, y, x + width, y + depth)
+        duplicate_bounds = any(
+            all(
+                abs(safe_float(safe_dict(node.get("bbox")).get(field), float("inf")) - expected) <= 1e-6
+                for field, expected in zip(("min_x", "min_y", "max_x", "max_y"), bounds)
+            )
+            for node in nodes
+            if safe_dict(node.get("bbox"))
+        )
+        if duplicate_bounds:
+            continue
+        seen.add(key)
+        if lower_text(street_edge) == "top":
+            service_point = [x + width / 2.0, y + depth]
+        elif lower_text(street_edge) == "left":
+            service_point = [x, y + depth / 2.0]
+        elif lower_text(street_edge) == "right":
+            service_point = [x + width, y + depth / 2.0]
+        else:
+            service_point = [x + width / 2.0, y]
+        nodes.append({
+            "zone_id": key,
+            "zone_name": safe_str(rec.get("name") or rec.get("label"), key),
+            "service_point": service_point,
+            "centroid": [x + width / 2.0, y + depth / 2.0],
+            "bbox": {"min_x": x, "min_y": y, "max_x": x + width, "max_y": y + depth},
+            "source": safe_str(rec.get("source"), "saved_canvas_object"),
+        })
     return nodes
 
 
@@ -6475,6 +6541,10 @@ def _precoordinate_vertical_hierarchy(project: ProjectModel, manager: ProjectMan
         sanitary.setdefault("vertical_coordination", {})["depth_stack"] = "sanitary_below_water_above_storm"
         manager.latest_outputs["sanitary"] = deepcopy(sanitary)
         project.meta["sanitary_summary"] = deepcopy(sanitary)
+        # The depth stack changes canonical inverts, slopes, and cover. Rebuild
+        # every dependent metric and the exact exchange snapshot so persistence
+        # and LandXML never expose geometry from before vertical coordination.
+        _recompute_sanitary_summary(project, manager, prefer_cache=True)
 
 
 def _bind_sanitary_graph_nodes(
@@ -6966,12 +7036,24 @@ def _ensure_sanitary_structure_spacing(
     inserted: List[Dict[str, Any]] = []
     for rec in updated_segments:
         role = safe_str(rec.get("segment_role")).lower()
-        if role not in {"main", "trunk", "collector", ""}:
+        if role not in {"main", "trunk", "collector", "lateral", ""}:
             continue
         path = _dedupe_path_points(safe_list(rec.get("route_points")))
         if len(path) < 2:
             continue
-        points = _support_structure_points_for_path(path, max_spacing_ft)
+        bend_points = [
+            path[index]
+            for index in range(1, len(path) - 1)
+            if abs(
+                (path[index][0] - path[index - 1][0]) * (path[index + 1][1] - path[index][1])
+                - (path[index][1] - path[index - 1][1]) * (path[index + 1][0] - path[index][0])
+            ) > 1e-6
+        ]
+        points = (
+            _support_structure_points_for_path(path, max_spacing_ft)
+            if role in {"main", "trunk", "collector", ""}
+            else bend_points
+        )
         new_points: List[List[float]] = []
         for point in points:
             key = _point_key(point)
@@ -6984,7 +7066,7 @@ def _ensure_sanitary_structure_spacing(
                 "node_id": name,
                 "x": key[0],
                 "y": key[1],
-                "reason": "sanitary_structure_spacing",
+                "reason": "sanitary_route_bend" if point in bend_points else "sanitary_structure_spacing",
                 "source": "generated_from_canonical_route",
                 "max_spacing_ft": round(max_spacing_ft, 3),
                 "segment": safe_str(rec.get("name"), "SAN"),
@@ -7223,6 +7305,13 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager, 
     summary["network_validation"] = _validate_sanitary_network(summary)
     summary["disconnected_segments"] = deepcopy(safe_list(safe_dict(summary["network_validation"]).get("disconnected_services")))
     summary["success"] = bool(summary["graph_validation"].get("valid")) and bool(summary["network_validation"].get("valid"))
+    summary.pop("exchange_network_v1", None)
+    if summary["success"]:
+        try:
+            summary["exchange_network_v1"] = _sanitary_exchange_snapshot(summary)
+            summary["exchange_validation"] = {"ready": True, "reasons": []}
+        except ValueError as exc:
+            summary["exchange_validation"] = {"ready": False, "reasons": [safe_str(exc)]}
     manager.latest_outputs["sanitary"] = deepcopy(summary)
     project.meta["sanitary_summary"] = deepcopy(summary)
     if summary["success"]:
@@ -9563,6 +9652,7 @@ def _run_utility_stage(ctx: PlannerExecutionContext) -> None:
         utility_export_validation=_utility_export_validation,
         record_strict_stage_failure=_record_strict_stage_failure,
         preferred_route_between=_preferred_route_between,
+        building_service_nodes=_sanitary_building_nodes,
         utility_engine_cls=UtilityEngine,
     )
 

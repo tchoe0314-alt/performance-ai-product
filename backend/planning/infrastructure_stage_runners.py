@@ -172,7 +172,7 @@ def run_sanitary_stage(
     sanitary_requested: Callable[[Dict[str, Any]], bool],
     sanitary_user_input_summary: Callable[[Dict[str, Any], Any], Optional[Dict[str, Any]]],
     record_strict_stage_failure: Callable[..., None],
-    sanitary_building_nodes: Callable[[Any, str], List[Dict[str, Any]]],
+    sanitary_building_nodes: Callable[[Any, str, Optional[Dict[str, Any]]], List[Dict[str, Any]]],
     storm_pipe_paths: Callable[[Any], List[List[List[float]]]],
     orthogonal_path: Callable[..., List[List[float]]],
     sanitary_min_slope: Callable[[str, float], float],
@@ -223,7 +223,7 @@ def run_sanitary_stage(
         lot_y = safe_float(lot.get("y"), DEFAULT_LOT_Y)
         lot_w = safe_float(lot.get("w"), DEFAULT_LOT_WIDTH)
         lot_h = safe_float(lot.get("h"), DEFAULT_LOT_HEIGHT)
-        sanitary_nodes = sanitary_building_nodes(project, street_edge)
+        sanitary_nodes = sanitary_building_nodes(project, street_edge, parsed)
         if not sanitary_nodes:
             if strict_mode:
                 record_strict_stage_failure(
@@ -682,6 +682,7 @@ def run_utility_stage(
     utility_export_validation: Callable[..., Dict[str, Any]],
     record_strict_stage_failure: Callable[..., None],
     preferred_route_between: Callable[..., List[List[float]]],
+    building_service_nodes: Callable[[Any, str, Optional[Dict[str, Any]]], List[Dict[str, Any]]],
     utility_engine_cls: Callable[..., Any] = UtilityEngine,
 ) -> None:
     manager = ctx.manager
@@ -779,22 +780,15 @@ def run_utility_stage(
         )
 
         destinations = []
-        for zone in project.zones.values():
-            zone_name = safe_str(getattr(zone, "name", ""))
-            zone_type = getattr(zone, "zone_type", None)
-            if zone_type not in {ZoneType.BUILDING, ZoneType.BUILDING_PAD, ZoneType.PAD}:
+        for node in building_service_nodes(project, safe_str(parsed.get("street_edge"), "bottom"), parsed):
+            centroid = safe_list(node.get("centroid"))
+            if len(centroid) < 2:
                 continue
-            if zone_type == ZoneType.PAD and zone_name.upper() in {"BUILDABLE_AREA", "SITE", "LOT"}:
-                continue
-            if zone_type == ZoneType.PAD and "BUILDABLE" in zone_name.upper():
-                continue
-            if zone_type == ZoneType.PAD and not zone_name:
-                continue
-            c = zone.boundary.centroid()
+            zone_name = safe_str(node.get("zone_name"), "BLDG")
             destinations.append(
                 UtilityNodeSpec(
-                    x=c.x,
-                    y=c.y,
+                    x=safe_float(centroid[0], 0.0),
+                    y=safe_float(centroid[1], 0.0),
                     z=DEFAULT_PAD_ELEV,
                     name=f"{zone_name or 'BLDG'}_SERVICE",
                     kind="service",
