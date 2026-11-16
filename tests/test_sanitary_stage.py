@@ -97,6 +97,25 @@ def _complete_sanitary_fixture():
 
 
 class SanitaryStageTest(unittest.TestCase):
+    def test_saved_canvas_building_in_manual_fields_drives_live_api_shape(self) -> None:
+        payload = _manual_sanitary_payload(
+            meta={"input_mode": "assisted", "orchestrator_meta": {"requested_system": "full"}},
+            site_plan={"building_program_sf": 2400.0, "building_type": "office", "parking_count": 12},
+        )
+        payload.setdefault("manual_fields", {})["site_objects"] = [{
+            "id": "office", "name": "Saved office", "type": "office_building",
+            "x": 80.0, "y": 40.0, "w": 60.0, "d": 40.0, "placed": True,
+        }]
+
+        plan = build_plan(payload)
+        sanitary = (plan.get("meta") or {}).get("sanitary") or {}
+        self.assertTrue(sanitary.get("success"), sanitary)
+        self.assertGreater(len(sanitary.get("segments") or []), 0)
+        self.assertIn(
+            "Saved office",
+            (sanitary.get("service_coverage") or {}).get("served_buildings") or [],
+        )
+
     def test_saved_canvas_building_survives_recompute_and_exports_landxml(self) -> None:
         payload = _manual_sanitary_payload(
             meta={"input_mode": "assisted", "orchestrator_meta": {"requested_system": "full"}},

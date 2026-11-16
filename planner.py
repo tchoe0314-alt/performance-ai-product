@@ -362,6 +362,21 @@ def _strict_mode_enabled(parsed: Dict[str, Any]) -> bool:
     return False
 
 
+def _parsed_site_objects(parsed: Dict[str, Any]) -> List[Any]:
+    """Return canonical canvas objects from API or direct-engine payloads."""
+    execution_payload = safe_dict(unwrap_fields_for_execution(parsed))
+    manual_fields = safe_dict(execution_payload.get("manual_fields"))
+    for candidate in (
+        execution_payload.get("buildings"),
+        execution_payload.get("site_objects"),
+        manual_fields.get("buildings"),
+        manual_fields.get("site_objects"),
+    ):
+        if isinstance(candidate, list):
+            return candidate
+    return []
+
+
 def _sanitary_requested(parsed: Dict[str, Any]) -> bool:
     deliverables = {_requested for _requested in [lower_text(item) for item in safe_list(parsed.get("deliverables"))] if _requested}
     if any(any(token in deliverable for token in ("sanitary", "sewer")) for deliverable in deliverables):
@@ -405,7 +420,7 @@ def _sanitary_requested(parsed: Dict[str, Any]) -> bool:
                 "industrial_building", "residential_building",
             }
             and bool(safe_dict(item).get("placed", True))
-            for item in safe_list(parsed.get("buildings") or parsed.get("site_objects"))
+            for item in _parsed_site_objects(parsed)
             if isinstance(item, dict)
         )
     if has_building_program and not field_path_is_omitted(parsed, "sanitary"):
@@ -3837,7 +3852,7 @@ def _sanitary_building_nodes(
                 } if bbox is not None else None,
             }
         )
-    for item in safe_list(safe_dict(parsed).get("buildings") or safe_dict(parsed).get("site_objects")):
+    for item in _parsed_site_objects(safe_dict(parsed)):
         rec = safe_dict(item)
         object_type = lower_text(rec.get("type"))
         if object_type not in {
