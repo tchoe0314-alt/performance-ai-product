@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Optional
 
@@ -20,6 +21,79 @@ from engines.utility_engine import UtilityEngine, UtilityNodeSpec, UtilityReques
 from .common import dedupe_keep_order, lower_text, polyline_length, safe_dict, safe_float, safe_int, safe_list, safe_str
 from .field_contract import field_path_is_omitted, unwrap_fields_for_execution
 from .runtime import PlannerExecutionContext, _mark_dependency_state
+
+
+def _sanitary_exchange_snapshot(summary: Dict[str, Any]) -> Dict[str, Any]:
+    """Build an exact straight-segment exchange view from the canonical graph."""
+    manholes = [deepcopy(safe_dict(item)) for item in safe_list(summary.get("manholes")) if safe_dict(item)]
+    coord_nodes: Dict[tuple[float, float], str] = {}
+    structures: Dict[str, Dict[str, Any]] = {}
+    connected_inverts: Dict[str, List[float]] = {}
+    for index, manhole in enumerate(manholes, start=1):
+        name = safe_str(manhole.get("id") or manhole.get("node_id") or manhole.get("name"), f"SMH-{index}")
+        x, y = safe_float(manhole.get("x"), float("nan")), safe_float(manhole.get("y"), float("nan"))
+        rim = safe_float(manhole.get("rim_elev_ft"), float("nan"))
+        if not name or not all(math.isfinite(value) for value in (x, y, rim)):
+            raise ValueError("Sanitary exchange requires named manholes with finite coordinates and rim elevations.")
+        key = (round(x, 3), round(y, 3))
+        if key in coord_nodes and coord_nodes[key] != name:
+            raise ValueError("Sanitary exchange has ambiguous colocated manhole identities.")
+        coord_nodes[key] = name
+        structures[name] = {"id": name, "name": name, "x": x, "y": y, "rim_elevation_ft": rim}
+        connected_inverts[name] = []
+
+    exchange_segments: List[Dict[str, Any]] = []
+    for logical in [safe_dict(item) for item in safe_list(summary.get("segments")) if safe_dict(item)]:
+        logical_name = safe_str(logical.get("id") or logical.get("name"), "sanitary")
+        path = [[safe_float(point[0], float("nan")), safe_float(point[1], float("nan"))]
+                for point in safe_list(logical.get("route_points"))
+                if isinstance(point, (list, tuple)) and len(point) >= 2]
+        if len(path) < 2 or any(not all(math.isfinite(value) for value in point) for point in path):
+            raise ValueError(f"Sanitary exchange route {logical_name} needs finite path coordinates.")
+        total_length = polyline_length(path)
+        start_invert = safe_float(logical.get("start_invert_ft"), float("nan"))
+        end_invert = safe_float(logical.get("end_invert_ft"), float("nan"))
+        if total_length <= 0 or not all(math.isfinite(value) for value in (start_invert, end_invert)):
+            raise ValueError(f"Sanitary exchange route {logical_name} needs calculated endpoint inverts.")
+        cumulative = [0.0]
+        for start, end in zip(path, path[1:]):
+            cumulative.append(cumulative[-1] + math.hypot(end[0] - start[0], end[1] - start[1]))
+        split_indices = [index for index, point in enumerate(path) if (round(point[0], 3), round(point[1], 3)) in coord_nodes]
+        if not split_indices or split_indices[0] != 0 or split_indices[-1] != len(path) - 1:
+            raise ValueError(f"Sanitary exchange route {logical_name} needs canonical structures at both endpoints.")
+        for part, (start_index, end_index) in enumerate(zip(split_indices, split_indices[1:]), start=1):
+            subpath = path[start_index:end_index + 1]
+            sub_length = polyline_length(subpath)
+            straight_length = math.hypot(subpath[-1][0] - subpath[0][0], subpath[-1][1] - subpath[0][1])
+            if sub_length <= 0 or not math.isclose(sub_length, straight_length, rel_tol=1e-6, abs_tol=.01):
+                raise ValueError(f"Sanitary exchange route {logical_name} has a bend without a canonical manhole.")
+            from_name = coord_nodes[(round(subpath[0][0], 3), round(subpath[0][1], 3))]
+            to_name = coord_nodes[(round(subpath[-1][0], 3), round(subpath[-1][1], 3))]
+            z0 = start_invert + (end_invert - start_invert) * cumulative[start_index] / total_length
+            z1 = start_invert + (end_invert - start_invert) * cumulative[end_index] / total_length
+            connected_inverts[from_name].append(z0)
+            connected_inverts[to_name].append(z1)
+            exchange_segments.append({
+                "id": f"{logical_name}-{part}", "name": f"{logical_name}-{part}",
+                "from_node": from_name, "to_node": to_name,
+                "length_ft": straight_length, "diameter_in": safe_float(logical.get("diameter_in"), float("nan")),
+                "invert_start_ft": z0, "invert_end_ft": z1,
+                "slope_ft_ft": (z0 - z1) / straight_length,
+                "path": [[subpath[0][0], subpath[0][1], z0], [subpath[-1][0], subpath[-1][1], z1]],
+                "source_segment_id": logical_name,
+            })
+
+    for name, structure in structures.items():
+        values = connected_inverts[name]
+        if not values:
+            raise ValueError(f"Sanitary exchange structure {name} is unconnected.")
+        structure["sump_elevation_ft"] = min(values)
+        if structure["sump_elevation_ft"] > structure["rim_elevation_ft"]:
+            raise ValueError(f"Sanitary exchange structure {name} sump is above its rim.")
+    snapshot = {"version": 1, "segments": exchange_segments, "structures": list(structures.values())}
+    from .landxml_exchange import network_geometry_signature
+    snapshot["geometry_signature"] = network_geometry_signature(summary)
+    return snapshot
 
 
 def _insert_sanitary_spacing_points(path: List[List[float]], max_spacing_ft: float = 240.0) -> List[List[float]]:
@@ -529,6 +603,8 @@ def run_sanitary_stage(
         summary["graph_validation"] = validate_network_graph(summary, "sanitary")
         summary["network_validation"] = validate_sanitary_network(summary)
         summary["success"] = bool(summary["graph_validation"].get("valid")) and bool(summary["network_validation"].get("valid"))
+        if summary["success"]:
+            summary["exchange_network_v1"] = _sanitary_exchange_snapshot(summary)
         manager.latest_outputs["sanitary"] = deepcopy(summary)
         project.meta["sanitary_summary"] = deepcopy(summary)
         manager.set_metric("sanitary_total_length_ft", safe_float(summary.get("total_length_ft"), 0.0), units="ft", category="sanitary")

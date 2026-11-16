@@ -4,6 +4,7 @@ No inferred elevations, inferred connectivity, or native-CAD compatibility claim
 The legacy XML report writer is not used by the artifact export endpoint.
 """
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 import xml.etree.ElementTree as ET
@@ -55,6 +56,19 @@ def snapshot_grid(surface):
             "registration": dict(surface.registration)}
 
 
+def network_geometry_signature(data):
+    """Bind exact exchange output to the displayed calculation geometry."""
+    keys = {
+        "nodes": ("id", "name", "x", "y", "rim_elev_ft", "invert_elev_ft"),
+        "segments": ("id", "pipe", "from", "to", "start_name", "end_name", "node_ids",
+                     "path", "route_points", "length_ft", "diameter_in", "slope_ft_ft",
+                     "start_invert", "end_invert", "start_invert_ft", "end_invert_ft"),
+    }
+    geometry = {key: [{field: row.get(field) for field in fields} for row in data.get(key, [])]
+                for key, fields in keys.items()}
+    return hashlib.sha256(json.dumps(geometry, sort_keys=True, allow_nan=False).encode()).hexdigest()
+
+
 def surface_xml(parent, raw, name):
     raw = mapping(raw, "surface")
     grid = mapping(raw.get("exchange_grid_v1") or raw, "surface grid")
@@ -78,7 +92,14 @@ def surface_xml(parent, raw, name):
     for key, expected in (("x_max", x+(cols-1)*step), ("y_max", y+(rows-1)*step)):
         if key in grid and not math.isclose(number(grid[key], key), expected, abs_tol=1e-7, rel_tol=1e-10):
             raise ValueError("LandXML node-grid bounds disagree with sampling dimensions.")
-    reg = grid.get("registration") or {}
+    reg = mapping(grid.get("registration") or {}, "surface registration")
+    for key in ("horizontal_units", "vertical_units"):
+        if reg.get(key) is not None and reg[key] not in ("ft", "international_foot", "feet", "foot"):
+            raise ValueError("LandXML surface units require explicit conversion to international feet.")
+    if reg.get("affine") is not None:
+        raise ValueError("LandXML affine surface grids need explicit transformation before export.")
+    if any(reg.get(key) for key in ("boundary", "holes", "clip_polygon")):
+        raise ValueError("LandXML clipped/holed surfaces need supported boundary triangulation; full-grid export is blocked.")
     if reg.get("rotation", 0) or reg.get("rotation_deg", 0):
         raise ValueError("Rotated surface grids need explicit transformation before LandXML export.")
     surf = ET.SubElement(parent, tag("Surface"), {"name": name, "desc": "Review only; computed node grid triangulated along SW-NE diagonals"})
@@ -123,6 +144,13 @@ def build_landxml_exchange(plan, *, network_name="Civora Pipe Network"):
     all_ids = set()
     for system, data in (("storm", meta.get("storm_pipes") or meta.get("storm_pipe_summary") or {}), ("sanitary", meta.get("sanitary") or meta.get("sanitary_summary") or {})):
         data = mapping(data, "network")
+        if "exchange_network_v1" in data:
+            snapshot = mapping(data["exchange_network_v1"], "exact network snapshot")
+            if snapshot.get("geometry_signature") != network_geometry_signature(data):
+                raise ValueError("LandXML exact network snapshot is stale; recalculate the changed network before export.")
+            data = snapshot
+            if data.get("version") != 1:
+                raise ValueError("LandXML network snapshot version is unsupported; recalculate first.")
         segments = data.get("segments") or []
         structures = data.get("structures") or data.get("manholes") or []
         if not isinstance(segments, list) or not isinstance(structures, list):
