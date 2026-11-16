@@ -47,9 +47,21 @@ export function ObjectManagerPanel({
       {selectedObject.selectedObject ? (
         <div data-testid="preview-object-manager">
           <SelectedObjectCard {...selectedObject} />
-          {selectedObject.onEngineeringMeta && selectedObject.selectedObject.type !== "site" ? <ObjectEngineeringProperties key={`engineering:${selectedObject.selectedObject.id}:${JSON.stringify(selectedObject.selectedObject.meta?.vertical_extent_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.cul_de_sac_v1)}:${selectedObject.selectedObject.meta?.pipe_diameter_ft}`} item={selectedObject.selectedObject} onCommit={selectedObject.onEngineeringMeta} /> : null}
-          {selectedObject.onEngineeringMeta && !["site", "lot_block"].includes(selectedObject.selectedObject.type ?? "") ? <ObjectCoordinationProperties key={`coordination:${selectedObject.selectedObject.id}:${JSON.stringify(selectedObject.selectedObject.meta?.coordination_envelope_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.setback_rule_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.intentional_connections_v1)}`} item={selectedObject.selectedObject} objects={objectList.objects} onCommit={selectedObject.onEngineeringMeta} /> : null}
-          {selectedObject.onEngineeringMeta && !["site", "lot_block", "setback_zone", "no_build_zone"].includes(selectedObject.selectedObject.type ?? "") ? <ObjectDetailedGeometryProperties key={`${detailedGeometryBinding(selectedObject.selectedObject)}:${JSON.stringify(selectedObject.selectedObject.meta?.occupied_components_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.pipe_profile_v1)}`} item={selectedObject.selectedObject} onCommit={selectedObject.onEngineeringMeta} /> : null}
+          {selectedObject.onEngineeringMeta && selectedObject.selectedObject.type !== "site" ? (
+            <DisclosurePanel title="Engineering properties" subtitle="Elevations, clearances, and design-specific inputs" status="Optional">
+              <ObjectEngineeringProperties key={`engineering:${selectedObject.selectedObject.id}:${JSON.stringify(selectedObject.selectedObject.meta?.vertical_extent_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.cul_de_sac_v1)}:${selectedObject.selectedObject.meta?.pipe_diameter_ft}`} item={selectedObject.selectedObject} onCommit={selectedObject.onEngineeringMeta} />
+            </DisclosurePanel>
+          ) : null}
+          {selectedObject.onEngineeringMeta && !["site", "lot_block"].includes(selectedObject.selectedObject.type ?? "") ? (
+            <DisclosurePanel title="Coordination properties" subtitle="Setbacks, envelopes, and intentional connections" status="Optional">
+              <ObjectCoordinationProperties key={`coordination:${selectedObject.selectedObject.id}:${JSON.stringify(selectedObject.selectedObject.meta?.coordination_envelope_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.setback_rule_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.intentional_connections_v1)}`} item={selectedObject.selectedObject} objects={objectList.objects} onCommit={selectedObject.onEngineeringMeta} />
+            </DisclosurePanel>
+          ) : null}
+          {selectedObject.onEngineeringMeta && !["site", "lot_block", "setback_zone", "no_build_zone"].includes(selectedObject.selectedObject.type ?? "") ? (
+            <DisclosurePanel title="Detailed geometry" subtitle="Occupied components and profile data" status="Optional">
+              <ObjectDetailedGeometryProperties key={`${detailedGeometryBinding(selectedObject.selectedObject)}:${JSON.stringify(selectedObject.selectedObject.meta?.occupied_components_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.pipe_profile_v1)}`} item={selectedObject.selectedObject} onCommit={selectedObject.onEngineeringMeta} />
+            </DisclosurePanel>
+          ) : null}
         </div>
       ) : null}
       <SiteInterferencePanel objects={objectList.objects} />
@@ -76,7 +88,7 @@ export function ObjectManagerPanel({
         <ObjectManagerLayerControls {...layerControls} />
       </DisclosurePanel>
       {selectedTools ? (
-        <DisclosurePanel defaultOpen title="Modify" subtitle="Transform and edit the selected object" status="Selected">
+        <DisclosurePanel title="Modify" subtitle="Transform and edit the selected object" status="Selected">
           <ObjectManagerSelectedToolsPanel {...selectedTools} />
         </DisclosurePanel>
       ) : null}
