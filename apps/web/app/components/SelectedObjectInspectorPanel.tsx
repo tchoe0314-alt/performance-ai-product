@@ -8,6 +8,7 @@ import {
 import { SITE_OBJECT_CATALOG } from "../utils/siteObjectCatalog";
 import { ObjectClassificationFields } from "./ObjectClassificationFields";
 import { ObjectDependencyEditor } from "./ObjectDependencyEditor";
+import { SitePlanningEvidenceEditor } from "./SitePlanningEvidenceEditor";
 
 type ObjectConfidenceSummary = {
   confidence_band?: string;
@@ -265,6 +266,11 @@ export function SelectedObjectInspectorPanel({
               </div>
             </div>
           ) : null}
+          <SitePlanningEvidenceEditor
+            object={selectedBuilding}
+            disabled={editBlocked || selectedBuilding.locked === true}
+            onUpdate={onUpdateObject}
+          />
           <div className="grid grid-cols-2 gap-2">
             <button type="button" onClick={() => onToggleLock(selectedBuilding)} disabled={selectedBuilding.type === "site"} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50">
               {selectedBuilding.locked ? "Unlock object" : "Lock object"}
