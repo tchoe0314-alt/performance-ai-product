@@ -169,6 +169,28 @@ test("timeout queues once but explicit cancellation never starts a fallback job"
   }
 });
 
+test("a hung queue submission fails visibly and releases busy state without inventing a job", async () => {
+  const paths: string[] = [];
+  const state = fixture(async (path, _body, options) => {
+    paths.push(path);
+    if (path === "/api/orchestrate") throw new Error("Failed to fetch");
+    return new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener("abort", () => reject(new DOMException("Cancelled", "AbortError")), { once: true });
+    });
+  });
+
+  expect(await state.execute({
+    mode: "run",
+    requestPayload: payload,
+    queueSubmissionTimeoutMs: 5,
+  })).toBe("blocked");
+  expect(paths).toEqual(["/api/orchestrate", "/api/jobs/orchestrate"]);
+  expect(state.writes.some(([key]) => key === "job")).toBe(false);
+  expect(state.writes.some(([key, value]) => key === "status" && (value as { state: string }).state === "blocked")).toBe(true);
+  expect(state.writes.some(([key, value]) => key === "chat" && String(value).includes("No background job was confirmed"))).toBe(true);
+  expect(state.writes.at(-2)).toEqual(["busy", false]);
+});
+
 test("already cancelled requests do not change UI or start any network request", async () => {
   const state = fixture(async () => { throw new Error("Unexpected network request"); });
   state.controller.abort();

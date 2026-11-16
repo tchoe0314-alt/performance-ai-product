@@ -22,6 +22,8 @@ export type DashboardPlanExecutionRequest = {
   timeoutMs?: number;
   allowQueueFallback?: boolean;
   forceQueue?: boolean;
+  /** Bounds queue submission itself; the queued engineering job keeps its own backend runtime limit. */
+  queueSubmissionTimeoutMs?: number;
 };
 
 export type DashboardPlanExecutionOutcome = "completed" | "queued" | "blocked" | "cancelled" | "stale";
@@ -57,7 +59,8 @@ export function createDashboardPlanExecutor(options: PlanExecutionOptions): Dash
   const post = options.post ?? postJson;
   return async ({ mode, requestPayload, resolvedProjectId, assistantPrefix,
     clearPromptOnSuccess = false, signal, timeoutMs = 12_000,
-    allowQueueFallback = true, forceQueue = false }: DashboardPlanExecutionRequest) => {
+    allowQueueFallback = true, forceQueue = false,
+    queueSubmissionTimeoutMs = 15_000 }: DashboardPlanExecutionRequest) => {
     if (signal?.aborted) return "cancelled";
     const generation = options.getWorkspaceGeneration();
     const inputFingerprint = options.getLiveInputFingerprint?.();
@@ -65,10 +68,27 @@ export function createDashboardPlanExecutor(options: PlanExecutionOptions): Dash
     const isCurrent = () => options.getWorkspaceGeneration() === generation;
     const canPublish = () => isCurrent() && !signal?.aborted;
     const prefix = (message: string) => [assistantPrefix, message].filter(Boolean).join(" ");
-    const queueRun = () => post<{ job: JobSummary }>("/api/jobs/orchestrate", {
-      project_id: resolvedProjectId !== undefined ? resolvedProjectId : ((requestPayload.project_id ?? projectId) || null),
-      request: requestPayload,
-    }, { token, signal });
+    const queueRun = async () => {
+      const controller = new AbortController();
+      const abortFromCaller = () => controller.abort();
+      signal?.addEventListener("abort", abortFromCaller, { once: true });
+      if (signal?.aborted) controller.abort();
+      const timeout = setTimeout(() => controller.abort(), queueSubmissionTimeoutMs);
+      try {
+        return await post<{ job: JobSummary }>("/api/jobs/orchestrate", {
+          project_id: resolvedProjectId !== undefined ? resolvedProjectId : ((requestPayload.project_id ?? projectId) || null),
+          request: requestPayload,
+        }, { token, signal: controller.signal });
+      } catch (error) {
+        if (!signal?.aborted && controller.signal.aborted && error instanceof Error && error.name === "AbortError") {
+          throw new Error("Job queue submission timed out before the backend accepted it. No background job was confirmed.");
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", abortFromCaller);
+      }
+    };
     const publishQueued = (job: JobSummary, staged: boolean, reason?: "timeout" | "connection") => {
       if (!canPublish()) return;
       setActiveJobId(job.job_id);
