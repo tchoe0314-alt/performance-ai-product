@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 import { useEffect, useRef } from "react";
-import { Bot, ChevronRight, Loader2, MessageSquareText, SendHorizonal, Sparkles } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, Loader2, MessageSquareText, SendHorizonal, Sparkles } from "lucide-react";
 
 import type { PlanToolMode } from "../types";
 
@@ -35,6 +35,8 @@ type PinnedCommandBarProps = {
   };
   leftRailVisible?: boolean;
   rightPanelSize?: "none" | "standard" | "wide";
+  expanded?: boolean;
+  onExpandedChange?: (expanded: boolean) => void;
 };
 
 export default function PinnedCommandBar({
@@ -53,6 +55,8 @@ export default function PinnedCommandBar({
   commandContext,
   leftRailVisible = true,
   rightPanelSize = "none",
+  expanded = false,
+  onExpandedChange,
 }: PinnedCommandBarProps) {
   const dockRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -84,6 +88,7 @@ export default function PinnedCommandBar({
       data-command-bar-id="pinned-civora-command-bar"
       className="civora-motion-command-bar civora-command-dock fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-1/2 z-[720] w-[min(48rem,calc(100vw-1rem))] -translate-x-1/2 overflow-hidden rounded-[16px] border border-slate-300/80 bg-white/95 shadow-[0_24px_70px_-28px_rgba(15,23,42,0.52)] backdrop-blur-2xl"
       style={dockStyle}
+      data-expanded={expanded}
     >
       {isWorking ? (
         <div className="mb-2 flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -100,7 +105,7 @@ export default function PinnedCommandBar({
         </div>
       ) : null}
       {!isWorking && statusText ? <span className="sr-only" aria-live="polite">{statusText}</span> : null}
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 bg-slate-50/80 px-3.5 py-2">
+      {expanded ? <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 bg-slate-50/80 px-3.5 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
             <Sparkles className="h-3.5 w-3.5" />
@@ -110,7 +115,8 @@ export default function PinnedCommandBar({
             <p className="truncate text-[10px] font-medium text-slate-500">Edit the plan with plain language</p>
           </div>
         </div>
-        {commandContext ? (
+        <div className="flex min-w-0 items-center gap-2">
+        {commandContext && expanded ? (
           <div className="hidden min-w-0 items-center gap-1.5 md:flex" aria-label="Current design context">
             <span className="civora-command-context-chip">{commandContext.view}</span>
             <span className="civora-command-context-chip">{commandContext.layer}</span>
@@ -121,8 +127,19 @@ export default function PinnedCommandBar({
             ) : null}
           </div>
         ) : null}
-      </div>
-      <div className="flex min-w-0 items-center gap-2 px-2 py-2">
+        <button type="button" onClick={() => onExpandedChange?.(!expanded)} aria-expanded={expanded} aria-label={expanded ? "Collapse Civora Copilot" : "Open Civora Copilot"} className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100">
+          {expanded ? "Hide" : "Ask Civora"}<ChevronDown className={`h-3.5 w-3.5 transition ${expanded ? "rotate-180" : ""}`} />
+        </button>
+        </div>
+      </div> : null}
+      {!expanded ? (
+        <div className="flex min-w-0 items-center gap-1.5 p-1.5">
+          <button type="button" onClick={() => onExpandedChange?.(true)} aria-label="Open Civora Copilot" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-slate-950 text-white"><Sparkles className="h-4 w-4" /></button>
+          <textarea ref={commandInputRef} data-testid="civora-command-input" value={prompt} onChange={(event) => onPromptChange(event.target.value)} onKeyDown={onPromptKeyDown} onFocus={() => onExpandedChange?.(true)} placeholder="Ask Civora…" rows={1} className="h-9 min-w-0 flex-1 resize-none border-0 bg-transparent px-2 py-2 text-sm font-medium leading-5 text-slate-950 outline-none placeholder:text-slate-400" />
+          <button type="button" onClick={onSendMessage} disabled={!canSend} aria-label="Run Civora command" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-slate-950 text-white disabled:opacity-35"><SendHorizonal className="h-4 w-4" /></button>
+        </div>
+      ) : null}
+      {expanded ? <><div className="flex min-w-0 items-center gap-2 px-2 py-2">
         <button
           type="button"
           onClick={onOpenHistory}
@@ -172,7 +189,7 @@ export default function PinnedCommandBar({
             </button>
           ))}
         </div>
-      ) : null}
+      ) : null}</> : null}
     </div>
   );
 }

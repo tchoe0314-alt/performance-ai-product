@@ -496,7 +496,7 @@ export function PreviewEditableObjectHitTargets({
                   onRemoveBuilding(item.id);
                 }}
               />
-              {hoveredObjectId === item.id ? <PreviewObjectHoverCard details={objectHoverDetails} /> : null}
+              {hoveredObjectId === item.id && isSelected ? <PreviewObjectHoverCard details={objectHoverDetails} /> : null}
             </div>
           );
         })}

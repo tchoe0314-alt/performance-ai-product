@@ -582,7 +582,7 @@ body,
   }
 
   .civora-workspace-canvas-frame[data-drawer-state="open"] {
-    right: 0;
+    right: var(--civora-shell-drawer-width);
   }
 
   .civora-workspace-canvas-frame[data-drawer-state="open"] .civora-preview-view-toolbar {

@@ -355,7 +355,7 @@ function PerformanceAIDashboardView({
     sidebarVisible,
   } = useDashboardLeftSidebarState();
   const [, setChatCollapsed] = useState(false);
-  const [, setCommandBarExpanded] = useState(false);
+  const [commandBarExpanded, setCommandBarExpanded] = useState(false);
   const {
     activeSidePanel,
     setActiveSidePanel,
@@ -2597,7 +2597,7 @@ function PerformanceAIDashboardView({
     upsertProjectSummary,
   });
   const projectHeaderStatus = useProjectHeaderStatus(currentProject?.project_id ?? "", token, currentProject?.revision_token, backendResult?.metadata?.calculation_save_v1?.calculation_id);
-  const headerSaveStatus = saveState === "saving" ? "Saving" : saveState === "failed" ? "Save failed" : effectiveDemoWorkspaceEnabled ? "Local only" : currentProject?.project_id && !tabBranch.hasEdits(currentProject.project_id, payloadPreview) ? "Saved" : "Unsaved";
+  const headerSaveStatus = saveState === "saving" ? "Saving" : saveState === "auth_required" ? "Sign in to save" : saveState === "failed" ? "Save failed" : effectiveDemoWorkspaceEnabled ? "Local only" : currentProject?.project_id && !tabBranch.hasEdits(currentProject.project_id, payloadPreview) ? "Saved" : "Unsaved";
   const headerHealth = projectStatusSummary.state === "blocked" ? "Blocked" : resultIsStale ? "Stale" : projectStatusSummary.state === "working" ? "Updating" : !backendResult ? "Unverified" : "Review needed";
 
   useEffect(() => {
@@ -6060,6 +6060,8 @@ function PerformanceAIDashboardView({
       commandBar={commandBarDockVisible ? (
             <PinnedCommandBar
               {...pinnedCommandBarProps}
+          expanded={commandBarExpanded}
+          onExpandedChange={setCommandBarExpanded}
               leftRailVisible={sidebarRendered && sidebarVisible}
               rightPanelSize={sidePanelForRender ? "standard" : "none"}
             />

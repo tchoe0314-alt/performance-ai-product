@@ -78,7 +78,7 @@ export function useDashboardProjectSave({
   upsertProjectSummary,
 }: UseDashboardProjectSaveOptions) {
   const saveQueueRef = useRef<DashboardProjectSaveQueue | null>(null);
-  const [saveProgress, setSaveProgress] = useState<{generation:number; state:"saving"|"failed"|"idle"}>({generation:-1,state:"idle"});
+  const [saveProgress, setSaveProgress] = useState<{generation:number; state:"saving"|"failed"|"auth_required"|"idle"}>({generation:-1,state:"idle"});
   const revisionRef = useRef<{ generation: number; projectId: string; revision?: string } | null>(null);
   const forkRef = useRef<{ generation: number; original: string; copy: string } | null>(null);
   const waitForPendingProjectSaves = useCallback(async (id: string) => {
@@ -319,16 +319,17 @@ export function useDashboardProjectSave({
         return data.project;
       } catch (error) {
         if (projectLoadRequestRef.current !== workspaceGeneration) return null;
-        setSaveProgress({generation:workspaceGeneration,state:"failed"});
+        const authRequired = [401, 403].includes((error as { status?: number }).status ?? 0);
+        setSaveProgress({generation:workspaceGeneration,state:authRequired?"auth_required":"failed"});
         const message = panelErrorMessage(error, "Project save could not complete.");
         setProjectDrawerNotice(`Save needs attention: ${message}`);
         if (!silent) {
           updateProjectStatus({
             state: "blocked",
             area: "projects",
-            title: "Save could not finish",
+            title: authRequired ? "Sign in again to save" : "Save could not finish",
             detail: message,
-            nextAction: "Check auth/backend connectivity, then press Save Project again.",
+            nextAction: authRequired ? "Sign in again, then press Save Project. Your edits remain in this tab." : "Check auth/backend connectivity, then press Save Project again.",
           });
         }
         return null;
