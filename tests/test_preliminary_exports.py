@@ -7,7 +7,17 @@ from backend.planning.preliminary_export import (
     has_valid_preliminary_disclosure,
     prepare_preliminary_snapshot,
     preliminary_disclosure_lines,
+    validate_review_geometry,
 )
+
+
+@pytest.mark.parametrize("action", [
+    {"task": "rectangle", "origin": [0, 0], "width": None, "height": None, "w": 30, "h": 50},
+    {"task": "circle", "center": [10, 10], "radius": None, "r": 5},
+    {"task": "arc", "center": [10, 10], "radius": None, "r": 5, "start_angle": 0, "end_angle": 90},
+])
+def test_null_canonical_dimension_alias_uses_representable_legacy_value(action):
+    assert validate_review_geometry({"units": "ft", "actions": [action]})
 
 
 def source():

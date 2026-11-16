@@ -23,6 +23,15 @@ def _items(value: Any) -> list:
     return [] if value is None else [value]
 
 
+def _first_present(action: dict, *fields: str, default: Any = None) -> Any:
+    """Return the first non-null dimension alias in a superset action."""
+    for field in fields:
+        value = action.get(field)
+        if value is not None:
+            return value
+    return default
+
+
 def validate_review_geometry(plan: dict) -> str:
     units = str(plan.get("units") or "").lower().strip()
     if units not in {"ft", "feet", "m", "meters", "metres"}:
@@ -37,6 +46,10 @@ def validate_review_geometry(plan: dict) -> str:
             if not isinstance(action, dict) or action.get("task") not in supported:
                 raise ValueError("unsupported drawing entity")
             for field in numeric_fields.intersection(action):
+                # Canonical actions use a superset schema and explicitly set
+                # irrelevant dimension aliases to null.
+                if action[field] is None:
+                    continue
                 if not math.isfinite(float(action[field])):
                     raise ValueError("nonfinite coordinate or dimension")
             for field in ("points", "origin", "center"):
@@ -46,17 +59,19 @@ def validate_review_geometry(plan: dict) -> str:
                 if not isinstance(points, list):
                     raise ValueError("invalid coordinate array")
                 for point in points:
-                    if not isinstance(point, (list, tuple)) or len(point) < 2 or not all(math.isfinite(float(v)) for v in point):
+                    if not isinstance(point, (list, tuple)) or len(point) < 2 or not all(math.isfinite(float(v)) for v in point[:2]):
                         raise ValueError("invalid coordinate")
+                    if len(point) > 2 and any(v is not None and not math.isfinite(float(v)) for v in point[2:]):
+                        raise ValueError("invalid optional coordinate ordinate")
             if action["task"] in {"polyline", "polygon"}:
                 if len(action.get("points") or []) < (3 if action["task"] == "polygon" else 2):
                     raise ValueError("incomplete line or polygon")
                 if len({tuple(point[:2]) for point in action["points"]}) < (3 if action["task"] == "polygon" else 2):
                     raise ValueError("degenerate line or polygon")
             if action["task"] == "rectangle":
-                if float(action.get("width", action.get("w", 0))) <= 0 or float(action.get("height", action.get("h", 0))) <= 0:
+                if float(_first_present(action, "width", "w", default=0)) <= 0 or float(_first_present(action, "height", "h", default=0)) <= 0:
                     raise ValueError("rectangle dimensions must be positive")
-            if action["task"] in {"circle", "arc"} and float(action.get("radius", action.get("r", 0))) <= 0:
+            if action["task"] in {"circle", "arc"} and float(_first_present(action, "radius", "r", default=0)) <= 0:
                 raise ValueError("radius must be positive")
         encoded = json.dumps({"units": units, "actions": actions}, sort_keys=True, separators=(",", ":"), allow_nan=False)
     except (ValueError, TypeError, OverflowError) as exc:
