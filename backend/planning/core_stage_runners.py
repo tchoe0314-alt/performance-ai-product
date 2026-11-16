@@ -12,7 +12,7 @@ from core.config import (
     DEFAULT_PAD_ELEV,
     DEFAULT_PAD_WIDTH,
 )
-from core.geometry_core import EngineeringDomain, EngineeringObject, Point2D, Point3D, Polygon2D, ZoneType, rect_zone
+from core.geometry_core import EngineeringDomain, EngineeringObject, Point2D, Point3D, Polygon2D, Zone, ZoneType, rect_zone
 from core.project_manager import ConflictRecord, ConflictSeverity, DependencyState
 from engines.bridge_engine import BridgeEngine, BridgeRequest
 from engines.subdivision_engine import SubdivisionEngine, SubdivisionRequest
@@ -350,6 +350,14 @@ def _layout_overlap_issues(actions: Sequence[Dict[str, Any]]) -> List[str]:
     building_rects = _collect_rects_by_layer(actions, {"BUILDING"})
     parking_rects = _collect_rects_by_layer(actions, {"PARKING"})
     issues: List[str] = []
+    for action in safe_list(actions):
+        rec = safe_dict(action)
+        if safe_str(rec.get("layer")).upper() != "PARKING":
+            continue
+        meta = safe_dict(rec.get("meta"))
+        if safe_str(meta.get("parking_geometry_status")) == "invalid_or_does_not_fit":
+            fields = ", ".join(safe_str(item) for item in safe_list(meta.get("parking_geometry_issues")))
+            issues.append(f"Parking geometry does not fit its explicit design basis: {fields}.")
 
     def _check_pairs(rects_a: Sequence[Dict[str, float]], rects_b: Sequence[Dict[str, float]], buffer: float, label: str) -> None:
         for a in rects_a:
@@ -379,6 +387,301 @@ def _layout_overlap_issues(actions: Sequence[Dict[str, Any]]) -> List[str]:
                 break
 
     return issues
+
+
+def _explicit_canvas_parking_actions(parsed: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return user-positioned parking courts as canonical layout actions.
+
+    The legacy expander can synthesize a different parking module around a
+    building even when the canvas already contains a positioned parking court.
+    That both moves a locked user requirement and can manufacture an overlap.
+    Preserve the supplied bounds and declared stall program, while keeping the
+    declaration explicitly user-sourced rather than treating it as a verified
+    jurisdictional parking layout.
+    """
+
+    actions: List[Dict[str, Any]] = []
+    execution_payload = unwrap_fields_for_execution(parsed)
+    for raw in safe_list(execution_payload.get("site_objects")):
+        item = safe_dict(raw)
+        item_type = lower_text(item.get("type"))
+        if item_type not in {"parking", "parking_area", "parking_lot"}:
+            continue
+        x = item.get("x")
+        y = item.get("y")
+        width = item.get("w", item.get("width"))
+        depth = item.get("d", item.get("depth", item.get("height")))
+        if not all(type(value) in (int, float) for value in (x, y, width, depth)):
+            continue
+        if safe_float(width, 0.0) <= 0.0 or safe_float(depth, 0.0) <= 0.0:
+            continue
+        item_meta = safe_dict(item.get("meta"))
+        requested_stalls = max(
+            0,
+            safe_int(
+                item_meta.get("requested_stalls"),
+                safe_int(item.get("stall_count"), 0),
+            ),
+        )
+        action_meta = _preview_meta_for_action("PARKING", "rectangle")
+        action_meta.update(
+            {
+                "entity_id": safe_str(item.get("id"), "") or None,
+                "source": "user_canvas",
+                "stall_count_source": "user_declared" if requested_stalls else "not_supplied",
+                "stall_geometry_verified": False,
+                "truth_label": (
+                    "User-positioned parking court; stall count and legal/code adequacy remain unverified."
+                ),
+            }
+        )
+        court = {
+            "task": "rectangle",
+            "origin": [round(float(x), 3), round(float(y), 3)],
+            "width": round(float(width), 3),
+            "height": round(float(depth), 3),
+            "label": safe_str(item.get("label"), "User parking"),
+            "layer": "PARKING",
+            "stall_count": requested_stalls or None,
+            "canonical_source_id": safe_str(item.get("id"), "") or None,
+            "meta": action_meta,
+        }
+        actions.append(court)
+
+        basis = safe_dict(item_meta.get("parking_design_basis"))
+        if not basis:
+            continue
+        source = safe_str(basis.get("source"), "")
+        stall_w = safe_float(basis.get("stall_width_ft"), 0.0)
+        stall_d = safe_float(basis.get("stall_depth_ft"), 0.0)
+        aisle_w = safe_float(basis.get("aisle_width_ft"), 0.0)
+        accessible_count = max(0, safe_int(basis.get("accessible_stall_count"), 0))
+        accessible_w = safe_float(basis.get("accessible_stall_width_ft"), 0.0)
+        access_aisle_w = safe_float(basis.get("access_aisle_width_ft"), 0.0)
+        invalid = []
+        if not source:
+            invalid.append("parking_design_basis.source")
+        if requested_stalls <= 0:
+            invalid.append("requested_stalls")
+        for field_name, value in (
+            ("stall_width_ft", stall_w),
+            ("stall_depth_ft", stall_d),
+            ("aisle_width_ft", aisle_w),
+        ):
+            if value <= 0.0:
+                invalid.append(field_name)
+        if accessible_count > requested_stalls:
+            invalid.append("accessible_stall_count")
+        if accessible_count and (accessible_w <= 0.0 or access_aisle_w <= 0.0):
+            invalid.extend(["accessible_stall_width_ft", "access_aisle_width_ft"])
+        regular_count = max(0, requested_stalls - accessible_count)
+        components = [
+            {"kind": "accessible", "width": accessible_w + access_aisle_w}
+            for _ in range(accessible_count)
+        ] + [
+            {"kind": "regular", "width": stall_w}
+            for _ in range(regular_count)
+        ]
+        rows: List[List[Dict[str, Any]]] = []
+        for component in components:
+            component_width = safe_float(component.get("width"), 0.0)
+            if component_width > safe_float(width, 0.0) + 1e-8:
+                invalid.append("court_width")
+                break
+            if not rows or sum(safe_float(entry.get("width"), 0.0) for entry in rows[-1]) + component_width > safe_float(width, 0.0) + 1e-8:
+                rows.append([])
+            rows[-1].append(component)
+        required_depth = len(rows) * (stall_d + aisle_w)
+        if required_depth > safe_float(depth, 0.0) + 1e-8:
+            invalid.append("court_depth")
+        if invalid:
+            action_meta["parking_geometry_status"] = "invalid_or_does_not_fit"
+            action_meta["parking_geometry_issues"] = sorted(set(invalid))
+            action_meta["parking_design_basis"] = deepcopy(basis)
+            continue
+
+        # Deterministic single-loaded modules packed into as many rows as the
+        # court requires. This checks geometry against the supplied basis; it
+        # does not claim that the basis satisfies local zoning or access law.
+        module_depth = stall_d + aisle_w
+        start_y = float(y) + (float(depth) - required_depth) / 2.0
+        common_meta = {
+            "source": "user_parking_design_basis",
+            "criteria_source": source,
+            "parking_geometry_verified": True,
+            "jurisdictional_compliance_verified": False,
+            "truth_label": "Geometry fits the explicit user-supplied concept basis; legal/code adequacy remains unverified.",
+            **_preview_meta_for_action("PARKING", "rectangle"),
+        }
+        regular_index = 0
+        accessible_index = 0
+        for row_index, row in enumerate(rows):
+            row_width = sum(safe_float(entry.get("width"), 0.0) for entry in row)
+            cursor_x = float(x) + (float(width) - row_width) / 2.0
+            aisle_y = start_y + row_index * module_depth
+            stall_y = aisle_y + aisle_w
+            actions.append(
+                {
+                    "task": "rectangle",
+                    "origin": [round(cursor_x, 3), round(aisle_y, 3)],
+                    "width": round(row_width, 3),
+                    "height": round(aisle_w, 3),
+                    "label": f"Parking drive aisle {row_index + 1}",
+                    "layer": "PAVEMENT",
+                    "meta": {**common_meta, "parking_component": "drive_aisle", "parking_row": row_index + 1},
+                }
+            )
+            for component in row:
+                if component["kind"] == "regular":
+                    regular_index += 1
+                    actions.append(
+                        {
+                            "task": "rectangle",
+                            "origin": [round(cursor_x, 3), round(stall_y, 3)],
+                            "width": round(stall_w, 3),
+                            "height": round(stall_d, 3),
+                            "label": f"Parking stall {regular_index}",
+                            "layer": "PARKING_STALL",
+                            "meta": {**common_meta, "parking_component": "regular_stall", "parking_row": row_index + 1},
+                        }
+                    )
+                    cursor_x += stall_w
+                    continue
+                accessible_index += 1
+                actions.append(
+                    {
+                        "task": "rectangle",
+                        "origin": [round(cursor_x, 3), round(stall_y, 3)],
+                        "width": round(accessible_w, 3),
+                        "height": round(stall_d, 3),
+                        "label": f"Accessible parking stall {accessible_index}",
+                        "layer": "ACCESSIBLE_PARKING",
+                        "meta": {**common_meta, "parking_component": "accessible_stall", "parking_row": row_index + 1},
+                    }
+                )
+                cursor_x += accessible_w
+                actions.append(
+                    {
+                        "task": "rectangle",
+                        "origin": [round(cursor_x, 3), round(stall_y, 3)],
+                        "width": round(access_aisle_w, 3),
+                        "height": round(stall_d, 3),
+                        "label": f"Accessible access aisle {accessible_index}",
+                        "layer": "ACCESS_AISLE",
+                        "meta": {**common_meta, "parking_component": "accessible_access_aisle", "parking_row": row_index + 1},
+                    }
+                )
+                cursor_x += access_aisle_w
+        action_meta.update(
+            {
+                "stall_geometry_verified": True,
+                "parking_geometry_status": "fits_explicit_basis",
+                "parking_design_basis": deepcopy(basis),
+                "generated_stall_count": requested_stalls,
+                "generated_accessible_stall_count": accessible_count,
+                "generated_access_aisle_count": accessible_count,
+                "generated_parking_row_count": len(rows),
+            }
+        )
+    return actions
+
+
+def _explicit_canvas_accessible_route_actions(parsed: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Preserve explicitly dimensioned pedestrian routes for downstream validation.
+
+    A route is not labeled verified here: finalization still has to prove that
+    its endpoints connect an access aisle and a declared building entrance.
+    """
+
+    actions: List[Dict[str, Any]] = []
+    execution_payload = unwrap_fields_for_execution(parsed)
+    for raw in safe_list(execution_payload.get("site_objects")):
+        item = safe_dict(raw)
+        item_type = lower_text(item.get("type"))
+        if item_type not in {"sidewalk", "walkway", "ada_route", "accessible_route"}:
+            continue
+        item_meta = safe_dict(item.get("meta"))
+        basis = safe_dict(item_meta.get("accessible_route_design_basis"))
+        if not basis:
+            continue
+        raw_points = safe_list(item.get("geometry") or item.get("points"))
+        points: List[List[float]] = []
+        for raw_point in raw_points:
+            point = safe_list(raw_point)
+            if len(point) < 2 or type(point[0]) not in (int, float) or type(point[1]) not in (int, float):
+                points = []
+                break
+            points.append([round(float(point[0]), 3), round(float(point[1]), 3)])
+        if len(points) < 2:
+            continue
+        meta = _preview_meta_for_action("WALK", "polyline")
+        meta.update(
+            {
+                "entity_id": safe_str(item.get("id"), "") or None,
+                "source": "user_accessible_route_design_basis",
+                "accessible_route_design_basis": deepcopy(basis),
+                "accessible_route_geometry_candidate": True,
+                "jurisdictional_compliance_verified": False,
+                "truth_label": "Explicit accessible-route evidence candidate; connectivity and supplied criteria are validated downstream, and legal compliance is not implied.",
+            }
+        )
+        actions.append(
+            {
+                "task": "polyline",
+                "points": points,
+                "label": safe_str(item.get("label"), "Accessible route"),
+                "layer": "WALK",
+                "canonical_source_id": safe_str(item.get("id"), "") or None,
+                "meta": meta,
+            }
+        )
+    return actions
+
+
+def _explicit_canvas_circulation_actions(parsed: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Preserve explicitly sourced entrance-to-site circulation centerlines."""
+
+    actions: List[Dict[str, Any]] = []
+    execution_payload = unwrap_fields_for_execution(parsed)
+    for raw in safe_list(execution_payload.get("site_objects")):
+        item = safe_dict(raw)
+        if lower_text(item.get("type")) not in {"entrance", "driveway", "access_drive", "road"}:
+            continue
+        basis = safe_dict(safe_dict(item.get("meta")).get("circulation_design_basis"))
+        if not basis:
+            continue
+        points: List[List[float]] = []
+        for raw_point in safe_list(item.get("geometry") or item.get("points")):
+            point = safe_list(raw_point)
+            if len(point) < 2 or type(point[0]) not in (int, float) or type(point[1]) not in (int, float):
+                points = []
+                break
+            points.append([round(float(point[0]), 3), round(float(point[1]), 3)])
+        if len(points) < 2:
+            continue
+        meta = _preview_meta_for_action("PAVEMENT", "polyline")
+        meta.update(
+            {
+                "entity_id": safe_str(item.get("id"), "") or None,
+                "source": "user_circulation_design_basis",
+                "circulation_design_basis": deepcopy(basis),
+                "circulation_geometry_candidate": True,
+                "circulation_validation_status": "pending_finalization",
+                "jurisdictional_compliance_verified": False,
+                "truth_label": "Entrance-to-site circulation evidence candidate; finalization checks supplied route, swept-path, and fire-access evidence without implying legal approval.",
+            }
+        )
+        actions.append(
+            {
+                "task": "polyline",
+                "points": points,
+                "label": safe_str(item.get("label"), "Site access route"),
+                "layer": "PAVEMENT",
+                "canonical_source_id": safe_str(item.get("id"), "") or None,
+                "meta": meta,
+            }
+        )
+    return actions
 
 
 def _layout_fallback_actions(
@@ -972,6 +1275,30 @@ def run_layout_stage(
         expanded = legacy_expand_payload(execution_payload)
         if isinstance(expanded, dict):
             expanded_actions = filter_actions_by_field_intent(parsed, safe_list(expanded.get("actions")))
+            explicit_parking = _explicit_canvas_parking_actions(parsed)
+            explicit_accessible_routes = _explicit_canvas_accessible_route_actions(parsed)
+            explicit_circulation = _explicit_canvas_circulation_actions(parsed)
+            if explicit_parking:
+                # A positioned canvas court is an explicit requirement. Remove
+                # generated parking geometry for this layout pass, but preserve
+                # unrelated road/pavement actions.
+                expanded_actions = [
+                    action
+                    for action in expanded_actions
+                    if safe_str(safe_dict(action).get("layer")).upper() != "PARKING"
+                ]
+                expanded_actions.extend(explicit_parking)
+            if explicit_accessible_routes:
+                # Explicit route evidence supersedes the schematic generated
+                # building-to-court connector, whose endpoints are not proven.
+                expanded_actions = [
+                    action
+                    for action in expanded_actions
+                    if safe_str(safe_dict(action).get("layer")).upper() not in {"WALK", "SIDEWALK"}
+                ]
+                expanded_actions.extend(explicit_accessible_routes)
+            if explicit_circulation:
+                expanded_actions.extend(explicit_circulation)
             expanded_actions = _synthesize_layout_semantics(expanded_actions)
             expanded["actions"] = expanded_actions
         if safe_list(expanded.get("actions")):
@@ -1258,9 +1585,50 @@ def run_layout_stage(
         )
 
         subdivision_payload = safe_dict(execution_payload.get("subdivision"))
-        if subdivision_payload or lower_text(execution_payload.get("mode")) == "subdivision":
+        project_type = lower_text(execution_payload.get("project_type")).replace("-", "_").replace(" ", "_")
+        subdivision_requested = bool(subdivision_payload) or lower_text(execution_payload.get("mode")) == "subdivision" or project_type in {
+            "subdivision", "residential_subdivision",
+        }
+        if subdivision_requested:
             try:
+                parcel_zone_id = None
+                raw_parcel_points = safe_list(subdivision_payload.get("parcel_points"))
+                parcel_geometry_source = "explicit_subdivision_parcel_points" if raw_parcel_points else ""
+                if not raw_parcel_points:
+                    canvas_site = next(
+                        (
+                            item for item in safe_list(execution_payload.get("site_objects"))
+                            if lower_text(safe_dict(item).get("type")) == "site"
+                            and len(safe_list(safe_dict(item).get("geometry"))) >= 3
+                        ),
+                        None,
+                    )
+                    if canvas_site is not None:
+                        raw_parcel_points = safe_list(safe_dict(canvas_site).get("geometry"))
+                        parcel_geometry_source = "canvas_site_polygon"
+                if raw_parcel_points:
+                    parcel_points = []
+                    for index, raw_point in enumerate(raw_parcel_points):
+                        if not isinstance(raw_point, (list, tuple)) or len(raw_point) < 2:
+                            raise ValueError(f"subdivision.parcel_points[{index}] requires x/y coordinates")
+                        x, y = raw_point[0], raw_point[1]
+                        if type(x) not in (int, float) or type(y) not in (int, float):
+                            raise ValueError(f"subdivision.parcel_points[{index}] requires numeric x/y coordinates")
+                        parcel_points.append(Point2D(float(x), float(y)))
+                    parcel_zone = Zone(
+                        boundary=Polygon2D(parcel_points),
+                        zone_type=ZoneType.SITE,
+                        name="SUBDIVISION_PARCEL",
+                        tags=["subdivision", "parcel_boundary"],
+                        meta={
+                            "source": parcel_geometry_source,
+                            "truth_label": "User-supplied concept parcel geometry; not survey or legal-boundary evidence.",
+                        },
+                    )
+                    project.add_zone(parcel_zone)
+                    parcel_zone_id = parcel_zone.id
                 subdivision_request = SubdivisionRequest(
+                    parcel_zone_id=parcel_zone_id,
                     road_width=max(20.0, safe_float(subdivision_payload.get("road_width"), 60.0)),
                     lot_width=max(30.0, safe_float(subdivision_payload.get("target_lot_width"), 80.0)),
                     lot_depth=max(50.0, safe_float(subdivision_payload.get("target_lot_depth"), 140.0)),
@@ -1279,11 +1647,61 @@ def run_layout_stage(
                     "lot_count": len(subdivision_result.lot_ids),
                     "road_count": len(subdivision_result.road_ids),
                     "warnings": list(subdivision_result.warnings),
+                    "blockers": list(subdivision_result.blockers),
+                    "validation_status": subdivision_result.validation_status,
+                    "parcel_geometry_source": parcel_geometry_source if parcel_zone_id else "planner_site_rectangle",
+                    "criteria_sources": {
+                        "road_width": "user_input" if "road_width" in subdivision_payload else "concept_default_60_ft",
+                        "target_lot_width": "user_input" if "target_lot_width" in subdivision_payload else "concept_default_80_ft",
+                        "target_lot_depth": "user_input" if "target_lot_depth" in subdivision_payload else "concept_default_140_ft",
+                    },
+                    "setback_adequacy": "unverified",
+                    "legal_adequacy": "unverified",
+                    "truth_label": (
+                        "Concept subdivision geometry was checked for parcel containment only. "
+                        "Setbacks, easements, access/frontage, survey closure, legal lot validity, and approval remain unverified."
+                    ),
                 }
                 manager.set_metric("subdivision_lot_count", len(subdivision_result.lot_ids), category="layout")
                 manager.set_metric("subdivision_road_count", len(subdivision_result.road_ids), category="layout")
+                ctx.add_stage(
+                    "subdivision",
+                    subdivision_result.success,
+                    subdivision_result.message,
+                    validation_status=subdivision_result.validation_status,
+                    blockers=list(subdivision_result.blockers),
+                    lot_count=len(subdivision_result.lot_ids),
+                    road_count=len(subdivision_result.road_ids),
+                    legal_adequacy="unverified",
+                )
+                if not subdivision_result.success:
+                    ctx.record_warning(
+                        "Subdivision concept remains blocked: "
+                        + ", ".join(subdivision_result.blockers or [subdivision_result.message])
+                    )
             except Exception as exc:
-                ctx.record_warning(f"Subdivision layout failed: {exc}")
+                message = f"Subdivision layout failed: {exc}"
+                project.meta["subdivision_summary"] = {
+                    "success": False,
+                    "message": message,
+                    "lot_count": 0,
+                    "road_count": 0,
+                    "warnings": [],
+                    "blockers": ["subdivision_input_or_geometry_invalid"],
+                    "validation_status": "invalid_input",
+                    "setback_adequacy": "unverified",
+                    "legal_adequacy": "unverified",
+                    "truth_label": "Subdivision generation failed; no legal, setback, or engineering adequacy is implied.",
+                }
+                ctx.add_stage(
+                    "subdivision",
+                    False,
+                    message,
+                    validation_status="invalid_input",
+                    blockers=["subdivision_input_or_geometry_invalid"],
+                    legal_adequacy="unverified",
+                )
+                ctx.record_warning(message)
 
         bridge_payload = safe_dict(execution_payload.get("bridge"))
         if bridge_payload or lower_text(execution_payload.get("mode")) == "bridge":
@@ -1375,13 +1793,14 @@ def run_layout_stage(
         if field_path_is_omitted(parsed, "site_plan.parking_count"):
             parking_count = 0
         else:
-            parking_count = max(
-                0,
-                safe_int(
-                    safe_dict(expanded.get("meta")).get("parking_count"),
-                    safe_int(site_plan.get("parking_count"), 24),
-                ),
-            )
+            # Explicit program input is authoritative. The legacy expander's
+            # generated geometry count must not silently replace it.
+            parking_count = max(0, safe_int(site_plan.get("parking_count"), 0))
+            if parking_count <= 0:
+                parking_count = max(
+                    0,
+                    safe_int(safe_dict(expanded.get("meta")).get("parking_count"), 24),
+                )
         layout_stats = collect_plan_stats(
             expanded if expanded else project_model_to_plan(project, parsed.get("project_name") or "Generated Plan")
         )

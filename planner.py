@@ -726,17 +726,24 @@ def _required_stage_names(parsed: Dict[str, Any], plan: Dict[str, Any]) -> List[
 
 def _compile_stage_completeness(ctx: PlannerExecutionContext, parsed: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
     rows = []
+    statuses: Dict[str, str] = {}
     for stage in sorted(ctx.stage_results, key=lambda item: _stage_sort_key(safe_str(item.stage_name))):
         meta = deepcopy(safe_dict(stage.meta))
+        stage_name = safe_str(stage.stage_name)
+        completeness = _stage_completeness_label(
+            stage_name, bool(stage.success), safe_str(stage.message), meta
+        )
         rows.append(
             {
-                "stage_name": safe_str(stage.stage_name),
+                "stage_name": stage_name,
                 "success": bool(stage.success),
-                "completeness": _stage_completeness_label(safe_str(stage.stage_name), bool(stage.success), safe_str(stage.message), meta),
+                "completeness": completeness,
                 "message": safe_str(stage.message),
                 "meta": meta,
             }
         )
+        if stage_name:
+            statuses[stage_name] = completeness
     required = _required_stage_names(parsed, plan)
     required_status: Dict[str, str] = {}
     for row in rows:
@@ -749,6 +756,7 @@ def _compile_stage_completeness(ctx: PlannerExecutionContext, parsed: Dict[str, 
         required_status[name] = completeness
     return {
         "stages": rows,
+        "statuses": statuses,
         "required_stage_names": required,
         "required_stage_status": required_status,
         "all_required_complete": all(required_status.get(name) == "complete" for name in required),
@@ -756,6 +764,15 @@ def _compile_stage_completeness(ctx: PlannerExecutionContext, parsed: Dict[str, 
 
 
 def _estimated_parking_stalls_from_actions(actions: Sequence[Dict[str, Any]]) -> int:
+    declared_stalls = sum(
+        max(0, safe_int(safe_dict(action).get("stall_count"), 0))
+        for action in actions
+        if isinstance(action, dict)
+        and safe_str(action.get("layer"), "").upper() == "PARKING"
+        and safe_str(safe_dict(action.get("meta")).get("stall_count_source")) == "user_declared"
+    )
+    if declared_stalls > 0:
+        return declared_stalls
     parking_area = 0.0
     for action in actions:
         if not isinstance(action, dict):
@@ -9897,9 +9914,23 @@ def _run_model_first_workflow(
             "message": message,
             "yielded": False,
         }
-        checkpoint_plan["meta"]["stage_completeness"] = {
-            "statuses": _current_stage_statuses(),
-        }
+        checkpoint_plan["meta"]["stage_completeness"] = _compile_stage_completeness(
+            ctx,
+            parsed,
+            checkpoint_plan,
+        )
+        checkpoint_plan["meta"]["stage_results"] = [
+            {
+                "stage_name": safe_str(stage.stage_name),
+                "success": bool(stage.success),
+                "message": safe_str(stage.message),
+                "warnings": list(stage.warnings),
+                "meta": _bounded_state_copy(
+                    safe_dict(stage.meta), max_depth=6, max_items=200
+                ),
+            }
+            for stage in ctx.stage_results
+        ]
         checkpoint_plan["meta"]["parking_program"] = _checkpoint_stage_summary(manager.project.meta.get("parking_program"))
         checkpoint_plan["meta"]["grading"] = _checkpoint_stage_summary(manager.project.meta.get("grading_summary"))
         checkpoint_plan["meta"]["drainage"] = _checkpoint_stage_summary(manager.project.meta.get("drainage_canonical"))

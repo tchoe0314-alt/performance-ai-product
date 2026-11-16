@@ -234,6 +234,30 @@ def parking_program_context(parsed: Dict[str, Any], plan: Dict[str, Any]) -> Dic
     stats = safe_dict(safe_dict(plan.get("meta")).get("stats"))
     manager_metrics = safe_dict(safe_dict(safe_dict(plan.get("meta")).get("manager_export")).get("metrics"))
     actions = safe_list(plan.get("actions"))
+    stall_actions = [
+        safe_dict(action)
+        for action in actions
+        if safe_str(safe_dict(action).get("layer")).upper()
+        in {"PARKING_STALL", "ACCESSIBLE_PARKING"}
+        and bool(safe_dict(safe_dict(action).get("meta")).get("parking_geometry_verified"))
+    ]
+    accessible_stall_count = sum(
+        1 for action in stall_actions if safe_str(action.get("layer")).upper() == "ACCESSIBLE_PARKING"
+    )
+    access_aisle_count = sum(
+        1
+        for action in actions
+        if safe_str(safe_dict(action).get("layer")).upper() == "ACCESS_AISLE"
+        and bool(safe_dict(safe_dict(action).get("meta")).get("parking_geometry_verified"))
+    )
+    geometry_stall_count = len(stall_actions)
+    criteria_sources = dedupe_keep_order(
+        safe_str(safe_dict(action.get("meta")).get("criteria_source"))
+        for action in stall_actions
+        if safe_str(safe_dict(action.get("meta")).get("criteria_source"))
+    )
+    route_evidence = _accessible_route_evidence(actions)
+    circulation_evidence = _circulation_access_evidence(parsed, actions)
     explicit_target = max(0, safe_int(site_plan.get("parking_count"), 0))
     building_area = max(
         0.0,
@@ -299,25 +323,448 @@ def parking_program_context(parsed: Dict[str, Any], plan: Dict[str, Any]) -> Dic
         reason = "Industrial parking target derived from a concept 1 stall per 800 sf rule."
         source_fields = ["project_type", "site_plan.building_area_sf"]
 
-    canonical_achieved = max(0, safe_int(safe_dict(manager_metrics.get("parking_count")).get("value"), 0))
+    canonical_achieved = max(
+        geometry_stall_count,
+        safe_int(safe_dict(manager_metrics.get("parking_count")).get("value"), 0),
+        0,
+    )
     achieved_count = canonical_achieved
+    achieved_source = (
+        "verified_stall_geometry"
+        if geometry_stall_count > 0
+        else "canonical_layout_metric" if canonical_achieved > 0 else ""
+    )
     if achieved_count <= 0:
         achieved_count = max(
             0,
             safe_int(safe_dict(safe_dict(plan.get("meta")).get("quantities")).get("totals", {}).get("estimated_parking_stalls"), 0),
             _estimated_parking_stalls_from_actions(actions),
         )
+        achieved_source = "layout_action_evidence" if achieved_count > 0 else "not_evidenced"
     variance = achieved_count - target if target > 0 else None
     return {
         "requested_target": target,
         "explicit_target": explicit_target,
         "program_target": target if method == "program_rule" else 0,
         "achieved_count": achieved_count,
+        "achieved_source": achieved_source,
+        "stall_geometry_verified": bool(
+            target > 0
+            and geometry_stall_count == target
+            and accessible_stall_count == access_aisle_count
+            and bool(criteria_sources)
+        ),
+        "geometry_stall_count": geometry_stall_count,
+        "accessible_stall_count": accessible_stall_count,
+        "access_aisle_count": access_aisle_count,
+        "criteria_sources": criteria_sources,
+        "jurisdictional_compliance_verified": False,
+        "accessible_route_verified": bool(accessible_stall_count > 0 and route_evidence.get("verified")),
+        "accessible_route_evidence": route_evidence,
+        "accessible_route_missing_evidence": (
+            safe_list(route_evidence.get("missing_evidence")) if accessible_stall_count > 0 else []
+        ),
+        "vehicle_access_route_verified": bool(circulation_evidence.get("verified")),
+        "circulation_access_evidence": circulation_evidence,
         "variance": variance,
         "method": method,
         "reason": reason,
         "traceable": target > 0 and bool(method and source_fields),
         "source_fields": dedupe_keep_order(source_fields),
+    }
+
+
+def _circulation_access_evidence(parsed: Dict[str, Any], actions: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Check sourced circulation evidence without implying legal/fire approval."""
+
+    def _point(raw: Any) -> Optional[Tuple[float, float]]:
+        values = safe_list(raw)
+        if len(values) < 2 or type(values[0]) not in (int, float) or type(values[1]) not in (int, float):
+            return None
+        return float(values[0]), float(values[1])
+
+    def _rect(action: Dict[str, Any]) -> Optional[Tuple[float, float, float, float]]:
+        origin = _point(action.get("origin"))
+        width = safe_float(action.get("width"), 0.0)
+        height = safe_float(action.get("height"), 0.0)
+        return (origin[0], origin[1], width, height) if origin and width > 0 and height > 0 else None
+
+    def _inside(point: Tuple[float, float], rect: Tuple[float, float, float, float], tolerance: float = 0.01) -> bool:
+        x, y, width, height = rect
+        return x - tolerance <= point[0] <= x + width + tolerance and y - tolerance <= point[1] <= y + height + tolerance
+
+    def _polygon(raw: Any) -> List[Tuple[float, float]]:
+        points = [point for point in (_point(value) for value in safe_list(raw)) if point]
+        if len(points) > 3 and math.dist(points[0], points[-1]) <= 0.01:
+            points.pop()
+        return points
+
+    def _cross(a: Tuple[float, float], b: Tuple[float, float], c: Tuple[float, float]) -> float:
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    def _point_on_segment(
+        point: Tuple[float, float],
+        start: Tuple[float, float],
+        end: Tuple[float, float],
+        tolerance: float = 0.01,
+    ) -> bool:
+        return (
+            abs(_cross(start, end, point)) <= tolerance * max(1.0, math.dist(start, end))
+            and min(start[0], end[0]) - tolerance <= point[0] <= max(start[0], end[0]) + tolerance
+            and min(start[1], end[1]) - tolerance <= point[1] <= max(start[1], end[1]) + tolerance
+        )
+
+    def _point_in_polygon(point: Tuple[float, float], polygon: Sequence[Tuple[float, float]]) -> bool:
+        if len(polygon) < 3:
+            return False
+        inside = False
+        for index, end in enumerate(polygon):
+            start = polygon[index - 1]
+            if _point_on_segment(point, start, end):
+                return True
+            if (start[1] > point[1]) != (end[1] > point[1]):
+                intersection_x = (end[0] - start[0]) * (point[1] - start[1]) / (end[1] - start[1]) + start[0]
+                if point[0] < intersection_x:
+                    inside = not inside
+        return inside
+
+    def _segments_cross(
+        a: Tuple[float, float],
+        b: Tuple[float, float],
+        c: Tuple[float, float],
+        d: Tuple[float, float],
+    ) -> bool:
+        ab_c, ab_d = _cross(a, b, c), _cross(a, b, d)
+        cd_a, cd_b = _cross(c, d, a), _cross(c, d, b)
+        return ab_c * ab_d < -1e-9 and cd_a * cd_b < -1e-9
+
+    def _simple_polygon(polygon: Sequence[Tuple[float, float]]) -> bool:
+        if len(polygon) < 3 or abs(sum(
+            polygon[index - 1][0] * point[1] - point[0] * polygon[index - 1][1]
+            for index, point in enumerate(polygon)
+        )) <= 0.02:
+            return False
+        edges = [(polygon[index - 1], point) for index, point in enumerate(polygon)]
+        for first_index, (a, b) in enumerate(edges):
+            for second_index, (c, d) in enumerate(edges):
+                if second_index <= first_index or second_index in {first_index - 1, first_index + 1}:
+                    continue
+                if {first_index, second_index} == {0, len(edges) - 1}:
+                    continue
+                if _segments_cross(a, b, c, d):
+                    return False
+        return True
+
+    def _polygon_contains_polygon(
+        container: Sequence[Tuple[float, float]],
+        candidate: Sequence[Tuple[float, float]],
+    ) -> bool:
+        if not _simple_polygon(container) or not _simple_polygon(candidate):
+            return False
+        if not all(_point_in_polygon(point, container) for point in candidate):
+            return False
+        container_edges = [(container[index - 1], point) for index, point in enumerate(container)]
+        candidate_edges = [(candidate[index - 1], point) for index, point in enumerate(candidate)]
+        return not any(_segments_cross(a, b, c, d) for a, b in candidate_edges for c, d in container_edges)
+
+    execution_payload = safe_dict(unwrap_fields_for_execution(parsed))
+    lot = safe_dict(execution_payload.get("lot"))
+    lot_rect = (
+        safe_float(lot.get("x"), 0.0),
+        safe_float(lot.get("y"), 0.0),
+        safe_float(lot.get("w"), 0.0),
+        safe_float(lot.get("h"), 0.0),
+    )
+    parking_rects: List[Tuple[float, float, float, float]] = []
+    candidates: List[Dict[str, Any]] = []
+    for raw_action in actions:
+        action = safe_dict(raw_action)
+        if safe_str(action.get("layer")).upper() == "PARKING":
+            rect = _rect(action)
+            if rect:
+                parking_rects.append(rect)
+        if bool(safe_dict(action.get("meta")).get("circulation_geometry_candidate")):
+            candidates.append(action)
+    if not candidates:
+        return {
+            "verified": False,
+            "turning_movement_verified": False,
+            "fire_access_verified": False,
+            "jurisdictional_compliance_verified": False,
+            "missing_evidence": ["site_entrance_to_parking_geometry", "circulation_width_design_basis"],
+        }
+
+    route = candidates[0]
+    meta = safe_dict(route.get("meta"))
+    basis = safe_dict(meta.get("circulation_design_basis"))
+    points = [point for point in (_point(raw) for raw in safe_list(route.get("points"))) if point]
+    start = points[0] if points else None
+    end = points[-1] if points else None
+    entrance = _point(basis.get("site_entrance_xy"))
+    width = safe_float(basis.get("route_width_ft"), 0.0)
+    minimum_width = safe_float(basis.get("minimum_route_width_ft"), 0.0)
+    geometry_source = safe_str(basis.get("route_geometry_source"), "")
+    criteria_source = safe_str(basis.get("criteria_source"), "")
+    design_vehicle = safe_dict(basis.get("design_vehicle"))
+    swept_path = safe_dict(basis.get("swept_path_evidence"))
+    fire_basis = safe_dict(basis.get("fire_access_design_basis"))
+    entrance_matches = bool(entrance and start and end and (math.dist(entrance, start) <= 0.01 or math.dist(entrance, end) <= 0.01))
+    entrance_on_boundary = False
+    if entrance and lot_rect[2] > 0 and lot_rect[3] > 0 and _inside(entrance, lot_rect):
+        x, y, lot_width, lot_height = lot_rect
+        entrance_on_boundary = min(abs(entrance[0] - x), abs(entrance[0] - (x + lot_width)), abs(entrance[1] - y), abs(entrance[1] - (y + lot_height))) <= 0.01
+    parking_connected = bool(
+        start and end and any(_inside(start, rect) or _inside(end, rect) for rect in parking_rects)
+    )
+    missing: List[str] = []
+    if len(points) < 2 or not entrance_matches or not entrance_on_boundary or not parking_connected:
+        missing.append("site_entrance_to_parking_geometry")
+    if width <= 0.0 or minimum_width <= 0.0 or width < minimum_width:
+        missing.append("circulation_width_design_basis")
+    if not geometry_source:
+        missing.append("route_geometry_source")
+    if not criteria_source:
+        missing.append("circulation_criteria_source")
+
+    vehicle_name = safe_str(design_vehicle.get("name"), "")
+    vehicle_source = safe_str(design_vehicle.get("source"), "")
+    vehicle_length = safe_float(design_vehicle.get("overall_length_ft"), 0.0)
+    vehicle_width = safe_float(design_vehicle.get("overall_width_ft"), 0.0)
+    vehicle_wheelbase = safe_float(design_vehicle.get("wheelbase_ft"), 0.0)
+    vehicle_valid = bool(
+        vehicle_name and vehicle_source and vehicle_length > 0.0 and vehicle_width > 0.0
+        and vehicle_wheelbase > 0.0 and vehicle_wheelbase < vehicle_length
+    )
+    swept_polygon = _polygon(swept_path.get("swept_envelope_polygon"))
+    maneuvering_polygon = _polygon(swept_path.get("maneuvering_area_polygon"))
+    swept_source = safe_str(swept_path.get("source"), "")
+    swept_envelope_contained = bool(
+        vehicle_valid and swept_source and _polygon_contains_polygon(maneuvering_polygon, swept_polygon)
+    )
+    turning_missing: List[str] = []
+    if not vehicle_valid:
+        turning_missing.append("sourced_design_vehicle_geometry")
+    if not swept_source or not _simple_polygon(swept_polygon) or not _simple_polygon(maneuvering_polygon):
+        turning_missing.append("sourced_swept_path_and_maneuvering_geometry")
+    elif not swept_envelope_contained:
+        turning_missing.append("swept_path_containment")
+
+    clear_width = safe_float(fire_basis.get("clear_width_ft"), 0.0)
+    minimum_clear_width = safe_float(fire_basis.get("minimum_clear_width_ft"), 0.0)
+    vertical_clearance = safe_float(fire_basis.get("vertical_clearance_ft"), 0.0)
+    minimum_vertical_clearance = safe_float(fire_basis.get("minimum_vertical_clearance_ft"), 0.0)
+    measured_grade = safe_float(fire_basis.get("measured_max_grade_pct"), -1.0)
+    maximum_grade = safe_float(fire_basis.get("maximum_grade_pct"), -1.0)
+    surface_capacity = safe_float(fire_basis.get("surface_capacity_tons"), 0.0)
+    minimum_surface_capacity = safe_float(fire_basis.get("minimum_surface_capacity_tons"), 0.0)
+    dead_end_length = safe_float(fire_basis.get("dead_end_length_ft"), -1.0)
+    maximum_dead_end_without_turnaround = safe_float(
+        fire_basis.get("maximum_dead_end_without_turnaround_ft"), -1.0
+    )
+    fire_criteria_source = safe_str(fire_basis.get("criteria_source"), "")
+    surface_source = safe_str(fire_basis.get("surface_capacity_source"), "")
+    access_control_source = safe_str(fire_basis.get("access_control_source"), "")
+    fire_geometry_verified = bool(
+        not turning_missing
+        and fire_criteria_source
+        and surface_source
+        and access_control_source
+        and clear_width > 0.0
+        and minimum_clear_width > 0.0
+        and clear_width >= minimum_clear_width
+        and vertical_clearance > 0.0
+        and minimum_vertical_clearance > 0.0
+        and vertical_clearance >= minimum_vertical_clearance
+        and measured_grade >= 0.0
+        and maximum_grade >= 0.0
+        and measured_grade <= maximum_grade
+        and surface_capacity > 0.0
+        and minimum_surface_capacity > 0.0
+        and surface_capacity >= minimum_surface_capacity
+        and dead_end_length >= 0.0
+        and maximum_dead_end_without_turnaround >= 0.0
+        and (dead_end_length <= maximum_dead_end_without_turnaround or not turning_missing)
+    )
+    fire_missing: List[str] = []
+    if not fire_criteria_source:
+        fire_missing.append("accepted_fire_access_criteria")
+    if clear_width <= 0.0 or minimum_clear_width <= 0.0 or clear_width < minimum_clear_width:
+        fire_missing.append("fire_access_clear_width")
+    if vertical_clearance <= 0.0 or minimum_vertical_clearance <= 0.0 or vertical_clearance < minimum_vertical_clearance:
+        fire_missing.append("fire_access_vertical_clearance")
+    if measured_grade < 0.0 or maximum_grade < 0.0 or measured_grade > maximum_grade:
+        fire_missing.append("fire_access_grade")
+    if not surface_source or surface_capacity <= 0.0 or minimum_surface_capacity <= 0.0 or surface_capacity < minimum_surface_capacity:
+        fire_missing.append("fire_access_surface_capacity")
+    if not access_control_source:
+        fire_missing.append("fire_access_control")
+    if (
+        dead_end_length < 0.0
+        or maximum_dead_end_without_turnaround < 0.0
+        or (dead_end_length > maximum_dead_end_without_turnaround and bool(turning_missing))
+    ):
+        fire_missing.append("fire_access_dead_end_turnaround")
+    if turning_missing:
+        fire_missing.append("design_vehicle_swept_path")
+    route_length = sum(math.dist(points[index - 1], points[index]) for index in range(1, len(points)))
+    return {
+        "verified": not missing,
+        "route_id": safe_str(route.get("canonical_source_id")) or safe_str(meta.get("entity_id")),
+        "route_length_ft": round(route_length, 3),
+        "site_entrance_matches_endpoint": entrance_matches,
+        "site_entrance_on_lot_boundary": entrance_on_boundary,
+        "parking_connected": parking_connected,
+        "route_width_ft": width,
+        "minimum_route_width_ft": minimum_width,
+        "route_geometry_source": geometry_source,
+        "criteria_source": criteria_source,
+        "turning_movement_verified": not turning_missing,
+        "design_vehicle": {
+            "name": vehicle_name,
+            "overall_length_ft": vehicle_length,
+            "overall_width_ft": vehicle_width,
+            "wheelbase_ft": vehicle_wheelbase,
+            "source": vehicle_source,
+        },
+        "swept_path_source": swept_source,
+        "swept_envelope_contained": swept_envelope_contained,
+        "turning_missing_evidence": dedupe_keep_order(turning_missing),
+        "fire_access_geometry_verified": fire_geometry_verified,
+        "fire_access_verified": False,
+        "fire_access_design_basis": {
+            "clear_width_ft": clear_width,
+            "minimum_clear_width_ft": minimum_clear_width,
+            "vertical_clearance_ft": vertical_clearance,
+            "minimum_vertical_clearance_ft": minimum_vertical_clearance,
+            "measured_max_grade_pct": measured_grade,
+            "maximum_grade_pct": maximum_grade,
+            "surface_capacity_tons": surface_capacity,
+            "minimum_surface_capacity_tons": minimum_surface_capacity,
+            "dead_end_length_ft": dead_end_length,
+            "maximum_dead_end_without_turnaround_ft": maximum_dead_end_without_turnaround,
+            "criteria_source": fire_criteria_source,
+            "surface_capacity_source": surface_source,
+            "access_control_source": access_control_source,
+        },
+        "fire_access_missing_evidence": dedupe_keep_order(fire_missing + ["authority_having_jurisdiction_and_operational_review"]),
+        "jurisdictional_compliance_verified": False,
+        "missing_turning_fire_evidence": dedupe_keep_order(
+            turning_missing + fire_missing + ["authority_having_jurisdiction_and_operational_review"]
+        ),
+        "missing_evidence": dedupe_keep_order(missing),
+        "truth_label": "Entrance, width, sourced swept-path containment, and supplied fire-access geometry criteria were checked where provided; authority approval and operational adequacy remain unverified.",
+    }
+
+
+def _accessible_route_evidence(actions: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+    """Validate explicit route evidence without making a legal compliance claim."""
+
+    def _point(raw: Any) -> Optional[Tuple[float, float]]:
+        values = safe_list(raw)
+        if len(values) < 2 or type(values[0]) not in (int, float) or type(values[1]) not in (int, float):
+            return None
+        return float(values[0]), float(values[1])
+
+    def _rect(action: Dict[str, Any]) -> Optional[Tuple[float, float, float, float]]:
+        origin = _point(action.get("origin"))
+        width = safe_float(action.get("width"), 0.0)
+        height = safe_float(action.get("height"), 0.0)
+        if not origin or width <= 0.0 or height <= 0.0:
+            return None
+        return origin[0], origin[1], width, height
+
+    def _inside(point: Tuple[float, float], rect: Tuple[float, float, float, float], tolerance: float = 0.01) -> bool:
+        x, y, width, height = rect
+        return x - tolerance <= point[0] <= x + width + tolerance and y - tolerance <= point[1] <= y + height + tolerance
+
+    def _on_boundary(point: Tuple[float, float], rect: Tuple[float, float, float, float], tolerance: float = 0.01) -> bool:
+        if not _inside(point, rect, tolerance):
+            return False
+        x, y, width, height = rect
+        return min(abs(point[0] - x), abs(point[0] - (x + width)), abs(point[1] - y), abs(point[1] - (y + height))) <= tolerance
+
+    access_aisles: List[Tuple[float, float, float, float]] = []
+    buildings: List[Tuple[float, float, float, float]] = []
+    for raw_action in actions:
+        action = safe_dict(raw_action)
+        rect = _rect(action)
+        layer = safe_str(action.get("layer")).upper()
+        if rect and layer == "ACCESS_AISLE":
+            access_aisles.append(rect)
+        elif rect and layer == "BUILDING":
+            buildings.append(rect)
+    route_actions = [
+        safe_dict(action) for action in actions
+        if safe_str(safe_dict(action).get("layer")).upper() in {"WALK", "SIDEWALK"}
+        and bool(safe_dict(safe_dict(action).get("meta")).get("accessible_route_geometry_candidate"))
+    ]
+    if not route_actions:
+        return {
+            "verified": False,
+            "jurisdictional_compliance_verified": False,
+            "missing_evidence": [
+                "continuous_accessible_route_geometry",
+                "route_width_and_slope_design_basis",
+                "accepted_accessibility_criteria",
+            ],
+        }
+
+    route = route_actions[0]
+    meta = safe_dict(route.get("meta"))
+    basis = safe_dict(meta.get("accessible_route_design_basis"))
+    points = [point for point in (_point(raw) for raw in safe_list(route.get("points"))) if point]
+    start = points[0] if points else None
+    end = points[-1] if points else None
+    entrance = _point(basis.get("building_entrance_xy"))
+    width = safe_float(basis.get("route_width_ft"), 0.0)
+    min_width = safe_float(basis.get("minimum_route_width_ft"), 0.0)
+    running = safe_float(basis.get("measured_running_slope_pct"), -1.0)
+    max_running = safe_float(basis.get("maximum_running_slope_pct"), -1.0)
+    cross = safe_float(basis.get("measured_cross_slope_pct"), -1.0)
+    max_cross = safe_float(basis.get("maximum_cross_slope_pct"), -1.0)
+    criteria_source = safe_str(basis.get("criteria_source"), "")
+    geometry_source = safe_str(basis.get("route_geometry_source"), "")
+    crossing_count = safe_int(basis.get("vehicle_crossing_count"), -1)
+    crossing_source = safe_str(basis.get("vehicle_crossing_controls_source"), "")
+
+    access_connected = bool(start and end and any(_inside(start, rect) or _inside(end, rect) for rect in access_aisles))
+    entrance_matches_endpoint = bool(
+        entrance and start and end
+        and (math.dist(entrance, start) <= 0.01 or math.dist(entrance, end) <= 0.01)
+    )
+    entrance_on_building = bool(entrance and any(_on_boundary(entrance, rect) for rect in buildings))
+    missing: List[str] = []
+    if len(points) < 2 or not access_connected or not entrance_matches_endpoint or not entrance_on_building:
+        missing.append("continuous_accessible_route_geometry")
+    if not geometry_source:
+        missing.append("route_geometry_source")
+    if width <= 0.0 or min_width <= 0.0 or width < min_width or running < 0.0 or max_running < 0.0 or running > max_running or cross < 0.0 or max_cross < 0.0 or cross > max_cross:
+        missing.append("route_width_and_slope_design_basis")
+    if not criteria_source:
+        missing.append("accepted_accessibility_criteria")
+    if crossing_count < 0 or (crossing_count > 0 and not crossing_source):
+        missing.append("vehicle_crossing_treatment")
+    length = sum(math.dist(points[index - 1], points[index]) for index in range(1, len(points)))
+    return {
+        "verified": not missing,
+        "route_id": safe_str(route.get("canonical_source_id")) or safe_str(meta.get("entity_id")),
+        "route_length_ft": round(length, 3),
+        "access_aisle_connected": access_connected,
+        "entrance_matches_endpoint": entrance_matches_endpoint,
+        "entrance_on_building_boundary": entrance_on_building,
+        "route_width_ft": width,
+        "minimum_route_width_ft": min_width,
+        "measured_running_slope_pct": running,
+        "maximum_running_slope_pct": max_running,
+        "measured_cross_slope_pct": cross,
+        "maximum_cross_slope_pct": max_cross,
+        "vehicle_crossing_count": crossing_count,
+        "vehicle_crossing_controls_source": crossing_source,
+        "criteria_source": criteria_source,
+        "route_geometry_source": geometry_source,
+        "jurisdictional_compliance_verified": False,
+        "missing_evidence": dedupe_keep_order(missing),
+        "truth_label": "Route geometry and supplied concept criteria were checked; this is not a jurisdictional accessibility determination.",
     }
 
 
@@ -865,6 +1312,15 @@ def produced_deliverables(plan: Dict[str, Any]) -> List[str]:
 
 
 def _estimated_parking_stalls_from_actions(actions: Sequence[Dict[str, Any]]) -> int:
+    declared_stalls = sum(
+        max(0, safe_int(safe_dict(action).get("stall_count"), 0))
+        for action in actions
+        if isinstance(action, dict)
+        and safe_str(action.get("layer"), "").upper() == "PARKING"
+        and safe_str(safe_dict(action.get("meta")).get("stall_count_source")) == "user_declared"
+    )
+    if declared_stalls > 0:
+        return declared_stalls
     parking_area = 0.0
     for action in actions:
         if not isinstance(action, dict):
