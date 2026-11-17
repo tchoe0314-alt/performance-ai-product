@@ -77,7 +77,7 @@ type PreviewCanvasHeaderControlsProps = {
 };
 
 const controlClass = (active: boolean) =>
-  `inline-flex h-8 items-center justify-center rounded-[6px] px-2.5 text-xs font-semibold transition ${
+  `pointer-events-auto inline-flex h-8 items-center justify-center rounded-[6px] px-2.5 text-xs font-semibold transition ${
     active
       ? "bg-slate-950 text-white"
       : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
@@ -164,7 +164,7 @@ export function PreviewCanvasHeaderControls({
   }, [transientMenuCloseToken]);
 
   return (
-    <div className="pointer-events-auto relative flex min-w-0 items-center gap-1 rounded-[8px] border border-slate-200/90 bg-white/96 p-1 shadow-[0_16px_44px_-30px_rgba(15,23,42,0.55)] backdrop-blur-xl">
+    <div className="pointer-events-none relative flex min-w-0 items-center gap-1 rounded-[8px] border border-slate-200/90 bg-white/96 p-1 shadow-[0_16px_44px_-30px_rgba(15,23,42,0.55)] backdrop-blur-xl">
       <span className="sr-only" data-testid="site-status">
         {siteLocked ? "Site Locked" : "Site Editable"}; {coordinateModeLabel(coordinateMode)}
       </span>
@@ -231,7 +231,7 @@ export function PreviewCanvasHeaderControls({
       <details
         ref={layerMenuRef}
         data-testid="preview-layer-menu"
-        className="group relative"
+        className="pointer-events-auto group relative"
         onToggle={(event) => {
           if (event.currentTarget.open && viewMenuRef.current) viewMenuRef.current.open = false;
           if (event.currentTarget.open) requestAnimationFrame(fitHeaderMenus);
@@ -345,7 +345,7 @@ export function PreviewCanvasHeaderControls({
 
       <details
         ref={viewMenuRef}
-        className="group relative"
+        className="pointer-events-auto group relative"
         onToggle={(event) => {
           if (event.currentTarget.open && layerMenuRef.current) layerMenuRef.current.open = false;
           if (event.currentTarget.open) requestAnimationFrame(fitHeaderMenus);

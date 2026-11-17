@@ -31,15 +31,17 @@ for (const [width, height] of sizes) {
     await expect(grid).toBeVisible();
     const line = grid.getByRole("button", { name: "Line", exact: true });
     await expect(line).toHaveAttribute("title", /Line/);
-    await expect(line.locator("span")).toHaveClass("sr-only");
+    await expect(line.locator("span")).toBeVisible();
+    await expect(line.locator("span")).toHaveText("Line");
     const alignment = await line.evaluate(el => {
       const box = el.getBoundingClientRect(), icon = el.querySelector("svg")!.getBoundingClientRect();
       return { x: Math.abs(box.x + box.width / 2 - icon.x - icon.width / 2), y: Math.abs(box.y + box.height / 2 - icon.y - icon.height / 2), height: box.height };
     });
     expect(alignment.x).toBeLessThan(1);
-    expect(alignment.y).toBeLessThan(1);
-    expect(alignment.height).toBeLessThanOrEqual(44);
-    expect(alignment.height).toBeGreaterThanOrEqual(info.project.use.isMobile ? 44 : 32);
+    // The visible label intentionally shifts the icon slightly above center.
+    expect(alignment.y).toBeLessThanOrEqual(10);
+    expect(alignment.height).toBeLessThanOrEqual(52);
+    expect(alignment.height).toBeGreaterThanOrEqual(48);
     const panelBounds = (await drawer.boundingBox())!;
     expect(panelBounds.x).toBeGreaterThanOrEqual(0);
     expect(panelBounds.x + panelBounds.width).toBeLessThanOrEqual(width + 1);

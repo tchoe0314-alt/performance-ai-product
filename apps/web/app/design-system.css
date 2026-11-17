@@ -49,8 +49,8 @@
 [data-testid="workspace-right-panel"] :where(.p-4) { padding: var(--civora-space-3); }
 [data-testid="workspace-right-panel"] :where(.rounded-xl, .rounded-2xl) { border-radius: 8px; }
 [data-testid="workspace-right-panel"] [data-testid="draw-cad-tools-section"] button[data-testid^="cad-tool-"] {
-  min-height: 36px;
-  height: 36px;
+  min-height: 48px;
+  height: 48px;
   border-radius: var(--civora-control-radius);
 }
 .civora-tool-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .25rem; }
@@ -113,7 +113,7 @@
 @media (pointer: coarse) {
   /* Compact appearance is not a reason to make touch targets hard to hit. */
   :root { --civora-control-height: 2.75rem; }
-  [data-testid="workspace-right-panel"] [data-testid="draw-cad-tools-section"] button[data-testid^="cad-tool-"] { min-height: 44px; height: 44px; }
+  [data-testid="workspace-right-panel"] [data-testid="draw-cad-tools-section"] button[data-testid^="cad-tool-"] { min-height: 48px; height: 48px; }
   .civora-preview-view-toolbar { max-width: calc(100% - 1rem); }
   .civora-preview-view-toolbar > div { gap: 0; }
   .civora-preview-view-toolbar button, .civora-preview-view-toolbar summary { min-height: 44px; min-width: 44px; }
