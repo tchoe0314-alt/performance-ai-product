@@ -53,9 +53,11 @@
   height: 36px;
   border-radius: var(--civora-control-radius);
 }
-.civora-tool-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .25rem; }
-.civora-tool-grid button { min-width: 0; padding: .25rem; }
-.civora-tool-grid button[data-tool-label="true"] { grid-column: span 2; gap: .375rem; }
+.civora-tool-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .25rem; }
+.civora-tool-grid button { min-width: 0; }
+@media (min-width: 48rem) {
+  .civora-tool-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
 .civora-preview-mobile-draw-toolbar button { min-height: 44px; }
 .civora-panel-header { height: 44px; padding-inline: .75rem; }
 .civora-panel-actions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .25rem; }

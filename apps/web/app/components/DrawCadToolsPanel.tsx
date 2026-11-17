@@ -51,8 +51,6 @@ const TOOL_ICONS: Partial<Record<CadToolName, LucideIcon>> = {
   arc: Spline,
 };
 
-const ICON_ONLY_TOOLS = new Set<CadToolName>(["select", "pan", "line", "area", "box", "point", "circle", "text", "dimension", "move", "copy", "rotate", "scale", "trim", "delete"]);
-
 export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelProps) {
   return (
     <section className="rounded-[8px] border border-slate-200/90 bg-white p-3" data-testid="draw-cad-tools-section">
@@ -70,7 +68,6 @@ export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelPro
             <div className="civora-tool-grid">
               {group.tools.map((item) => {
                 const Icon = item.tool === "line" ? Minus : TOOL_ICONS[item.tool] ?? BoxSelect;
-                const iconOnly = ICON_ONLY_TOOLS.has(item.tool);
                 return (
                   <button
                     key={`${group.title}-${item.tool}`}
@@ -79,11 +76,11 @@ export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelPro
                     data-testid={`cad-tool-${item.tool}`}
                     title={`${item.label} · ${item.hint}`}
                     aria-label={item.label}
-                    data-tool-label={iconOnly ? undefined : "true"}
-                    className="flex items-center justify-center rounded-[6px] border border-transparent text-center text-slate-600 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950"
+                    data-tool-label="true"
+                    className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-[6px] border border-transparent px-1 py-1.5 text-center text-slate-600 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-100"
                   >
                     <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-                    <span className={iconOnly ? "sr-only" : "text-[11px] font-semibold"}>{item.label}</span>
+                    <span className="max-w-full truncate text-[10px] font-semibold leading-none">{item.label}</span>
                   </button>
                 );
               })}
