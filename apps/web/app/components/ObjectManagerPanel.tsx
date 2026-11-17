@@ -88,7 +88,7 @@ export function ObjectManagerPanel({
         <ObjectManagerLayerControls {...layerControls} />
       </DisclosurePanel>
       {selectedTools ? (
-        <DisclosurePanel title="Modify" subtitle="Transform and edit the selected object" status="Selected">
+        <DisclosurePanel title="Modify" subtitle="Transform and edit the selected object" status="Selected" testId="object-manager-modify">
           <ObjectManagerSelectedToolsPanel {...selectedTools} />
         </DisclosurePanel>
       ) : null}
