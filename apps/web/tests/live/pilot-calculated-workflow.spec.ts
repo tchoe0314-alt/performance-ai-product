@@ -271,6 +271,7 @@ for (const { assisted, target } of [
 
     await openWorkspaceTool(page, "Generate");
     const recalculation = page.waitForResponse(value => value.request().method() === "POST" && /\/api\/(?:jobs\/)?orchestrate$/.test(value.url()), { timeout: 20_000 });
+    const recalculationStartedAt = Date.now();
     await page.getByTestId("generate-main-action").click();
     const recalculationPayload = await (await recalculation).json();
     expect(recalculationPayload.job).toBeTruthy();
@@ -293,7 +294,20 @@ for (const { assisted, target } of [
         }
       }
       return job.status;
-    }, { timeout: 120_000, intervals: [1000] }).toBe("completed");
+    }, {
+      timeout: Number(process.env.CIVORA_RECALC_DIAGNOSTIC_TIMEOUT_MS || 120_000),
+      intervals: [1000],
+    }).toBe("completed");
+    const recalculationElapsedMs = Date.now() - recalculationStartedAt;
+    console.log(`[recalculation completed] elapsed_ms=${recalculationElapsedMs}`);
+    if (process.env.CIVORA_RECALC_DIAGNOSTIC_TIMEOUT_MS) {
+      // A diagnostic observation may continue into downstream correctness
+      // checks, but the unchanged 120-second product acceptance remains a
+      // separately reported soft failure.
+      expect.soft(recalculationElapsedMs, "full recalculation must complete within 120 seconds").toBeLessThanOrEqual(120_000);
+    } else {
+      expect(recalculationElapsedMs).toBeLessThanOrEqual(120_000);
+    }
     await expect.poll(async () => (await saved()).result_freshness_v1.status, { timeout: 30_000 }).toBe("current");
     const revisedCheckpoint = await saved();
     expect(revisedCheckpoint.latest_result.metadata.calculation_save_v1.calculation_id).not.toBe(calculationId);

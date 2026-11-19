@@ -3,6 +3,7 @@ import type { MutableRefObject } from "react";
 
 import { getJson } from "../../lib/api";
 import type { JobSummary, PlanResponse, PreviewResponse, ProjectRecord } from "../types";
+import { shouldDiscardSavedResultResponse } from "../utils/savedResultHydration";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 
@@ -67,25 +68,21 @@ export function useDashboardProjectResultLoader({
     const workspaceGeneration = projectLoadRequestRef.current;
     const requestId = projectResultLoadRequestRef.current + 1;
     projectResultLoadRequestRef.current = requestId;
+    const shouldDiscardResponse = () => shouldDiscardSavedResultResponse({
+      requestId,
+      latestRequestId: projectResultLoadRequestRef.current,
+      workspaceGeneration,
+      latestWorkspaceGeneration: projectLoadRequestRef.current,
+      requestedProjectId: project.project_id,
+      activeProjectId: resolvedProjectIdRef.current || projectId || currentProject?.project_id || "",
+    });
     void getJson<{ project_id: string; latest_result: PlanResponse; result_freshness_v1?: { status: string } | null }>(
       `/api/projects/${project.project_id}/result`,
       { token },
     )
       .then(async (data) => {
-        if (
-          projectResultLoadRequestRef.current !== requestId ||
-          projectLoadRequestRef.current !== workspaceGeneration
-        ) {
-          return;
-        }
+        if (shouldDiscardResponse()) return;
         const latestResult = data.latest_result ?? {};
-        const liveCurrent = await isLiveResultCurrent(latestResult);
-        if (projectResultLoadRequestRef.current !== requestId || projectLoadRequestRef.current !== workspaceGeneration) return;
-        if (!liveCurrent || data.result_freshness_v1?.status === "stale") {
-          setSavedResultTruthState("stale");
-          setStatusMessage("Saved results are out of date. Recalculate for this layout.");
-          return;
-        }
         if (latestResult && Object.keys(latestResult).length) {
           const disposition = String(latestResult.metadata?.calculation_save_v1?.disposition ?? "").toLowerCase();
           setSavedResultTruthState(latestResult.success === false ? "failed" : disposition === "archived" ? "historical" : data.result_freshness_v1?.status === "current" ? "current" : "unverified");
@@ -113,6 +110,17 @@ export function useDashboardProjectResultLoader({
               silentStatus: true,
             },
           );
+          // Hydrate a server-authorized result before the asynchronous local
+          // fingerprint check. Large saved plans can otherwise finish that
+          // check after workspace restoration advances its generation, leaving
+          // a valid result labelled "missing". The local check may only
+          // downgrade this hydrated result to stale; it never promotes one.
+          const liveCurrent = await isLiveResultCurrent(latestResult);
+          if (shouldDiscardResponse()) return;
+          if (!liveCurrent || data.result_freshness_v1?.status === "stale") {
+            setSavedResultTruthState("stale");
+            setStatusMessage("Saved results are out of date. Recalculate for this layout.");
+          }
         } else {
           const activeProjectForPreview =
             visibleActiveJob?.project_id ||
@@ -155,9 +163,7 @@ export function useDashboardProjectResultLoader({
         }
       })
       .catch((error) => {
-        if (projectLoadRequestRef.current !== workspaceGeneration) {
-          return;
-        }
+        if (shouldDiscardResponse()) return;
         setSavedResultTruthState("failed");
         setStatusMessage(
           error instanceof Error ? error.message : "Project result load failed.",

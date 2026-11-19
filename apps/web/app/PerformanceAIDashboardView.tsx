@@ -315,6 +315,7 @@ import type {
 import useChatPersistence from "./hooks/useChatPersistence";
 import usePreviewReview from "./hooks/usePreviewReview";
 import useJobPolling from "./hooks/useJobPolling";
+import { shouldRetrySavedResultHydration } from "./utils/savedResultHydration";
 import useAuthState from "./hooks/useAuthState";
 import useProjectsState from "./hooks/useProjectsState";
 import useJobsState from "./hooks/useJobsState";
@@ -3492,6 +3493,27 @@ function PerformanceAIDashboardView({
     visibleActiveJob,
   });
   loadProjectResultInBackgroundRef.current = loadProjectResultInBackground;
+
+  useEffect(() => {
+    const restoredProject = currentProject;
+    if (!restoredProject) return;
+    if (!shouldRetrySavedResultHydration({
+      token,
+      workspaceRestoreState,
+      projectId: restoredProject.project_id,
+      hasBackendResult: Boolean(backendResult),
+    })) {
+      return;
+    }
+    // The initial project fetch can finish while restore state is still
+    // advancing its generation token. Retry once after the restored snapshot
+    // has committed; otherwise a valid saved calculation can remain labelled
+    // "missing" until another job event happens.
+    const timer = window.setTimeout(() => {
+      loadProjectResultInBackgroundRef.current?.(restoredProject);
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [backendResult, currentProject, token, workspaceRestoreState]);
 
   useEffect(() => {
     if (!token) return;

@@ -25,7 +25,7 @@ test("explicit inspector target outranks a stale bulk selection", () => {
   }).selectedBuilding?.id).toBe(inlet.id);
 });
 
-test("ordinary storm command route has no duplicate turn vertex", () => {
+test("ordinary storm command starts as one LandXML-compatible straight pipe", () => {
   const item = buildDashboardObjectPlacement({
     type: "utility_corridor", lot: { w: 900, h: 700 }, existingCount: 1,
     defaultDimensions: { w: 180, d: 8 }, fallbackLabel: "Storm Sewer",
@@ -33,7 +33,7 @@ test("ordinary storm command route has no duplicate turn vertex", () => {
     parkingControls: {} as Parameters<typeof buildDashboardObjectPlacement>[0]["parkingControls"],
     computeParkingFootprint: () => ({ maxStalls: 0, moduleCols: 0, moduleRows: 0 }),
   });
-  expect(item.geometry?.length).toBe(4);
+  expect(item.geometry?.length).toBe(2);
   expect(item.geometry?.every((point, index, points) => index === 0 || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1])).toBe(true);
 });
 

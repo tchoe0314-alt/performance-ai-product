@@ -142,6 +142,8 @@ def build_landxml_exchange(plan, *, network_name="Civora Pipe Network"):
             surface_xml(parent, grid, name)
     network_parent = None
     all_ids = set()
+    incomplete_networks = []
+    exported_networks = 0
     networks = (
         ("storm", "storm", meta.get("storm_pipes") or meta.get("storm_pipe_summary") or {}),
         ("sanitary", "sanitary", meta.get("sanitary") or meta.get("sanitary_summary") or {}),
@@ -163,7 +165,14 @@ def build_landxml_exchange(plan, *, network_name="Civora Pipe Network"):
         if not segments and not structures:
             continue
         if not segments or not structures:
-            raise ValueError("LandXML network requires connected pipes and structures; no endpoint inference is permitted.")
+            # A blocked calculated discipline may retain structure-only
+            # diagnostics beside a complete authored review network. Never
+            # infer the missing half, but do not let it shadow the exact,
+            # connected network either. If no complete network is available,
+            # preserve the strict failure below.
+            incomplete_networks.append(system)
+            continue
+        exported_networks += 1
         if network_parent is None:
             network_parent = ET.SubElement(root, tag("PipeNetworks"), {"name": network_name})
         net = ET.SubElement(network_parent, tag("PipeNetwork"), {
@@ -265,6 +274,8 @@ def build_landxml_exchange(plan, *, network_name="Civora Pipe Network"):
         for name,node in nodes.items():
             if node.find(tag("Invert")) is None: raise ValueError("LandXML network contains an unconnected structure.")
             feature(node, {"canonical_id": name, "review_only": "true"})
+    if not surfaces and exported_networks == 0 and incomplete_networks:
+        raise ValueError("LandXML network requires connected pipes and structures; no endpoint inference is permitted.")
     if not surfaces and network_parent is None:
         raise ValueError("LandXML needs supported pipe-network data or complete surface nodes.")
     from .export_package_report import build_export_package_report_v1

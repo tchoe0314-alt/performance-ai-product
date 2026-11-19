@@ -18,6 +18,31 @@ type UseJobPollingOptions = {
   lastStaleJobWarningRef: React.MutableRefObject<Record<string, boolean>>;
 };
 
+export const ACTIVE_JOB_POLL_INTERVAL_MS = 2_000;
+
+export function shouldPollActiveJob(status: string | undefined, documentHidden: boolean): boolean {
+  if (documentHidden) return false;
+  const normalizedStatus = String(status || "").toLowerCase();
+  return !normalizedStatus || ["queued", "running", "cancelling"].includes(normalizedStatus);
+}
+
+export async function runActiveJobPoll(input: {
+  status?: string;
+  documentHidden: boolean;
+  inFlight: { current: boolean };
+  load: () => Promise<unknown> | unknown;
+  refresh: () => Promise<unknown> | unknown;
+}): Promise<boolean> {
+  if (!shouldPollActiveJob(input.status, input.documentHidden) || input.inFlight.current) return false;
+  input.inFlight.current = true;
+  try {
+    await Promise.allSettled([Promise.resolve(input.load()), Promise.resolve(input.refresh())]);
+    return true;
+  } finally {
+    input.inFlight.current = false;
+  }
+}
+
 export default function useJobPolling({
   token,
   activeJobId,
@@ -51,22 +76,23 @@ export default function useJobPolling({
     }
 
     const poll = async () => {
-      if (pollInFlightRef.current) return;
-      pollInFlightRef.current = true;
-      try {
-        await Promise.allSettled([
-          Promise.resolve(loadJobRef.current(activeJobId)),
-          Promise.resolve(refreshJobsRef.current(token, { suppressError: true, force: true })),
-        ]);
-      } finally {
-        pollInFlightRef.current = false;
-      }
+      await runActiveJobPoll({
+        status: visibleActiveJob?.status,
+        documentHidden: document.hidden,
+        inFlight: pollInFlightRef,
+        load: () => loadJobRef.current(activeJobId),
+        refresh: () => refreshJobsRef.current(token, { suppressError: true, force: true }),
+      });
     };
 
     void poll();
     const interval = window.setInterval(() => {
       void poll();
-    }, 4000);
+    // Review checkpoints are explicit user decisions. A four-second status
+    // cadence made every approval feel unresponsive and added avoidable time
+    // to a multi-stage run without reducing backend work. Two seconds keeps
+    // requests bounded while making the saved checkpoint available promptly.
+    }, ACTIVE_JOB_POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [token, activeJobId, visibleActiveJob?.status]);
 

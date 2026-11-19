@@ -344,17 +344,10 @@ export function buildDashboardObjectPlacement({
     const yFactor = network === "water" ? 0.28 : network === "sanitary" ? 0.78 : network === "storm" ? 0.58 : 0.68;
     const startX = network === "water" ? 0.08 : network === "sanitary" ? 0.10 : 0.52;
     const endX = network === "water" ? 0.88 : network === "sanitary" ? 0.86 : 0.86;
-    const rightSideRun =
-      network === "storm"
-        ? ([
-            [lot.w * endX, lot.h * 0.62],
-          ] as Array<[number, number]>)
-        : [];
+    const endY = network === "storm" ? 0.62 : yFactor;
     nextPlacement.geometry = [
       [lot.w * startX, lot.h * yFactor],
-      [lot.w * ((startX + endX) / 2), lot.h * yFactor],
-      [lot.w * endX, lot.h * yFactor],
-      ...rightSideRun,
+      [lot.w * endX, lot.h * endY],
     ];
     // A specific pipe object owns its placed route dimensions; it is not the
     // site's generic network corridor (which may not be initialized yet).

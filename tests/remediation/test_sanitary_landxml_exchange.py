@@ -6,6 +6,39 @@ from backend.planning.infrastructure_stage_runners import _sanitary_exchange_sna
 from backend.planning.landxml_exchange import build_landxml_exchange, verify_exchange
 
 
+def _complete_review_network():
+    return {
+        "review_only": True,
+        "construction_release_allowed": False,
+        "structures": [
+            {"id": "IN-A", "name": "IN-A", "x": 0, "y": 0, "rim_elevation_ft": 100, "sump_elevation_ft": 89},
+            {"id": "OUT-B", "name": "OUT-B", "x": 100, "y": 0, "rim_elevation_ft": 99, "sump_elevation_ft": 87},
+        ],
+        "segments": [{
+            "id": "P-1", "from_node": "IN-A", "to_node": "OUT-B",
+            "length_ft": 100, "diameter_in": 18,
+            "invert_start_ft": 90, "invert_end_ft": 89, "slope_ft_ft": 0.01,
+        }],
+    }
+
+
+def test_complete_authored_network_is_not_shadowed_by_structure_only_diagnostic():
+    xml = build_landxml_exchange({"units": "ft", "meta": {
+        "storm_pipe_summary": {"segments": [], "structures": [{"id": "diagnostic-only"}]},
+        "review_pipe_network": _complete_review_network(),
+    }})
+    root = ET.fromstring(xml)
+    pipe_tag = "{http://www.landxml.org/schema/LandXML-1.2}Pipe"
+    assert root.find(f".//{pipe_tag}[@name='P-1']") is not None
+
+
+def test_structure_only_network_without_complete_alternative_remains_blocked():
+    with pytest.raises(ValueError, match="requires connected pipes and structures"):
+        build_landxml_exchange({"units": "ft", "meta": {
+            "storm_pipe_summary": {"segments": [], "structures": [{"id": "diagnostic-only"}]},
+        }})
+
+
 def sanitary_summary():
     return {
         "segments": [{"name": "SAN-MAIN-1", "route_points": [[0, 0], [100, 0], [100, 50]],
