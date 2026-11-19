@@ -1,6 +1,7 @@
 import type { MouseEvent as ReactMouseEvent, Ref } from "react";
 
 import type { BuildingPlacement } from "../types";
+import { formatPreviewSnapStep } from "../utils/previewCanvasDetail";
 
 type SelectionIndex = { id: string; index: number } | null;
 type PreviewEditCapabilities = {
@@ -35,6 +36,7 @@ type PreviewSelectionAffordancesProps = {
   onRotateClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onResizeMouseDown: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onDeleteClick: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  manipulationSnapStep: number;
 };
 
 function isSegmentEditableType(item: BuildingPlacement, isPolygon: boolean) {
@@ -66,6 +68,7 @@ export function PreviewSelectionAffordances({
   onRotateClick,
   onResizeMouseDown,
   onDeleteClick,
+  manipulationSnapStep,
 }: PreviewSelectionAffordancesProps) {
   if (!show) return null;
 
@@ -205,7 +208,7 @@ export function PreviewSelectionAffordances({
       ) : null}
       {showObjectLabel && caps.movable && !isPolyline ? (
         <div className="pointer-events-none absolute -bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500 shadow">
-          Snap 5ft
+          Snap {formatPreviewSnapStep(manipulationSnapStep)}
         </div>
       ) : null}
       {showObjectLabel && typeof item.x === "number" && typeof item.y === "number" ? (

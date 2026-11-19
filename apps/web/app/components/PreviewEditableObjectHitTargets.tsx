@@ -104,6 +104,7 @@ type PreviewEditableObjectHitTargetsProps = {
     index: number,
   ) => void;
   deleteSelectedVertex: () => void;
+  manipulationSnapStep: number;
 };
 
 export function PreviewEditableObjectHitTargets({
@@ -159,6 +160,7 @@ export function PreviewEditableObjectHitTargets({
   onUpdateBuilding,
   insertVertexOnSegment,
   deleteSelectedVertex,
+  manipulationSnapStep,
 }: PreviewEditableObjectHitTargetsProps) {
   return (
     <>
@@ -303,6 +305,13 @@ export function PreviewEditableObjectHitTargets({
                 onSelectBuilding(item.id);
               }}
             >
+              {(item.geometryType === "point" || ["hydrant", "inlet", "outfall", "manhole"].includes(String(item.type))) && allowItemInteraction ? (
+                <span
+                  aria-hidden="true"
+                  data-testid="cad-point-hit-area"
+                  className="pointer-events-auto absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-transparent"
+                />
+              ) : null}
               {useSegmentHitTargets ? (
                 <svg
                   className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
@@ -495,6 +504,7 @@ export function PreviewEditableObjectHitTargets({
                   });
                   onRemoveBuilding(item.id);
                 }}
+                manipulationSnapStep={manipulationSnapStep}
               />
               {hoveredObjectId === item.id && isSelected ? <PreviewObjectHoverCard details={objectHoverDetails} /> : null}
             </div>

@@ -449,6 +449,22 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     }));
   });
 
+  test("dense utility point selection keeps a 32px hit target", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add inlet");
+    await openDrawPanel(page);
+    await page.getByTestId("draw-cad-tools-section").getByTestId("cad-tool-select").click();
+    const point = canvasObject(page, "Inlet");
+    await expect(point).toBeVisible();
+    const hitArea = point.getByTestId("cad-point-hit-area");
+    await expect(hitArea).toBeVisible();
+    expect(await hitArea.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    })).toEqual({ width: 32, height: 32 });
+
+  });
+
   test("selected object Move arms that object and places it with one canvas click", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

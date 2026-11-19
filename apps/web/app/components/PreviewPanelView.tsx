@@ -160,6 +160,7 @@ import { usePreviewDraftGeometry } from "./usePreviewDraftGeometry";
 import { useWorkspaceEnvironmentMemory } from "../hooks/useWorkspaceEnvironmentMemory";
 import { defaultEnvironment, environmentLayerForObject, environmentObjectVisible, type DisplayUnits, type WorkspaceEnvironment } from "../utils/workspaceEnvironment";
 import { PreviewEnvironmentControls } from "./PreviewEnvironmentControls";
+import { resolvePreviewManipulationSnapStep } from "../utils/previewCanvasDetail";
 
 export default function PreviewPanel({
   environmentScope,
@@ -563,6 +564,7 @@ export default function PreviewPanel({
   const activeZoomLabel = showMap
     ? `MAP ZOOM ${mapRef.current?.getZoom().toFixed(1) ?? "--"}`
     : `ZOOM ${Math.round(activeCanvasView.scale * 100)}%`;
+  const manipulationSnapStep = resolvePreviewManipulationSnapStep(activeCanvasView.scale, showMap);
   const zoomActiveView = useCallback(
     (delta: number) => {
       if (showMap && mapRef.current) {
@@ -1146,11 +1148,11 @@ export default function PreviewPanel({
         };
         const x = snapValue(
           clampValue(sitePoint.x - dragSiteOffset.x, 0, Math.max(lotWidth - target.w, 0)),
-          5,
+          manipulationSnapStep,
         );
         const y = snapValue(
           clampValue(sitePoint.y - dragSiteOffset.y, 0, Math.max(lotHeight - target.d, 0)),
-          5,
+          manipulationSnapStep,
         );
         const deltaX = x - (target.x ?? 0);
         const deltaY = y - (target.y ?? 0);
@@ -1193,8 +1195,8 @@ export default function PreviewPanel({
       if (draggingMode === "resize") {
         const rawW = clampValue(sitePoint.x, 10, lotWidth);
         const rawD = clampValue(sitePoint.y, 10, lotHeight);
-        const nextW = Math.max(10, snapValue(rawW - (target.x ?? 0), 5));
-        const nextD = Math.max(10, snapValue(rawD - (target.y ?? 0), 5));
+        const nextW = Math.max(10, snapValue(rawW - (target.x ?? 0), manipulationSnapStep));
+        const nextD = Math.max(10, snapValue(rawD - (target.y ?? 0), manipulationSnapStep));
         const updates: Partial<BuildingPlacement> = { w: nextW, d: nextD };
         if (
           (target.geometryType === "polygon" || target.geometryType === "rect") &&
@@ -1240,6 +1242,7 @@ export default function PreviewPanel({
       currentSiteSize,
       lotHeight,
       lotWidth,
+      manipulationSnapStep,
       getEditCapabilities,
       resolveCadSnapPoint,
       snapValue,
@@ -2879,6 +2882,7 @@ export default function PreviewPanel({
                     onUpdateBuilding,
                     insertVertexOnSegment,
                     deleteSelectedVertex,
+                    manipulationSnapStep,
                   },
                   suggestedObjectHitTargetsProps: {
                     suggestedPlacements: renderedSuggestedPlacements,
