@@ -59,6 +59,7 @@ type UseDashboardAddObjectActionInput = {
   parkingLoading: "single" | "double";
   parkingStallDepth: string;
   parkingStallWidth: string;
+  persistDraftRefresh: (reason: string) => void;
   pushRecoveryMessage: (message: string) => void;
   recordDraftUndoAction: (action: DraftUndoAction) => void;
   recordRecentChange: (change: Omit<RecentChange, "id" | "createdAt">) => void;
@@ -96,6 +97,7 @@ export function useDashboardAddObjectAction({
   parkingLoading,
   parkingStallDepth,
   parkingStallWidth,
+  persistDraftRefresh,
   pushRecoveryMessage,
   recordDraftUndoAction,
   recordRecentChange,
@@ -128,6 +130,7 @@ export function useDashboardAddObjectAction({
           const sitePlacement = buildDashboardSitePlacement({ width, height });
           return [sitePlacement, ...filtered];
         });
+        persistDraftRefresh("site boundary added");
         return;
       }
       if (!hasSiteBoundary()) {
@@ -163,6 +166,7 @@ export function useDashboardAddObjectAction({
         computeParkingFootprint,
       });
       setBuildingPlacements((prev) => [...prev, nextPlacement]);
+      persistDraftRefresh(`${nextPlacement.label} added`);
       markSystemsStale(systemsImpactedByPlacement(nextPlacement));
       setActivePlacementId(autoPlaced ? null : nextPlacement.id);
       setPlacementModeEnabled(!autoPlaced);
@@ -204,6 +208,7 @@ export function useDashboardAddObjectAction({
       parkingLoading,
       parkingStallDepth,
       parkingStallWidth,
+      persistDraftRefresh,
       pushRecoveryMessage,
       recordDraftUndoAction,
       recordRecentChange,

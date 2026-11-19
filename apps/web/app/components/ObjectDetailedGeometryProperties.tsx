@@ -1,21 +1,49 @@
 import { useState } from "react";
 import type { BuildingPlacement } from "../types";
-import { detailedGeometryBinding, validateComponentModel, validatePipeProfile, type ComponentModel, type PipeProfile, type OccupiedComponent } from "../utils/detailedObjectGeometry";
+import { detailedGeometryBinding, validateComponentModel, validatePipeProfile, type CanonicalPipeProfile, type ComponentModel, type PipeProfile, type OccupiedComponent } from "../utils/detailedObjectGeometry";
 import { isLinearUtility } from "../utils/siteInterference";
 
 type PartDraft = { id: string; label: string; kind: OccupiedComponent["kind"]; xFt: string; yFt: string; wFt: string; dFt: string; minFt: string; maxFt: string };
-export function ObjectDetailedGeometryProperties({ item, onCommit }: { item: BuildingPlacement; onCommit: (item: BuildingPlacement, meta: Record<string, unknown>) => void }) {
+export function ObjectDetailedGeometryProperties({ item, objects = [], onCommit }: { item: BuildingPlacement; objects?: BuildingPlacement[]; onCommit: (item: BuildingPlacement, meta: Record<string, unknown>) => void }) {
   const isPipe = isLinearUtility(item) && item.geometryType === "polyline";
   const saved = (isPipe ? item.meta?.pipe_profile_v1 : item.meta?.occupied_components_v1) as PipeProfile & ComponentModel | undefined;
   const [datum, setDatum] = useState(saved?.datum ?? ""), [source, setSource] = useState(saved?.source ?? ""), [clearance, setClearance] = useState(saved?.requiredClearanceFt == null ? "" : String(saved.requiredClearanceFt));
   const [reviewed, setReviewed] = useState(Boolean(saved?.reviewed && saved.geometryBinding === detailedGeometryBinding(item))), [complete, setComplete] = useState(saved?.complete ?? false), [error, setError] = useState("");
-  const [elevations, setElevations] = useState((item.geometry ?? []).map((_, i) => saved?.centerElevationsFt?.[i] == null ? "" : String(saved.centerElevationsFt[i])));
+  const canonicalSaved = saved as CanonicalPipeProfile | undefined;
+  const diameterFt = Number(item.meta?.pipe_diameter_ft ?? 0);
+  const [inverts, setInverts] = useState((item.geometry ?? []).map((_, i) => canonicalSaved?.invertElevationsFt?.[i] == null ? "" : String(canonicalSaved.invertElevationsFt[i])));
+  const [network, setNetwork] = useState<CanonicalPipeProfile["network"]>(canonicalSaved?.network ?? (String(item.meta?.network) === "sanitary" ? "sanitary" : String(item.meta?.network) === "water" ? "water" : "storm"));
+  const [fromNodeId, setFromNodeId] = useState(canonicalSaved?.endpointStructures?.[0]?.id ?? "");
+  const [toNodeId, setToNodeId] = useState(canonicalSaved?.endpointStructures?.[1]?.id ?? "");
+  const [startRim, setStartRim] = useState(canonicalSaved?.endpointStructures?.[0]?.rimElevationFt == null ? "" : String(canonicalSaved.endpointStructures[0].rimElevationFt));
+  const [startSump, setStartSump] = useState(canonicalSaved?.endpointStructures?.[0]?.sumpElevationFt == null ? "" : String(canonicalSaved.endpointStructures[0].sumpElevationFt));
+  const [endRim, setEndRim] = useState(canonicalSaved?.endpointStructures?.[1]?.rimElevationFt == null ? "" : String(canonicalSaved.endpointStructures[1].rimElevationFt));
+  const [endSump, setEndSump] = useState(canonicalSaved?.endpointStructures?.[1]?.sumpElevationFt == null ? "" : String(canonicalSaved.endpointStructures[1].sumpElevationFt));
+  const endpointObjects = objects.filter(object => ["inlet", "outfall", "manhole"].includes(String(object.type)));
   const [parts, setParts] = useState<PartDraft[]>((saved?.components ?? []).map(c => ({ ...c, xFt: String(c.xFt), yFt: String(c.yFt), wFt: String(c.wFt), dFt: String(c.dFt), minFt: String(c.minFt), maxFt: String(c.maxFt) })));
   const apply = () => {
     const evidence = { version: 1 as const, datum: datum.trim(), source: source.trim(), reviewed, requiredClearanceFt: clearance.trim() ? Number(clearance) : null, geometryBinding: detailedGeometryBinding(item) };
     if (isPipe) {
-      if (elevations.some(z => !z.trim())) { setError("Enter the center elevation at every route vertex."); return; }
-      const value: PipeProfile = { ...evidence, centerElevationsFt: elevations.map(Number) }, invalid = validatePipeProfile(value, { ...item, meta: { ...item.meta, occupied_components_v1: null } });
+      if (inverts.some(z => !z.trim())) { setError("Enter the invert elevation at every route vertex."); return; }
+      if (!fromNodeId || !toNodeId) { setError("Choose explicit start and end structures."); return; }
+      if ([startRim, startSump, endRim, endSump].some(value => !value.trim())) { setError("Enter rim and sump elevations for both endpoint structures."); return; }
+      const startObject = endpointObjects.find(object => object.id === fromNodeId), endObject = endpointObjects.find(object => object.id === toNodeId);
+      const objectPoint = (object: BuildingPlacement) => object.geometry?.[0] ?? [Number(object.x ?? 0), Number(object.y ?? 0)] as [number, number];
+      if (!startObject || !endObject) { setError("The selected endpoint structure is no longer available."); return; }
+      const invertElevationsFt = inverts.map(Number);
+      const radiusFt = diameterFt / 2;
+      const startPoint = objectPoint(startObject), endPoint = objectPoint(endObject);
+      const value: CanonicalPipeProfile = {
+        ...evidence,
+        network,
+        invertElevationsFt,
+        centerElevationsFt: invertElevationsFt.map(invert => invert + radiusFt),
+        endpointStructures: [
+          { id: startObject.id, name: startObject.label, x: startPoint[0], y: startPoint[1], rimElevationFt: Number(startRim), sumpElevationFt: Number(startSump) },
+          { id: endObject.id, name: endObject.label, x: endPoint[0], y: endPoint[1], rimElevationFt: Number(endRim), sumpElevationFt: Number(endSump) },
+        ],
+      };
+      const invalid = validatePipeProfile(value, { ...item, meta: { ...item.meta, occupied_components_v1: null } });
       if (invalid) { setError(invalid); return; } setError(""); onCommit(item, { pipe_profile_v1: value, occupied_components_v1: null });
     } else {
       if (parts.some(c => [c.xFt, c.yFt, c.wFt, c.dFt, c.minFt, c.maxFt].some(v => !v.trim()))) { setError("Enter every part's footprint and elevation limits."); return; }
@@ -32,7 +60,19 @@ export function ObjectDetailedGeometryProperties({ item, onCommit }: { item: Bui
       <label className="block">Detailed elevation datum<input className={input} value={datum} onChange={e => setDatum(e.target.value)} /></label>
       <label className="block">Detailed geometry evidence source<input className={input} value={source} onChange={e => setSource(e.target.value)} /></label>
       <label className="block">Detailed required clearance (ft)<input type="number" min="0" step="any" className={input} value={clearance} onChange={e => setClearance(e.target.value)} /></label>
-      {isPipe ? elevations.map((z, i) => <label key={i} className="block">Pipe center elevation at vertex {i + 1} (ft)<input type="number" step="any" className={input} value={z} onChange={e => setElevations(values => values.map((value, j) => j === i ? e.target.value : value))} /></label>) : <>
+      {isPipe ? <>
+        <label className="block">Pipe network<select aria-label="Pipe network" className={input} value={network} onChange={event => setNetwork(event.target.value as CanonicalPipeProfile["network"])}><option value="storm">Storm</option><option value="sanitary">Sanitary</option><option value="water">Water</option></select></label>
+        <label className="block">Start structure<select aria-label="Pipe start structure" className={input} value={fromNodeId} onChange={event => setFromNodeId(event.target.value)}><option value="">Choose structure</option>{endpointObjects.map(object => <option key={object.id} value={object.id}>{object.label} · {object.id}</option>)}</select></label>
+        <label className="block">End structure<select aria-label="Pipe end structure" className={input} value={toNodeId} onChange={event => setToNodeId(event.target.value)}><option value="">Choose structure</option>{endpointObjects.map(object => <option key={object.id} value={object.id}>{object.label} · {object.id}</option>)}</select></label>
+        {inverts.map((z, i) => <label key={i} className="block">Pipe invert elevation at vertex {i + 1} (ft)<input type="number" step="any" className={input} value={z} onChange={event => setInverts(values => values.map((value, j) => j === i ? event.target.value : value))} /></label>)}
+        <div className="grid grid-cols-2 gap-2">
+          <label>Start rim elevation (ft)<input aria-label="Pipe start rim elevation" type="number" step="any" className={input} value={startRim} onChange={event => setStartRim(event.target.value)} /></label>
+          <label>Start sump elevation (ft)<input aria-label="Pipe start sump elevation" type="number" step="any" className={input} value={startSump} onChange={event => setStartSump(event.target.value)} /></label>
+          <label>End rim elevation (ft)<input aria-label="Pipe end rim elevation" type="number" step="any" className={input} value={endRim} onChange={event => setEndRim(event.target.value)} /></label>
+          <label>End sump elevation (ft)<input aria-label="Pipe end sump elevation" type="number" step="any" className={input} value={endSump} onChange={event => setEndSump(event.target.value)} /></label>
+        </div>
+        <p className="text-[11px] text-slate-600">Length and slope are derived from the saved route and entered inverts. Civora does not invent missing hydraulic values.</p>
+      </> : <>
         {parts.map((part, i) => <div key={part.id} className="space-y-2 rounded border border-slate-200 p-2">
           <label className="block">Part {i + 1} label<input className={input} value={part.label} onChange={e => setParts(values => values.map((p, j) => j === i ? { ...p, label: e.target.value } : p))} /></label>
           <label className="block">Part {i + 1} kind<select aria-label={`Part ${i + 1} kind`} className={input} value={part.kind} onChange={e => setParts(values => values.map((p, j) => j === i ? { ...p, kind: e.target.value as PartDraft["kind"] } : p))}><option value="body">Occupied body</option><option value="foundation">Foundation</option><option value="deck">Bridge deck</option><option value="support">Support / pier</option></select></label>

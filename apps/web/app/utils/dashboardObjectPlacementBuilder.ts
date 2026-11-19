@@ -347,7 +347,6 @@ export function buildDashboardObjectPlacement({
     const rightSideRun =
       network === "storm"
         ? ([
-            [lot.w * endX, lot.h * yFactor],
             [lot.w * endX, lot.h * 0.62],
           ] as Array<[number, number]>)
         : [];

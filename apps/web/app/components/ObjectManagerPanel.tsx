@@ -59,7 +59,7 @@ export function ObjectManagerPanel({
           ) : null}
           {selectedObject.onEngineeringMeta && !["site", "lot_block", "setback_zone", "no_build_zone"].includes(selectedObject.selectedObject.type ?? "") ? (
             <DisclosurePanel title="Detailed geometry" subtitle="Occupied components and profile data" status="Optional">
-              <ObjectDetailedGeometryProperties key={`${detailedGeometryBinding(selectedObject.selectedObject)}:${JSON.stringify(selectedObject.selectedObject.meta?.occupied_components_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.pipe_profile_v1)}`} item={selectedObject.selectedObject} onCommit={selectedObject.onEngineeringMeta} />
+              <ObjectDetailedGeometryProperties key={`${detailedGeometryBinding(selectedObject.selectedObject)}:${JSON.stringify(selectedObject.selectedObject.meta?.occupied_components_v1)}:${JSON.stringify(selectedObject.selectedObject.meta?.pipe_profile_v1)}`} item={selectedObject.selectedObject} objects={objectList.objects} onCommit={selectedObject.onEngineeringMeta} />
             </DisclosurePanel>
           ) : null}
         </div>

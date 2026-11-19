@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { withCanonicalCanvasSnapshot } from "../../app/utils/canonicalCanvasProject";
+import { canonicalPipeSegmentFromPlacement, detailedGeometryBinding, validatePipeProfile } from "../../app/utils/detailedObjectGeometry";
 import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 
 for (const { assisted, target } of [
@@ -12,7 +13,9 @@ for (const { assisted, target } of [
   const api = process.env.PLAYWRIGHT_API_BASE_URL ?? "";
   test.skip(process.env.CIVORA_PHASE0_LOCAL_TESTS !== "1" || !/^http:\/\/(127\.0\.0\.1|localhost):/.test(api), "Disposable localhost only; never runs hosted generation.");
   test.setTimeout(600_000);
+  page.setDefaultTimeout(15_000);
   const name = `Calculated pilot ${randomUUID()}`;
+  let uiAuthoredPipe: { id: string; lengthFt: number; endInvertFt: number } | null = null;
   // The full multidisciplinary fixture intentionally leaves enough separation
   // for generated drainage and utility review geometry. The compact parking
   // fixture remains useful for the narrower parking-only probes.
@@ -82,6 +85,109 @@ for (const { assisted, target } of [
         slope_ft_ft: 0.01,
       }),
     ]));
+
+    // Create a second valid storm segment through ordinary workspace controls.
+    // This proves the editor, canonical project, recalculation and LandXML use
+    // one saved source rather than relying on the API-seeded compatibility row.
+    const savedProject = async () => (await (await request.get(`${api}/api/projects/${project.project_id}`, { headers })).json()).project;
+    const addThroughCommand = async (command: string, label: string) => {
+      await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+      await page.getByTestId("civora-command-input").fill(command);
+      await page.getByTestId("civora-command-input").press("Enter");
+      await expect.poll(async () => (await savedProject()).project_input.manual_fields.site_objects.some((item: { label: string }) => item.label === label), { timeout: 30_000 }).toBe(true);
+    };
+    await addThroughCommand("add storm sewer", "Storm Sewer");
+    // Add the endpoint structures through the advertised Drainage workbench.
+    // This is the ordinary editor path and avoids treating the chat parser as
+    // a privileged fixture loader.
+    await page.getByTestId("workspace-stage-analyze").click();
+    await page.getByTestId("workspace-stage-panel").selectOption("drainage");
+    await page.getByRole("button", { name: "Inlet", exact: true }).click();
+    await expect.poll(async () => (await savedProject()).project_input.manual_fields.site_objects.some((item: { type: string }) => item.type === "inlet"), { timeout: 30_000 }).toBe(true);
+    await page.getByRole("button", { name: "Outfall Point", exact: true }).click();
+    await expect.poll(async () => (await savedProject()).project_input.manual_fields.site_objects.some((item: { type: string }) => item.type === "outfall"), { timeout: 30_000 }).toBe(true);
+    let uiObjects = (await savedProject()).project_input.manual_fields.site_objects as Array<{ id: string; label: string; type: string; geometry?: Array<[number, number]> }>;
+    const storm = uiObjects.find(item => item.label === "Storm Sewer")!, inlet = uiObjects.find(item => item.type === "inlet")!, outfall = uiObjects.find(item => item.type === "outfall")!;
+    expect(storm.geometry!.length).toBeGreaterThanOrEqual(2);
+    const routeStart = storm.geometry![0], routeEnd = storm.geometry![storm.geometry!.length - 1];
+    await openWorkspaceTool(page, "Draw");
+    await page.getByTestId("workspace-stage-panel").selectOption("details");
+    const detailsPanel = page.getByTestId("workspace-right-panel");
+    for (const [object, point] of [[inlet, routeStart], [outfall, routeEnd]] as const) {
+      await detailsPanel.getByRole("button", { name: new RegExp(`^${object.label}`) }).click();
+      await expect(page.getByLabel("Selected object name")).toHaveValue(object.label);
+      await page.getByTestId("selected-object-x-input").fill(String(point[0]));
+      await page.getByTestId("selected-object-x-input").blur();
+      await page.getByTestId("selected-object-y-input").fill(String(point[1]));
+      await page.getByTestId("selected-object-y-input").blur();
+    }
+    await expect.poll(async () => {
+      const objects = (await savedProject()).project_input.manual_fields.site_objects;
+      return [inlet, outfall].every((source, index) => {
+        const object = objects.find((candidate: { id: string }) => candidate.id === source.id);
+        const expected = index ? routeEnd : routeStart;
+        return Number(object?.x) === expected[0] && Number(object?.y) === expected[1];
+      });
+    }, { timeout: 30_000 }).toBe(true);
+    await detailsPanel.getByRole("button", { name: new RegExp(`^${storm.label}`) }).click();
+    await expect(page.getByLabel("Selected object name")).toHaveValue(storm.label);
+    await openWorkspaceTool(page, "Draw");
+    if (!(await objectList.evaluate(element => element.hasAttribute("open")))) await objectList.locator("summary").click();
+    await page.getByText("Engineering properties", { exact: true }).click();
+    await page.getByLabel("Pipe outside diameter (ft)").fill("1.5");
+    await page.getByRole("button", { name: "Apply pipe diameter", exact: true }).click();
+    await page.getByText("Detailed geometry", { exact: true }).click();
+    await page.getByTestId("object-detailed-geometry").locator("summary").click();
+    await page.getByRole("button", { name: "Apply pipe depth profile", exact: true }).click();
+    await expect(page.getByTestId("object-detailed-geometry").getByRole("alert")).toContainText("invert elevation");
+    await page.getByLabel("Detailed elevation datum").fill("Synthetic QA datum");
+    await page.getByLabel("Detailed geometry evidence source").fill("Synthetic UI fixture; not survey evidence");
+    await page.getByLabel("Pipe network").selectOption("storm");
+    await page.getByLabel("Pipe start structure").selectOption(inlet.id);
+    await page.getByLabel("Pipe end structure").selectOption(inlet.id);
+    const invertInputs = page.getByLabel(/Pipe invert elevation at vertex/);
+    const routeLength = storm.geometry!.slice(1).reduce((sum, point, index) => sum + Math.hypot(point[0] - storm.geometry![index][0], point[1] - storm.geometry![index][1]), 0);
+    let station = 0;
+    for (let index = 0; index < storm.geometry!.length; index += 1) {
+      if (index) station += Math.hypot(storm.geometry![index][0] - storm.geometry![index - 1][0], storm.geometry![index][1] - storm.geometry![index - 1][1]);
+      await invertInputs.nth(index).fill(String(90 - station * 0.01));
+    }
+    const endInvert = 90 - routeLength * 0.01;
+    await page.getByLabel("Pipe start rim elevation").fill("100");
+    await page.getByLabel("Pipe start sump elevation").fill("89");
+    await page.getByLabel("Pipe end rim elevation").fill("99");
+    await page.getByLabel("Pipe end sump elevation").fill(String(endInvert - 1));
+    await page.getByLabel("I reviewed this detailed geometry against its source.").check();
+    await page.getByRole("button", { name: "Apply pipe depth profile", exact: true }).click();
+    await expect(page.getByTestId("object-detailed-geometry").getByRole("alert")).toContainText("different explicit objects");
+    await page.getByLabel("Pipe end structure").selectOption(outfall.id);
+    await page.getByRole("button", { name: "Apply pipe depth profile", exact: true }).click();
+    await expect(page.getByTestId("object-detailed-geometry").getByRole("alert")).toHaveCount(0);
+    await expect.poll(async () => {
+      const savedAfterProfile = await savedProject();
+      const objects = savedAfterProfile.project_input.manual_fields.site_objects;
+      const persistedStorm = objects.find((item: { id: string }) => item.id === storm.id);
+      const persistedProfile = persistedStorm?.meta?.pipe_profile_v1;
+      if (persistedStorm && persistedProfile) {
+        const normalizedStorm = { ...persistedStorm, geometryType: persistedStorm.geometryType ?? persistedStorm.geometry_type };
+        const normalizedObjects = objects.map((item: { geometryType?: string; geometry_type?: string }) => ({ ...item, geometryType: item.geometryType ?? item.geometry_type }));
+        expect(validatePipeProfile(persistedProfile, normalizedStorm), `stored=${persistedProfile.geometryBinding} current=${detailedGeometryBinding(normalizedStorm)}`).toBeNull();
+        expect(canonicalPipeSegmentFromPlacement(normalizedStorm, normalizedObjects)).not.toBeNull();
+      }
+      const pipe = (savedAfterProfile.project_input.manual_fields.pipe_network ?? []).find((item: { id: string }) => item.id === storm.id);
+      return Boolean(pipe && pipe.diameter_in === 18 && pipe.from_node === inlet.id && pipe.to_node === outfall.id && Math.abs(pipe.slope_ft_ft - 0.01) < 1e-12);
+    }, { timeout: 30_000 }).toBe(true);
+    const persistedPipe = ((await savedProject()).project_input.manual_fields.pipe_network ?? []).find((item: { id: string }) => item.id === storm.id);
+    expect(persistedPipe.endpoint_structures).toEqual([
+      expect.objectContaining({ id: inlet.id, name: inlet.label, x: routeStart[0], y: routeStart[1], rim_elevation_ft: 100, sump_elevation_ft: 89 }),
+      expect.objectContaining({ id: outfall.id, name: outfall.label, x: routeEnd[0], y: routeEnd[1], rim_elevation_ft: 99, sump_elevation_ft: endInvert - 1 }),
+    ]);
+    expect(persistedPipe.invert_start_ft).toBe(90);
+    expect(persistedPipe.invert_end_ft).toBeCloseTo(endInvert, 9);
+    uiAuthoredPipe = { id: storm.id, lengthFt: routeLength, endInvertFt: endInvert };
+    await page.reload();
+    await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
+    expect(((await savedProject()).project_input.manual_fields.pipe_network ?? []).find((item: { id: string }) => item.id === storm.id)).toMatchObject({ diameter_in: 18, invert_start_ft: 90, invert_end_ft: endInvert });
   }
   page.on("dialog", dialog => dialog.accept());
   await openWorkspaceTool(page, "Generate");
@@ -256,10 +362,11 @@ for (const { assisted, target } of [
     expect(downloadPath).toBeTruthy();
     const xml = await readFile(downloadPath!, "utf8");
     expect(xml).toContain("<LandXML");
-    const authoredPipe = xml.match(/<Pipe\b(?=[^>]*civoraCanonicalId="SYN-STORM-PIPE-1")[^>]*>[\s\S]*?<\/Pipe>/)?.[0];
+    const expectedPipeId = uiAuthoredPipe?.id ?? "SYN-STORM-PIPE-1";
+    const authoredPipe = xml.match(new RegExp(`<Pipe\\b(?=[^>]*civoraCanonicalId="${expectedPipeId}")[^>]*>[\\s\\S]*?<\\/Pipe>`))?.[0];
     expect(authoredPipe).toBeTruthy();
     const attr = (name: string) => authoredPipe!.match(new RegExp(`${name}="([^"]+)"`))?.[1];
-    expect(Number(attr("length"))).toBeCloseTo(178.885, 3);
+    expect(Number(attr("length"))).toBeCloseTo(uiAuthoredPipe?.lengthFt ?? 178.885, 3);
     expect(Number(attr("slope"))).toBeCloseTo(1, 6); // LandXML slope is percent.
     expect(Number(authoredPipe!.match(/<CircPipe\b[^>]*diameter="([^"]+)"/)?.[1])).toBeCloseTo(18 / 12, 6);
     expect(attr("civoraReviewOnly")).toBe("true");

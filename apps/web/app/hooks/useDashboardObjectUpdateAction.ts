@@ -481,7 +481,16 @@ export function useDashboardObjectUpdateAction({
     void guardedTransactionSave({
       isCurrent: () => projectLoadRequestRef.current === generation && JSON.stringify(buildingPlacementsRef.current) === snapshot,
       ensureDraft: () => ensureProjectDraftRef.current(),
-      save: () => saveProjectRef.current({ silent: true }),
+      // Let the canonical placement commit update the derived payload before
+      // snapshotting it. Saving in the same call stack can persist the new
+      // object meta beside an older derived pipe/quantity projection.
+      save: async () => {
+        await new Promise<void>((resolve) => {
+          if (typeof window === "undefined") resolve();
+          else window.requestAnimationFrame(() => resolve());
+        });
+        return saveProjectRef.current({ silent: true });
+      },
       refresh: () => { previewRefreshIntentRef.current = { reason: "Refreshing preview after object update...", track: true }; },
       onFailure: () => pushRecoveryMessage("The edit remains in the working plan, but saving failed. Retry Save Project."),
     });

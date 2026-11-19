@@ -8,6 +8,7 @@ import type {
 import { buildCanonicalGeometryHandoffV1, isCustomGeometryMode } from "./objectGeometry";
 import { parseNonNegativeNumber, parseNonNegativeInteger, parsePositiveNumber } from "./formatting";
 import {isPhysicalCanvasObject} from "./objectGroups";
+import { canonicalPipeSegmentFromPlacement } from "./detailedObjectGeometry";
 
 export function buildDashboardManualFields({
     nextSiteName,
@@ -140,6 +141,12 @@ export function buildDashboardManualFields({
     const placementOverrides = allPlacementSnapshots
       .filter((placement) => placement.placed && isPhysicalCanvasObject(placement,allPlacementSnapshots) && Number.isFinite(placement.x) && Number.isFinite(placement.y))
       .map((placement) => placement);
+    const canonicalPlacementOverrides = placementOverrides.map((placement) => ({
+      ...placement,
+      geometryType: placement.geometry_type,
+      h: placement.height_ft,
+      stallCount: placement.stall_count,
+    })) as BuildingPlacement[];
     const canonicalGeometryHandoffs = placementOverrides
       .filter((placement) => {
         if (placement.type === "site" || placement.type === "custom" || placement.generated) return false;
@@ -228,9 +235,11 @@ export function buildDashboardManualFields({
       );
     };
     const inferUtilityType = (placement: (typeof placementOverrides)[number]) => {
-      const hint = `${String(placement.meta?.network ?? "")} ${placement.label}`.toLowerCase();
-      if (/sanitary|sewer|\bsan\b/.test(hint)) return "sanitary";
+      const explicit = String(placement.meta?.network ?? "").trim().toLowerCase();
+      if (["storm", "sanitary", "water"].includes(explicit)) return explicit;
+      const hint = placement.label.toLowerCase();
       if (/storm|drain/.test(hint)) return "storm";
+      if (/sanitary|sewer|\bsan\b/.test(hint)) return "sanitary";
       if (/water|hydrant/.test(hint)) return "water";
       return "utility";
     };
@@ -308,10 +317,13 @@ export function buildDashboardManualFields({
     }
     const stormPipeNetwork = utilityNetwork.filter((feature) => feature.utility_type === "storm");
     if (stormPipeNetwork.length) {
-      manualFields.pipe_network = stormPipeNetwork.map((feature) => ({
-        ...feature,
-        path: feature.points,
-      }));
+      manualFields.pipe_network = stormPipeNetwork.map((feature) => {
+        const placement = canonicalPlacementOverrides.find((item) => item.id === feature.id);
+        return (placement ? canonicalPipeSegmentFromPlacement(placement, canonicalPlacementOverrides) : null) ?? {
+          ...feature,
+          path: feature.points,
+        };
+      });
     }
     if (inferredDrainageInlets.length) manualFields.drainage_structures = inferredDrainageInlets;
     if (inferredOutfalls.length) {

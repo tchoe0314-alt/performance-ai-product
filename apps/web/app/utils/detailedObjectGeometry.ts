@@ -1,10 +1,18 @@
-import type { BuildingPlacement } from "../types";
+import type { BuildingPlacement, ManualFields } from "../types";
 import { polygonContains, segmentsTouch, type FootprintPoint as Point } from "./culDeSacConcept";
 
 type Evidence = { version: 1; datum: string; source: string; reviewed: boolean; requiredClearanceFt: number | null; geometryBinding: string };
 export type OccupiedComponent = { id: string; kind: "body" | "foundation" | "deck" | "support"; label: string; xFt: number; yFt: number; wFt: number; dFt: number; minFt: number; maxFt: number };
 export type ComponentModel = Evidence & { complete: boolean; components: OccupiedComponent[] };
 export type PipeProfile = Evidence & { centerElevationsFt: number[] };
+export type CanonicalPipeProfile = PipeProfile & {
+  network: "storm" | "sanitary" | "water";
+  invertElevationsFt: number[];
+  endpointStructures: [
+    { id: string; name: string; x: number; y: number; rimElevationFt: number; sumpElevationFt: number },
+    { id: string; name: string; x: number; y: number; rimElevationFt: number; sumpElevationFt: number },
+  ];
+};
 export type DetailedFinding = { severity: "conflict" | "review" | "clear"; code: string; message: string };
 export const detailedGeometryBinding = (item: BuildingPlacement) => JSON.stringify([item.type, item.x, item.y, item.w, item.d, item.rotation ?? 0, item.geometryType, item.geometry, item.meta?.coordinate_units ?? "ft", item.meta?.pipe_diameter_ft]);
 const text = (value: unknown): value is string => typeof value === "string" && Boolean(value.trim());
@@ -32,7 +40,65 @@ export function validatePipeProfile(value: unknown, item: BuildingPlacement): st
   if (typeof diameter !== "number" || !Number.isFinite(diameter) || diameter <= 0) return "Enter the actual pipe outside diameter first.";
   if (!Array.isArray(profile.centerElevationsFt) || profile.centerElevationsFt.length !== item.geometry.length || !profile.centerElevationsFt.every(Number.isFinite)) return "Supply one finite center elevation for every route vertex.";
   if (item.geometry.some((p, i) => i > 0 && Math.hypot(p[0] - item.geometry![i - 1][0], p[1] - item.geometry![i - 1][1]) < 1e-9)) return "Remove duplicate route vertices before applying a pipe profile.";
+  if ("network" in profile) {
+    const canonical = profile as CanonicalPipeProfile;
+    if (!["storm", "sanitary", "water"].includes(canonical.network)) return "Choose the pipe network discipline.";
+    if (!Array.isArray(canonical.invertElevationsFt) || canonical.invertElevationsFt.length !== item.geometry.length || !canonical.invertElevationsFt.every(Number.isFinite)) return "Enter one finite invert elevation for every route vertex.";
+    if (!Array.isArray(canonical.endpointStructures) || canonical.endpointStructures.length !== 2) return "Choose explicit start and end structures.";
+    const [start, end] = canonical.endpointStructures;
+    if (!start?.id || !end?.id || start.id === end.id) return "Start and end structures must be different explicit objects.";
+    if ([start, end].some(endpoint => !endpoint.name || ![endpoint.x, endpoint.y, endpoint.rimElevationFt, endpoint.sumpElevationFt].every(Number.isFinite))) return "Both endpoint structures need names, coordinates, rim elevations, and sump elevations.";
+    const routeEnds = [item.geometry[0], item.geometry[item.geometry.length - 1]];
+    if ([start, end].some((endpoint, index) => Math.hypot(endpoint.x - routeEnds[index][0], endpoint.y - routeEnds[index][1]) > 0.01)) return "Move the selected structures to the pipe route endpoints before applying the profile.";
+    const endpointInverts = [canonical.invertElevationsFt[0], canonical.invertElevationsFt[canonical.invertElevationsFt.length - 1]];
+    if ([start, end].some((endpoint, index) => endpoint.sumpElevationFt > endpointInverts[index] || endpoint.rimElevationFt <= endpointInverts[index])) return "Each endpoint needs sump elevation at or below the invert and rim elevation above the invert.";
+    const radiusFt = diameter / 2;
+    if (canonical.centerElevationsFt.some((center, index) => Math.abs(center - (canonical.invertElevationsFt[index] + radiusFt)) > 1e-6)) return "Pipe center elevations contradict the entered inverts and diameter.";
+    if (["storm", "sanitary"].includes(canonical.network) && canonical.invertElevationsFt[0] <= canonical.invertElevationsFt[canonical.invertElevationsFt.length - 1]) return "Gravity pipe start invert must be above the end invert.";
+  }
   return null;
+}
+
+export function canonicalPipeSegmentFromPlacement(item: BuildingPlacement, objects: BuildingPlacement[]): NonNullable<ManualFields["pipe_network"]>[number] | null {
+  const profile = item.meta?.pipe_profile_v1 as CanonicalPipeProfile | undefined;
+  if (!profile || !("network" in profile) || validatePipeProfile(profile, item) || !item.geometry) return null;
+  const [start, end] = profile.endpointStructures;
+  const point = (object: BuildingPlacement) => object.geometry?.[0] ?? [Number(object.x ?? 0), Number(object.y ?? 0)];
+  for (const [endpoint, routePoint] of [[start, item.geometry[0]], [end, item.geometry[item.geometry.length - 1]]] as const) {
+    const linked = objects.find(object => object.id === endpoint.id && ["inlet", "outfall", "manhole"].includes(String(object.type)));
+    const linkedPoint = linked ? point(linked) : null;
+    if (!linkedPoint || Math.hypot(linkedPoint[0] - routePoint[0], linkedPoint[1] - routePoint[1]) > 0.01) return null;
+  }
+  const unitToFeet = item.meta?.coordinate_units === "m" ? 1 / 0.3048 : 1;
+  const lengthFt = item.geometry.slice(1).reduce((sum, endpoint, index) => sum + Math.hypot(endpoint[0] - item.geometry![index][0], endpoint[1] - item.geometry![index][1]), 0) * unitToFeet;
+  if (!Number.isFinite(lengthFt) || lengthFt <= 0) return null;
+  const invertStart = profile.invertElevationsFt[0], invertEnd = profile.invertElevationsFt[profile.invertElevationsFt.length - 1];
+  const slope = (invertStart - invertEnd) / lengthFt;
+  if (["storm", "sanitary"].includes(profile.network) && slope <= 0) return null;
+  return {
+    id: item.id,
+    canonical_id: item.id,
+    label: item.label,
+    utility_type: profile.network,
+    layer: profile.network === "storm" ? "STORM" : profile.network === "sanitary" ? "SAN" : "WATER",
+    points: item.geometry,
+    path: item.geometry,
+    length_ft: lengthFt,
+    diameter_in: Number(item.meta?.pipe_diameter_ft) * 12,
+    slope_ft_ft: slope,
+    from_node: start.id,
+    to_node: end.id,
+    invert_start_ft: invertStart,
+    invert_end_ft: invertEnd,
+    endpoint_structures: profile.endpointStructures.map(endpoint => ({
+      id: endpoint.id, name: endpoint.name, x: endpoint.x, y: endpoint.y,
+      rim_elevation_ft: endpoint.rimElevationFt, sump_elevation_ft: endpoint.sumpElevationFt,
+    })),
+    source: profile.source,
+    source_confidence: "user_entered_review_required",
+    review_required: true,
+    construction_release_allowed: false,
+  };
 }
 export function componentFootprint(item: BuildingPlacement, c: OccupiedComponent): Point[] {
   const unit = item.meta?.coordinate_units === "m" ? .3048 : 1;

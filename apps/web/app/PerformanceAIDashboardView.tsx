@@ -443,6 +443,7 @@ function PerformanceAIDashboardView({
   const [layoutAlternativeGoals, setLayoutAlternativeGoals] = useState<LayoutGoal[]>([]);
   const [placementModeEnabled, setPlacementModeEnabled] = useState(false);
   const [activePlacementId, setActivePlacementId] = useState<string | null>(null);
+  const persistDraftRefreshRef = useRef<(reason: string) => void>(() => undefined);
   const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([]);
   const [objectManagerStatusMessage, setObjectManagerStatusMessage] = useState("");
   const [objectClipboard, setObjectClipboard] = useState<BuildingPlacement[]>([]);
@@ -1594,6 +1595,7 @@ function PerformanceAIDashboardView({
     parkingLoading,
     parkingStallDepth,
     parkingStallWidth,
+    persistDraftRefresh: (reason) => window.setTimeout(() => persistDraftRefreshRef.current(reason), 0),
     pushRecoveryMessage,
     recordDraftUndoAction,
     recordRecentChange,
@@ -1781,6 +1783,7 @@ function PerformanceAIDashboardView({
     setObjectManagerStatusMessage,
     setStatusMessage,
   });
+  persistDraftRefreshRef.current = persistDraftRefresh;
 
   const {
     handleRemoveBuilding,

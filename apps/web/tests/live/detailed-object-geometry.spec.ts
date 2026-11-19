@@ -1,12 +1,13 @@
 import { expect, test } from "@playwright/test";
 import type { BuildingPlacement, ProjectInput } from "../../app/types";
 import { assessSiteInterference } from "../../app/utils/siteInterference";
-import { detailedGeometryBinding, pipeContactIntervals, componentFootprint, validateComponentModel, validatePipeProfile, type ComponentModel, type PipeProfile, type OccupiedComponent } from "../../app/utils/detailedObjectGeometry";
+import { canonicalPipeSegmentFromPlacement, detailedGeometryBinding, pipeContactIntervals, componentFootprint, validateComponentModel, validatePipeProfile, type CanonicalPipeProfile, type ComponentModel, type PipeProfile, type OccupiedComponent } from "../../app/utils/detailedObjectGeometry";
 import { buildProjectInputPlacements } from "../../app/utils/projectInputRestore";
 import { buildCanonicalGeometryHandoffV1 } from "../../app/utils/objectGeometry";
 import { buildDashboardObjectUpdateRecentChange } from "../../app/utils/dashboardObjectChangeMessages";
 import { buildDashboardObjectPlacement } from "../../app/utils/dashboardObjectPlacementBuilder";
 import { PUBLIC_PLAN_REFERENCE } from "../../app/utils/publicPlanReference";
+import { buildDashboardObjectSelectionView } from "../../app/utils/dashboardObjectSelectionView";
 
 const building: BuildingPlacement = { id: "building", type: "building", label: "Building", placed: true, x: 0, y: 0, w: 10, d: 10 };
 const pipe: BuildingPlacement = { id: "pipe", type: "utility_corridor", label: "Pipe", placed: true, x: -10, y: 5, w: 100, d: 1, geometryType: "polyline", geometry: [[-10, 5], [90, 5]], meta: { asset_kind: "pipe", pipe_diameter_ft: 1 } };
@@ -14,6 +15,27 @@ const evidence = { version: 1 as const, datum: "test-datum", source: "Synthetic 
 const part = (kind: OccupiedComponent["kind"], minFt: number, maxFt: number, xFt = 0, wFt = 10): OccupiedComponent => ({ id: kind, label: kind, kind, xFt, yFt: 0, wFt, dFt: 10, minFt, maxFt });
 const withParts = (item = building, parts = [part("body", 0, 20), part("foundation", -4, 0)]) => ({ ...item, meta: { ...item.meta, occupied_components_v1: { ...evidence, geometryBinding: detailedGeometryBinding(item), complete: true, components: parts } satisfies ComponentModel } });
 const withProfile = (item = pipe, elevations = [-10, 10]) => ({ ...item, meta: { ...item.meta, pipe_profile_v1: { ...evidence, geometryBinding: detailedGeometryBinding(item), centerElevationsFt: elevations } satisfies PipeProfile } });
+
+test("explicit inspector target outranks a stale bulk selection", () => {
+  const inlet: BuildingPlacement = { id: "inlet", type: "inlet", label: "Distinct inlet", w: 4, d: 4 };
+  expect(buildDashboardObjectSelectionView({
+    buildingPlacements: [building, inlet],
+    activePlacementId: inlet.id,
+    selectedObjectIds: [building.id],
+  }).selectedBuilding?.id).toBe(inlet.id);
+});
+
+test("ordinary storm command route has no duplicate turn vertex", () => {
+  const item = buildDashboardObjectPlacement({
+    type: "utility_corridor", lot: { w: 900, h: 700 }, existingCount: 1,
+    defaultDimensions: { w: 180, d: 8 }, fallbackLabel: "Storm Sewer",
+    options: { placed: true, geometryType: "polyline", meta: { network: "storm" } },
+    parkingControls: {} as Parameters<typeof buildDashboardObjectPlacement>[0]["parkingControls"],
+    computeParkingFootprint: () => ({ maxStalls: 0, moduleCols: 0, moduleRows: 0 }),
+  });
+  expect(item.geometry?.length).toBe(4);
+  expect(item.geometry?.every((point, index, points) => index === 0 || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1])).toBe(true);
+});
 
 test("pipe profile checks local crossing instead of its highest point elsewhere", () => {
   const findings = assessSiteInterference([withParts(), withProfile()]);
@@ -110,4 +132,30 @@ test("specific pipe routes use their actual dimensions even before site initiali
     expect(item.meta?.pipe_diameter_ft).toBeUndefined();
     expect(validatePipeProfile(withProfile(item, [-10, -10, -10]).meta.pipe_profile_v1, item)).toMatch(/outside diameter/);
   }
+});
+
+test("reviewed explicit pipe inputs produce one canonical segment without invented values", () => {
+  const start: BuildingPlacement = { id: "IN-1", type: "inlet", label: "IN-1", x: 0, y: 0, w: 12, d: 12, geometryType: "point", geometry: [[0, 0]] };
+  const end: BuildingPlacement = { id: "OUT-1", type: "outfall", label: "OUT-1", x: 160, y: 80, w: 12, d: 12, geometryType: "point", geometry: [[160, 80]] };
+  const item: BuildingPlacement = { ...pipe, id: "ST-1", label: "ST-1", x: 0, y: 0, w: 160, d: 80, geometry: [[0, 0], [160, 80]], meta: { asset_kind: "pipe", network: "storm", pipe_diameter_ft: 1.5 } };
+  const inverts = [90, 88.211145618];
+  const profile: CanonicalPipeProfile = { ...evidence, geometryBinding: detailedGeometryBinding(item), network: "storm", invertElevationsFt: inverts, centerElevationsFt: inverts.map(value => value + .75), endpointStructures: [
+    { id: start.id, name: start.label, x: 0, y: 0, rimElevationFt: 100, sumpElevationFt: 89 },
+    { id: end.id, name: end.label, x: 160, y: 80, rimElevationFt: 99, sumpElevationFt: 87.5 },
+  ] };
+  const profiled = { ...item, meta: { ...item.meta, pipe_profile_v1: profile } };
+  expect(validatePipeProfile(profile, profiled)).toBeNull();
+  const segment = canonicalPipeSegmentFromPlacement(profiled, [profiled, start, end]);
+  expect(segment).toMatchObject({
+    id: "ST-1", canonical_id: "ST-1", diameter_in: 18, from_node: "IN-1", to_node: "OUT-1",
+    invert_start_ft: 90, invert_end_ft: 88.211145618,
+    review_required: true, construction_release_allowed: false,
+  });
+  expect(segment?.length_ft).toBeCloseTo(178.8854382, 6);
+  expect(segment?.slope_ft_ft).toBeCloseTo(0.01, 12);
+
+  expect(validatePipeProfile({ ...profile, endpointStructures: [profile.endpointStructures[0], profile.endpointStructures[0]] }, profiled)).toMatch(/different explicit objects/);
+  expect(validatePipeProfile({ ...profile, centerElevationsFt: [999, 999] }, profiled)).toMatch(/contradict/);
+  expect(validatePipeProfile({ ...profile, invertElevationsFt: [88, 90], centerElevationsFt: [88.75, 90.75], endpointStructures: profile.endpointStructures.map(endpoint => ({ ...endpoint, sumpElevationFt: 80 })) as CanonicalPipeProfile["endpointStructures"] }, profiled)).toMatch(/start invert/);
+  expect(canonicalPipeSegmentFromPlacement(profiled, [profiled, { ...start, x: 1, geometry: [[1, 0]] }, end])).toBeNull();
 });

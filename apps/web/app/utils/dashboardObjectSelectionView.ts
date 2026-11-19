@@ -17,8 +17,14 @@ export function buildDashboardObjectSelectionView({
   activePlacementId,
   selectedObjectIds,
 }: BuildDashboardObjectSelectionViewOptions) {
-  const selectedIds = [activePlacementId, ...selectedObjectIds].filter(Boolean);
-  const selectedBuilding = buildingPlacements.find((item) => selectedIds.includes(item.id)) ?? null;
+  // The explicit inspector target must outrank older bulk selections. Finding
+  // against the combined set lets whichever object happens to occur first in
+  // the array masquerade as the active object (and edits then hit the wrong
+  // geometry).
+  const selectedBuilding = (
+    (activePlacementId ? buildingPlacements.find((item) => item.id === activePlacementId) : undefined) ??
+    buildingPlacements.find((item) => selectedObjectIds.includes(item.id))
+  ) ?? null;
   const selectedObjectSet = new Set(selectedObjectIds);
   const selectedObjectRows = buildingPlacements.filter((item) => selectedObjectSet.has(item.id));
   const selectedObjectMeasurements = selectedObjectRows.map(getDraftObjectMeasurement);
