@@ -1410,6 +1410,7 @@ def _coordinate_from_geojson(payload: Dict[str, Any]) -> Dict[str, Any]:
     return _normalize_coordinate_system({
         "name": name,
         "source": "geojson_crs",
+        "units": safe_str(props.get("units")),
     })
 
 

@@ -108,7 +108,7 @@ export function useDashboardSiteBoundaryDrawAction({
   utilities,
 }: UseDashboardSiteBoundaryDrawActionInput) {
   return useCallback(
-    (payload: { points: Array<[number, number]> }) => {
+    (payload: { points: Array<[number, number]>; source?: "manual_drawn" | "imported"; units?: "ft" | "m"; provenance?: NonNullable<SiteInputs["site_boundary_geometry"]>["provenance"] }) => {
       clearGeneratedPreview();
       const validPoints = payload.points.filter(([x, y]) => Number.isFinite(x) && Number.isFinite(y));
       if (validPoints.length < 3) {
@@ -127,8 +127,10 @@ export function useDashboardSiteBoundaryDrawAction({
         setStatusMessage("Drawn site boundary is too small. Add a wider boundary or set dimensions manually.");
         return;
       }
+      const boundarySource = payload.source ?? "manual_drawn";
+      const boundaryUnits = payload.units ?? (units || "ft");
       const normalizedGeometry = validPoints.map(([x, y]) => [x - minX, y - minY] as [number, number]);
-      const acres = (width * height) / SQFT_PER_ACRE;
+      const acres = (width * height) / (boundaryUnits === "m" ? 4046.8564224 : SQFT_PER_ACRE);
       const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const nextSite: BuildingPlacement = {
         id: siteId,
@@ -141,7 +143,7 @@ export function useDashboardSiteBoundaryDrawAction({
         rotation: 0,
         locked: true,
         placed: true,
-        source: "manual_drawn",
+        source: boundarySource === "imported" ? "detected_from_gis" : "manual_drawn",
         generated: false,
         geometryType: "polygon",
         geometry: normalizedGeometry,
@@ -155,18 +157,18 @@ export function useDashboardSiteBoundaryDrawAction({
         meta: {
           category: "site",
           site_boundary_state: "locked_canonical",
-          source: "manual_drawn",
-          source_ui_mode: "canvas_draw",
-          confidence: "user_drawn_review_required",
+          source: boundarySource,
+          source_ui_mode: boundarySource === "imported" ? "explicit_import_apply" : "canvas_draw",
+          confidence: boundarySource === "imported" ? "imported_source_user_applied_review_required" : "user_drawn_review_required",
           engineering_status: "review_required",
           construction_release_allowed: false,
-          units: units || "ft",
+          units: boundaryUnits,
           acres: Number(acres.toFixed(3)),
           boundary_vertices: normalizedGeometry.map(([x, y], idx) => ({
             id: `${siteId}-v-${idx + 1}`,
             x,
             y,
-            units: units || "ft",
+            units: boundaryUnits,
           })),
         },
       };
@@ -178,17 +180,18 @@ export function useDashboardSiteBoundaryDrawAction({
       const nextLotHeight = String(nextSite.d);
       const siteBoundaryGeometry: NonNullable<SiteInputs["site_boundary_geometry"]> = {
         type: "polygon",
-        source: "manual_drawn",
-        units: units || "ft",
+        source: boundarySource,
+        units: boundaryUnits,
         engineering_status: "review_required",
         construction_release_allowed: false,
-        vertices: normalizedGeometry.map(([x, y]) => ({ x, y, units: units || "ft" })),
+        vertices: normalizedGeometry.map(([x, y]) => ({ x, y, units: boundaryUnits })),
         bounds: {
           x: 0,
           y: 0,
           w: nextSite.w,
           h: nextSite.d,
         },
+        ...(payload.provenance ? { provenance: payload.provenance } : {}),
       };
       setLotWidth(nextLotWidth);
       setLotHeight(nextLotHeight);
@@ -199,13 +202,13 @@ export function useDashboardSiteBoundaryDrawAction({
       setFitToSiteRequest((value) => value + 1);
       setBuildingPlacements(nextPlacements);
       markSystemsStale(["roads", "parking", "grading", "drainage", "utilities"]);
-      setStatusMessage(`Site boundary locked at ${nextSite.w.toFixed(0)} ft x ${nextSite.d.toFixed(0)} ft (${acres.toFixed(2)} acres).`);
+      setStatusMessage(`Site boundary locked at ${nextSite.w.toFixed(0)} ${boundaryUnits} x ${nextSite.d.toFixed(0)} ${boundaryUnits} (${acres.toFixed(2)} acres).`);
 
       const currentInput = currentProject?.project_input ?? payloadPreview;
       const nextManualFields = buildManualFields({
         nextSiteName: siteName,
         nextFileName: fileName,
-        nextUnits: units,
+        nextUnits: boundaryUnits,
         nextProjectType: projectType,
         nextLotWidth,
         nextLotHeight,
@@ -236,7 +239,7 @@ export function useDashboardSiteBoundaryDrawAction({
           site_inputs: {
             ...(currentInput?.meta?.site_inputs ?? {}),
             site_alignment_locked: true,
-            site_boundary_source: "manual_drawn",
+            site_boundary_source: boundarySource,
             site_boundary_state: "locked_canonical",
             site_boundary_acres: Number(acres.toFixed(3)),
             site_boundary_geometry: siteBoundaryGeometry,

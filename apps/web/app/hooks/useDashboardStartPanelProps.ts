@@ -106,6 +106,7 @@ type UseDashboardStartPanelPropsInput = {
   onAnalyzeMapSnapshot: () => void;
   onUploadImage: (file: File) => Promise<void>;
   onUploadExistingConditions: (file: File) => Promise<void>;
+  importedBoundaryAction?: ImportSurveyPanelProps["importedBoundaryAction"];
   autoSiteContextFlowSummary: SiteSetupPanelProps["autoSiteContext"]["autoSiteContextFlowSummary"];
   siteIntelligenceSummary: SiteSetupPanelProps["autoSiteContext"]["siteIntelligenceSummary"];
   siteIntelligenceFoundCount: number;
@@ -206,6 +207,7 @@ export function useDashboardStartPanelProps({
   onAnalyzeMapSnapshot,
   onUploadImage,
   onUploadExistingConditions,
+  importedBoundaryAction,
   autoSiteContextFlowSummary,
   siteIntelligenceSummary,
   siteIntelligenceFoundCount,
@@ -487,6 +489,7 @@ export function useDashboardStartPanelProps({
     mapSnapshotReady: Boolean(uploadedImagePreviewUrl || uploadedImageApiUrl),
     surveyPointCount: surveyPreviewPointCount,
     imageUploadState,
+    importedBoundaryAction,
     imageUploadNote,
     surveyUploadMessage,
     sourceEffectRows,
@@ -511,6 +514,7 @@ export function useDashboardStartPanelProps({
   }), [
     detectionScaleFtPerPx,
     hasTerrainSource,
+    importedBoundaryAction,
     imageUploadNote,
     imageUploadState,
     mapAnalysisReady,

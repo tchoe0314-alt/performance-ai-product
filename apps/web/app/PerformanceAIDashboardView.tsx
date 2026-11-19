@@ -232,6 +232,7 @@ import { useDashboardProjectSave } from "./hooks/useDashboardProjectSave";
 import { useDashboardDesignControls } from "./hooks/useDashboardDesignControls";
 import { useDashboardSiteRestore } from "./hooks/useDashboardSiteRestore";
 import { ensureDashboardProjectDraft } from "./utils/dashboardProjectDraft";
+import { importedParcelBoundaryFromProjectInput } from "./utils/importedParcelBoundary";
 import { createDashboardPlanExecutor, isConnectivityFailureMessage } from "./utils/dashboardPlanExecution";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
 import { isLiveCalculationCurrent, liveInputFingerprint } from "./utils/liveCalculationFreshness";
@@ -1956,7 +1957,6 @@ function PerformanceAIDashboardView({
     units,
     utilities,
   });
-
   function askClarification(question: string, action: string, payload?: Record<string, unknown>) {
     setPendingClarification({ action, payload, question });
     setActiveSidePanel("chat");
@@ -2774,7 +2774,7 @@ function PerformanceAIDashboardView({
     token,
   });
 
-  const { uploadExistingConditions } = useDashboardExistingConditionsUpload({
+  const { uploadExistingConditions, latestImportedBoundaryInput } = useDashboardExistingConditionsUpload({
     appendChatMessage,
     currentProject,
     lotHeightValue: parsePositiveNumber(lotHeight),
@@ -2791,6 +2791,36 @@ function PerformanceAIDashboardView({
     token,
     useSurveyForGrading,
   });
+  const importedParcelBoundary = useMemo(
+    () => importedParcelBoundaryFromProjectInput(latestImportedBoundaryInput ?? payloadPreview),
+    [latestImportedBoundaryInput, payloadPreview],
+  );
+  const handleUseImportedSiteBoundary = () => {
+    if (importedParcelBoundary.status !== "ready") {
+      setStatusMessage(importedParcelBoundary.reason);
+      return;
+    }
+    const candidate = importedParcelBoundary.candidate;
+    if (units && units !== candidate.units) {
+      setStatusMessage(`Imported parcel units are ${candidate.units}; this project is ${units}. Convert or correct the source before applying it.`);
+      return;
+    }
+    const existingSite = buildingPlacementsRef.current.find((item) => item.type === "site");
+    if (existingSite && !window.confirm("Replace the active site boundary with this imported parcel? Existing engineering results will become stale; the imported source reference will remain stored.")) return;
+    handleCreateSiteBoundary({
+      points: candidate.points,
+      source: "imported",
+      units: candidate.units,
+      provenance: {
+        feature_id: candidate.featureId,
+        source_file: candidate.sourceFile,
+        original_units: candidate.units,
+        original_crs: candidate.crs,
+        original_vertices: candidate.points.map(([x, y]) => ({ x, y })),
+        normalization: "subtract_min_xy",
+      },
+    });
+  };
 
   const handleAnalyzeSiteAccess = useDashboardSiteAccessAnalysis({
     askClarification,
@@ -5114,6 +5144,21 @@ function PerformanceAIDashboardView({
     onAnalyzeMapSnapshot: analyzeMapSnapshot,
     onUploadImage: uploadImage,
     onUploadExistingConditions: uploadExistingConditions,
+    importedBoundaryAction: importedParcelBoundary.status === "ready"
+      ? {
+          label: buildingPlacements.some((item) => item.type === "site") ? "Replace with imported parcel" : "Use as site boundary",
+          detail: `One validated ${importedParcelBoundary.candidate.units} parcel polygon is available from ${importedParcelBoundary.candidate.sourceFile}. Applying it preserves every exterior vertex and marks dependent work stale.`,
+          enabled: !units || units === importedParcelBoundary.candidate.units,
+          onApply: handleUseImportedSiteBoundary,
+        }
+      : importedParcelBoundary.status === "unavailable"
+        ? undefined
+        : {
+            label: "Imported parcel cannot be applied",
+            detail: importedParcelBoundary.reason,
+            enabled: false,
+            onApply: handleUseImportedSiteBoundary,
+          },
     autoSiteContextFlowSummary,
     siteIntelligenceSummary,
     siteIntelligenceFoundCount: siteIntelligenceFound.length,

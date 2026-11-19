@@ -480,7 +480,7 @@ const buildRestoredSiteBoundary = ({
         rotation: 0,
         locked: Boolean(siteInputs?.site_alignment_locked),
         placed: true,
-        source: siteBoundaryGeometry?.source === "manual_drawn" ? "manual_drawn" : "user",
+        source: siteBoundaryGeometry?.source === "manual_drawn" ? "manual_drawn" : siteBoundaryGeometry?.source === "imported" ? "detected_from_gis" : "user",
         generated: false,
         geometryType: siteBoundaryGeometry?.type === "polygon" ? "polygon" as const : undefined,
         geometry: Array.isArray(siteBoundaryGeometry?.vertices)

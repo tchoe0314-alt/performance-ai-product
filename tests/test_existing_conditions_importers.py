@@ -78,7 +78,7 @@ class ExistingConditionsImporterTests(unittest.TestCase):
                             {"type": "Feature", "properties": {"type": "wetland"}, "geometry": {"type": "Polygon", "coordinates": [[[2, 2], [3, 2], [3, 3], [2, 2]]]}},
                             {"type": "Feature", "properties": {"name": "existing water utility"}, "geometry": {"type": "LineString", "coordinates": [[0, 0], [10, 0]]}},
                         ],
-                        "crs": {"type": "name", "properties": {"name": "EPSG:2276"}},
+                        "crs": {"type": "name", "properties": {"name": "EPSG:2276", "units": "ft"}},
                     }
                 ),
                 encoding="utf-8",
@@ -91,6 +91,7 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertEqual(imported["layer_counts"]["wetlands"], 1)
             self.assertEqual(imported["layer_counts"]["existing_utilities"], 1)
             self.assertEqual(imported["coordinate_system"]["name"], "EPSG:2276")
+            self.assertEqual(imported["coordinate_system"]["units"], "ft")
 
     def test_import_surface_grid_csv_builds_grid_surface(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

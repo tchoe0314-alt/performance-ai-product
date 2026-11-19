@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { postForm } from "../../lib/api";
 import type {
@@ -68,6 +68,8 @@ export function useDashboardExistingConditionsUpload({
   token,
   useSurveyForGrading,
 }: UseDashboardExistingConditionsUploadOptions) {
+  const [latestImportedBoundaryInput, setLatestImportedBoundaryInput] = useState<ProjectInput | null>(null);
+  useEffect(() => setLatestImportedBoundaryInput(null), [currentProject?.project_id]);
   const uploadExistingConditions = useCallback(async (file: File) => {
     const supportedSurveyPattern = /\.(csv|txt|geojson|json|dxf|shp|zip|gpkg|tif|tiff|las|laz|xml|landxml)$/i;
     if (!supportedSurveyPattern.test(file.name)) {
@@ -135,25 +137,26 @@ export function useDashboardExistingConditionsUpload({
           package_status: String(data.existing_conditions_package?.status ?? "unknown"),
         },
       };
+      const nextProjectInput: ProjectInput = {
+        ...currentInput,
+        input_mode: "user",
+        strict_mode: false,
+        allow_ai_fill_for_blanks: false,
+        meta: {
+          ...(currentInput?.meta ?? {}),
+          site_inputs: nextSiteInputs,
+          existing_conditions_package: data.existing_conditions_package,
+          existing_conditions_import_validation: data.import_validation,
+          existing_conditions_summary: data.existing_conditions_summary,
+          canonical_existing_conditions: data.canonical_existing_conditions,
+          canonical_existing_conditions_model: data.canonical_existing_conditions?.canonical_existing_conditions_model,
+          import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix,
+          canonical_vs_metadata_only: data.canonical_vs_metadata_only ?? data.import_validation?.canonical_vs_metadata_only,
+        },
+      };
       const saved = await saveProject({
         silent: true,
-        projectInputOverride: {
-          ...currentInput,
-          input_mode: "user",
-          strict_mode: false,
-          allow_ai_fill_for_blanks: false,
-          meta: {
-            ...(currentInput?.meta ?? {}),
-            site_inputs: nextSiteInputs,
-            existing_conditions_package: data.existing_conditions_package,
-            existing_conditions_import_validation: data.import_validation,
-            existing_conditions_summary: data.existing_conditions_summary,
-            canonical_existing_conditions: data.canonical_existing_conditions,
-            canonical_existing_conditions_model: data.canonical_existing_conditions?.canonical_existing_conditions_model,
-            import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix,
-            canonical_vs_metadata_only: data.canonical_vs_metadata_only ?? data.import_validation?.canonical_vs_metadata_only,
-          },
-        },
+        projectInputOverride: nextProjectInput,
       });
       if (!saved) {
         const message = "Survey/topo upload not applied: project save failed. Active source unchanged.";
@@ -161,6 +164,7 @@ export function useDashboardExistingConditionsUpload({
         setStatusMessage(message);
         return;
       }
+      setLatestImportedBoundaryInput(nextProjectInput);
       setSurveyFileName(storedFilename);
       setSourceEffectRows(sourceEffectRows);
       setSurveyPoints(surveyPoints);
@@ -210,5 +214,5 @@ export function useDashboardExistingConditionsUpload({
     useSurveyForGrading,
   ]);
 
-  return { uploadExistingConditions };
+  return { uploadExistingConditions, latestImportedBoundaryInput };
 }

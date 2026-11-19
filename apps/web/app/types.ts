@@ -1681,12 +1681,20 @@ export type SiteInputs = {
   brief_requirements_v1?: unknown;
   site_boundary_geometry?: {
     type: "polygon";
-    source: "manual_drawn";
+    source: "manual_drawn" | "imported";
     units: string;
     engineering_status: "review_required";
     construction_release_allowed: false;
     vertices: Array<{ x: number; y: number; units: string }>;
     bounds: { x: number; y: number; w: number; h: number };
+    provenance?: {
+      feature_id: string;
+      source_file: string;
+      original_units: "ft" | "m";
+      original_crs: string;
+      original_vertices: Array<{ x: number; y: number }>;
+      normalization: "subtract_min_xy";
+    };
   };
   site_rotation_deg?: number;
   drainage_source_override?: "civora" | "user";
