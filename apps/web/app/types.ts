@@ -2587,6 +2587,18 @@ export type GradingEarthworkUx = {
     spotElevations: Array<{ x: number; y: number; z: number }>;
     slopeArrows: Array<{ x: number; y: number; dx: number; dy: number; slopePct: number }>;
     flowPaths: Array<{ id: string; points: Array<{ x: number; y: number; z?: number }> }>;
-    comparisonCells: Array<{ x: number; y: number; deltaFt: number; mode: "cut" | "fill" | "balanced" }>;
+    comparisonCells: Array<{
+      id: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      existingElevationFt: number;
+      proposedElevationFt: number;
+      deltaFt: number;
+      cutCf: number;
+      fillCf: number;
+      mode: "cut" | "fill" | "balanced";
+    }>;
   };
 };

@@ -74,7 +74,14 @@ class TinSurfaceEngineTests(unittest.TestCase):
         self.assertEqual(comparison["fill_cf"], round(775/9, 3))
         self.assertEqual(comparison["cut_cf"], round(25/9, 3))
         self.assertEqual(comparison["net_cf"], round(250/3, 3))
-        self.assertEqual({cell["mode"] for cell in comparison["cells"]}, {"cut", "fill", "balanced"})
+        self.assertEqual(len(comparison["cells"]), 1)
+        cell = comparison["cells"][0]
+        self.assertEqual(cell["existing_elevation_ft"], 100.0)
+        self.assertEqual(cell["proposed_elevation_ft"], 100.5)
+        self.assertEqual(cell["delta_ft"], 0.5)
+        self.assertEqual(cell["cut_cf"], round(25/9, 3))
+        self.assertEqual(cell["fill_cf"], round(775/9, 3))
+        self.assertEqual(comparison["coverage"], {"preview_cell_count": 1, "integrated_cell_count": 1, "preview_is_complete": True})
 
     def test_grading_payload_carries_tin_and_unverified_control_label(self) -> None:
         parsed = {

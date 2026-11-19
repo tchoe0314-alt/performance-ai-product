@@ -951,31 +951,41 @@ def compare_surfaces(existing: GridSurface, proposed: GridSurface, *, max_cells:
     require_foot_units(existing)
     require_foot_units(proposed)
     integrated = list(integrated_cells(existing, proposed))
-    nrows = min(int(existing.nrows), int(proposed.nrows))
-    ncols = min(int(existing.ncols), int(proposed.ncols))
     cells: List[Dict[str, Any]] = []
     cut_cf = math.fsum(item["cut"] for item in integrated)
     fill_cf = math.fsum(item["fill"] for item in integrated)
-    stride = max(1, int(math.sqrt(max(nrows * ncols / max(max_cells, 1), 1))))
-    # Preserve the existing nodal preview locations; volumes above integrate
-    # physical support cells rather than assigning area to each preview point.
-    for row in range(nrows):
-        for col in range(ncols):
-            delta = float(proposed.values[row][col])-float(existing.values[row][col])
-            if row % stride == 0 and col % stride == 0 and len(cells) < max_cells:
-                cells.append(
-                    {
-                        "x": round(existing.x_at(col), 3),
-                        "y": round(existing.y_at(row), 3),
-                        "delta_ft": round(delta, 3),
-                        "mode": "cut" if delta < -1e-6 else "fill" if delta > 1e-6 else "balanced",
-                    }
-                )
+    stride = max(1, int(math.sqrt(max(len(integrated) / max(max_cells, 1), 1))))
+    # Preview exact physical support cells. Each retained item carries the source
+    # EG/FG elevations and its independently integrated cut/fill volumes; omitted
+    # cells remain included in the whole-site totals above, never extrapolated.
+    for index, item in enumerate(integrated):
+        if item["row"] % stride or item["col"] % stride or len(cells) >= max_cells:
+            continue
+        delta = float(item["delta"])
+        cells.append(
+            {
+                "x": round(existing.x_min + (item["col"] + 0.5) * existing.cell_size, 3),
+                "y": round(existing.y_min + (item["row"] + 0.5) * existing.cell_size, 3),
+                "width": round(existing.cell_size, 3),
+                "height": round(existing.cell_size, 3),
+                "existing_elevation_ft": round(float(item["existing"]), 3),
+                "proposed_elevation_ft": round(float(item["proposed"]), 3),
+                "delta_ft": round(delta, 3),
+                "cut_cf": round(float(item["cut"]), 3),
+                "fill_cf": round(float(item["fill"]), 3),
+                "mode": "cut" if delta < -1e-6 else "fill" if delta > 1e-6 else "balanced",
+            }
+        )
     return {
         "cut_cf": round(cut_cf, 3),
         "fill_cf": round(fill_cf, 3),
         "net_cf": round(fill_cf - cut_cf, 3),
         "cells": cells,
+        "coverage": {
+            "preview_cell_count": len(cells),
+            "integrated_cell_count": len(integrated),
+            "preview_is_complete": len(cells) == len(integrated),
+        },
         "truth_label": "Cut/fill comparison is sampled from existing and proposed surface elevations.",
         "method_version": METHOD_VERSION,
     }

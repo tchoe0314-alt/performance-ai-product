@@ -161,6 +161,7 @@ import { useWorkspaceEnvironmentMemory } from "../hooks/useWorkspaceEnvironmentM
 import { defaultEnvironment, environmentLayerForObject, environmentObjectVisible, type DisplayUnits, type WorkspaceEnvironment } from "../utils/workspaceEnvironment";
 import { PreviewEnvironmentControls } from "./PreviewEnvironmentControls";
 import { resolvePreviewManipulationSnapStep } from "../utils/previewCanvasDetail";
+import { shouldShowCurrentGradingComparison } from "../utils/dashboardGradingEarthworkView";
 
 export default function PreviewPanel({
   environmentScope,
@@ -707,7 +708,7 @@ export default function PreviewPanel({
   const showEarthworkUx =
     previewMode === "2d" &&
     Boolean(gradingEarthworkUx) &&
-    (hasGradingSurface || systemStatuses.grading === "fresh");
+    shouldShowCurrentGradingComparison({ hasGradingSurface, gradingStatus: systemStatuses.grading });
   const accessPointsForParking = useMemo(
     () => buildPreviewParkingAccessPoints(buildingPlacements),
     [buildingPlacements],
