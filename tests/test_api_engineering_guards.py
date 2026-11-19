@@ -291,6 +291,7 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
                     "review_only": True,
                     "construction_release_allowed": False,
                     "segments": [{"id": "P-1", "canonical_id": "P-1", "length_ft": 100, "diameter_in": 18}],
+                    "structures": [{"id": "A", "x": 0, "y": 0, "rim_elevation_ft": 105, "sump_elevation_ft": 99}],
                 },
             },
         })
@@ -298,6 +299,7 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
         self.assertTrue(review["review_only"])
         self.assertFalse(review["construction_release_allowed"])
         self.assertEqual(review["segments"][0]["canonical_id"], "P-1")
+        self.assertEqual(review["structures"][0]["id"], "A")
 
     def test_save_project_payload_keeps_omitted_latest_result_as_none(self) -> None:
         payload = SaveProjectPayload(

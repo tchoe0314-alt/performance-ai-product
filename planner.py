@@ -10328,12 +10328,20 @@ def _run_model_first_workflow(
         and safe_dict(item).get("construction_release_allowed") is False
     ]
     if review_pipe_segments:
+        review_pipe_structures: List[Dict[str, Any]] = []
+        for segment in review_pipe_segments:
+            review_pipe_structures.extend(
+                deepcopy(item)
+                for item in safe_list(segment.get("endpoint_structures"))
+                if safe_dict(item)
+            )
         plan["meta"]["review_pipe_network"] = {
             "source": "user_input",
             "status": "review_only_not_hydraulically_verified",
             "review_only": True,
             "construction_release_allowed": False,
             "segments": review_pipe_segments,
+            "structures": review_pipe_structures,
         }
     plan["actions"] = _filter_actions_for_dirty_systems(
         _merge_plan_actions(safe_list(plan.get("actions")), _canonical_export_actions(manager.project)),

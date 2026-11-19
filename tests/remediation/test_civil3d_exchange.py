@@ -140,3 +140,47 @@ def test_mutated_xml_cannot_pass_local_contract():
 def test_unknown_coordinate_unit_is_not_relabelled_as_feet():
     m=known_model();m['meta']['coordinate_system']={'horizontal_units':'USSurveyFoot'}
     with pytest.raises(ValueError,match='explicit conversion'):build_landxml_exchange(m)
+
+
+def test_complete_authored_review_pipe_is_preserved_as_its_own_network():
+    model = known_model()
+    model['meta']['review_pipe_network'] = {
+        'review_only': True,
+        'construction_release_allowed': False,
+        'structures': [
+            {'id':'AUTH-A','x':600,'y':420,'rim_elevation_ft':100,'sump_elevation_ft':89},
+            {'id':'AUTH-B','x':760,'y':500,'rim_elevation_ft':99,'sump_elevation_ft':87.5},
+        ],
+        'segments': [{
+            'id':'SYN-STORM-PIPE-1','canonical_id':'SYN-STORM-PIPE-1',
+            'from_node':'AUTH-A','to_node':'AUTH-B','path':[[600,420],[760,500]],
+            'length_ft':178.885,'diameter_in':18,'slope_ft_ft':.01,
+            'invert_start_ft':90,'invert_end_ft':88.21115,
+            'review_required':True,'construction_release_allowed':False,
+        }],
+    }
+    root, ns = inspect(build_landxml_exchange(model))
+    authored = next(pipe for pipe in root.findall('.//l:Pipe', ns) if pipe.get('name') == 'SYN-STORM-PIPE-1')
+
+    assert authored.get('length') == '178.885'
+    assert authored.get('slope') == '1'
+    assert authored.get('civoraCanonicalId') == 'SYN-STORM-PIPE-1'
+    assert authored.get('civoraReviewOnly') == 'true'
+    assert authored.get('civoraConstructionReleaseAllowed') == 'false'
+    assert authored.get('civoraCivil3dVerificationStatus') == 'not_verified'
+    assert authored.find('l:CircPipe', ns).get('diameter') == '1.5'
+    props = {node.get('label'): node.get('value') for node in authored.findall('l:Feature/l:Property', ns)}
+    assert props['canonical_id'] == 'SYN-STORM-PIPE-1'
+    assert props['review_only'] == 'true'
+
+
+def test_incomplete_authored_review_pipe_is_not_silently_omitted():
+    model = known_model()
+    model['meta']['review_pipe_network'] = {
+        'review_only': True,
+        'construction_release_allowed': False,
+        'structures': [],
+        'segments': [{'id':'AUTH-INCOMPLETE','length_ft':100,'diameter_in':18}],
+    }
+    with pytest.raises(ValueError, match='connected pipes and structures'):
+        build_landxml_exchange(model)

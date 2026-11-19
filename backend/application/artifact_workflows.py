@@ -1432,12 +1432,19 @@ def export_dxf_artifact(
                 and segment.get("construction_release_allowed") is False
             ]
             if review_segments:
+                review_structures = [
+                    dict(structure)
+                    for segment in review_segments
+                    for structure in list(segment.get("endpoint_structures") or [])
+                    if isinstance(structure, dict)
+                ]
                 final_meta["review_pipe_network"] = {
                     "source": "stored_parsed_user_input",
                     "status": "review_only_not_hydraulically_verified",
                     "review_only": True,
                     "construction_release_allowed": False,
                     "segments": review_segments,
+                    "structures": review_structures,
                 }
     final_plan["meta"] = final_meta
     if normalized_export_scope == "review":

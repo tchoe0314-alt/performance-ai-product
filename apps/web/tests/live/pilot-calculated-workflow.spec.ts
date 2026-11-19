@@ -35,6 +35,12 @@ for (const { assisted, target } of [
         id: "SYN-STORM-PIPE-1", label: "Synthetic storm trunk", utility_type: "storm",
         points: [[600, 420], [760, 500]], path: [[600, 420], [760, 500]],
         canonical_id: "SYN-STORM-PIPE-1", length_ft: 178.885, diameter_in: 18, slope_ft_ft: 0.01,
+        from_node: "SYN-STORM-START", to_node: "SYN-STORM-END",
+        invert_start_ft: 90, invert_end_ft: 88.21115,
+        endpoint_structures: [
+          { id: "SYN-STORM-START", name: "SYN-STORM-START", x: 600, y: 420, rim_elevation_ft: 100, sump_elevation_ft: 89 },
+          { id: "SYN-STORM-END", name: "SYN-STORM-END", x: 760, y: 500, rim_elevation_ft: 99, sump_elevation_ft: 87.5 },
+        ],
         source: "manual_drawn", review_required: true, construction_release_allowed: false,
       }] : [],
       site_objects: [
@@ -222,12 +228,14 @@ for (const { assisted, target } of [
     expect(downloadPath).toBeTruthy();
     const xml = await readFile(downloadPath!, "utf8");
     expect(xml).toContain("<LandXML");
-    expect(xml).toContain('civoraCanonicalId="SYN-STORM-PIPE-1"');
-    expect(xml).toContain('length="178.885"');
-    expect(xml).toContain('diameter="1.500"');
-    expect(xml).toContain('slope="0.010000"');
-    expect(xml).toContain('civoraReviewOnly="true"');
-    expect(xml).toContain('civoraConstructionReleaseAllowed="false"');
-    expect(xml).toContain('civoraCivil3dVerificationStatus="not_verified"');
+    const authoredPipe = xml.match(/<Pipe\b(?=[^>]*civoraCanonicalId="SYN-STORM-PIPE-1")[^>]*>[\s\S]*?<\/Pipe>/)?.[0];
+    expect(authoredPipe).toBeTruthy();
+    const attr = (name: string) => authoredPipe!.match(new RegExp(`${name}="([^"]+)"`))?.[1];
+    expect(Number(attr("length"))).toBeCloseTo(178.885, 3);
+    expect(Number(attr("slope"))).toBeCloseTo(1, 6); // LandXML slope is percent.
+    expect(Number(authoredPipe!.match(/<CircPipe\b[^>]*diameter="([^"]+)"/)?.[1])).toBeCloseTo(18 / 12, 6);
+    expect(attr("civoraReviewOnly")).toBe("true");
+    expect(attr("civoraConstructionReleaseAllowed")).toBe("false");
+    expect(attr("civoraCivil3dVerificationStatus")).toBe("not_verified");
   }
 });

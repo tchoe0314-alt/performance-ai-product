@@ -296,6 +296,7 @@ _DISCIPLINE_KEYS = {
         "review_only",
         "construction_release_allowed",
         "segments",
+        "structures",
     },
     "grading": {
         "schema_version",

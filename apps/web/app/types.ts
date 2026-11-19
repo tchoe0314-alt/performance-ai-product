@@ -1873,6 +1873,18 @@ export type ManualFields = {
     length_ft?: number;
     diameter_in?: number;
     slope_ft_ft?: number;
+    from_node?: string;
+    to_node?: string;
+    invert_start_ft?: number;
+    invert_end_ft?: number;
+    endpoint_structures?: Array<{
+      id: string;
+      name?: string;
+      x: number;
+      y: number;
+      rim_elevation_ft: number;
+      sump_elevation_ft: number;
+    }>;
     canonical_id?: string;
     source?: string;
     source_confidence?: string;

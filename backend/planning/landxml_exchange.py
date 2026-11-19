@@ -142,7 +142,12 @@ def build_landxml_exchange(plan, *, network_name="Civora Pipe Network"):
             surface_xml(parent, grid, name)
     network_parent = None
     all_ids = set()
-    for system, data in (("storm", meta.get("storm_pipes") or meta.get("storm_pipe_summary") or {}), ("sanitary", meta.get("sanitary") or meta.get("sanitary_summary") or {})):
+    networks = (
+        ("storm", "storm", meta.get("storm_pipes") or meta.get("storm_pipe_summary") or {}),
+        ("sanitary", "sanitary", meta.get("sanitary") or meta.get("sanitary_summary") or {}),
+        ("authored storm", "storm", meta.get("review_pipe_network") or {}),
+    )
+    for system, pipe_net_type, data in networks:
         data = mapping(data, "network")
         if "exchange_network_v1" in data:
             snapshot = mapping(data["exchange_network_v1"], "exact network snapshot")
@@ -161,7 +166,13 @@ def build_landxml_exchange(plan, *, network_name="Civora Pipe Network"):
             raise ValueError("LandXML network requires connected pipes and structures; no endpoint inference is permitted.")
         if network_parent is None:
             network_parent = ET.SubElement(root, tag("PipeNetworks"), {"name": network_name})
-        net = ET.SubElement(network_parent, tag("PipeNetwork"), {"name": f"{network_name} {system}", "pipeNetType": system})
+        net = ET.SubElement(network_parent, tag("PipeNetwork"), {
+            "name": f"{network_name} {system}",
+            "pipeNetType": pipe_net_type,
+            "civoraReviewOnly": "true",
+            "civoraConstructionReleaseAllowed": "false",
+            "civoraCivil3dVerificationStatus": "not_verified",
+        })
         structs_node, pipes_node = ET.SubElement(net, tag("Structs")), ET.SubElement(net, tag("Pipes"))
         lookup, records, nodes = {}, {}, {}
         for s in structures:
@@ -178,7 +189,13 @@ def build_landxml_exchange(plan, *, network_name="Civora Pipe Network"):
             rim = number(pick(s, "rim_elevation_ft", "rim_elev_ft"), "structure rim elevation")
             sump = number(pick(s, "sump_elevation_ft", "invert_elevation_ft", "invert_elev_ft"), "structure sump elevation")
             x, y = number(s.get("x"), "structure x"), number(s.get("y"), "structure y")
-            node = ET.SubElement(structs_node, tag("Struct"), {"name": name, "elevRim": fmt(rim), "elevSump": fmt(sump)})
+            node = ET.SubElement(structs_node, tag("Struct"), {
+                "name": name,
+                "elevRim": fmt(rim),
+                "elevSump": fmt(sump),
+                "civoraCanonicalId": str(s.get("canonical_id") or s.get("id") or name),
+                "civoraReviewOnly": "true",
+            })
             ET.SubElement(node, tag("Center")).text = f"{fmt(y)} {fmt(x)}"
             diameter = pick(s, "diameter_ft", "structure_diameter_ft")
             if diameter is None:
@@ -202,14 +219,21 @@ def build_landxml_exchange(plan, *, network_name="Civora Pipe Network"):
             z0 = number(pick(p, "invert_start_ft", "start_invert_ft", "start_invert"), "upstream invert")
             z1 = number(pick(p, "invert_end_ft", "end_invert_ft", "end_invert"), "downstream invert")
             a, b = records[start], records[end]
-            length = math.hypot(b[0]-a[0], b[1]-a[1])
+            geometric_length = math.hypot(b[0]-a[0], b[1]-a[1])
             given = number(p.get("length_ft"), "pipe length")
-            if length <= 0 or not math.isclose(length, given, rel_tol=1e-5, abs_tol=.01):
+            if geometric_length <= 0 or not math.isclose(geometric_length, given, rel_tol=1e-5, abs_tol=.01):
                 raise ValueError("LandXML supports straight pipes only; pipe length and connected endpoints disagree.")
+            # Retain the authored/calculated length after verifying it agrees
+            # with endpoint geometry. This preserves the canonical rounded
+            # engineering value and keeps its stated slope internally bound.
+            length = given
             slope = (z0-z1)/length
             stated = pick(p, "slope_ft_ft", "slope")
-            if stated is not None and not math.isclose(number(stated, "pipe slope"), slope, rel_tol=1e-5, abs_tol=1e-6):
-                raise ValueError("LandXML pipe slope conflicts with its length and invert elevations; recalculate first.")
+            if stated is not None:
+                stated_slope = number(stated, "pipe slope")
+                if not math.isclose(stated_slope, slope, rel_tol=1e-5, abs_tol=1e-6):
+                    raise ValueError("LandXML pipe slope conflicts with its length and invert elevations; recalculate first.")
+                slope = stated_slope
             diameter = number(p["diameter_ft"], "pipe diameter") if "diameter_ft" in p else number(p.get("diameter_in"), "pipe diameter")/12
             if diameter <= 0: raise ValueError("LandXML pipe diameter must be positive.")
             path = pick(p, "path", "route_points", "points")
@@ -221,7 +245,17 @@ def build_landxml_exchange(plan, *, network_name="Civora Pipe Network"):
                         raise ValueError("LandXML pipe geometry disagrees with connected structures.")
                     if len(xyz)>2 and xyz[2] is not None and not math.isclose(number(xyz[2], 'pipe elevation'),z,abs_tol=.001):
                         raise ValueError("LandXML pipe path elevation disagrees with invert data.")
-            pipe = ET.SubElement(pipes_node, tag("Pipe"), {"name": name, "refStart": start, "refEnd": end, "length": fmt(length), "slope": fmt(slope*100)})
+            pipe = ET.SubElement(pipes_node, tag("Pipe"), {
+                "name": name,
+                "refStart": start,
+                "refEnd": end,
+                "length": fmt(length),
+                "slope": fmt(slope*100),
+                "civoraCanonicalId": str(p.get("canonical_id") or p.get("id") or name),
+                "civoraReviewOnly": "true",
+                "civoraConstructionReleaseAllowed": "false",
+                "civoraCivil3dVerificationStatus": "not_verified",
+            })
             ET.SubElement(pipe, tag("CircPipe"), {"diameter": fmt(diameter)})
             feature(pipe, {"canonical_id": pick(p,"id","canonical_id") or name, "review_only": "true"})
             for ref,z,direction in ((start,z0,"out"),(end,z1,"in")):

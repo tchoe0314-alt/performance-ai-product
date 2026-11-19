@@ -2028,7 +2028,8 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         result_data = {
             "parsed_payload": {
                 "pipe_network": [
-                    {"id": "P-1", "canonical_id": "P-1", "length_ft": 100, "diameter_in": 18, "source": "manual_drawn", "review_required": True, "construction_release_allowed": False},
+                    {"id": "P-1", "canonical_id": "P-1", "length_ft": 100, "diameter_in": 18, "source": "manual_drawn", "review_required": True, "construction_release_allowed": False,
+                     "endpoint_structures": [{"id": "A", "x": 0, "y": 0, "rim_elevation_ft": 105, "sump_elevation_ft": 99}]},
                     {"id": "generated", "source": "generated", "review_required": True, "construction_release_allowed": False},
                 ],
             },
@@ -2050,6 +2051,7 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertEqual(path.suffix, ".landxml")
         review = service.dxf_export["final_plan"]["meta"]["review_pipe_network"]
         self.assertEqual([segment["canonical_id"] for segment in review["segments"]], ["P-1"])
+        self.assertEqual([structure["id"] for structure in review["structures"]], ["A"])
         self.assertFalse(review["construction_release_allowed"])
 
     def test_export_dxf_artifact_review_scope_discloses_stale_model_output(self):
