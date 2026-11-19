@@ -204,6 +204,42 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
             },
         )
 
+    def test_sanitize_plan_separates_bounded_diagnostics_from_geometry(self) -> None:
+        actions = [
+            {"task": "point", "origin": [float(index), 0.0], "layer": "TEST"}
+            for index in range(12)
+        ]
+        actions.insert(6, {"truncated_items": 3})
+        plan = sanitize_plan({"project_name": "Bounded diagnostics", "actions": actions, "meta": {}})
+
+        self.assertEqual(len(plan["actions"]), 12)
+        self.assertTrue(all(action.get("task") == "point" for action in plan["actions"]))
+        self.assertEqual(
+            plan["meta"]["diagnostic_snapshot_truncation_v1"],
+            {
+                "version": 1,
+                "markers_removed_from_authoritative_geometry": 1,
+                "diagnostic_items_omitted": 3,
+            },
+        )
+
+    def test_sanitize_plan_preserves_all_geometry_above_diagnostic_copy_cap(self) -> None:
+        actions = [
+            {"task": "point", "origin": [float(index), 1.0], "layer": "TEST"}
+            for index in range(3_005)
+        ]
+        actions.append({"__truncated_items__": 5})
+        # An unrelated malformed entity is not a recognized bounded-copy
+        # sentinel and must remain visible to downstream geometry guards.
+        actions.append({"unexpected": "malformed geometry"})
+        plan = sanitize_plan({"project_name": "Above cap", "actions": actions, "meta": {}})
+
+        self.assertEqual(len(plan["actions"]), 3_006)
+        self.assertEqual(plan["actions"][-1]["unexpected"], "malformed geometry")
+        self.assertEqual(
+            plan["meta"]["diagnostic_snapshot_truncation_v1"]["diagnostic_items_omitted"],
+            5,
+        )
     def test_sanitize_plan_preserves_canonical_sheet_metadata(self) -> None:
         plan = sanitize_plan(
             {

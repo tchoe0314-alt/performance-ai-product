@@ -150,6 +150,16 @@ def sanitize_action(action: Dict[str, Any]) -> Dict[str, Any]:
     return preserve_field_states(norm)
 
 
+def is_bounded_diagnostic_marker(value: Any) -> bool:
+    """Identify internal bounded-copy sentinels, never drawing geometry."""
+    if not isinstance(value, dict):
+        return False
+    marker_keys = {"truncated_items", "__truncated_items__", "__truncated__", "__truncated_count__"}
+    return bool(marker_keys.intersection(value)) and not any(
+        key in value for key in ("task", "layer", "origin", "points", "center", "canonical_source_id")
+    )
+
+
 _PLAN_META_KEYS = {
     "planner_workflow",
     "planner_pass_count",
@@ -177,6 +187,7 @@ _PLAN_META_KEYS = {
     "standards_review_packet",
     "standards_acceptance",
     "manual_validation",
+    "diagnostic_snapshot_truncation_v1",
     "qa",
     "coordination",
     "coordination_realism",
@@ -558,9 +569,27 @@ def sanitize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
         "assumptions": [safe_str(x) for x in safe_list(plan.get("assumptions")) if safe_str(x)],
         "meta": sanitize_plan_meta(safe_dict(plan.get("meta"))),
     }
+    diagnostic_markers = 0
+    diagnostic_omitted_items = 0
     for action in safe_list(plan.get("actions")):
+        if is_bounded_diagnostic_marker(action):
+            diagnostic_markers += 1
+            diagnostic_omitted_items += max(
+                0,
+                safe_int(
+                    action.get("truncated_items", action.get("__truncated_items__", action.get("__truncated_count__", 0))),
+                    0,
+                ),
+            )
+            continue
         if isinstance(action, dict):
             out["actions"].append(sanitize_action(action))
+    if diagnostic_markers:
+        out["meta"]["diagnostic_snapshot_truncation_v1"] = {
+            "version": 1,
+            "markers_removed_from_authoritative_geometry": diagnostic_markers,
+            "diagnostic_items_omitted": diagnostic_omitted_items,
+        }
     return out
 
 
