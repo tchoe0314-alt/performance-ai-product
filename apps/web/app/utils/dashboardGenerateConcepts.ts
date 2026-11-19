@@ -10,6 +10,7 @@ export function buildGenerateConceptPlacements({
   lot,
   siteScaleLocked,
   buildingPlacements,
+  buildingProgramSf,
   buildingWidth,
   buildingDepth,
   parkingCount,
@@ -28,6 +29,7 @@ export function buildGenerateConceptPlacements({
   lot: LotBounds;
   siteScaleLocked?: boolean;
   buildingPlacements: BuildingPlacement[];
+  buildingProgramSf?: string | number | null;
   buildingWidth: string | number | null | undefined;
   buildingDepth: string | number | null | undefined;
   parkingCount: string | number | null | undefined;
@@ -93,10 +95,15 @@ export function buildGenerateConceptPlacements({
       },
     });
   };
-  if (target === "full" && !hasExistingType("building", "office_building", "pad")) {
-    const requestedArea = parsePositiveNumber(buildingWidth) && parsePositiveNumber(buildingDepth)
-      ? Math.round((parsePositiveNumber(buildingWidth) ?? 0) * (parsePositiveNumber(buildingDepth) ?? 0))
-      : 28000;
+  const canonicalProgramArea = parsePositiveNumber(buildingProgramSf);
+  const dimensionProgramArea = parsePositiveNumber(buildingWidth) && parsePositiveNumber(buildingDepth)
+    ? Math.round((parsePositiveNumber(buildingWidth) ?? 0) * (parsePositiveNumber(buildingDepth) ?? 0))
+    : null;
+  // Never invent a program. The canonical brief is authoritative when it is
+  // present; dimensions are a legacy fallback only when no brief target exists.
+  const requestedBuildingArea = canonicalProgramArea ? Math.round(canonicalProgramArea) : dimensionProgramArea;
+  if (target === "full" && requestedBuildingArea && !hasExistingType("building", "office_building", "pad")) {
+    const requestedArea = requestedBuildingArea;
     const buildingDepthFt = Math.max(80, Math.min(lot.h * 0.18, Math.round(Math.sqrt(requestedArea / 2))));
     const buildingWidthFt = Math.max(150, Math.min(lot.w * 0.34, Math.round(requestedArea / buildingDepthFt)));
     addConcept({

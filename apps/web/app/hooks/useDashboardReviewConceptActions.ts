@@ -17,6 +17,7 @@ type UseDashboardReviewConceptActionsInput = {
   appendChatMessage: AppendChatMessage;
   buildingDepth: string;
   buildingPlacements: BuildingPlacement[];
+  buildingProgramSf?: number | null;
   buildingWidth: string;
   clearGeneratedPreview: () => void;
   ensureSiteBoundary: (reason: string) => boolean;
@@ -54,6 +55,7 @@ export function useDashboardReviewConceptActions({
   appendChatMessage,
   buildingDepth,
   buildingPlacements,
+  buildingProgramSf,
   buildingWidth,
   clearGeneratedPreview,
   ensureSiteBoundary,
@@ -156,6 +158,7 @@ export function useDashboardReviewConceptActions({
         lot,
         siteScaleLocked,
         buildingPlacements,
+        buildingProgramSf,
         buildingWidth,
         buildingDepth,
         parkingCount,
@@ -188,6 +191,7 @@ export function useDashboardReviewConceptActions({
     },
     [
       buildingDepth,
+      buildingProgramSf,
       buildingPlacements,
       buildingWidth,
       parkingAdaAisleWidth,

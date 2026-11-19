@@ -12,6 +12,7 @@ import {
   type SidePanelKey,
 } from "../utils/workspaceShell";
 import type { SystemGenerationTarget } from "../utils/workflowConstants";
+import { resolveDashboardGenerationTarget } from "../utils/dashboardGenerateIntent";
 
 type AppendChatMessage = (
   role: ChatMessage["role"],
@@ -212,31 +213,10 @@ export function useDashboardActionIntentHandler({
       return true;
     }
 
-    if (/(generate|run)\b/.test(normalized)) {
-      if (/roads|circulation/.test(normalized)) {
-        void handleGenerateSystem("roads");
-        return true;
-      }
-      if (/parking/.test(normalized)) {
-        void handleGenerateSystem("parking");
-        return true;
-      }
-      if (/grading|contours/.test(normalized)) {
-        void handleGenerateSystem("grading");
-        return true;
-      }
-      if (/drainage|storm/.test(normalized)) {
-        void handleGenerateSystem("drainage");
-        return true;
-      }
-      if (/utilities|utility/.test(normalized)) {
-        void handleGenerateSystem("utilities");
-        return true;
-      }
-      if (/full|all|everything/.test(normalized)) {
-        void handleGenerateSystem("full");
-        return true;
-      }
+    const generationTarget = resolveDashboardGenerationTarget(message);
+    if (generationTarget) {
+      void handleGenerateSystem(generationTarget);
+      return true;
     }
 
     if (/(fix|improve)\b/.test(normalized)) {
