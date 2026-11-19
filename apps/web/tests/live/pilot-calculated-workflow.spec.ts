@@ -95,6 +95,11 @@ for (const { assisted, target } of [
   await expect(page.getByText("Saved results are out of date. Recalculate for this layout.", { exact: true })).toHaveCount(0);
   expect(fingerprint(await history())).toBe(storedCalculation);
   expect((await saved()).latest_result.metadata.calculation_save_v1.calculation_id).toBe(calculationId);
+  if (target === "full") {
+    await openWorkspaceTool(page, "Review");
+    await expect(page.getByTestId("review-result-truth")).toHaveAttribute("data-result-state", "current");
+    await expect(page.getByTestId("review-result-truth")).toContainText("Current calculation");
+  }
   await openWorkspaceTool(page, "Generate");
   if (target === "parking") {
     await expect(page.getByTestId("generate-parking")).toContainText("Current");
@@ -115,6 +120,13 @@ for (const { assisted, target } of [
     await widthInput.fill(String(revisedWidth));
     await widthInput.blur();
     await expect.poll(async () => (await saved()).result_freshness_v1.status, { timeout: 30_000 }).not.toBe("current");
+    await openWorkspaceTool(page, "Review");
+    await expect(page.getByTestId("review-result-truth")).toHaveAttribute("data-result-state", "stale");
+    await expect(page.getByTestId("review-result-truth")).toContainText("Recalculation required");
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
+    await page.getByTestId("civora-command-input").fill("what is blocked");
+    await page.getByTestId("civora-command-input").press("Enter");
+    await expect(page.getByText(/Recalculation required: The layout changed after the saved calculation/i)).toBeVisible();
 
     await openWorkspaceTool(page, "Generate");
     const recalculation = page.waitForResponse(value => value.request().method() === "POST" && /\/api\/(?:jobs\/)?orchestrate$/.test(value.url()), { timeout: 20_000 });
@@ -149,6 +161,9 @@ for (const { assisted, target } of [
     await page.reload();
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
     await expect(page.getByText("Saved results are out of date. Recalculate for this layout.", { exact: true })).toHaveCount(0);
+    await openWorkspaceTool(page, "Review");
+    await expect(page.getByTestId("review-result-truth")).toHaveAttribute("data-result-state", "current");
+    await expect(page.getByTestId("review-result-truth")).toContainText("Current calculation");
 
     // Exercise calculated exports from a real engine result, not an injected
     // fixture. Preliminary release must retain its engineering limitations.

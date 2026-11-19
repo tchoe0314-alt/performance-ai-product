@@ -32,6 +32,7 @@ type UseDashboardProjectResultLoaderOptions = {
   ) => void;
   resolvedProjectIdRef: MutableRefObject<string>;
   setBackendResult: StateSetter<PlanResponse | null>;
+  setSavedResultTruthState: (state: "missing" | "failed" | "historical" | "unverified" | "stale" | "current") => void;
   setPlanPreviewSummary: StateSetter<PreviewResponse["summary"] | null>;
   setPlanPreviewUrl: StateSetter<string>;
   setStatusMessage: (message: string) => void;
@@ -53,6 +54,7 @@ export function useDashboardProjectResultLoader({
   requestPreviewInBackground,
   resolvedProjectIdRef,
   setBackendResult,
+  setSavedResultTruthState,
   setPlanPreviewSummary,
   setPlanPreviewUrl,
   setStatusMessage,
@@ -80,10 +82,13 @@ export function useDashboardProjectResultLoader({
         const liveCurrent = await isLiveResultCurrent(latestResult);
         if (projectResultLoadRequestRef.current !== requestId || projectLoadRequestRef.current !== workspaceGeneration) return;
         if (!liveCurrent || data.result_freshness_v1?.status === "stale") {
+          setSavedResultTruthState("stale");
           setStatusMessage("Saved results are out of date. Recalculate for this layout.");
           return;
         }
         if (latestResult && Object.keys(latestResult).length) {
+          const disposition = String(latestResult.metadata?.calculation_save_v1?.disposition ?? "").toLowerCase();
+          setSavedResultTruthState(latestResult.success === false ? "failed" : disposition === "archived" ? "historical" : data.result_freshness_v1?.status === "current" ? "current" : "unverified");
           const activeStatus = String(visibleActiveJob?.status || "").toLowerCase();
           const hasStaleSystems = Object.values(systemStatuses).some(
             (status) => status === "stale",
@@ -118,6 +123,22 @@ export function useDashboardProjectResultLoader({
           if (activeProjectForPreview && activeProjectForPreview !== project.project_id) {
             return;
           }
+          // The result endpoint may withhold latest_result after a canonical
+          // edit even though this workspace still holds the prior saved
+          // calculation. Keep that prior output visible as stale history;
+          // clearing it would incorrectly turn "recalculate" into "missing".
+          if (backendResult && Object.keys(backendResult).length) {
+            setSavedResultTruthState("stale");
+            setStatusMessage("Saved results are out of date. Recalculate for this layout.");
+            return;
+          }
+          setSavedResultTruthState(
+            data.result_freshness_v1?.status === "stale"
+              ? "stale"
+              : data.result_freshness_v1?.status === "failed"
+                ? "failed"
+                : "missing",
+          );
           const activeStatus = String(visibleActiveJob?.status || "").toLowerCase();
           const shouldPreserveCurrentPreview =
             project.project_id &&
@@ -137,6 +158,7 @@ export function useDashboardProjectResultLoader({
         if (projectLoadRequestRef.current !== workspaceGeneration) {
           return;
         }
+        setSavedResultTruthState("failed");
         setStatusMessage(
           error instanceof Error ? error.message : "Project result load failed.",
         );
@@ -154,6 +176,7 @@ export function useDashboardProjectResultLoader({
     requestPreviewInBackground,
     resolvedProjectIdRef,
     setBackendResult,
+    setSavedResultTruthState,
     setPlanPreviewSummary,
     setPlanPreviewUrl,
     setStatusMessage,

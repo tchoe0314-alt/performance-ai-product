@@ -31,6 +31,7 @@ type AccessAnalysisIssue = {
 };
 
 type UseDashboardReviewUtilityPanelPropsInput = {
+  resultTruth: AnalysisPanelProps["resultTruth"];
   previewMode: ModelReviewPanelProps["previewMode"];
   previewQuality: ModelReviewPanelProps["previewQuality"] & WorkspaceSettingsPanelProps["previewQuality"];
   hasGradingSurface: boolean;
@@ -84,6 +85,7 @@ type UseDashboardReviewUtilityPanelPropsInput = {
 };
 
 export function useDashboardReviewUtilityPanelProps({
+  resultTruth,
   previewMode,
   previewQuality,
   hasGradingSurface,
@@ -245,6 +247,7 @@ export function useDashboardReviewUtilityPanelProps({
   }), [onPreviewLayersChange, previewLayers]);
 
   const analysisPanelProps = useMemo<AnalysisPanelProps>(() => ({
+    resultTruth,
     modelIssueCount: issues.length,
     accessIssueCount: analysisIssues.length,
     systemsCompleteCount: systemCompleteCount,
@@ -279,6 +282,7 @@ export function useDashboardReviewUtilityPanelProps({
     onAnalyzeSiteAccess,
     onApplyDrainageIssue,
     onOpenDashboard,
+    resultTruth,
     systemCompleteCount,
   ]);
 

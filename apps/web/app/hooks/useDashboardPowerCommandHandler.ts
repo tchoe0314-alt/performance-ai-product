@@ -1,5 +1,7 @@
 import { useCallback, type MutableRefObject } from "react";
 import { parseDashboardGeometryCommand, buildDashboardGeometryCommandUpdates } from "../utils/dashboardGeometryCommands";
+import { objectTargetClarification, resolveDashboardObjectTarget } from "../utils/dashboardObjectTargetResolver";
+import type { DashboardResultTruth } from "../utils/dashboardResultTruth";
 import { canonicalConceptReplacementBlocker } from "../utils/canonicalEditCommands";
 import type { CanonicalBatchEdit } from "../utils/canonicalBatchTransaction";
 import { buildDraftObjectResizeUpdates } from "../utils/objectGeometry";
@@ -155,6 +157,7 @@ type UseDashboardPowerCommandHandlerInput = {
   updateProjectStatus: (summary: Omit<ProjectStatusSummary, "updatedAt">) => void;
   workflowActionHints: string[];
   workflowReviewDashboard: WorkflowReviewDashboard;
+  resultTruth: DashboardResultTruth;
 };
 
 export function useDashboardPowerCommandHandler({
@@ -218,6 +221,7 @@ export function useDashboardPowerCommandHandler({
   updateProjectStatus,
   workflowActionHints,
   workflowReviewDashboard,
+  resultTruth,
 }: UseDashboardPowerCommandHandlerInput) {
   const tryHandleSiteProgramCommand = useCallback((message: string): boolean => {
     const lower = normalizeDashboardChatIntent(message)
@@ -503,36 +507,28 @@ export function useDashboardPowerCommandHandler({
     if (/\b(stamp|seal|sign|certify|approve construction|submit construction documents|engineer of record|eor)\b/.test(normalized)) {
       return refuseUnsafeConstructionCommand(message);
     }
-    const resolveEditableTarget = (targetText: string) => {
-      const selectedTarget = activePlacementId
-        ? buildingPlacements.find((item) => item.id === activePlacementId)
-        : null;
-      if (selectedTarget) return selectedTarget;
-      const cleaned = targetText.replace(/\b(?:the|selected|object|move|resize|set|make|change)\b/g, " ").replace(/\s+/g, " ").trim();
-      if (!cleaned) return null;
-      const matches = buildingPlacements.filter((item) => `${item.label} ${item.type ?? ""}`.toLowerCase().replaceAll("_", " ").includes(cleaned));
-      return matches.length === 1 ? matches[0] : null;
-    };
     const geometryCommand = parseDashboardGeometryCommand(message, "strict");
     if (geometryCommand?.kind === "move") {
-      const target = resolveEditableTarget(geometryCommand.targetText);
+      const resolution = resolveDashboardObjectTarget({ objects: buildingPlacements, selectedId: activePlacementId, targetText: geometryCommand.targetText });
       appendChatMessage("user", message);
-      if (!target) {
-        appendChatMessage("assistant", "Select one object first, then tell me how far and which direction to move it.", "status");
+      if (resolution.status !== "resolved") {
+        appendChatMessage("assistant", objectTargetClarification(resolution, "move"), "status");
         return true;
       }
+      const target = resolution.object;
       const { distance, direction } = geometryCommand;
       const outcome = handleUpdateBuilding(target.id, buildDashboardGeometryCommandUpdates(target, geometryCommand));
       appendChatMessage("assistant", outcome === "proposed" ? `Move proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The move to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Moved ${target.label} ${distance} ft ${direction}. The CAD canvas and chat now use the same canonical edit command.`, "status");
       return true;
     }
     if (geometryCommand?.kind === "resize") {
-      const target = resolveEditableTarget(geometryCommand.targetText);
+      const resolution = resolveDashboardObjectTarget({ objects: buildingPlacements, selectedId: activePlacementId, targetText: geometryCommand.targetText });
       appendChatMessage("user", message);
-      if (!target) {
-        appendChatMessage("assistant", "Select one object first, then provide its width and depth.", "status");
+      if (resolution.status !== "resolved") {
+        appendChatMessage("assistant", objectTargetClarification(resolution, "resize"), "status");
         return true;
       }
+      const target = resolution.object;
       const { width, depth } = geometryCommand;
       const outcome = handleUpdateBuilding(target.id, buildDashboardGeometryCommandUpdates(target, geometryCommand));
       appendChatMessage("assistant", outcome === "proposed" ? `Resize proposed for ${target.label}; review the complete transaction before applying. The working plan is unchanged.` : outcome === "blocked" ? `The resize to ${target.label} was blocked. Review the object status; the working plan is unchanged.` : `Resized ${target.label} to ${width} ft by ${depth} ft through the canonical edit system.`, "status");
@@ -549,24 +545,13 @@ export function useDashboardPowerCommandHandler({
       const requestedHeight = Number(heightCommand[2]);
       const isHeightCapable = (item: BuildingPlacement) =>
         /building|office|structure/.test(`${item.type || ""} ${item.label || ""}`.toLowerCase());
-      const selectedTarget = activePlacementId
-        ? buildingPlacements.find((item) => item.id === activePlacementId && isHeightCapable(item))
-        : null;
-      const namedTarget = buildingPlacements.find((item) => {
-        if (!isHeightCapable(item)) return false;
-        const searchable = `${item.label || ""} ${item.type || ""}`.toLowerCase().replaceAll("_", " ");
-        return targetPhrase === "building" || targetPhrase === "" || searchable.includes(targetPhrase);
-      });
-      const target = selectedTarget ?? namedTarget;
+      const resolution = resolveDashboardObjectTarget({ objects: buildingPlacements.filter(isHeightCapable), selectedId: activePlacementId, targetText: targetPhrase });
       appendChatMessage("user", message);
-      if (!target) {
-        appendChatMessage(
-          "assistant",
-          "Select a building first, or include its name, then give me the height in feet.",
-          "status",
-        );
+      if (resolution.status !== "resolved") {
+        appendChatMessage("assistant", objectTargetClarification(resolution, "change the height of"), "status");
         return true;
       }
+      const target = resolution.object;
       if (!Number.isFinite(requestedHeight) || requestedHeight < 1 || requestedHeight > 500) {
         appendChatMessage("assistant", "Building height must be between 1 ft and 500 ft.", "status");
         return true;
@@ -930,6 +915,7 @@ export function useDashboardPowerCommandHandler({
     if (/^(what is blocked|what blocked|what needs input|what needs attention)(?: right now)?$/.test(intentText)) {
       appendChatMessage("user", message);
       const blockers = userFacingWorkflowNeeds(uniqueStrings([
+        resultTruth.state === "current" ? "" : `${resultTruth.label}: ${resultTruth.reason}`,
         projectStatusSummary.state === "blocked" ? `${projectStatusSummary.title}: ${projectStatusSummary.detail}` : "",
         ...issues.map((issue) => issue.message),
         ...analysisIssues.map((issue) => issue.message),
@@ -1033,5 +1019,6 @@ export function useDashboardPowerCommandHandler({
     updateProjectStatus,
     workflowActionHints,
     workflowReviewDashboard,
+    resultTruth,
   ]);
 }

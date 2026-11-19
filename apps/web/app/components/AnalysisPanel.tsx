@@ -9,6 +9,7 @@ type AnalysisPanelIssue = {
 };
 
 type AnalysisPanelProps = {
+  resultTruth: import("../utils/dashboardResultTruth").DashboardResultTruth;
   modelIssueCount: number;
   accessIssueCount: number;
   systemsCompleteCount: number;
@@ -19,6 +20,7 @@ type AnalysisPanelProps = {
 };
 
 export function AnalysisPanel({
+  resultTruth,
   modelIssueCount,
   accessIssueCount,
   systemsCompleteCount,
@@ -32,6 +34,10 @@ export function AnalysisPanel({
 
   return (
     <div className="space-y-3" data-testid="clean-review-panel">
+      <section className={`rounded-[8px] border p-3 ${resultTruth.state === "current" ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`} data-testid="review-result-truth" data-result-state={resultTruth.state}>
+        <p className="text-sm font-semibold text-slate-950">{resultTruth.label}</p>
+        <p className="mt-1 text-xs leading-5 text-slate-600">{resultTruth.reason}</p>
+      </section>
       <section className="rounded-[8px] border border-slate-200 bg-white p-3">
         <div className="flex items-start gap-3">
           <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] ${hasAttentionItems ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
@@ -45,7 +51,7 @@ export function AnalysisPanel({
                   ? "Setup needs input before a full review"
                   : "No active review issues"}
             </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">{systemsCompleteCount} systems current · {blockedSystemCount} need input</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{resultTruth.canClaimSystemsCurrent ? systemsCompleteCount : 0} systems current · {blockedSystemCount} need input</p>
           </div>
         </div>
         <div className="mt-3 grid grid-cols-2 divide-x divide-slate-100 border-y border-slate-100 py-2 text-center text-xs">

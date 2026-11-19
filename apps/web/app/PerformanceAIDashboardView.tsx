@@ -233,6 +233,7 @@ import { useDashboardDesignControls } from "./hooks/useDashboardDesignControls";
 import { useDashboardSiteRestore } from "./hooks/useDashboardSiteRestore";
 import { ensureDashboardProjectDraft } from "./utils/dashboardProjectDraft";
 import { importedParcelBoundaryFromProjectInput } from "./utils/importedParcelBoundary";
+import { buildDashboardResultTruth, type DashboardResultTruthState } from "./utils/dashboardResultTruth";
 import { createDashboardPlanExecutor, isConnectivityFailureMessage } from "./utils/dashboardPlanExecution";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
 import { isLiveCalculationCurrent, liveInputFingerprint } from "./utils/liveCalculationFreshness";
@@ -466,6 +467,7 @@ function PerformanceAIDashboardView({
     useState<Assumption[]>(defaultAssumptions);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [backendResult, setBackendResult] = useState<PlanResponse | null>(null);
+  const [savedResultTruthState, setSavedResultTruthState] = useState<DashboardResultTruthState>("missing");
   const [planSheetSet, setPlanSheetSet] = useState<PlanSheetSet>(() =>
     createDefaultPlanSheetSet("Untitled Project"),
   );
@@ -1198,12 +1200,15 @@ function PerformanceAIDashboardView({
 
   const applyBackendResult = (data: PlanResponse) => {
     setBackendResult(data);
+    const disposition = String(data.metadata?.calculation_save_v1?.disposition ?? "").toLowerCase();
+    setSavedResultTruthState(data.success === false ? "failed" : disposition === "archived" ? "historical" : disposition === "active" ? "current" : "unverified");
     setAssumptions(buildDashboardAssumptionsFromPlanResult(data));
     setIssues(buildDashboardIssuesFromPlanResult(data));
     setSystemStatuses((prev) => applyDashboardReactiveSystemStatusFromPlanResult(data, prev));
   };
   const isLiveResultCurrent = (data: PlanResponse) => isLiveCalculationCurrent(data, () => payloadPreviewRef.current);
   const [resultIsStale, setResultIsStale] = useState(false);
+  const resultTruth = useMemo(() => buildDashboardResultTruth({ result: backendResult, freshness: savedResultTruthState, localStale: resultIsStale }), [backendResult, resultIsStale, savedResultTruthState]);
   useEffect(() => {
     let cancelled = false;
     void isLiveCalculationCurrent(backendResult ?? {}, () => payloadPreview).then(current => {
@@ -1524,6 +1529,10 @@ function PerformanceAIDashboardView({
     setPlanPreviewUrl("");
     setPlanPreviewSummary(null);
     setPlanPreviewAnnotations(null);
+    // Clearing rendered/generated geometry after a canonical edit must not
+    // erase the fact that a prior saved calculation exists. Review should
+    // describe it as stale until a successful recalculation replaces it.
+    setSavedResultTruthState((state) => state === "current" || state === "unverified" ? "stale" : state);
     setBackendResult(null);
     setPlanPreviewProjectId(null);
     debugLog("clear-generated-preview");
@@ -3432,6 +3441,7 @@ function PerformanceAIDashboardView({
     requestPreviewInBackground,
     resolvedProjectIdRef,
     setBackendResult,
+    setSavedResultTruthState,
     setPlanPreviewSummary,
     setPlanPreviewUrl,
     setStatusMessage,
@@ -4885,6 +4895,7 @@ function PerformanceAIDashboardView({
     updateProjectStatus,
     workflowActionHints,
     workflowReviewDashboard,
+    resultTruth,
   });
   const { handleContinuePendingClarification, handlePromptKeyDown, handleSendMessage } = useDashboardChatSendHandlers({
     activeJob: visibleActiveJob,
@@ -5557,6 +5568,7 @@ function PerformanceAIDashboardView({
     modelReviewPanelProps,
     workspaceSettingsPanelProps,
   } = useDashboardReviewUtilityPanelProps({
+    resultTruth,
     objectTypeLibrary: (currentProject?.project_input?.canonical_project_v1?.extensions as {object_type_library_v1?: Record<string, import("./utils/siteObjectDefinition").CustomTypeDefinition>} | undefined)?.object_type_library_v1,
     previewMode,
     previewQuality,
