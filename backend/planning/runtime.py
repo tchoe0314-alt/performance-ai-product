@@ -161,6 +161,7 @@ def is_bounded_diagnostic_marker(value: Any) -> bool:
 
 
 _PLAN_META_KEYS = {
+    "calculation_engine_revision",
     "planner_workflow",
     "planner_pass_count",
     "option_name",

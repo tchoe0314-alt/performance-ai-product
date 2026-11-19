@@ -812,6 +812,17 @@ def build_orchestrate_job_runner(
             ).get("statuses")
             or {}
         )
+        if checkpoint:
+            # A checkpoint is the authoritative state of this execution, not
+            # a patch over the prior active calculation. Carrying old complete
+            # statuses across a new layout revision caused grading, drainage,
+            # utilities, and quantities to be skipped after the layout hold.
+            checkpoint_statuses = dict(
+                dict(dict(checkpoint.get("meta") or {}).get("stage_completeness") or {}).get("statuses")
+                or {}
+            )
+            if checkpoint_statuses:
+                stage_statuses = checkpoint_statuses
         existing_phase_checkpoints = dict(
             dict(dict(latest_result.get("final_plan") or {}).get("meta") or {}).get("phase_checkpoints")
             or dict(dict(latest_result.get("metadata") or {}).get("run_summary") or {}).get("phase_checkpoints")
@@ -1331,6 +1342,9 @@ def build_orchestrate_job_runner(
             "qa": "Validation Phase",
         }
 
+        persisted_runtime_checkpoint_stages: set[str] = set()
+        final_tail_resume = False
+
         def _phase_progress_callback(
             stage_name: str,
             status: str,
@@ -1350,7 +1364,18 @@ def build_orchestrate_job_runner(
                 progress=int(progress or 48),
             )
             normalized_status = str(status or "").strip().lower()
-            if checkpoint is not None or normalized_status in {"complete", "failed"}:
+            final_tail_stage = str(stage_name or "") in {
+                "coordination_resolution",
+                "earthwork",
+                "sheets",
+                "qa",
+            }
+            should_persist_phase = not (
+                final_tail_resume
+                and final_tail_stage
+                and normalized_status == "complete"
+            )
+            if should_persist_phase and (checkpoint is not None or normalized_status in {"complete", "failed"}):
                 _persist_runtime_phase_checkpoint(
                     user_id=user_id,
                     project_id=project_id,
@@ -1362,6 +1387,8 @@ def build_orchestrate_job_runner(
                     progress=int(progress or 48),
                     checkpoint=checkpoint,
                 )
+                if checkpoint is not None and normalized_status == "complete" and stage_name:
+                    persisted_runtime_checkpoint_stages.add(str(stage_name))
 
         if job_id:
             update_job_progress(
@@ -1409,18 +1436,42 @@ def build_orchestrate_job_runner(
                     run_payload["meta"] = run_meta
         run_meta = dict(run_payload.get("meta") or {})
         orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
-        requested_batch_limit = safe_int(orchestrator_meta.get("runtime_phase_batch_limit"), 0)
-        if requested_batch_limit <= 0:
-            requested_batch_limit = safe_int(run_meta.get("runtime_phase_batch_limit"), 0)
-        if requested_batch_limit <= 0:
-            requested_batch_limit = 1
-        orchestrator_meta["runtime_phase_batch_limit"] = requested_batch_limit
-        run_meta["orchestrator_meta"] = orchestrator_meta
         approved_stages = [
             str(item).strip()
             for item in list(orchestrator_meta.get("runtime_approved_stages") or [])
             if str(item).strip()
         ]
+        runtime_resume = dict(orchestrator_meta.get("runtime_resume") or {})
+        resumed_statuses = {
+            str(name).strip(): str(status).strip().lower()
+            for name, status in dict(runtime_resume.get("stage_statuses") or {}).items()
+        }
+        approval_stages = (
+            "layout",
+            "grading",
+            "drainage",
+            "storm_pipes",
+            "sanitary",
+            "utility_network",
+        )
+        final_tail_resume = bool(runtime_resume) and all(
+            resumed_statuses.get(stage_name) in {"complete", "assumed"}
+            or stage_name in approved_stages
+            for stage_name in approval_stages
+        )
+        requested_batch_limit = safe_int(orchestrator_meta.get("runtime_phase_batch_limit"), 0)
+        if requested_batch_limit <= 0:
+            requested_batch_limit = safe_int(run_meta.get("runtime_phase_batch_limit"), 0)
+        if final_tail_resume:
+            # Once every user-review stage has a revision-matched persisted
+            # checkpoint, finish coordination, quantities, sheets, and QA in
+            # one tail. These packaging stages have no separate user decision;
+            # yielding after Coordination made a partial result look terminal.
+            requested_batch_limit = 0
+        elif requested_batch_limit <= 0:
+            requested_batch_limit = 1
+        orchestrator_meta["runtime_phase_batch_limit"] = requested_batch_limit
+        run_meta["orchestrator_meta"] = orchestrator_meta
         if approved_stages:
             # PlannerOrchestratorRequest.meta is wrapped once more as
             # parsed.meta.orchestrator_meta. Mirror runtime controls at this
@@ -1457,14 +1508,19 @@ def build_orchestrate_job_runner(
                 enriched_metadata["runtime_phase_checkpoint"] = runtime_checkpoint
             enriched["metadata"] = enriched_metadata
         if project_id and user_id:
-            if job_id:
+            checkpoint_already_persisted = (
+                runtime_should_continue
+                and bool(stage_name)
+                and stage_name in persisted_runtime_checkpoint_stages
+            )
+            if job_id and not checkpoint_already_persisted:
                 update_job_progress(
                     job_id,
                     stage="Saving Project",
                     detail="Saving the latest design state back into the project.",
                     progress=76,
                 )
-            if existing is not None:
+            if existing is not None and not checkpoint_already_persisted:
                 existing_result = _load_project_latest_result(
                     project_store=project_store,
                     user_id=user_id,

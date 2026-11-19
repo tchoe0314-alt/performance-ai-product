@@ -284,7 +284,13 @@ for (const { assisted, target } of [
       }
       if (job.status === "awaiting_approval") {
         const proceed = page.getByTestId("generate-main-action");
-        if ((await proceed.textContent())?.includes("Continue after")) await proceed.click();
+        if ((await proceed.textContent())?.includes("Continue after") && await proceed.isEnabled()) {
+          // The job poller can switch this control to "Starting next stage"
+          // between reading its label and clicking it. That is a normal
+          // in-flight transition; retry on the next poll instead of blocking
+          // the entire acceptance loop on a now-disabled button.
+          await proceed.click({ timeout: 2_000 }).catch(() => undefined);
+        }
       }
       return job.status;
     }, { timeout: 120_000, intervals: [1000] }).toBe("completed");
@@ -298,6 +304,15 @@ for (const { assisted, target } of [
     const revisedBuildingArea = revisedCheckpoint.latest_result.final_plan.meta.quantities?.totals?.building_area_sf;
     expect(revisedBuildingArea).toBe(15_300);
     expect(revisedBuildingArea - initialBuildingArea).toBe(900);
+    const revisedStages = revisedCheckpoint.latest_result.final_plan.meta.stage_results ?? [];
+    for (const stageName of ["grading", "drainage", "storm_pipes", "sanitary", "utility_network"]) {
+      const stages = revisedStages.filter((item: { stage_name?: string }) => item.stage_name === stageName);
+      expect(stages.length, `${stageName} must remain in the building-resize dependency closure`).toBeGreaterThan(0);
+      expect(
+        stages.some((stage: { meta?: { resumed_from_checkpoint?: boolean } }) => !(stage.meta?.resumed_from_checkpoint ?? false)),
+        `${stageName} must include an executed result for the revised model`,
+      ).toBe(true);
+    }
     checkpoint = revisedCheckpoint;
     const branchDialog = page.getByTestId("project-tab-branch-dialog");
     if (await branchDialog.isVisible().catch(() => false)) {

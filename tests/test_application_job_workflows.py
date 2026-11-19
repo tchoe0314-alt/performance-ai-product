@@ -1121,6 +1121,13 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             nonlocal seen_meta
             payload = _canonical_calculation_payload(payload)
             seen_meta = dict(payload.get("meta") or {})
+            progress_callback(
+                "grading",
+                "complete",
+                30,
+                "Grading checkpoint saved.",
+                checkpoint=existing_final_plan,
+            )
             return {
                 "success": True,
                 "final_plan": existing_final_plan,
@@ -1193,6 +1200,95 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             {"layout": "complete"},
         )
         self.assertEqual(seen_meta.get("runtime_approved_stages"), ["storm_pipes"])
+        self.assertEqual(len(store.save_calls), 1, "A confirmed yielded checkpoint must not be saved twice.")
+
+    def test_build_orchestrate_job_runner_finishes_tail_only_after_all_review_stages_are_current(self):
+        from backend.services.canonical_record import seal_record
+
+        approval_stages = (
+            "layout",
+            "grading",
+            "drainage",
+            "storm_pipes",
+            "sanitary",
+            "utility_network",
+        )
+        statuses = {stage_name: "complete" for stage_name in approval_stages}
+        final_plan = {
+            "project_name": "Demo",
+            "meta": {
+                "stage_completeness": {"statuses": statuses},
+                "phase_checkpoints": {
+                    stage_name: {"status": "complete", "ready": True}
+                    for stage_name in approval_stages
+                },
+            },
+        }
+        sealed_input = seal_record({"name": "Demo", "project_input": {"prompt_text": "run", "meta": {}}})[
+            "project_input"
+        ]
+        store = FakeProjectStore(
+            {
+                "user_id": "u1",
+                "project_id": "p1",
+                "name": "Demo",
+                "description": "",
+                "session_id": None,
+                "tags": [],
+                "project_input": sealed_input,
+                "latest_result": {"final_plan": final_plan},
+                "session_state": {},
+                "metadata": {},
+            }
+        )
+        seen_limits = []
+
+        def run_orchestration(payload, progress_callback=None):
+            seen_limits.append(
+                dict(dict(payload.get("meta") or {}).get("orchestrator_meta") or {}).get(
+                    "runtime_phase_batch_limit"
+                )
+            )
+            for stage_name in ("coordination_resolution", "earthwork", "sheets", "qa"):
+                progress_callback(
+                    stage_name,
+                    "complete",
+                    94,
+                    f"{stage_name} complete.",
+                    checkpoint=final_plan,
+                )
+            return {"success": True, "final_plan": final_plan, "metadata": {}}
+
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=lambda *_args, **_kwargs: None,
+            run_orchestration=run_orchestration,
+            build_run_summary=lambda result, **kwargs: {
+                "run_id": "tail",
+                "convergence_summary": {},
+                "reliability_summary": {},
+                "phase_checkpoints": final_plan["meta"]["phase_checkpoints"],
+                "requested_deliverables": [],
+                "produced_deliverables": [],
+                "ready_deliverables": [],
+                "extra_deliverables": [],
+                "failed_deliverables": [],
+            },
+            merge_project_metadata=lambda metadata, **kwargs: metadata,
+            final_plan_from_result=lambda result, **kwargs: final_plan,
+        )
+        runner(
+            {
+                "job_id": "job_tail",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {**sealed_input, "prompt_text": "run"},
+            }
+        )
+
+        self.assertEqual(seen_limits, [0])
+        self.assertEqual(len(store.save_calls), 1, "The no-hold final tail saves only its terminal result.")
 
     def test_build_orchestrate_job_runner_restores_runtime_continue_from_final_plan_checkpoint(self):
         yielded_final_plan = {

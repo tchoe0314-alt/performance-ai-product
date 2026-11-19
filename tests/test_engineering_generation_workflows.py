@@ -291,6 +291,34 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
         checkpoint = resumed["meta"]["runtime_phase_checkpoint"]
         self.assertNotEqual(checkpoint["stage_name"], "layout")
 
+    def test_runtime_checkpoint_preserves_current_engine_provenance_without_recertifying_unknown_resume(self) -> None:
+        from backend.services.canonical_results import ENGINE_REVISION
+
+        fresh_payload = _supported_minimal_payload()
+        fresh_payload["meta"] = {"orchestrator_meta": {"runtime_phase_batch_limit": 1}}
+        fresh_checkpoint = planner.build_plan(fresh_payload)
+        self.assertEqual(fresh_checkpoint["meta"]["calculation_engine_revision"], ENGINE_REVISION)
+
+        unknown_payload = _supported_minimal_payload()
+        unknown_payload["meta"] = {
+            "orchestrator_meta": {
+                "runtime_phase_batch_limit": 1,
+                "runtime_approved_stages": ["layout"],
+                "runtime_resume": {
+                    "final_plan": {
+                        "actions": fresh_checkpoint.get("actions", []),
+                        "meta": {
+                            "stage_completeness": {"statuses": {"layout": "complete"}},
+                            "runtime_phase_checkpoint": {"stage_name": "layout", "yielded": True},
+                        },
+                    },
+                    "stage_statuses": {"layout": "complete"},
+                },
+            }
+        }
+        unknown_checkpoint = planner.build_plan(unknown_payload)
+        self.assertNotIn("calculation_engine_revision", unknown_checkpoint["meta"])
+
     def test_sparse_approved_layout_checkpoint_rehydrates_user_building(self) -> None:
         payload = _supported_minimal_payload()
         payload["buildings"] = [{"id": "B-1", "name": "Office", "x": 40, "y": 50, "w": 70, "d": 40}]

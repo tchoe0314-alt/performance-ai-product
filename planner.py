@@ -9836,6 +9836,12 @@ def _run_model_first_workflow(
     manager.project.meta["preferred_corridors"] = _preferred_corridors(parsed, manager.project)
     orchestrator_meta = safe_dict(safe_dict(parsed.get("meta")).get("orchestrator_meta"))
     runtime_phase_batch_limit = max(0, safe_int(orchestrator_meta.get("runtime_phase_batch_limit"), 0))
+    runtime_resume_plan = safe_dict(safe_dict(orchestrator_meta.get("runtime_resume")).get("final_plan"))
+    from backend.services.canonical_results import ENGINE_REVISION
+    runtime_checkpoint_engine_is_current = (
+        not runtime_resume_plan
+        or safe_str(safe_dict(runtime_resume_plan.get("meta")).get("calculation_engine_revision")) == ENGINE_REVISION
+    )
 
     class _RuntimePhaseYield(Exception):
         def __init__(self, plan: Dict[str, Any], stage_name: str, message: str) -> None:
@@ -10085,6 +10091,12 @@ def _run_model_first_workflow(
         checkpoint_plan["meta"]["routing"] = {"path": route.path, "reasons": list(route.reasons)}
         checkpoint_plan["meta"]["option_name"] = option_name
         checkpoint_plan["meta"]["option_family"] = option_family
+        # This marker is provenance, not approval. A checkpoint created from a
+        # fresh/current engine chain may carry the current revision so the next
+        # approved continuation does not become historical merely because it
+        # crossed a persisted hold. Never recertify an old/unknown checkpoint.
+        if runtime_checkpoint_engine_is_current:
+            checkpoint_plan["meta"]["calculation_engine_revision"] = ENGINE_REVISION
         checkpoint_plan["meta"]["runtime_phase_checkpoint"] = {
             "stage_name": stage_name,
             "status": "complete",
