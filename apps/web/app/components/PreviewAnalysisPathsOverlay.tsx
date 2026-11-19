@@ -22,7 +22,7 @@ export function PreviewAnalysisPathsOverlay({
   if (!analysisPaths?.length) return null;
 
   return (
-    <svg className="absolute inset-0" viewBox="0 0 100 100" preserveAspectRatio="none">
+    <svg className="absolute inset-0" viewBox="0 0 100 100" preserveAspectRatio="none" data-testid="analysis-paths-overlay">
       {analysisPaths.map((path) => {
         const isSelected = analysisHighlight?.pathId === path.id;
         const points = path.points?.length ? path.points : [path.from, path.to];
@@ -35,7 +35,7 @@ export function PreviewAnalysisPathsOverlay({
         const labelPoint = points[Math.floor(points.length / 2)] ?? path.from;
         const [labelX, labelY] = sitePointToPreviewPercent([labelPoint.x, labelPoint.y]);
         return (
-          <g key={path.id}>
+          <g key={path.id} data-testid={`analysis-path-${path.id}`}>
             <polyline
               points={coords}
               fill="none"

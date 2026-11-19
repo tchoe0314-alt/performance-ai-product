@@ -50,7 +50,7 @@ export function useDashboardSiteAccessAnalysis({
 }: UseDashboardSiteAccessAnalysisOptions) {
   return useCallback(() => {
     const confirmed = buildingPlacements.filter(
-      (item) => item.placed && (item.source === "user" || item.source === "user_confirmed"),
+      (item) => item.placed && (item.source === "user" || item.source === "user_confirmed" || item.source === "manual_drawn"),
     );
     const accessTypes = new Set<SiteObjectType>(["road", "entrance", "parking", "sidewalk", "driveway"]);
     const buildingTypes = new Set<SiteObjectType>([
