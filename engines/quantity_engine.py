@@ -178,6 +178,84 @@ def _dedupe_keep_order(values: Sequence[Any]) -> List[Any]:
     return out
 
 
+def _construction_takeoff(meta: Dict[str, Any], *, legacy_feet: bool) -> Dict[str, Any]:
+    """Build review quantities without inventing a universal bid measurement basis."""
+    storm = _safe_dict(meta.get("storm_pipes") or meta.get("storm"))
+    sanitary = _safe_dict(meta.get("sanitary") or meta.get("sanitary_summary"))
+    utilities = _safe_dict(meta.get("utilities") or meta.get("utility_summary"))
+    drainage = _safe_dict(meta.get("drainage") or meta.get("drainage_summary"))
+    utility_segments = _safe_list(_safe_dict(utilities.get("conflict_hooks")).get("utility_segments"))
+    if not utility_segments:
+        utility_segments = _safe_list(utilities.get("segments") or utilities.get("routes"))
+    pipe_sources = [
+        ("storm", _safe_list(storm.get("segments"))),
+        ("sanitary", _safe_list(sanitary.get("segments"))),
+        ("utility", utility_segments),
+    ]
+    pipe_groups: Dict[Tuple[str, float | None, str], Dict[str, Any]] = {}
+    for default_system, raw_segments in pipe_sources:
+        for raw_segment in raw_segments:
+            segment = _safe_dict(raw_segment)
+            system = _safe_str(segment.get("system_type") or segment.get("system"), default_system).lower()
+            raw_diameter = segment.get("diameter_in", segment.get("diameter_inches", segment.get("diameter")))
+            diameter = _safe_float(raw_diameter, 0.0) if raw_diameter is not None else None
+            default_basis = "centerline_horizontal" if segment.get("path") or segment.get("route_points") else "source_reported_unspecified"
+            basis = _safe_str(segment.get("measurement_basis"), default_basis)
+            key = (system, diameter, basis)
+            row = pipe_groups.setdefault(key, {
+                "system": system, "diameter_in": diameter, "measurement_basis": basis,
+                "horizontal_length_ft": 0.0, "three_dimensional_length_ft": None, "source_object_ids": [],
+            })
+            row["horizontal_length_ft"] += _route_length_ft(segment, legacy_feet=legacy_feet)
+            length_3d = segment.get("length_3d_ft")
+            if length_3d is not None:
+                if row["three_dimensional_length_ft"] is None:
+                    row["three_dimensional_length_ft"] = 0.0
+                row["three_dimensional_length_ft"] += _route_length_ft({"length_ft": length_3d}, legacy_feet=True)
+            source_id = _safe_str(segment.get("id") or segment.get("name") or segment.get("pipe"))
+            if source_id:
+                row["source_object_ids"].append(source_id)
+    pipe_rows = []
+    for row in pipe_groups.values():
+        row["horizontal_length_ft"] = _round(row["horizontal_length_ft"])
+        if row["three_dimensional_length_ft"] is not None:
+            row["three_dimensional_length_ft"] = _round(row["three_dimensional_length_ft"])
+        row["source_object_ids"] = _dedupe_keep_order(row["source_object_ids"])
+        pipe_rows.append(row)
+    pipe_rows.sort(key=lambda row: (row["system"], row["diameter_in"] is None, row["diameter_in"] or 0, row["measurement_basis"]))
+
+    structure_sources = [
+        ("storm", _safe_list(drainage.get("structures")) or _safe_list(storm.get("structures"))),
+        ("sanitary", _safe_list(sanitary.get("manholes")) or _safe_list(sanitary.get("structures"))),
+        ("utility", _safe_list(utilities.get("structures"))),
+    ]
+    structure_groups: Dict[Tuple[str, str], set[str]] = {}
+    for default_system, raw_structures in structure_sources:
+        for index, raw_structure in enumerate(raw_structures):
+            structure = _safe_dict(raw_structure)
+            system = _safe_str(structure.get("system_type") or structure.get("system"), default_system).lower()
+            structure_type = _safe_str(structure.get("structure_type") or structure.get("canonical_type") or structure.get("type"), "structure").lower()
+            source_id = _safe_str(structure.get("id") or structure.get("name"), f"{system}:{structure_type}:{index}")
+            structure_groups.setdefault((system, structure_type), set()).add(source_id)
+    structure_rows = [
+        {"system": system, "structure_type": structure_type, "count": len(source_ids), "source_object_ids": sorted(source_ids)}
+        for (system, structure_type), source_ids in sorted(structure_groups.items())
+    ]
+
+    grading = _safe_dict(meta.get("grading") or meta.get("grading_summary"))
+    earthwork = _safe_dict(grading.get("earthwork") or meta.get("earthwork") or meta.get("earthwork_summary"))
+    return {
+        "earthwork": {
+            "cut_cy": _round(_safe_float(earthwork.get("cut_cf"), 0.0) / 27.0),
+            "fill_cy": _round(_safe_float(earthwork.get("fill_cf"), 0.0) / 27.0),
+            "derivation_method": "canonical_cut_and_fill_cf_divided_by_27",
+            "haul_quantity_inferred": False,
+        },
+        "pipes_by_system_and_diameter": pipe_rows,
+        "structures_by_system_and_type": structure_rows,
+    }
+
+
 def _manager_export(plan: Dict[str, Any]) -> Dict[str, Any]:
     return _safe_dict(_safe_dict(plan.get("meta")).get("manager_export"))
 
@@ -1010,6 +1088,8 @@ class QuantityEngine:
         if not math.isfinite(impervious_ratio):
             raise QuantityInputError("Quantity coverage ratio exceeds the numeric domain.")
 
+        construction_takeoff = _construction_takeoff(meta, legacy_feet=drawing_to_ft == 1.0)
+
         # ---------------------------------------------------------------------
         # Tables
         # ---------------------------------------------------------------------
@@ -1129,6 +1209,8 @@ class QuantityEngine:
             "coordination_unresolved_conflict_count": unit_counts["coordination_unresolved_conflict_count"],
             "fg_contour_count": unit_counts["fg_contour_count"],
             "eg_contour_count": unit_counts["eg_contour_count"],
+            "earthwork_cut_cy": construction_takeoff["earthwork"]["cut_cy"],
+            "earthwork_fill_cy": construction_takeoff["earthwork"]["fill_cy"],
         }
 
         tables = {
@@ -1137,6 +1219,7 @@ class QuantityEngine:
             "area_takeoff": area_table,
             "linear_takeoff": linear_table,
             "feature_counts": feature_table,
+            "construction_takeoff": construction_takeoff,
         }
 
         explain = {
