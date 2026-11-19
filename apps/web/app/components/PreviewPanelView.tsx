@@ -374,6 +374,9 @@ export default function PreviewPanel({
   const cadWindowSelectRef = useRef<typeof cadWindowSelect>(null);
   const [draggingBuildingId, setDraggingBuildingId] = useState<string | null>(null);
   const [draggingMode, setDraggingMode] = useState<"move" | "resize" | "rotate" | "vertex" | null>(null);
+  const [dragPreviewPlacement, setDragPreviewPlacement] = useState<BuildingPlacement | null>(null);
+  const dragPreviewPlacementRef = useRef<BuildingPlacement | null>(null);
+  const dragPreviewDirtyRef = useRef(false);
   const [draggingVertex, setDraggingVertex] = useState<{ id: string; index: number } | null>(null);
   const [hoveredVertex, setHoveredVertex] = useState<{ id: string; index: number } | null>(null);
   const [hoveredSegment, setHoveredSegment] = useState<{ id: string; index: number } | null>(null);
@@ -877,6 +880,12 @@ export default function PreviewPanel({
     }),
     [buildingPlacements, cadEntityPreviewObjects, getCadLayer, hiddenCadLayers],
   );
+  const previewVisibleCadObjects = useMemo(
+    () => dragPreviewPlacement
+      ? visibleCadObjects.map((item) => item.id === dragPreviewPlacement.id ? dragPreviewPlacement : item)
+      : visibleCadObjects,
+    [dragPreviewPlacement, visibleCadObjects],
+  );
   const cadReferenceMode = useMemo(
     () =>
       visibleCadObjects.some(
@@ -949,12 +958,12 @@ export default function PreviewPanel({
     setSourceLayerVisibility((current) => ({ ...current, [layer]: !current[layer] }));
   }, []);
   const detectedExistingObjects = useMemo(
-    () => visibleCadObjects.filter(isDetectedExistingPlacement),
-    [visibleCadObjects],
+    () => previewVisibleCadObjects.filter(isDetectedExistingPlacement),
+    [previewVisibleCadObjects],
   );
   const proposedDesignObjects = useMemo(
-    () => visibleCadObjects.filter((item) => !isDetectedExistingPlacement(item)),
-    [visibleCadObjects],
+    () => previewVisibleCadObjects.filter((item) => !isDetectedExistingPlacement(item)),
+    [previewVisibleCadObjects],
   );
   const technicalProposedVisible = sourceLayerVisibility.proposedDesign && !aiRealismEnabled;
   const renderedCadObjects = useMemo(
@@ -975,10 +984,12 @@ export default function PreviewPanel({
   }, [onSelectObjects, onSetPreviewInteraction, renderedCadObjects]);
   const renderedSuggestedPlacements = useMemo(
     () =>
-      suggestedPlacements.filter((item) =>
-        isDetectedExistingPlacementVisible(item, sourceLayerVisibility) && environmentObjectVisible(item, environmentLayers),
-      ),
-    [sourceLayerVisibility, suggestedPlacements, environmentLayers],
+      suggestedPlacements
+        .map((item) => item.id === dragPreviewPlacement?.id ? dragPreviewPlacement : item)
+        .filter((item) =>
+          isDetectedExistingPlacementVisible(item, sourceLayerVisibility) && environmentObjectVisible(item, environmentLayers),
+        ),
+    [dragPreviewPlacement, sourceLayerVisibility, suggestedPlacements, environmentLayers],
   );
   const mapLayerPlacements = useMemo(() => {
     const byId = new Map<string, BuildingPlacement>();
@@ -1100,6 +1111,13 @@ export default function PreviewPanel({
     [onUpdateBuilding],
   );
 
+  const stageDraggedPlacement = useCallback((target: BuildingPlacement, updates: Partial<BuildingPlacement>) => {
+    const preview = { ...target, ...updates };
+    dragPreviewDirtyRef.current = true;
+    dragPreviewPlacementRef.current = preview;
+    setDragPreviewPlacement(preview);
+  }, []);
+
   const updateDraggedBuilding = useCallback(
     (event: React.MouseEvent<HTMLDivElement>, bounds: { left: number; top: number; width: number; height: number }) => {
       if (!draggingBuildingId || !draggingMode) return;
@@ -1143,11 +1161,7 @@ export default function PreviewPanel({
             y: deltaY,
           });
         }
-        if (target.source === "detected_from_image") {
-          onUpdateSuggested(draggingBuildingId, updates);
-        } else {
-          onUpdateBuilding(draggingBuildingId, updates);
-        }
+        stageDraggedPlacement(target, updates);
         return;
       }
       if (
@@ -1173,11 +1187,7 @@ export default function PreviewPanel({
           d: Math.max(5, nextBounds.height),
           placed: true,
         };
-        if (target.source === "detected_from_image") {
-          onUpdateSuggested(draggingBuildingId, updates);
-        } else {
-          onUpdateBuilding(draggingBuildingId, updates);
-        }
+        stageDraggedPlacement(target, updates);
         return;
       }
       if (draggingMode === "resize") {
@@ -1203,11 +1213,7 @@ export default function PreviewPanel({
         } else if (target.geometryType === "point" && Array.isArray(target.geometry)) {
           updates.geometry = [[(target.x ?? 0) + nextW / 2, (target.y ?? 0) + nextD / 2]];
         }
-        if (target.source === "detected_from_image") {
-          onUpdateSuggested(draggingBuildingId, updates);
-        } else {
-          onUpdateBuilding(draggingBuildingId, updates);
-        }
+        stageDraggedPlacement(target, updates);
         return;
       }
       if (draggingMode === "rotate") {
@@ -1219,11 +1225,7 @@ export default function PreviewPanel({
         const deg = (angle * 180) / Math.PI;
         const normalized = (deg + 360) % 360;
         const snapped = snapValue(normalized, 15);
-        if (target.source === "detected_from_image") {
-          onUpdateSuggested(draggingBuildingId, { rotation: snapped });
-        } else {
-          onUpdateBuilding(draggingBuildingId, { rotation: snapped });
-        }
+        stageDraggedPlacement(target, { rotation: snapped });
       }
     },
     [
@@ -1239,10 +1241,9 @@ export default function PreviewPanel({
       lotHeight,
       lotWidth,
       getEditCapabilities,
-      onUpdateBuilding,
-      onUpdateSuggested,
       resolveCadSnapPoint,
       snapValue,
+      stageDraggedPlacement,
     ],
   );
 
@@ -1992,6 +1993,9 @@ export default function PreviewPanel({
       setDraggingBuildingId(building.id);
       setDraggingMode(mode);
       setDraggingVertex(null);
+      dragPreviewPlacementRef.current = building;
+      dragPreviewDirtyRef.current = false;
+      setDragPreviewPlacement(building);
       onSelectBuilding(building.id);
       const rect = event.currentTarget.getBoundingClientRect();
       setDragOffset({
@@ -2038,6 +2042,21 @@ export default function PreviewPanel({
       );
     };
     const handleUp = () => {
+      const preview = dragPreviewPlacementRef.current;
+      if (preview && dragPreviewDirtyRef.current) {
+        const updates: Partial<BuildingPlacement> = draggingMode === "move"
+          ? { x: preview.x, y: preview.y, placed: true, geometry: preview.geometry }
+          : draggingMode === "resize"
+            ? { w: preview.w, d: preview.d, geometry: preview.geometry }
+            : draggingMode === "rotate"
+              ? { rotation: preview.rotation }
+              : { x: preview.x, y: preview.y, w: preview.w, d: preview.d, placed: true, geometry: preview.geometry };
+        if (preview.source === "detected_from_image") onUpdateSuggested(preview.id, updates);
+        else onUpdateBuilding(preview.id, updates);
+      }
+      dragPreviewPlacementRef.current = null;
+      dragPreviewDirtyRef.current = false;
+      setDragPreviewPlacement(null);
       setDraggingBuildingId(null);
       setDraggingMode(null);
       setDraggingVertex(null);
@@ -2052,6 +2071,8 @@ export default function PreviewPanel({
     draggingBuildingId,
     draggingMode,
     overlayBoundsResolved,
+    onUpdateBuilding,
+    onUpdateSuggested,
     previewRef,
     setDraggingBuildingId,
     setDraggingMode,
@@ -2968,8 +2989,8 @@ export default function PreviewPanel({
         siteLocked={Boolean(siteLocked)}
         lotWidth={lotWidth}
         lotHeight={lotHeight}
-        visibleCadObjects={visibleCadObjects}
-        suggestedPlacements={suggestedPlacements}
+        visibleCadObjects={previewVisibleCadObjects}
+        suggestedPlacements={renderedSuggestedPlacements}
         interactiveRectPercent={(item) => interactiveRectPercent(item, null)}
         rectIntersectsPreview={rectIntersectsPreview}
         resolveObjectHitZIndex={resolveObjectHitZIndex}

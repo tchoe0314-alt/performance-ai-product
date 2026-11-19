@@ -366,6 +366,13 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(officeOverlay).toBeVisible();
     await officeOverlay.click();
     await expect(page.getByTestId("draw-selected-object-card")).toContainText("Office Building", { timeout: 5_000 });
+    await openDisclosure(page, "object-manager-recent-changes");
+    const recentChanges = page.getByTestId("recent-changes-section");
+    if (!(await page.getByTestId("recent-changes-list").count())) {
+      await recentChanges.locator('button[aria-expanded]').click();
+    }
+    const recentRows = page.getByTestId("recent-change-row-undo");
+    const beforeMoveChangeCount = await recentRows.count();
 
     const beforeMove = await officeOverlay.boundingBox();
     expect(beforeMove).not.toBeNull();
@@ -373,6 +380,14 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.mouse.move(dragStart.x, dragStart.y);
     await page.mouse.down();
     await page.mouse.move(dragStart.x + 48, dragStart.y + 24, { steps: 8 });
+    await expect
+      .poll(async () => {
+        const box = await officeOverlay.boundingBox();
+        return Boolean(box && box.x > beforeMove!.x + 12 && box.y > beforeMove!.y + 6);
+      })
+      .toBeTruthy();
+    const duringMove = await officeOverlay.boundingBox();
+    expect(await recentRows.count()).toBe(beforeMoveChangeCount);
     await page.mouse.up();
 
     await expect
@@ -385,6 +400,7 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     expect(afterMove).not.toBeNull();
     expect(afterMove!.x).toBeGreaterThan(beforeMove!.x + 12);
     expect(afterMove!.y).toBeGreaterThan(beforeMove!.y + 6);
+    const beforeResizeChangeCount = await recentRows.count();
 
     await officeOverlay.click();
     const resizeHandle = page.getByTestId("selected-object-resize-handle");
@@ -397,6 +413,14 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
     await page.mouse.down();
     await page.mouse.move(handleBox!.x + handleBox!.width / 2 + 44, handleBox!.y + handleBox!.height / 2 + 28, { steps: 8 });
+    await expect
+      .poll(async () => {
+        const box = await officeOverlay.boundingBox();
+        return Boolean(box && box.width > beforeResize!.width + 10 && box.height > beforeResize!.height + 6);
+      })
+      .toBeTruthy();
+    const duringResize = await officeOverlay.boundingBox();
+    expect(await recentRows.count()).toBe(beforeResizeChangeCount);
     await page.mouse.up();
 
     const afterResize = await officeOverlay.boundingBox();
@@ -404,6 +428,25 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     expect(afterResize!.width).toBeGreaterThan(beforeResize!.width + 10);
     expect(afterResize!.height).toBeGreaterThan(beforeResize!.height + 6);
     await expect(page.getByTestId("selected-object-resize-handle")).toBeVisible();
+    console.log("[canvas direct manipulation]", JSON.stringify({
+      movePreviewBeforePointerUpPx: {
+        x: Number(((duringMove?.x ?? 0) - beforeMove!.x).toFixed(1)),
+        y: Number(((duringMove?.y ?? 0) - beforeMove!.y).toFixed(1)),
+      },
+      committedMovePx: {
+        x: Number((afterMove!.x - beforeMove!.x).toFixed(1)),
+        y: Number((afterMove!.y - beforeMove!.y).toFixed(1)),
+      },
+      resizePreviewBeforePointerUpPx: {
+        width: Number(((duringResize?.width ?? 0) - beforeResize!.width).toFixed(1)),
+        height: Number(((duringResize?.height ?? 0) - beforeResize!.height).toFixed(1)),
+      },
+      committedResizePx: {
+        width: Number((afterResize!.width - beforeResize!.width).toFixed(1)),
+        height: Number((afterResize!.height - beforeResize!.height).toFixed(1)),
+      },
+      canonicalHistoryRowsDuringDragDelta: 0,
+    }));
   });
 
   test("selected object Move arms that object and places it with one canvas click", async ({ page }) => {
