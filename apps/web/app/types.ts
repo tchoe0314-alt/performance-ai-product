@@ -1359,6 +1359,7 @@ export type PlanMeta = {
     success?: boolean;
     totals?: QuantityTotals;
     explain?: QuantityExplain;
+    tables?: Record<string, unknown>;
   };
   cost_estimate?: CostEstimate;
   cost_package_status?: Record<string, unknown>;

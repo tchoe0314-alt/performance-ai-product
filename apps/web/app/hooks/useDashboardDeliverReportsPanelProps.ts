@@ -91,6 +91,7 @@ type UseDashboardDeliverReportsPanelPropsInput = {
   sourceConfidenceRows: SourceConfidenceEntry[];
   sourceConfidenceEntryCount: number;
   quantityRows: DashboardReportsQuantitiesPanelProps["quantities"]["rows"];
+  constructionTakeoff?: DashboardReportsQuantitiesPanelProps["quantities"]["constructionTakeoff"];
   staleSystemCount: number;
   onExportQuantityReviewReport: DashboardReportsQuantitiesPanelProps["quantities"]["onExportReport"];
   formatMetric: DashboardReportsQuantitiesPanelProps["quantities"]["formatMetric"];
@@ -171,6 +172,7 @@ export function useDashboardDeliverReportsPanelProps({
   sourceConfidenceRows,
   sourceConfidenceEntryCount,
   quantityRows,
+  constructionTakeoff,
   staleSystemCount,
   onExportQuantityReviewReport,
   formatMetric,
@@ -330,6 +332,7 @@ export function useDashboardDeliverReportsPanelProps({
     },
     quantities: {
       rows: quantityRows,
+      constructionTakeoff,
       outdated: resultIsStale,
       calculationReference,
       staleSystemCount,
@@ -360,6 +363,7 @@ export function useDashboardDeliverReportsPanelProps({
     onPromptChange,
     openReviewIssueCount,
     quantityRows,
+    constructionTakeoff,
     reviewGateItems,
     reviewIssueItems,
     reviewIssueTracker.by_status,

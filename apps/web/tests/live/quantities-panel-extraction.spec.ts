@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { buildDashboardQuantityRows } from "../../app/utils/dashboardQuantityRows";
 import { QuantitiesPanel } from "../../app/components/QuantitiesPanel";
+import { quantityConstructionTakeoffForReport } from "../../app/utils/dashboardExportActions";
 
 test("previous quantity totals are labelled and cannot be downloaded as current", () => {
   const rows = buildDashboardQuantityRows({ quantityTotals: { building_area_sf: 1200 }, quantityExplain: {}, costEstimate: { explain: {} } });
@@ -87,4 +88,40 @@ test("Informational quantity totals remain references instead of false cost or t
     traceComplete: true,
     missingCost: false,
   });
+});
+
+test("construction breakdown renders explicit bases and is preserved in the review report", () => {
+  const constructionTakeoff = {
+    earthwork: { cut_cy: 100, fill_cy: 50, haul_quantity_inferred: false },
+    pipes_by_system_and_diameter: [
+      { system: "storm", diameter_in: 18, measurement_basis: "centerline_horizontal", horizontal_length_ft: 50, three_dimensional_length_ft: 50.16, source_object_ids: ["STM-1"] },
+      { system: "storm", diameter_in: 18, measurement_basis: "structure_face_to_face_horizontal", horizontal_length_ft: 40, three_dimensional_length_ft: null, source_object_ids: ["STM-2"] },
+      { system: "sanitary", diameter_in: 18, measurement_basis: "centerline_horizontal", horizontal_length_ft: 70, three_dimensional_length_ft: null, source_object_ids: ["SAN-1"] },
+    ],
+    structures_by_system_and_type: [
+      { system: "storm", structure_type: "manhole", count: 1, source_object_ids: ["MH-1"] },
+    ],
+  };
+  const rendered = JSON.stringify(QuantitiesPanel({
+    rows: [],
+    staleSystemCount: 0,
+    trustScoreLabel: "Ready",
+    onExportReport: () => {},
+    formatMetric: (value, unit) => `${value ?? "Pending"} ${unit}`,
+    statusLabelForQuantityReview: (status) => status,
+    constructionTakeoff,
+  }));
+  expect(rendered).toContain("Construction breakdown");
+  expect(rendered).toContain("Earthwork cut");
+  expect(rendered).toContain("100 cy");
+  expect(rendered).toContain("Earthwork fill");
+  expect(rendered).toContain("50 cy");
+  expect(rendered).toContain("centerline_horizontal");
+  expect(rendered).toContain("structure_face_to_face_horizontal");
+  expect(rendered).toContain("Haul quantity: not inferred");
+  expect(rendered).toContain("Distinct structures");
+  expect(rendered).toContain("manhole");
+
+  expect(quantityConstructionTakeoffForReport({ quantities: { tables: { construction_takeoff: constructionTakeoff } } })).toEqual(constructionTakeoff);
+  expect(quantityConstructionTakeoffForReport({})).toBeNull();
 });

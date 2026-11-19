@@ -28,6 +28,28 @@ export type QuantityReviewRowView = {
   status: QuantityReviewStatusView;
 };
 
+export type ConstructionTakeoffView = {
+  earthwork?: {
+    cut_cy?: number;
+    fill_cy?: number;
+    haul_quantity_inferred?: boolean;
+  };
+  pipes_by_system_and_diameter?: Array<{
+    system?: string;
+    diameter_in?: number | null;
+    measurement_basis?: string;
+    horizontal_length_ft?: number;
+    three_dimensional_length_ft?: number | null;
+    source_object_ids?: string[];
+  }>;
+  structures_by_system_and_type?: Array<{
+    system?: string;
+    structure_type?: string;
+    count?: number;
+    source_object_ids?: string[];
+  }>;
+};
+
 export function QuantitiesPanel({
   rows,
   staleSystemCount,
@@ -37,6 +59,7 @@ export function QuantitiesPanel({
   statusLabelForQuantityReview,
   outdated = false,
   calculationReference,
+  constructionTakeoff,
 }: {
   rows: QuantityReviewRowView[];
   staleSystemCount: number;
@@ -46,6 +69,7 @@ export function QuantitiesPanel({
   statusLabelForQuantityReview: (status: QuantityReviewStatusView) => string;
   outdated?: boolean;
   calculationReference?: string;
+  constructionTakeoff?: ConstructionTakeoffView;
 }) {
   const isOutdated = outdated || staleSystemCount > 0 || rows.some(row => row.status === "stale");
   const hasMissingCost = rows.some((row) => row.missingCost);
@@ -202,6 +226,43 @@ export function QuantitiesPanel({
           </p>
         ) : null}
       </div>
+      {constructionTakeoff ? (
+        <div data-testid="construction-takeoff-breakdown" className="mt-3 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
+          <div>
+            <p className="font-semibold uppercase tracking-[0.14em] text-slate-500">Construction breakdown</p>
+            <p className="mt-1 text-slate-500">Review quantities preserve each source measurement basis; they do not establish a universal bid basis.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <p className="font-semibold text-slate-700">Earthwork cut</p>
+              <p className="mt-1 text-base font-semibold text-slate-900">{formatMetric(constructionTakeoff.earthwork?.cut_cy ?? null, "cy")}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <p className="font-semibold text-slate-700">Earthwork fill</p>
+              <p className="mt-1 text-base font-semibold text-slate-900">{formatMetric(constructionTakeoff.earthwork?.fill_cy ?? null, "cy")}</p>
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-500">Haul quantity: not inferred from cut/fill totals.</p>
+          {(constructionTakeoff.pipes_by_system_and_diameter ?? []).map((pipe, index) => (
+            <div key={`${pipe.system}-${pipe.diameter_in}-${pipe.measurement_basis}-${index}`} className="rounded-lg border border-slate-200 bg-white p-3">
+              <p className="font-semibold text-slate-900">{pipe.system || "Unknown system"} · {pipe.diameter_in ?? "Unknown"} in</p>
+              <p className="mt-1 text-slate-700">Horizontal: {formatMetric(pipe.horizontal_length_ft ?? null, "ft")}</p>
+              <p className="mt-1 text-slate-700">3D: {pipe.three_dimensional_length_ft == null ? "Not reported" : formatMetric(pipe.three_dimensional_length_ft, "ft")}</p>
+              <p className="mt-1 break-all text-[11px] text-slate-500">Basis: {pipe.measurement_basis || "Unspecified"} · Sources: {(pipe.source_object_ids ?? []).join(", ") || "Missing"}</p>
+            </div>
+          ))}
+          {(constructionTakeoff.structures_by_system_and_type ?? []).length ? (
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <p className="font-semibold text-slate-900">Distinct structures</p>
+              {(constructionTakeoff.structures_by_system_and_type ?? []).map((structure, index) => (
+                <p key={`${structure.system}-${structure.structure_type}-${index}`} className="mt-1 text-slate-700">
+                  {structure.system || "Unknown system"} · {structure.structure_type || "structure"}: {structure.count ?? 0}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

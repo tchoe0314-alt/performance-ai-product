@@ -110,6 +110,9 @@ export function resolveDashboardExportBlockReason({
     : "";
 }
 
+export const quantityConstructionTakeoffForReport = (planMeta: PlanMeta) =>
+  planMeta.quantities?.tables?.construction_takeoff ?? null;
+
 export function createDashboardExportActions(config: DashboardExportActionsConfig) {
   const {
     appendChatMessage,
@@ -206,6 +209,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
       review_only: true,
       engineer_review_required: true,
       quantity_success: currentPlanMeta.quantities?.success ?? false,
+      construction_takeoff: quantityConstructionTakeoffForReport(currentPlanMeta),
       quantity_model_reference: quantityExplain.quantity_model_reference ?? costEstimate.explain?.quantity_model_reference ?? {},
       cost_estimate_reference: costEstimate.explain?.cost_estimate_reference ?? {},
       pricing_coverage_gaps: costEstimate.explain?.pricing_coverage_gaps ?? {},

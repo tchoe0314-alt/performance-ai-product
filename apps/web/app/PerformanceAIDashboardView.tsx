@@ -5591,6 +5591,7 @@ function PerformanceAIDashboardView({
     sourceConfidenceRows,
     sourceConfidenceEntryCount: sourceConfidenceEntries.length,
     quantityRows,
+    constructionTakeoff: currentPlanMeta.quantities?.tables?.construction_takeoff as import("./components/QuantitiesPanel").ConstructionTakeoffView | undefined,
     staleSystemCount: sidebarStaleSystems.length,
     onExportQuantityReviewReport: handleExportQuantityReviewReport,
     formatMetric,
