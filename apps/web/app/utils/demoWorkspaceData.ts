@@ -1223,7 +1223,7 @@ export const createDemoPlanResponse = (): PlanResponse => ({
   success: true,
   message: "Demo workspace loaded for UI QA.",
   metadata: {
-    calculation_save_v1: { disposition: "active", calculation_id: "demo-takeoff-revision-1" },
+    calculation_save_v1: { disposition: "active", calculation_id: "demo-takeoff-revision-1", reason: "synthetic browser takeoff fixture" },
   },
   assumptions: [
     {

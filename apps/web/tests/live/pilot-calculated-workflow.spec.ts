@@ -241,6 +241,30 @@ for (const { assisted, target } of [
     await openWorkspaceTool(page, "Review");
     await expect(page.getByTestId("review-result-truth")).toHaveAttribute("data-result-state", "current");
     await expect(page.getByTestId("review-result-truth")).toContainText("Current calculation");
+    await page.getByTestId("workspace-stage-analyze").click();
+    await page.getByTestId("workspace-stage-panel").selectOption("quantities");
+    const takeoffPanel = page.getByTestId("construction-takeoff-breakdown");
+    await expect(takeoffPanel).toBeVisible();
+    await expect(takeoffPanel).toContainText("Earthwork cut");
+    await expect(takeoffPanel).toContainText("Earthwork fill");
+    await expect(takeoffPanel).toContainText("centerline_horizontal");
+    const exportButton = page.getByRole("button", { name: "Export report", exact: true });
+    await expect(exportButton).toBeEnabled();
+    const [download] = await Promise.all([page.waitForEvent("download"), exportButton.click()]);
+    const reportPath = await download.path();
+    expect(reportPath).toBeTruthy();
+    const report = JSON.parse(await readFile(reportPath!, "utf8"));
+    expect(report.calculation_reference?.calculation_id).toBe(calculationId);
+    expect(report.construction_takeoff?.earthwork).toEqual(expect.objectContaining({
+      cut_cy: expect.any(Number),
+      fill_cy: expect.any(Number),
+      haul_quantity_inferred: false,
+    }));
+    expect(report.construction_takeoff).toEqual(checkpoint.latest_result.final_plan.meta.quantities.tables.construction_takeoff);
+    expect(report.construction_takeoff?.pipes_by_system_and_diameter).toEqual(expect.arrayContaining([
+      expect.objectContaining({ system: "storm", diameter_in: expect.any(Number), measurement_basis: "centerline_horizontal" }),
+    ]));
+    expect(report.construction_takeoff?.structures_by_system_and_type?.length).toBeGreaterThan(0);
   }
   await openWorkspaceTool(page, "Generate");
   if (target === "parking") {
