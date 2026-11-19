@@ -1,11 +1,18 @@
 import type { PlanResponse, ProjectInput } from "../types";
 import { withCanonicalCanvasSnapshot, resolveCanonicalCanvasInput } from "./canonicalCanvasProject";
 
+const NON_CALCULATION_SITE_INPUT_KEYS = new Set([
+  "generate_flow_summary_v1",
+  "review_package_flow_summary_v1",
+]);
+
 export function liveInputFingerprint(input: ProjectInput): string {
   const resolved = resolveCanonicalCanvasInput(withCanonicalCanvasSnapshot(input));
   const fields = { ...resolved.manual_fields };
   delete fields.project_name;
   delete fields.file_name;
+  const siteInputs: Record<string, unknown> = { ...(resolved.meta?.site_inputs || {}) };
+  for (const key of NON_CALCULATION_SITE_INPUT_KEYS) delete siteInputs[key];
   const encode = (value: unknown): unknown => {
     if (value === null) return ["null"];
     if (typeof value === "boolean") return ["bool", value];
@@ -20,7 +27,7 @@ export function liveInputFingerprint(input: ProjectInput): string {
     if (value && typeof value === "object") return ["object", Object.keys(value).sort().map(key => [key, encode((value as Record<string, unknown>)[key])])];
     throw new Error("Unsupported calculation input.");
   };
-  return JSON.stringify(encode({ manual_fields: fields, site_inputs: resolved.meta?.site_inputs || {} }))
+  return JSON.stringify(encode({ manual_fields: fields, site_inputs: siteInputs }))
     .replace(/[\u0080-\uffff]/g, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
 }
 

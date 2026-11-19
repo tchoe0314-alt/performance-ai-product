@@ -62,6 +62,23 @@ def test_label_and_numeric_representation_do_not_invalidate():
     assert canvas_input_signature(source) == canvas_input_signature(renamed)
 
 
+def test_workflow_receipts_do_not_invalidate_but_engineering_inputs_still_do():
+    source = fixture()
+    bound = bind_canvas_result({"metadata": {}}, source)
+    receipt = deepcopy(source)
+    receipt.setdefault("meta", {}).setdefault("site_inputs", {}).update({
+        "generate_flow_summary_v1": {"generated_at": "later", "blocked": False},
+        "review_package_flow_summary_v1": {"generated_at": "later", "review_only": True},
+    })
+    assert canvas_input_signature(source) == canvas_input_signature(receipt)
+    assert canvas_live_input_signature(source) == canvas_live_input_signature(receipt)
+    assert canvas_result_freshness(bound, receipt, require_engine_revision=False)["status"] == "current"
+
+    receipt["meta"]["site_inputs"]["survey"] = "revised engineering source"
+    assert canvas_input_signature(source) != canvas_input_signature(receipt)
+    assert canvas_result_freshness(bound, receipt, require_engine_revision=False)["status"] == "stale"
+
+
 def test_legacy_missing_binding_and_invalid_input_are_not_proven_current():
     assert canvas_result_freshness({"success": True}, {}) is None
     assert canvas_result_freshness({"success": True}, fixture())["status"] == "unverified"

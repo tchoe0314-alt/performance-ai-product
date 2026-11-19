@@ -1338,7 +1338,23 @@ export type PlanMeta = {
   };
   manager_export?: {
     metrics?: ManagerMetrics;
+    system_counts?: {
+      declared?: number;
+      running?: number;
+      complete?: number;
+      failed?: number;
+      skipped?: number;
+      idle?: number;
+      total?: number;
+    };
   };
+  stage_results?: Array<{
+    stage_name?: string;
+    success?: boolean;
+    message?: string;
+    warnings?: string[];
+    meta?: Record<string, unknown>;
+  }>;
   quantities?: {
     success?: boolean;
     totals?: QuantityTotals;

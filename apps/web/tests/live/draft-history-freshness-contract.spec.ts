@@ -46,6 +46,19 @@ test("portable input keys exactly match Python for decimals, negative zero and U
     .toBe("052aebb38581c85b637a7274049c880f2593f2957fdeb25f9e431004ed028281");
 });
 
+test("review and generate receipts do not stale calculations, but engineering sources do", () => {
+  const source = input();
+  const withReceipts = structuredClone(source);
+  withReceipts.meta!.site_inputs = {
+    ...withReceipts.meta!.site_inputs,
+    generate_flow_summary_v1: { generated_at: "later", blocked: false },
+    review_package_flow_summary_v1: { generated_at: "later", review_only: true },
+  } as never;
+  expect(liveInputFingerprint(withReceipts)).toBe(liveInputFingerprint(source));
+  withReceipts.meta!.site_inputs = { ...(withReceipts.meta!.site_inputs as Record<string, unknown>), survey: "revised engineering source" } as never;
+  expect(liveInputFingerprint(withReceipts)).not.toBe(liveInputFingerprint(source));
+});
+
 test("unsaved edits block a result; undo to identical inputs matches; legacy remains unverified", async () => {
   const current = input();
   const sourceKey = createHash("sha256").update(liveInputFingerprint(current)).digest("hex");

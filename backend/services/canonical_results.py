@@ -15,10 +15,22 @@ BINDING_KEY = "canvas_result_binding_v1"
 # v15 refreshes generated hydraulic profile views instead of retaining stale caches.
 # Older outputs remain historical, not recertified by saving or viewing them.
 ENGINE_REVISION = "engineering_core_2026_10_v15"
+NON_CALCULATION_SITE_INPUT_KEYS = {
+    "generate_flow_summary_v1",
+    "review_package_flow_summary_v1",
+}
 
 
 def has_current_engine_revision(result: dict) -> bool:
     return (result.get("metadata") or {}).get("calculation_engine_revision") == ENGINE_REVISION
+
+
+def _calculation_site_inputs(resolved: dict) -> dict:
+    """Exclude UI workflow receipts that cannot affect engineering output."""
+    site_inputs = deepcopy((resolved.get("meta") or {}).get("site_inputs") or {})
+    for key in NON_CALCULATION_SITE_INPUT_KEYS:
+        site_inputs.pop(key, None)
+    return site_inputs
 
 
 def canvas_live_input_signature(project_input: dict) -> str:
@@ -27,7 +39,7 @@ def canvas_live_input_signature(project_input: dict) -> str:
     fields = deepcopy(resolved.get("manual_fields") or {})
     fields.pop("project_name", None)
     fields.pop("file_name", None)
-    value = {"manual_fields": fields, "site_inputs": (resolved.get("meta") or {}).get("site_inputs") or {}}
+    value = {"manual_fields": fields, "site_inputs": _calculation_site_inputs(resolved)}
     def encode(item: Any) -> Any:
         if item is None: return ["null"]
         if isinstance(item, bool): return ["bool", item]
@@ -51,7 +63,7 @@ def canvas_input_signature(project_input: dict) -> str | None:
     # Labels do not change geometry or engineering quantities.
     fields.pop("project_name", None)
     fields.pop("file_name", None)
-    value = {"manual_fields": fields, "site_inputs": (resolved.get("meta") or {}).get("site_inputs") or {}}
+    value = {"manual_fields": fields, "site_inputs": _calculation_site_inputs(resolved)}
 
     def normalize(item: Any) -> Any:
         if isinstance(item, float) and item.is_integer():

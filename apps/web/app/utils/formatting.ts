@@ -282,6 +282,17 @@ export function summarizePlanResponse(
     .slice(0, 2)
     .map((issue) => String(issue?.message || "").trim())
     .filter(Boolean);
+  const skippedSystemCount = Number(meta?.manager_export?.system_counts?.skipped ?? 0);
+  const skippedStageMessages = Array.isArray(meta?.stage_results)
+    ? meta.stage_results
+        .map((stage) => String(stage?.message || "").trim())
+        .filter((message) => /\bskipp?ed\b/i.test(message))
+    : [];
+  const skippedReviewItems = skippedStageMessages.length
+    ? skippedStageMessages
+    : skippedSystemCount > 0
+      ? [`${skippedSystemCount} skipped system${skippedSystemCount === 1 ? "" : "s"}`]
+      : [];
 
   const assumptionList = assumptionExamples.filter(
     (item): item is string => Boolean(item),
@@ -296,22 +307,26 @@ export function summarizePlanResponse(
           readableAutofixActions.length ? readableAutofixActions : readableFixTargets,
         )}.`
       : "I did not need to record any corrective fix actions on this run.",
-    readableReviewCategories.length || issueMessages.length || unresolved > 0
+    readableReviewCategories.length || issueMessages.length || unresolved > 0 || skippedReviewItems.length
       ? `You should still review ${joinNatural(
           readableReviewCategories.length
             ? readableReviewCategories
             : issueMessages.length
               ? issueMessages
-              : [`${unresolved} unresolved conflicts`],
+              : unresolved > 0
+                ? [`${unresolved} unresolved conflicts`]
+                : skippedReviewItems,
         )}.`
       : "I don’t see any active review items recorded right now.",
-    readableBlockedReasons.length || readableBlockedExports.length || readableFailed.length
+    readableBlockedReasons.length || readableBlockedExports.length || readableFailed.length || skippedReviewItems.length
       ? `What is still blocked: ${joinNatural(
           readableBlockedReasons.length
             ? readableBlockedReasons
             : readableBlockedExports.length
               ? readableBlockedExports
-              : readableFailed,
+              : readableFailed.length
+                ? readableFailed
+                : skippedReviewItems,
         )}.`
       : "Nothing is explicitly blocked right now.",
     producedDeliverables.length

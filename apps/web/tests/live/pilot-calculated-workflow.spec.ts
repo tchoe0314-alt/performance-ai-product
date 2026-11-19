@@ -60,6 +60,29 @@ for (const { assisted, target } of [
   await page.getByTestId("header-projects-button").click();
   await page.getByRole("button", { name: `Open project ${name}`, exact: true }).click();
   await expect(page.getByTestId("project-status-summary")).toContainText("Project opened");
+  if (target === "full") {
+    // Prove this is the frozen 160 x 90 fixture before Generate. A similarly
+    // named hosted QA project with only a 28,000-sf program auto-sizes a review
+    // concept and is not evidence for this canonical edit/export contract.
+    await openWorkspaceTool(page, "Draw");
+    const objectList = page.getByTestId("object-manager-panel");
+    if (!(await objectList.evaluate(element => element.hasAttribute("open")))) await objectList.locator("summary").click();
+    const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Synthetic office" }).first();
+    await officeRow.getByTestId("object-manager-select").click();
+    await officeRow.getByTestId("object-manager-inspect").click();
+    await expect(page.getByTestId("selected-object-width-input")).toHaveValue("160");
+    await expect(page.getByTestId("selected-object-depth-input")).toHaveValue("90");
+    const stored = (await (await request.get(`${api}/api/projects/${project.project_id}`, { headers })).json()).project;
+    expect(stored.project_input.manual_fields.pipe_network).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "SYN-STORM-PIPE-1",
+        from_node: "SYN-STORM-START",
+        to_node: "SYN-STORM-END",
+        diameter_in: 18,
+        slope_ft_ft: 0.01,
+      }),
+    ]));
+  }
   page.on("dialog", dialog => dialog.accept());
   await openWorkspaceTool(page, "Generate");
   const execution = page.waitForResponse(response => response.request().method() === "POST" && /\/api\/(?:jobs\/)?orchestrate$/.test(response.url()), { timeout: 20_000 });
@@ -180,6 +203,11 @@ for (const { assisted, target } of [
     // Exercise calculated exports from a real engine result, not an injected
     // fixture. Preliminary release must retain its engineering limitations.
     await openWorkspaceTool(page, "Deliver");
+    const freshnessBeforePackage = (await saved()).result_freshness_v1.status;
+    expect(freshnessBeforePackage).toBe("current");
+    await page.getByRole("button", { name: "Make Review Package", exact: true }).click();
+    await expect(page.getByTestId("deliver-review-package-summary")).toBeVisible();
+    await expect.poll(async () => (await saved()).result_freshness_v1.status, { timeout: 30_000 }).toBe("current");
     const stages = checkpoint.latest_result.final_plan.meta.stage_completeness?.statuses ?? {};
     const incomplete = Object.values(stages).some(value => value === "failed" || value === "partial");
     if (incomplete) {
