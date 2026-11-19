@@ -20,6 +20,12 @@ for (const { assisted, target } of [
   const registration = await request.post(`${api}/api/auth/register`, { data: { email: `calc-${randomUUID()}@example.test`, name: "Synthetic calculation test", password: "Disposable-123" } });
   expect(registration.status()).toBe(200);
   const { token } = await registration.json(), headers = { Authorization: `Bearer ${token}` };
+  const jobSummary = async (jobId: string) => {
+    const jobsPage = await (await request.get(`${api}/api/jobs?limit=100`, { headers })).json();
+    const job = jobsPage.jobs.find((item: { job_id: string }) => item.job_id === jobId);
+    expect(job, `Job ${jobId} should remain visible in the bounded job summary`).toBeTruthy();
+    return job;
+  };
   const created = await request.post(`${api}/api/projects`, { headers, data: { name, project_input: withCanonicalCanvasSnapshot({
     input_mode: assisted ? "assisted" : "user", allow_ai_fill_for_blanks: assisted,
     manual_fields: { project_name: name, units: "ft", project_type: "commercial_pad", building_width: small ? 60 : 160, building_depth: small ? 40 : 90,
@@ -57,7 +63,7 @@ for (const { assisted, target } of [
   const payload = await response.json();
   if (payload.job) {
     await expect.poll(async () => {
-      const job = (await (await request.get(`${api}/api/jobs/${payload.job.job_id}`, { headers })).json()).job;
+      const job = await jobSummary(payload.job.job_id);
       if (job.status === "awaiting_approval") {
         // Approve synthetic stage checkpoints through the visible website,
         // exactly as the pilot user must, not through a hidden API bypass.
@@ -134,7 +140,7 @@ for (const { assisted, target } of [
     const recalculationPayload = await (await recalculation).json();
     expect(recalculationPayload.job).toBeTruthy();
     await expect.poll(async () => {
-      const job = (await (await request.get(`${api}/api/jobs/${recalculationPayload.job.job_id}`, { headers })).json()).job;
+      const job = await jobSummary(recalculationPayload.job.job_id);
       if (job.status === "awaiting_approval") {
         const proceed = page.getByTestId("generate-main-action");
         if ((await proceed.textContent())?.includes("Continue after")) await proceed.click();
@@ -196,7 +202,7 @@ for (const { assisted, target } of [
       expect(artifactResponse.status()).toBe(200);
       // Let the workspace's job poller observe completion before requesting a
       // second export; the API receipt can lead the rendered job state briefly.
-      await page.waitForTimeout(2_500);
+      await page.waitForTimeout(6_500);
       return artifactResponse.body();
     };
     const pdf = await downloadCalculatedArtifact("Review PDF", "review-pdf");

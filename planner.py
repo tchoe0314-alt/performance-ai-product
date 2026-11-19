@@ -7050,6 +7050,7 @@ def _ensure_sanitary_structure_spacing(
     manholes: Sequence[Dict[str, Any]],
     *,
     max_spacing_ft: float,
+    proposed_surface: Any = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
     updated_segments = [deepcopy(safe_dict(item)) for item in segments]
     updated_manholes = [deepcopy(safe_dict(item)) for item in manholes if safe_dict(item)]
@@ -7076,7 +7077,7 @@ def _ensure_sanitary_structure_spacing(
         points = (
             _support_structure_points_for_path(path, max_spacing_ft)
             if role in {"main", "trunk", "collector", ""}
-            else bend_points
+            else [path[0], *bend_points, path[-1]]
         )
         new_points: List[List[float]] = []
         for point in points:
@@ -7106,6 +7107,38 @@ def _ensure_sanitary_structure_spacing(
                 "max_spacing_ft": round(max_spacing_ft, 3),
                 "reason": "main_route_spacing_and_bends",
             }
+    # LandXML requires explicit structure elevations.  Derive them only from
+    # the calculated surface and the calculated pipe profile; never substitute
+    # zero or a generic catalog value.  Points without both sources remain
+    # incomplete and continue to be blocked by export validation.
+    for manhole in updated_manholes:
+        x = safe_float(manhole.get("x"), 0.0)
+        y = safe_float(manhole.get("y"), 0.0)
+        if proposed_surface is not None and manhole.get("rim_elev_ft") is None and manhole.get("rim_elevation_ft") is None:
+            manhole["rim_elev_ft"] = round(_sample_grid_surface(proposed_surface, x, y, DEFAULT_PAD_ELEV), 3)
+        if manhole.get("sump_elevation_ft") is not None or manhole.get("invert_elevation_ft") is not None:
+            continue
+        for segment in updated_segments:
+            path = _dedupe_path_points(safe_list(segment.get("route_points")))
+            match_index = next(
+                (index for index, point in enumerate(path) if _point_key(point) == _point_key([x, y])),
+                None,
+            )
+            if match_index is None or len(path) < 2:
+                continue
+            lengths = [math.hypot(path[index][0] - path[index - 1][0], path[index][1] - path[index - 1][1]) for index in range(1, len(path))]
+            total_length = sum(lengths)
+            if total_length <= 1e-9:
+                continue
+            start_invert = segment.get("start_invert_ft", segment.get("invert_start_ft"))
+            end_invert = segment.get("end_invert_ft", segment.get("invert_end_ft"))
+            if start_invert is None or end_invert is None:
+                continue
+            fraction = sum(lengths[:match_index]) / total_length
+            invert = safe_float(start_invert) + (safe_float(end_invert) - safe_float(start_invert)) * fraction
+            manhole["sump_elevation_ft"] = round(invert, 3)
+            manhole["invert_elevation_ft"] = round(invert, 3)
+            break
     return updated_segments, updated_manholes, {
         "valid": True,
         "max_spacing_ft": round(max_spacing_ft, 3),
@@ -7260,6 +7293,7 @@ def _recompute_sanitary_summary(project: ProjectModel, manager: ProjectManager, 
         segments,
         safe_list(summary.get("manholes")),
         max_spacing_ft=safe_float(standards.max_sanitary_manhole_spacing_ft, 400.0),
+        proposed_surface=proposed_surface,
     )
     segments, manholes, nodes = _bind_sanitary_graph_nodes(segments, generated_manholes)
     referenced_node_ids = {

@@ -21,6 +21,7 @@ from backend.api.app import (
     validate_unit_price_book,
 )
 from backend.planning.runtime import sanitize_plan
+from planner_orchestrator import _clone_payload
 
 
 class ApiEngineeringGuardsTest(unittest.TestCase):
@@ -240,6 +241,25 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
             plan["meta"]["diagnostic_snapshot_truncation_v1"]["diagnostic_items_omitted"],
             5,
         )
+
+    def test_orchestrator_clone_never_truncates_authoritative_plan_actions(self) -> None:
+        actions = [
+            {
+                "task": "polyline",
+                "layer": "FG_CONTOUR",
+                "points": [[float(index), 0.0], [float(index), 5.0]],
+                "canonical_source_id": f"contour-{index}",
+            }
+            for index in range(5_007)
+        ]
+        cloned = _clone_payload({"actions": actions, "meta": {"diagnostic_rows": list(range(5_007))}})
+
+        self.assertEqual(len(cloned["actions"]), len(actions))
+        self.assertEqual(cloned["actions"][-1]["canonical_source_id"], "contour-5006")
+        self.assertFalse(any("truncated_items" in action for action in cloned["actions"]))
+        # Non-authoritative diagnostic collections stay bounded.
+        self.assertEqual(cloned["meta"]["diagnostic_rows"][-1], {"truncated_items": 7})
+
     def test_sanitize_plan_preserves_canonical_sheet_metadata(self) -> None:
         plan = sanitize_plan(
             {

@@ -56,12 +56,17 @@ def _cell_segments(
     if crosses(z_tl, z_bl):
         edges.append(_interp(tl, z_tl, bl, z_bl, level))
 
+    def valid(segment: Segment) -> bool:
+        (ax, ay), (bx, by) = segment
+        return (ax - bx) ** 2 + (ay - by) ** 2 > 1e-18
+
     if len(edges) == 2:
-        return [(edges[0], edges[1])]
+        segment = (edges[0], edges[1])
+        return [segment] if valid(segment) else []
 
     if len(edges) == 4:
         # ambiguous case — split into two segments
-        return [(edges[0], edges[1]), (edges[2], edges[3])]
+        return [segment for segment in ((edges[0], edges[1]), (edges[2], edges[3])) if valid(segment)]
 
     return []
 

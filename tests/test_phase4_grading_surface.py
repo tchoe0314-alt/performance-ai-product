@@ -3,11 +3,76 @@ from types import SimpleNamespace
 
 import planner
 from backend.planning.grading_support import grading_surface_actions, surface_actions_from_grid
+from engines.contour_engine import contour_segments
 from engines.grading_engine import GradeElement
 from engines.surface_engine import GridSurface
 
 
 class Phase4GradingSurfaceTests(unittest.TestCase):
+    def test_contours_at_exact_grid_vertices_never_emit_zero_length_segments(self) -> None:
+        surface = GridSurface(
+            x_min=0.0,
+            y_min=0.0,
+            x_max=20.0,
+            y_max=20.0,
+            cell_size=10.0,
+            ncols=3,
+            nrows=3,
+            values=[
+                [98.0, 100.0, 102.0],
+                [98.0, 100.0, 102.0],
+                [98.0, 100.0, 102.0],
+            ],
+        )
+
+        segments = [segment for rows in contour_segments(surface, interval=2.0).values() for segment in rows]
+        self.assertTrue(segments)
+        self.assertTrue(all(start != end for start, end in segments))
+
+    def test_generated_sanitary_structures_use_surface_and_pipe_profile_elevations(self) -> None:
+        surface = GridSurface(
+            x_min=0.0, y_min=0.0, x_max=400.0, y_max=10.0,
+            cell_size=10.0, ncols=41, nrows=2,
+            values=[[110.0] * 41, [110.0] * 41],
+        )
+        segments, manholes, _ = planner._ensure_sanitary_structure_spacing(
+            [{
+                "name": "SAN-1", "segment_role": "main",
+                "route_points": [[0.0, 0.0], [400.0, 0.0]],
+                "start_invert_ft": 100.0, "end_invert_ft": 96.0,
+            }],
+            [],
+            max_spacing_ft=200.0,
+            proposed_surface=surface,
+        )
+
+        self.assertEqual(len(manholes), 3)
+        self.assertEqual([item["rim_elev_ft"] for item in manholes], [110.0, 110.0, 110.0])
+        self.assertEqual([item["sump_elevation_ft"] for item in manholes], [100.0, 98.0, 96.0])
+        self.assertEqual(len(segments[0]["route_points"]), 3)
+
+    def test_sanitary_lateral_endpoints_receive_exportable_structures(self) -> None:
+        surface = GridSurface(
+            x_min=0.0, y_min=0.0, x_max=100.0, y_max=100.0,
+            cell_size=10.0, ncols=11, nrows=11,
+            values=[[110.0] * 11 for _ in range(11)],
+        )
+        segments, manholes, _ = planner._ensure_sanitary_structure_spacing(
+            [{
+                "name": "SAN-LAT-1", "segment_role": "lateral",
+                "route_points": [[10.0, 10.0], [90.0, 10.0]],
+                "start_invert_ft": 100.0, "end_invert_ft": 99.0,
+            }],
+            [],
+            max_spacing_ft=400.0,
+            proposed_surface=surface,
+        )
+        bound_segments, bound_manholes, _ = planner._bind_sanitary_graph_nodes(segments, manholes)
+
+        self.assertEqual(len(bound_manholes), 2)
+        self.assertEqual(bound_segments[0]["start_name"], bound_manholes[0]["node_id"])
+        self.assertEqual(bound_segments[0]["end_name"], bound_manholes[1]["node_id"])
+
     def test_grading_surface_actions_prioritize_control_spot_grades(self) -> None:
         surface = GridSurface(
             x_min=0.0,

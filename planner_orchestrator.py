@@ -62,7 +62,7 @@ def _clone_payload(value: Any, *, max_depth: int = 18, max_items: int = 5000) ->
 
     seen: set[int] = set()
 
-    def clone(node: Any, depth: int) -> Any:
+    def clone(node: Any, depth: int, path: tuple[str, ...] = ()) -> Any:
         if node is None or isinstance(node, (str, int, float, bool)):
             return node
         if depth > max_depth:
@@ -78,24 +78,29 @@ def _clone_payload(value: Any, *, max_depth: int = 18, max_items: int = 5000) ->
                     if idx >= max_items:
                         out["__truncated_items__"] = max(0, len(node) - max_items)
                         break
-                    out[str(key)] = clone(item, depth + 1)
+                    key_text = str(key)
+                    out[key_text] = clone(item, depth + 1, path + (key_text,))
                 seen.discard(node_id)
                 return out
             seq = list(node)
-            out_list = [clone(item, depth + 1) for item in seq[:max_items]]
-            if len(seq) > max_items:
+            # final_plan.actions is authoritative geometry, not a diagnostic
+            # snapshot. Capping it silently drops valid entities and appends a
+            # marker that later looks like corrupt CAD geometry.
+            item_limit = len(seq) if path == ("actions",) else max_items
+            out_list = [clone(item, depth + 1, path + (str(index),)) for index, item in enumerate(seq[:item_limit])]
+            if len(seq) > item_limit:
                 out_list.append({"truncated_items": len(seq) - max_items})
             seen.discard(node_id)
             return out_list
         to_dict = getattr(node, "to_dict", None)
         if callable(to_dict):
             try:
-                return clone(to_dict(), depth + 1)
+                return clone(to_dict(), depth + 1, path)
             except Exception:
                 pass
         if hasattr(node, "__dict__"):
             public = {key: item for key, item in vars(node).items() if not str(key).startswith("_")}
-            return clone(public, depth + 1)
+            return clone(public, depth + 1, path)
         return repr(node)
 
     return clone(value, 0)
