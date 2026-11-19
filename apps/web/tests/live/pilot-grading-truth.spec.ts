@@ -32,7 +32,9 @@ test("known surface cells preserve signed cut/fill depth and exact volumes", () 
 });
 
 test("saved grading revision is hidden as soon as an edit makes grading stale", () => {
-  expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "fresh" })).toBe(true);
-  expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "stale" })).toBe(false);
-  expect(shouldShowCurrentGradingComparison({ hasGradingSurface: false, gradingStatus: "fresh" })).toBe(false);
+  expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "fresh", resultCurrent: true })).toBe(true);
+  expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "not_generated", resultCurrent: true })).toBe(true);
+  expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "stale", resultCurrent: true })).toBe(false);
+  expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "fresh", resultCurrent: false })).toBe(false);
+  expect(shouldShowCurrentGradingComparison({ hasGradingSurface: false, gradingStatus: "fresh", resultCurrent: true })).toBe(false);
 });

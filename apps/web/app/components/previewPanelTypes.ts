@@ -242,6 +242,7 @@ export type PreviewPanelProps = {
   preview3DEffectiveItems: Preview3DItem[];
   usingAnnotation3D: boolean;
   hasGradingSurface: boolean;
+  gradingResultCurrent: boolean;
   placementMode: boolean;
   onPlaceBuilding: (position: { x: number; y: number }) => void;
   onPlaceObject: (id: string, position: { x: number; y: number }) => void;

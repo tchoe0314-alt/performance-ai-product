@@ -34,7 +34,7 @@ export function PreviewGradingEarthworkDock({ gradingEarthworkUx, formatMetric }
         return <rect key={cell.id} data-testid="grading-comparison-cell" data-mode={cell.mode} className="pointer-events-auto cursor-crosshair" x={layout.xPct} y={layout.yPct} width={layout.wPct} height={layout.hPct} fill={cellColor(cell)} stroke={selectedCellId === cell.id ? "#0f172a" : "rgba(255,255,255,.35)"} strokeWidth={selectedCellId === cell.id ? 0.55 : 0.12} onClick={() => setSelectedCellId(cell.id)} />;
       })}
     </svg> : null}
-    <div data-testid="grading-earthwork-panel" className="civora-evidence-dock civora-evidence-dock-left pointer-events-auto absolute bottom-4 left-4 z-[24] w-[min(380px,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.85)] backdrop-blur">
+    <div data-testid="grading-earthwork-panel" className="civora-evidence-dock civora-grading-earthwork-dock civora-evidence-dock-left pointer-events-auto absolute bottom-4 left-4 z-[40] w-[min(380px,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs text-slate-700 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.85)] backdrop-blur">
       <div className="flex items-start justify-between gap-3">
         <div><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Grading / earthwork</p><p className="mt-1 font-semibold text-slate-900">{gradingEarthworkUx.surfaceComparison.deltaLabel}</p></div>
         <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" aria-label="Surface view">

@@ -20,11 +20,13 @@ type LotBoundsForGrading = {
 export function shouldShowCurrentGradingComparison({
   hasGradingSurface,
   gradingStatus,
+  resultCurrent,
 }: {
   hasGradingSurface: boolean;
   gradingStatus: "not_generated" | "fresh" | "stale";
+  resultCurrent: boolean;
 }): boolean {
-  return hasGradingSurface && gradingStatus === "fresh";
+  return hasGradingSurface && resultCurrent && gradingStatus !== "stale";
 }
 
 export function buildDashboardGradingSourceSummary(siteInputs: SiteInputs | null | undefined): string {

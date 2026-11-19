@@ -184,6 +184,10 @@ body,
   display: none !important;
 }
 
+.civora-grading-earthwork-dock {
+  display: block !important;
+}
+
 .civora-cad-dock > section {
   min-width: min(100%, 190px);
 }

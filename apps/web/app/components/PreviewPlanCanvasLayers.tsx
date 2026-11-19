@@ -159,7 +159,7 @@ export function PreviewPlanCanvasLayers({
 
   return (
     <div
-      className="pointer-events-none absolute z-10"
+      className={`pointer-events-none absolute ${showEarthworkUx ? "z-[35]" : "z-10"}`}
       style={{
         left: overlayBoundsResolved.left,
         top: overlayBoundsResolved.top,

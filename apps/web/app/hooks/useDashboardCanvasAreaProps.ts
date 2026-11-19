@@ -29,6 +29,7 @@ type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectN
   canvasPreviewInteraction: PreviewPanelProps["previewInteraction"];
   draftingWorkspaceActive: boolean;
   systemStatuses: PreviewPanelProps["systemStatuses"];
+  gradingResultCurrent: boolean;
   hasTerrainSource: boolean;
   hasSourceBackedSurfaceEvidence: boolean;
   hasBasinPlaced: boolean;
@@ -142,6 +143,7 @@ export function useDashboardCanvasAreaProps({
   draftingWorkspaceActive,
   previewQuality,
   systemStatuses,
+  gradingResultCurrent,
   hasTerrainSource,
   hasSourceBackedSurfaceEvidence,
   hasBasinPlaced,
@@ -271,6 +273,7 @@ export function useDashboardCanvasAreaProps({
       draftingWorkspaceActive,
       previewQuality,
       systemStatuses,
+      gradingResultCurrent,
       hasTerrainSource,
       hasSourceBackedSurfaceEvidence,
       hasBasinPlaced,

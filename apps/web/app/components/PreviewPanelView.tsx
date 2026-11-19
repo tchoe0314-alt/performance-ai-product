@@ -189,6 +189,7 @@ export default function PreviewPanel({
   preview3DEffectiveItems,
   usingAnnotation3D,
   hasGradingSurface,
+  gradingResultCurrent,
   placementMode,
   onPlaceBuilding,
   onPlaceObject,
@@ -708,7 +709,11 @@ export default function PreviewPanel({
   const showEarthworkUx =
     previewMode === "2d" &&
     Boolean(gradingEarthworkUx) &&
-    shouldShowCurrentGradingComparison({ hasGradingSurface, gradingStatus: systemStatuses.grading });
+    shouldShowCurrentGradingComparison({
+      hasGradingSurface,
+      gradingStatus: systemStatuses.grading,
+      resultCurrent: gradingResultCurrent,
+    });
   const accessPointsForParking = useMemo(
     () => buildPreviewParkingAccessPoints(buildingPlacements),
     [buildingPlacements],

@@ -5744,6 +5744,7 @@ function PerformanceAIDashboardView({
     draftingWorkspaceActive:
       activePrimaryWorkflowKey === "draw" || activePrimaryWorkflowKey === "objects",
     systemStatuses,
+    gradingResultCurrent: resultTruth.canClaimSystemsCurrent,
     hasTerrainSource,
     hasSourceBackedSurfaceEvidence,
     hasBasinPlaced,
