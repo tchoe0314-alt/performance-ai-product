@@ -285,23 +285,6 @@ export function useDashboardJobLoader({
           );
         }
       }
-      if (
-        activeTrackedProjectId &&
-        ["queued", "running", "awaiting_approval"].includes(String(job.status || "").toLowerCase())
-      ) {
-        const refreshStamp =
-          typeof job.updated_at === "number" && Number.isFinite(job.updated_at)
-            ? job.updated_at
-            : Date.now() / 1000;
-        const previousRefresh = lastProjectResultRefreshRef.current[job.job_id] ?? 0;
-        if (refreshStamp > previousRefresh) {
-          lastProjectResultRefreshRef.current[job.job_id] = refreshStamp;
-          loadProjectResultInBackground({
-            project_id: activeTrackedProjectId,
-            name: currentProject?.name || siteName || "Untitled Project",
-          } as ProjectRecord);
-        }
-      }
       if (!isArtifactExportJob(job) && job.status === "completed" && job.result?.success === false) {
         const detail = job.result.message?.trim() || "Calculation did not complete. Review the inputs and try again.";
         setJobsPanelStatusMessage(detail);
@@ -341,16 +324,23 @@ export function useDashboardJobLoader({
         if (partialRefreshStamp > previousPartialRefresh) {
           lastJobPartialResultRefreshRef.current[job.job_id] = partialRefreshStamp;
           applyBackendResult(job.result);
-          requestPreviewInBackground(
-            {
-              project_id: activeTrackedProjectId || null,
-              result: job.result,
-              filename_stem: fileName || currentProject?.name || siteName || "civora-ai-plan",
-            },
-            {
-              silentStatus: true,
-            },
-          );
+          // Running stage snapshots are useful for keeping the canonical model
+          // current, but rendering each poll competes with the staged worker and
+          // can leave a valid approval hold looking disabled. Render once when
+          // the server has actually yielded for review; completion has its own
+          // final-result path below.
+          if (normalizedStatus === "awaiting_approval") {
+            requestPreviewInBackground(
+              {
+                project_id: activeTrackedProjectId || null,
+                result: job.result,
+                filename_stem: fileName || currentProject?.name || siteName || "civora-ai-plan",
+              },
+              {
+                silentStatus: true,
+              },
+            );
+          }
         }
       }
       if (job.status === "completed" && job.result) {

@@ -684,6 +684,8 @@ function PerformanceAIDashboardView({
   const lastStaleJobWarningRef = useRef<Record<string, boolean>>({});
   const previewRefreshIntentRef = useRef<{ reason: string; track?: boolean } | null>(null);
   const previewAutoRefreshTimeoutRef = useRef<number | null>(null);
+  const previewRequestInFlightRef = useRef<Map<string, Promise<void>>>(new Map());
+  const approvalPreviewStageRef = useRef("");
   const lastProjectResultRefreshRef = useRef<Record<string, number>>({});
   const lastJobPartialResultRefreshRef = useRef<Record<string, number>>({});
   const handleGenerateSystemRef = useRef<((target: SystemGenerationTarget, options?: { slopeEstimateOverride?: SurveySlopeResponse | null }) => Promise<void>) | null>(null);
@@ -3278,6 +3280,20 @@ function PerformanceAIDashboardView({
     options?: { silent?: boolean; track?: boolean },
   ) => {
     if (!token) return;
+    const previewJob = currentProjectActiveJob || visibleActiveJob;
+    const activeJobStatus = String(previewJob?.status || "").toLowerCase();
+    if (["queued", "running", "cancelling"].includes(activeJobStatus)) return;
+    const approvalCheckpoint = (previewJob?.result?.metadata as Record<string, unknown> | undefined)?.runtime_phase_checkpoint as
+      | { stage_name?: string; yielded?: boolean }
+      | undefined;
+    const payloadCheckpoint = (payload.result?.metadata as Record<string, unknown> | undefined)?.runtime_phase_checkpoint as
+      | { stage_name?: string; yielded?: boolean }
+      | undefined;
+    const yieldedCheckpoint = payloadCheckpoint?.yielded === true ? payloadCheckpoint : approvalCheckpoint;
+    const approvalPreviewStage = activeJobStatus === "awaiting_approval" || payloadCheckpoint?.yielded === true
+      ? `${previewJob?.job_id || payload.project_id || ""}:${String(yieldedCheckpoint?.stage_name || previewJob?.stage || "").trim()}`
+      : "";
+    if (approvalPreviewStage && approvalPreviewStageRef.current === approvalPreviewStage) return;
     const workspaceGeneration = projectLoadRequestRef.current;
     const previewInputFingerprint = liveInputFingerprint(payloadPreviewRef.current);
     if (effectiveDemoWorkspaceEnabled || isSeededDemoProjectId(payload.project_id)) {
@@ -3298,6 +3314,7 @@ function PerformanceAIDashboardView({
       preview_mode: "production",
       preview_layers: previewLayerList,
     };
+    if (approvalPreviewStage) approvalPreviewStageRef.current = approvalPreviewStage;
     try {
       const data = await postJson<PreviewResponse>("/api/preview", previewPayload, {
         token,
@@ -3311,6 +3328,11 @@ function PerformanceAIDashboardView({
       if (!options?.silent) {
         setStatusMessage("Plan preview generated.");
       }
+    } catch (error) {
+      if (approvalPreviewStage && approvalPreviewStageRef.current === approvalPreviewStage) {
+        approvalPreviewStageRef.current = "";
+      }
+      throw error;
     } finally {
       if (options?.track && projectLoadRequestRef.current === workspaceGeneration) {
         setPreviewRefreshing(false);
@@ -3329,7 +3351,17 @@ function PerformanceAIDashboardView({
     if (options?.loadingMessage && !options?.silentStatus) {
       setStatusMessage(options.loadingMessage);
     }
-    void requestPreview(payload, { silent: true, track: options?.track })
+    const requestKey = JSON.stringify({
+      projectId: payload.project_id || null,
+      result: payload.result,
+      previewQuality,
+      previewLabelDensity,
+      previewInteraction,
+      previewLayerList,
+    });
+    if (previewRequestInFlightRef.current.has(requestKey)) return;
+    let request: Promise<void>;
+    request = requestPreview(payload, { silent: true, track: options?.track })
       .then(() => {
         if (projectLoadRequestRef.current !== previewGeneration || previewFingerprint !== liveInputFingerprint(payloadPreviewRef.current)) return;
         if (options?.successMessage && !options?.silentStatus) {
@@ -3346,7 +3378,14 @@ function PerformanceAIDashboardView({
           setPreviewRefreshing(false);
           setPreviewRefreshNote(null);
         }
+      })
+      .finally(() => {
+        if (previewRequestInFlightRef.current.get(requestKey) === request) {
+          previewRequestInFlightRef.current.delete(requestKey);
+        }
       });
+    previewRequestInFlightRef.current.set(requestKey, request);
+    void request;
   };
 
   useEffect(() => {

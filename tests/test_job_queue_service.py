@@ -1197,15 +1197,28 @@ class JobQueueServiceTest(unittest.TestCase):
             waiting["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"],
             "layout",
         )
-        continued = self.queue.continue_job(user_id=self.user_id, job_id=created["job_id"])
+        with self.assertRaisesRegex(ValueError, "checkpoint is stale"):
+            self.queue.continue_job(
+                user_id=self.user_id,
+                job_id=created["job_id"],
+                expected_stage="grading",
+            )
+        continued = self.queue.continue_job(
+            user_id=self.user_id,
+            job_id=created["job_id"],
+            expected_stage="layout",
+        )
         self.assertIsNotNone(continued)
         self.assertIn(continued["status"], {"queued", "running"})
 
         # A browser retry or double-click after the acknowledgement must not
         # approve another checkpoint or enqueue another orchestration pass.
-        duplicate = self.queue.continue_job(user_id=self.user_id, job_id=created["job_id"])
-        self.assertIsNotNone(duplicate)
-        self.assertIn(duplicate["status"], {"queued", "running"})
+        with self.assertRaisesRegex(ValueError, "no longer waiting"):
+            self.queue.continue_job(
+                user_id=self.user_id,
+                job_id=created["job_id"],
+                expected_stage="layout",
+            )
 
         queued_detail = self.queue.get_job_detail(user_id=self.user_id, job_id=created["job_id"])
         self.assertIsNotNone(queued_detail)

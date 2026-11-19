@@ -60,3 +60,18 @@ test("deleting the final object cannot retain or resurrect the old canonical dra
   expect(resolveCanonicalCanvasInput(saved).manual_fields?.site_objects).toEqual([]);
   expect(saved.canonical_project_v1?.buildings).toEqual([]);
 });
+
+test("a single authored building keeps planner compatibility dimensions in sync with canonical edits", () => {
+  const edited = fields({
+    nextBuildingWidth: "160",
+    nextBuildingDepth: "90",
+    nextBuildingCount: "1",
+    buildingPlacements: [{
+      id: "office", label: "Office", type: "office_building", x: 100, y: 100,
+      w: 170, d: 90, placed: true, source: "manual_drawn",
+    }],
+  });
+  expect(edited.building_width).toBe(170);
+  expect(edited.building_depth).toBe(90);
+  expect(edited.site_objects?.find((item) => item.id === "office")?.w).toBe(170);
+});

@@ -276,6 +276,16 @@ export function useDashboardObjectUpdateAction({
     const editSource: CanonicalEditSource = ["manual_cad", "chat", "generator", "dependency", "system"].includes(requestedSource)
       ? requestedSource as CanonicalEditSource
       : "manual_cad";
+    if (
+      editSource === "manual_cad" &&
+      ["x", "y", "w", "d", "rotation", "geometry"].some((key) => key in nextUpdates)
+    ) {
+      // Once a user edits generated geometry it is an authored canonical
+      // object. Retaining `generated: true` let compatibility form values
+      // outrank the visible edit during the next calculation.
+      nextUpdates.generated = false;
+      nextUpdates.source = "manual_drawn";
+    }
     const canonicalCommand = target ? createCanonicalUpdateCommand(target.id, nextUpdates, editSource) : null;
     const canonicalResult = target && canonicalCommand ? applyCanonicalUpdateCommand(target, canonicalCommand) : null;
     if (canonicalResult?.blockedReason) {

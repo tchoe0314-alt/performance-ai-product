@@ -39,7 +39,7 @@ class JobQueueProtocol(Protocol):
     def cancel_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         ...
 
-    def continue_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+    def continue_job(self, *, user_id: str, job_id: str, expected_stage: Optional[str] = None) -> Optional[Dict[str, Any]]:
         ...
 
     def retry_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
@@ -165,11 +165,10 @@ def queue_orchestrate_job(
     # Checkpoint preparation expands an execution payload, not editable inputs.
     # Keep the caller's original design request separate before that expansion.
     editable_request = deepcopy(dict(request_payload or {}))
+    checkpoint_saved = True
     if project_id:
         existing = project_store.get_project(user_id=user_id, project_id=project_id)
         if existing is None:
-            from fastapi import HTTPException
-
             raise HTTPException(status_code=404, detail="Project not found.")
         latest_result = _load_project_latest_result(
             project_store=project_store,
@@ -186,18 +185,28 @@ def queue_orchestrate_job(
             **editable_request,
             "request_payload": deepcopy(editable_request),
         }
-        save_project_snapshot(project_store, existing,
-            user_id=user_id,
-            project_id=project_id,
-            name=str(existing.get("name") or "Untitled Project"),
-            description=str(existing.get("description") or ""),
-            session_id=existing.get("session_id"),
-            tags=list(existing.get("tags") or []),
-            project_input=seeded_project_input,
-            latest_result=latest_result,
-            session_state=dict(existing.get("session_state") or {}),
-            metadata=dict(existing.get("metadata") or {}),
-        )
+        try:
+            save_project_snapshot(project_store, existing,
+                user_id=user_id,
+                project_id=project_id,
+                name=str(existing.get("name") or "Untitled Project"),
+                description=str(existing.get("description") or ""),
+                session_id=existing.get("session_id"),
+                tags=list(existing.get("tags") or []),
+                project_input=seeded_project_input,
+                latest_result=latest_result,
+                session_state=dict(existing.get("session_state") or {}),
+                metadata=dict(existing.get("metadata") or {}),
+            )
+        except HTTPException as error:
+            if error.status_code != 409:
+                raise
+            # The queued job owns an immutable copy of editable_request. If an
+            # autosave wins this optional project-trace write, preserve that
+            # newer project revision and continue from the exact request. The
+            # result freshness guard will archive the job if the project truly
+            # changed; never overwrite the concurrent edit here.
+            checkpoint_saved = False
 
     job = job_queue.submit_job(
         user_id=user_id,
@@ -216,6 +225,7 @@ def queue_orchestrate_job(
             "project_id": project_id,
             "job_id": job.get("job_id"),
             "retryable": True,
+            "checkpoint_saved": checkpoint_saved,
         },
     }
 
@@ -330,8 +340,16 @@ def continue_existing_job(
     job_queue: JobQueueProtocol,
     user_id: str,
     job_id: str,
+    expected_stage: Optional[str] = None,
 ) -> Dict[str, Any]:
-    job = job_queue.continue_job(user_id=user_id, job_id=job_id)
+    try:
+        job = job_queue.continue_job(
+            user_id=user_id,
+            job_id=job_id,
+            **({"expected_stage": expected_stage} if expected_stage else {}),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found.")
     return {

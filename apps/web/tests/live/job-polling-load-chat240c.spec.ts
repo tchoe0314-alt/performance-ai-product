@@ -67,6 +67,7 @@ test("an approval hold does not create overlapping project or job polling", asyn
   let jobDetailCalls = 0;
   let projectResultCalls = 0;
   let continueCalls = 0;
+  let previewCalls = 0;
   let queueCalls = 0;
   let continued = false;
   let jobListInFlight = 0;
@@ -181,6 +182,7 @@ test("an approval hold does not create overlapping project or job polling", asyn
     }
     if (path === `/api/jobs/${job.job_id}/continue` && request.method() === "POST") {
       continueCalls += 1;
+      expect(request.postDataJSON()).toEqual({ expected_stage: "storm_pipes" });
       continued = true;
       await route.fulfill({
         status: 200,
@@ -199,6 +201,7 @@ test("an approval hold does not create overlapping project or job polling", asyn
       return;
     }
     if (path === "/api/preview") {
+      previewCalls += 1;
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, image_url: "", summary: {} }) });
       return;
     }
@@ -231,6 +234,7 @@ test("an approval hold does not create overlapping project or job polling", asyn
   expect(maxJobListInFlight).toBeLessThanOrEqual(1);
   expect(maxJobDetailInFlight).toBeLessThanOrEqual(1);
   expect(projectResultCalls).toBeLessThanOrEqual(3);
+  expect(previewCalls).toBeLessThanOrEqual(1);
 });
 
 test("a completed job does not block the next review export", async ({ page }) => {

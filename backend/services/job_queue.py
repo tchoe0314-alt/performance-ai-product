@@ -563,17 +563,21 @@ class JobQueueService:
         updated = self.get_job(user_id=user_id, job_id=job_id)
         return None if updated is None else self._job_summary(updated)
 
-    def continue_job(self, *, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+    def continue_job(self, *, user_id: str, job_id: str, expected_stage: Optional[str] = None) -> Optional[Dict[str, Any]]:
         self._ensure_workers_alive()
         record = self.get_job_detail(user_id=user_id, job_id=job_id)
         if record is None:
             return None
         if record["status"] != "awaiting_approval":
+            if expected_stage:
+                raise ValueError("This review checkpoint is no longer waiting for approval.")
             return self._job_summary(record)
 
         result = dict(record.get("result") or {})
         checkpoint = dict(dict(result.get("metadata") or {}).get("runtime_phase_checkpoint") or {})
         stage_name = str(checkpoint.get("stage_name") or "").strip()
+        if expected_stage and stage_name != str(expected_stage).strip():
+            raise ValueError("The visible review checkpoint is stale. Refresh before continuing.")
         payload = dict(record.get("payload") or {})
         payload_meta = dict(payload.get("meta") or {})
         orchestrator_meta = dict(payload_meta.get("orchestrator_meta") or {})

@@ -256,7 +256,7 @@ export function useDashboardJobActions({
     try {
       const data = await postJson<{ job: JobSummary }>(
         `/api/jobs/${visibleActiveJob.job_id}/continue`,
-        {},
+        { expected_stage: String(runtimeCheckpoint?.stage_name || "").trim() || null },
         { token },
       );
       upsertJobSummary(data.job);
@@ -275,8 +275,7 @@ export function useDashboardJobActions({
         setActiveJobId(data.job.job_id);
         setApprovalPendingJobId(data.job.job_id);
       }
-      await refreshJobs(token, { suppressError: true, force: true });
-      queuePreviewRefresh("Refreshing preview after review step...");
+      void refreshJobs(token, { suppressError: true, force: true });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not continue the staged run.";
@@ -292,7 +291,6 @@ export function useDashboardJobActions({
     previewNextPendingPhase?.label,
     previewRunningPhase?.label,
     pushJobToast,
-    queuePreviewRefresh,
     refreshJobs,
     setActiveJobId,
     setApprovalError,

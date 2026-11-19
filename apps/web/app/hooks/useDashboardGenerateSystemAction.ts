@@ -63,7 +63,10 @@ type UseDashboardGenerateSystemActionInput = {
   minSlopePct: string;
   pendingPlacementLabels: string[];
   pendingPlacementObjects: BuildingPlacement[];
-  persistFlowMetadata: (updates: Partial<{ generate_flow_summary_v1: GenerateFlowSummary }>) => Promise<boolean | void>;
+  persistFlowMetadata: (
+    updates: Partial<{ generate_flow_summary_v1: GenerateFlowSummary }>,
+    inputOverride?: PlanRequestPayload,
+  ) => Promise<boolean | void>;
   projectId: string;
   reactiveChangedSystems: EngineeringSystemKey[];
   reactiveValidation: ReactiveValidationState;
@@ -168,7 +171,7 @@ export function useDashboardGenerateSystemAction({
         safety_wording:
           "Generate creates review-required drafts for qualified review.",
       });
-      const recordGenerateSummary = (summary: GenerateFlowSummary) => {
+      const recordGenerateSummary = (summary: GenerateFlowSummary, inputOverride?: PlanRequestPayload) => {
         setGenerateFlowSummary(summary);
         recordRecentChange({
           type: "generate_recorded",
@@ -184,7 +187,7 @@ export function useDashboardGenerateSystemAction({
           ran: summary.ran.length,
           skipped: summary.skipped.length,
         });
-        return persistFlowMetadata({ generate_flow_summary_v1: summary });
+        return persistFlowMetadata({ generate_flow_summary_v1: summary }, inputOverride);
       };
       if (hardPreflightBlockers.length) {
         const firstHardBlocker = hardPreflightBlockers[0];
@@ -409,7 +412,10 @@ export function useDashboardGenerateSystemAction({
           "Generate creates review-required drafts for qualified review.",
       };
       let checkpointSave: Promise<boolean | void> | undefined;
-      flushSync(() => { checkpointSave = recordGenerateSummary(runSummary); });
+      // Save the exact canonical payload that will be queued. An object edit can
+      // still have an older autosave in flight; rebuilding from generic live
+      // state here allowed that older snapshot to win the recalculation race.
+      flushSync(() => { checkpointSave = recordGenerateSummary(runSummary, systemRequestPayload); });
       if (await checkpointSave === false) {
         updateProjectStatus({ state: "blocked", area: "generate", title: "Calculation needs saved inputs",
           detail: "The calculation checkpoint could not be saved. No calculation was started.", nextAction: "Save this layout successfully, then run again." });

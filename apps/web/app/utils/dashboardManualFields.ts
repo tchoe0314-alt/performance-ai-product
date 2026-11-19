@@ -192,6 +192,22 @@ export function buildDashboardManualFields({
     const buildingOverrides = placementOverrides.filter((placement) =>
       buildingTypes.has(placement.type as SiteObjectType),
     );
+    const authoredBuildingOverrides = buildingOverrides.filter(
+      (placement) => !placement.generated && placement.meta?.generated_review_concept !== true,
+    );
+    // The scalar fields remain as compatibility inputs for the planner, but a
+    // single authored canonical building is the source of truth after a canvas
+    // edit. Leaving these scalars at their original form values silently
+    // reverted the object during recalculation.
+    if (authoredBuildingOverrides.length === 1) {
+      const [canonicalBuilding] = authoredBuildingOverrides;
+      if (Number.isFinite(canonicalBuilding.w) && canonicalBuilding.w > 0) {
+        manualFields.building_width = canonicalBuilding.w;
+      }
+      if (Number.isFinite(canonicalBuilding.d) && canonicalBuilding.d > 0) {
+        manualFields.building_depth = canonicalBuilding.d;
+      }
+    }
     const placementRoutePoints = (placement: (typeof placementOverrides)[number]): Array<[number, number]> =>
       (Array.isArray(placement.geometry) ? placement.geometry : [])
         .filter(

@@ -3555,6 +3555,7 @@ def cancel_job(
 @app.post("/api/jobs/{job_id}/continue")
 def continue_job(
     job_id: str,
+    payload: Optional[Dict[str, Any]] = None,
     current_user: Dict[str, Any] = Depends(get_current_user),
     _rate_limit: None = Depends(rate_limit("planner")),
 ) -> Dict[str, Any]:
@@ -3562,6 +3563,7 @@ def continue_job(
         job_queue=JOB_QUEUE,
         user_id=current_user["user_id"],
         job_id=job_id,
+        expected_stage=str((payload or {}).get("expected_stage") or "").strip() or None,
     )
 
 

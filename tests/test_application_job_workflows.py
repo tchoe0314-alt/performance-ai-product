@@ -258,6 +258,27 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
             110,
         )
 
+    def test_queue_orchestrate_job_preserves_concurrent_autosave_and_still_queues_exact_request(self):
+        class ConflictingStore(FakeProjectStore):
+            def save_project(self, **kwargs):
+                raise HTTPException(status_code=409, detail="Project changed during this operation. Reopen it and retry.")
+
+        store = ConflictingStore({
+            "user_id": "u1", "project_id": "p1", "name": "Concurrent", "description": "",
+            "session_id": None, "tags": [], "project_input": {"manual_fields": {"building_width": 160}},
+            "latest_result": {}, "session_state": {}, "metadata": {},
+        })
+        queue = FakeJobQueue()
+        request = {"project_id": "p1", "manual_fields": {"building_width": 170}, "meta": {"requested_system": "full"}}
+
+        response = queue_orchestrate_job(
+            project_store=store, job_queue=queue, user_id="u1", project_id="p1", request_payload=request,
+        )
+
+        self.assertTrue(response["success"])
+        self.assertFalse(response["operational_summary"]["checkpoint_saved"])
+        self.assertEqual(queue.submitted["payload"]["manual_fields"]["building_width"], 170)
+
     def test_queue_artifact_export_job_submits_review_only_report_job(self):
         store = FakeProjectStore(
             {

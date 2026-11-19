@@ -53,8 +53,9 @@ export function useDashboardGenerateFlowCoordinator({
         generate_flow_summary_v1: GenerateFlowSummary;
         review_package_flow_summary_v1: ReviewPackageFlowSummary;
       }>,
+      inputOverride?: ProjectInput,
     ) => {
-      const currentInput = liveInputRef.current;
+      const currentInput = inputOverride ?? liveInputRef.current;
       const currentInputMode = currentInput?.input_mode === "assisted" ? "assisted" : "user";
       const nextProjectInput: ProjectInput = {
         ...currentInput,
