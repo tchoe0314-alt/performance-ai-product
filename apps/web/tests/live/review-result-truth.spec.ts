@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { buildDashboardResultTruth } from "../../app/utils/dashboardResultTruth";
+import { buildDashboardResultTruth, calculatedResultBlockReason } from "../../app/utils/dashboardResultTruth";
 import type { PlanResponse } from "../../app/types";
 
 const result = (disposition?: "active" | "archived", success: boolean = true) => ({
@@ -23,5 +23,7 @@ test("Review result truth has conservative precedence for every saved-calculatio
     const truth = buildDashboardResultTruth({ result: state === "missing" ? null : result(state === "historical" ? "archived" : "active", state !== "failed"), freshness: state, localStale: state === "stale" });
     expect(truth.canClaimSystemsCurrent).toBe(false);
     expect(truth.canUseCalculatedExports).toBe(false);
+    if (state !== "missing") expect(calculatedResultBlockReason(truth, true)).toContain(truth.label.toLowerCase());
   }
+  expect(calculatedResultBlockReason(current, true)).toBe("");
 });

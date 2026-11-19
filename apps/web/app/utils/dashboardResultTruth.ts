@@ -27,3 +27,9 @@ export function buildDashboardResultTruth({ result, freshness, localStale }: { r
   };
   return { state, label: copy[state][0], reason: copy[state][1], canClaimSystemsCurrent: state === "current", canUseCalculatedExports: state === "current" };
 }
+
+export function calculatedResultBlockReason(truth: DashboardResultTruth, resultPresent: boolean): string {
+  return resultPresent && !truth.canUseCalculatedExports
+    ? `${truth.label.toLowerCase()}: ${truth.reason}`
+    : "";
+}

@@ -25,6 +25,7 @@ export type DashboardExportActionsConfig = {
   appendChatMessage: AppendChatMessage;
   artifactPayload: Record<string, unknown>;
   backendResultPresent: boolean;
+  calculatedResultBlockReason?: string;
   autoSiteContextSummary: AutoSiteContextFlowSummary;
   costEstimate: {
     explain?: {
@@ -255,6 +256,7 @@ export function createDashboardExportActions(config: DashboardExportActionsConfi
   };
 
   const getExportBlockReason = (exportScope: "review" | "construction" = "review") => {
+    if (config.calculatedResultBlockReason) return config.calculatedResultBlockReason;
     if (config.resultIsStale) return "calculation is out of date; recalculate before exporting";
     return resolveDashboardExportBlockReason({
       token,

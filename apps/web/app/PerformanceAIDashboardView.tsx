@@ -233,7 +233,7 @@ import { useDashboardDesignControls } from "./hooks/useDashboardDesignControls";
 import { useDashboardSiteRestore } from "./hooks/useDashboardSiteRestore";
 import { ensureDashboardProjectDraft } from "./utils/dashboardProjectDraft";
 import { importedParcelBoundaryFromProjectInput } from "./utils/importedParcelBoundary";
-import { buildDashboardResultTruth, type DashboardResultTruthState } from "./utils/dashboardResultTruth";
+import { buildDashboardResultTruth, calculatedResultBlockReason, type DashboardResultTruthState } from "./utils/dashboardResultTruth";
 import { createDashboardPlanExecutor, isConnectivityFailureMessage } from "./utils/dashboardPlanExecution";
 import { useDashboardProjectResultLoader } from "./hooks/useDashboardProjectResultLoader";
 import { isLiveCalculationCurrent, liveInputFingerprint } from "./utils/liveCalculationFreshness";
@@ -3854,6 +3854,7 @@ function PerformanceAIDashboardView({
         artifactPayload,
         autoSiteContextSummary: autoSiteContextFlowSummary,
         backendResultPresent: Boolean(backendResult),
+        calculatedResultBlockReason: calculatedResultBlockReason(resultTruth, Boolean(backendResult)),
         costEstimate,
         currentPlanMeta,
         currentProject,
@@ -3880,6 +3881,7 @@ function PerformanceAIDashboardView({
       backendResult,
       costEstimate,
       resultIsStale,
+      resultTruth,
       currentPlanMeta,
       currentProject,
       projectId,
@@ -5422,7 +5424,7 @@ function PerformanceAIDashboardView({
     sidePanelForRender,
     reviewPackageFlowSummary,
     planPreviewUrl,
-    hasBackendResult: Boolean(backendResult),
+    hasBackendResult: Boolean(backendResult) && resultTruth.canUseCalculatedExports,
     placedObjectCount,
     sidebarTrustScore,
     exportActionMessage,

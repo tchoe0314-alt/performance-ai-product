@@ -292,6 +292,7 @@ export function DeliverPanel({
           <button
             type="button"
             onClick={onPlanSheetExportPdf}
+            title={exportBlockReason || "Download review PDF"}
             className="rounded-[7px] border border-slate-200 bg-white px-2 py-2.5 text-center text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
           >
             Review PDF
