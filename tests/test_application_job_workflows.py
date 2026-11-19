@@ -2513,6 +2513,29 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertEqual(runtime_resume["stage_statuses"]["grading"], "complete")
         self.assertTrue(runtime_resume["phase_checkpoints"]["layout"]["ready"])
 
+        captured_payload.clear()
+        runner(
+            {
+                "job_id": "job_resume_owned_checkpoint",
+                "job_type": "orchestrate",
+                "user_id": "u1",
+                "project_id": "p1",
+                "payload": {"prompt_text": "run"},
+                "result": {
+                    "final_plan": {
+                        "meta": {
+                            "stage_completeness": {"statuses": {"storm_pipes": "complete"}},
+                            "phase_checkpoints": {"drainage_storm": {"status": "complete", "ready": True}},
+                        }
+                    }
+                },
+            }
+        )
+        owned_resume = dict(dict(captured_payload.get("meta") or {}).get("runtime_resume") or {})
+        self.assertEqual(owned_resume["source"], "job_checkpoint")
+        self.assertEqual(owned_resume["stage_statuses"], {"storm_pipes": "complete"})
+        self.assertNotIn("grading", owned_resume["stage_statuses"])
+
     def test_build_orchestrate_job_runner_uses_full_latest_result_not_shell(self):
         store = FakeProjectStore(
             {

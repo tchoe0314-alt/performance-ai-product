@@ -11158,6 +11158,14 @@ def build_plan(
     parsed_checked = triple_check_parsed_payload(parsed)
     route = choose_routing_path(parsed_checked)
     raw = build_plan_from_parsed(parsed_checked, route, progress_callback=progress_callback)
+    runtime_checkpoint = safe_dict(safe_dict(raw.get("meta")).get("runtime_phase_checkpoint"))
+    if bool(runtime_checkpoint.get("yielded")):
+        # Approval checkpoints persist canonical geometry and discipline state,
+        # but are not deliverables. Fully finalizing every hold duplicated
+        # quantities, cost, CAD/export audits, and readiness packaging before
+        # the user could even approve the next stage. The terminal continuation
+        # still runs the complete finalization path below.
+        return sanitize_plan(raw)
     return finalize_plan(raw, parsed=parsed_checked, route=route)
 
 

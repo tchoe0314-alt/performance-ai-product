@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from copy import deepcopy
+from unittest.mock import patch
 
 import planner
 
@@ -318,6 +319,14 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
         }
         unknown_checkpoint = planner.build_plan(unknown_payload)
         self.assertNotIn("calculation_engine_revision", unknown_checkpoint["meta"])
+
+    def test_runtime_approval_checkpoint_skips_terminal_packaging(self) -> None:
+        payload = _supported_minimal_payload()
+        payload["meta"] = {"orchestrator_meta": {"runtime_phase_batch_limit": 1}}
+        with patch.object(planner, "finalize_plan", side_effect=AssertionError("terminal packaging must not run")):
+            checkpoint = planner.build_plan(payload)
+        self.assertTrue(checkpoint["meta"]["runtime_phase_checkpoint"]["yielded"])
+        self.assertNotIn("quantities", checkpoint["meta"])
 
     def test_sparse_approved_layout_checkpoint_rehydrates_user_building(self) -> None:
         payload = _supported_minimal_payload()

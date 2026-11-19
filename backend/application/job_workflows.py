@@ -1400,6 +1400,34 @@ def build_orchestrate_job_runner(
         existing = None
         if project_id and user_id:
             existing = project_store.get_project(user_id=user_id, project_id=project_id)
+        # An awaiting-approval job owns its partial, revision-bound checkpoint.
+        # Project latest intentionally remains the last complete calculation,
+        # so continuation must prefer the same job's result instead of making a
+        # partial checkpoint look current merely to resume it.
+        job_result = dict(job.get("result") or {})
+        job_final_plan = dict(job_result.get("final_plan") or {})
+        job_final_meta = dict(job_final_plan.get("meta") or {})
+        job_stage_statuses = dict(
+            dict(job_final_meta.get("stage_completeness") or {}).get("statuses") or {}
+        )
+        job_phase_checkpoints = dict(
+            job_final_meta.get("phase_checkpoints")
+            or dict(dict(job_result.get("metadata") or {}).get("run_summary") or {}).get("phase_checkpoints")
+            or {}
+        )
+        resume_result: Dict[str, Any] = {}
+        resume_final_plan: Dict[str, Any] = {}
+        stage_statuses: Dict[str, Any] = {}
+        phase_checkpoints: Dict[str, Any] = {}
+        if (
+            job_final_plan
+            and (job_stage_statuses or job_phase_checkpoints)
+            and _result_can_resume_for_input(job_result, run_payload)
+        ):
+            resume_result = job_result
+            resume_final_plan = job_final_plan
+            stage_statuses = job_stage_statuses
+            phase_checkpoints = job_phase_checkpoints
         if existing is not None:
                 existing_result = _load_project_latest_result(
                     project_store=project_store,
@@ -1409,31 +1437,38 @@ def build_orchestrate_job_runner(
                 )
                 existing_final_plan = dict(existing_result.get("final_plan") or {})
                 existing_meta = dict(existing_final_plan.get("meta") or {})
-                stage_statuses = dict(
+                existing_stage_statuses = dict(
                     dict(existing_meta.get("stage_completeness") or {}).get("statuses") or {}
                 )
-                phase_checkpoints = dict(
+                existing_phase_checkpoints = dict(
                     existing_meta.get("phase_checkpoints")
                     or dict(dict(existing_result.get("metadata") or {}).get("run_summary") or {}).get("phase_checkpoints")
                     or {}
                 )
                 if (
-                    existing_final_plan
-                    and (stage_statuses or phase_checkpoints)
+                    not resume_final_plan
+                    and existing_final_plan
+                    and (existing_stage_statuses or existing_phase_checkpoints)
                     and _result_can_resume_for_input(existing_result, run_payload)
                 ):
-                    runtime_resume = {
-                        "project_id": project_id,
-                        "stage_statuses": stage_statuses,
-                        "phase_checkpoints": phase_checkpoints,
-                        "final_plan": existing_final_plan,
-                    }
-                    run_meta = dict(run_payload.get("meta") or {})
-                    orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
-                    orchestrator_meta["runtime_resume"] = runtime_resume
-                    run_meta["orchestrator_meta"] = orchestrator_meta
-                    run_meta["runtime_resume"] = runtime_resume
-                    run_payload["meta"] = run_meta
+                    resume_result = existing_result
+                    resume_final_plan = existing_final_plan
+                    stage_statuses = existing_stage_statuses
+                    phase_checkpoints = existing_phase_checkpoints
+        if resume_final_plan:
+            runtime_resume = {
+                "project_id": project_id,
+                "stage_statuses": stage_statuses,
+                "phase_checkpoints": phase_checkpoints,
+                "final_plan": resume_final_plan,
+                "source": "job_checkpoint" if resume_result is job_result else "latest_project_result",
+            }
+            run_meta = dict(run_payload.get("meta") or {})
+            orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
+            orchestrator_meta["runtime_resume"] = runtime_resume
+            run_meta["orchestrator_meta"] = orchestrator_meta
+            run_meta["runtime_resume"] = runtime_resume
+            run_payload["meta"] = run_meta
         run_meta = dict(run_payload.get("meta") or {})
         orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
         approved_stages = [
