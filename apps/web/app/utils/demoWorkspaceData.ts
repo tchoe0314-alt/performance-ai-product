@@ -1222,6 +1222,9 @@ export const createUrbanizationCampusPlanPlacements = (lot: { w: number; h: numb
 export const createDemoPlanResponse = (): PlanResponse => ({
   success: true,
   message: "Demo workspace loaded for UI QA.",
+  metadata: {
+    calculation_save_v1: { disposition: "active", calculation_id: "demo-takeoff-revision-1" },
+  },
   assumptions: [
     {
       field_name: "demo_mode",
@@ -1256,6 +1259,7 @@ export const createDemoPlanResponse = (): PlanResponse => ({
         },
       },
       quantities: {
+        success: true,
         totals: {
           lot_area_sf: 395200,
           building_area_sf: 17590,
@@ -1268,6 +1272,21 @@ export const createDemoPlanResponse = (): PlanResponse => ({
           estimated_parking_stalls: 116,
           pond_count: 1,
           inlet_count: 5,
+        },
+        tables: {
+          construction_takeoff: {
+            earthwork: { cut_cy: 100, fill_cy: 50, haul_quantity_inferred: false },
+            pipes_by_system_and_diameter: [
+              { system: "sanitary", diameter_in: 18, measurement_basis: "centerline_horizontal", horizontal_length_ft: 70, three_dimensional_length_ft: null, source_object_ids: ["SAN-1"] },
+              { system: "storm", diameter_in: 18, measurement_basis: "centerline_horizontal", horizontal_length_ft: 50, three_dimensional_length_ft: 50.16, source_object_ids: ["STM-1"] },
+              { system: "storm", diameter_in: 24, measurement_basis: "structure_face_to_face_horizontal", horizontal_length_ft: 60, three_dimensional_length_ft: 60.3, source_object_ids: ["STM-2"] },
+            ],
+            structures_by_system_and_type: [
+              { system: "sanitary", structure_type: "manhole", count: 1, source_object_ids: ["SMH-1"] },
+              { system: "storm", structure_type: "inlet", count: 2, source_object_ids: ["DI-1", "DI-2"] },
+              { system: "storm", structure_type: "manhole", count: 1, source_object_ids: ["MH-1"] },
+            ],
+          },
         },
       },
       storm_pipes: {

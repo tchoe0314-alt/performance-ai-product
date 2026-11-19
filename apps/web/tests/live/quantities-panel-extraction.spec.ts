@@ -20,11 +20,15 @@ test("previous quantity totals are labelled and cannot be downloaded as current"
 });
 
 async function openQuantitiesPanel(page: Page) {
-  await page.goto("/demo/workspace?debugPreview=1&debugPanel=quantities", { waitUntil: "domcontentloaded" });
+  await page.goto("/demo/workspace?debugPreview=1&seedDemo=1&debugPanel=quantities", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
   const panel = page.getByTestId("workspace-right-panel");
+  if (!(await panel.getByText("Quantity takeoff", { exact: true }).count())) {
+    await page.getByTestId("workspace-stage-analyze").click();
+    await page.getByTestId("workspace-stage-panel").selectOption("quantities");
+  }
   await expect(panel).toContainText("Quantity takeoff", { timeout: 5_000 });
-  await expect(panel.getByTestId("quantity-calculation-source")).toContainText("Calculation version unverified.");
+  await expect(panel.getByTestId("quantity-calculation-source")).toContainText("Previous calculation. Recalculate for current totals.");
   return panel;
 }
 
@@ -35,9 +39,14 @@ test("Quantities panel remains reachable and keeps review export state", async (
   await expect(panel).toContainText("Missing cost");
   await expect(panel).toContainText("Untraced");
   await expect(panel).toContainText("Deltas");
+  await expect(panel.getByTestId("construction-takeoff-breakdown")).toContainText("Earthwork cut");
+  await expect(panel.getByTestId("construction-takeoff-breakdown")).toContainText("100.0 cy");
+  await expect(panel.getByTestId("construction-takeoff-breakdown")).toContainText("Earthwork fill");
+  await expect(panel.getByTestId("construction-takeoff-breakdown")).toContainText("50.0 cy");
+  await expect(panel.getByTestId("construction-takeoff-breakdown")).toContainText("centerline_horizontal");
+  await expect(panel.getByTestId("construction-takeoff-breakdown")).toContainText("structure_face_to_face_horizontal");
+  await expect(panel.getByTestId("construction-takeoff-breakdown")).toContainText("storm · inlet: 2");
   await expect(panel.getByRole("button", { name: "Export report" })).toBeDisabled();
-  await expect(panel).toContainText("No traceable quantity result was produced.");
-  await expect(panel).toContainText("Review generation inputs and run the required systems again.");
 });
 
 test("Informational quantity totals remain references instead of false cost or trace gaps", () => {
