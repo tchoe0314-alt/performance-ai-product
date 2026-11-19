@@ -224,6 +224,25 @@ class ApiEngineeringGuardsTest(unittest.TestCase):
         self.assertTrue(plan["meta"]["sheet_registry"])
         self.assertEqual(plan["meta"]["export_audit"], {"success": True})
 
+    def test_sanitize_plan_preserves_review_only_pipe_network(self) -> None:
+        plan = sanitize_plan({
+            "project_name": "Review Pipe Plan",
+            "actions": [],
+            "meta": {
+                "review_pipe_network": {
+                    "source": "user_input",
+                    "status": "review_only_not_hydraulically_verified",
+                    "review_only": True,
+                    "construction_release_allowed": False,
+                    "segments": [{"id": "P-1", "canonical_id": "P-1", "length_ft": 100, "diameter_in": 18}],
+                },
+            },
+        })
+        review = plan["meta"]["review_pipe_network"]
+        self.assertTrue(review["review_only"])
+        self.assertFalse(review["construction_release_allowed"])
+        self.assertEqual(review["segments"][0]["canonical_id"], "P-1")
+
     def test_save_project_payload_keeps_omitted_latest_result_as_none(self) -> None:
         payload = SaveProjectPayload(
             name="Demo Project",

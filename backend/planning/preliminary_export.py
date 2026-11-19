@@ -46,14 +46,17 @@ def validate_review_geometry(plan: dict) -> str:
             if not isinstance(action, dict) or action.get("task") not in supported:
                 raise ValueError("unsupported drawing entity")
             for field in numeric_fields.intersection(action):
-                # Canonical actions use a superset schema and explicitly set
-                # irrelevant dimension aliases to null.
+                # Canonical actions use a stable shape and therefore carry
+                # nulls for fields that do not apply to that entity (for
+                # example a polyline's radius or a rectangle's rotation).
+                # Null is absence, not a corrupt coordinate; required values
+                # are validated by the task-specific checks below.
                 if action[field] is None:
                     continue
                 if not math.isfinite(float(action[field])):
                     raise ValueError("nonfinite coordinate or dimension")
             for field in ("points", "origin", "center"):
-                if field not in action:
+                if field not in action or action[field] is None:
                     continue
                 points = action[field] if field == "points" else [action[field]]
                 if not isinstance(points, list):

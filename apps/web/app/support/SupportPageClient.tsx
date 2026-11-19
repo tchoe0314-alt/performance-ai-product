@@ -83,9 +83,9 @@ export function SupportPageClient() {
   return (
     <main className="min-h-screen bg-slate-50 px-5 py-8 text-slate-900" data-testid="support-page">
       <div className="mx-auto max-w-3xl">
-        <Link href="/demo/workspace" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
+        <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950">
           <ArrowLeft className="h-4 w-4" />
-          Back to workspace
+          Back to Civora
         </Link>
 
         <header className="mt-8 border-b border-slate-200 pb-7">
@@ -113,10 +113,15 @@ export function SupportPageClient() {
               onSubmitted={recordSubmission}
             />
           ) : authState === "signed_out" ? (
-            <Link href="/demo/workspace" className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-950 px-3 text-sm font-semibold text-white">
-              <LogIn className="h-4 w-4" />
-              Open Civora to sign in
-            </Link>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link href="/" className="inline-flex h-9 items-center gap-2 rounded-lg bg-slate-950 px-3 text-sm font-semibold text-white">
+                <LogIn className="h-4 w-4" />
+                Open Civora to sign in
+              </Link>
+              <Link href="/demo/workspace" className="text-sm font-semibold text-slate-600 underline hover:text-slate-950">
+                Explore the demo workspace
+              </Link>
+            </div>
           ) : null}
         </section>
 

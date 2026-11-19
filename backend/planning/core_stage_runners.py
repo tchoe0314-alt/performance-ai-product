@@ -1523,6 +1523,42 @@ def run_layout_stage(
             by = lot_y + max(5.0, (lot_h - build_d) / 2.0)
             placements = [{"name": "BUILDING", "use": "generic", "x": bx, "y": by, "w": build_w, "d": build_d}]
 
+        # Persist the resolved user building placements into the expanded plan
+        # itself. Resume/recalculation can rebuild the ProjectModel from a
+        # sparse SITE/PAD checkpoint, so relying only on transient model
+        # objects can otherwise drop the edited building from final exports.
+        if user_layout_requested:
+            placement_actions = []
+            for placement in placements:
+                placement_id = safe_str(placement.get("id"), "")
+                placement_actions.append({
+                    "task": "rectangle",
+                    "layer": "BUILDING",
+                    "label": safe_str(placement.get("name"), "BUILDING"),
+                    "origin": [safe_float(placement.get("x"), 0.0), safe_float(placement.get("y"), 0.0)],
+                    "width": max(1.0, safe_float(placement.get("w"), build_w)),
+                    "height": max(1.0, safe_float(placement.get("d"), build_d)),
+                    "canonical_source_id": placement_id or None,
+                    "canonical_source_type": "building",
+                    "meta": {**_preview_meta_for_action("BUILDING", "rectangle"), "entity_id": placement_id or None},
+                })
+            current_expanded = safe_dict(project.meta.get("_expanded_plan"))
+            placement_ids = {safe_str(item.get("canonical_source_id"), "") for item in placement_actions}
+            retained_actions = [
+                action for action in safe_list(current_expanded.get("actions"))
+                if not (
+                    safe_str(safe_dict(action).get("layer"), "").upper() == "BUILDING"
+                    and safe_str(safe_dict(action).get("canonical_source_id"), "") in placement_ids
+                )
+            ]
+            store_expanded_plan(project, {
+                "project_name": safe_str(parsed.get("project_name"), "Generated Plan"),
+                "units": safe_str(parsed.get("units"), "ft"),
+                "actions": _merge_layout_actions(retained_actions, placement_actions),
+                "meta": dict(current_expanded.get("meta") or {}),
+                "assumptions": list(current_expanded.get("assumptions") or []),
+            })
+
         for placement in placements:
             px = safe_float(placement.get("x"), 0.0)
             py = safe_float(placement.get("y"), 0.0)

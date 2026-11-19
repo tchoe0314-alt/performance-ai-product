@@ -1,3 +1,4 @@
+import { canRebaseCalculationRevision } from "../utils/projectSaveRebase";
 import type { MutableRefObject } from "react";
 import { useCallback, useRef, useState } from "react";
 
@@ -79,7 +80,7 @@ export function useDashboardProjectSave({
 }: UseDashboardProjectSaveOptions) {
   const saveQueueRef = useRef<DashboardProjectSaveQueue | null>(null);
   const [saveProgress, setSaveProgress] = useState<{generation:number; state:"saving"|"failed"|"auth_required"|"idle"}>({generation:-1,state:"idle"});
-  const revisionRef = useRef<{ generation: number; projectId: string; revision?: string } | null>(null);
+  const revisionRef = useRef<{ generation: number; projectId: string; revision?: string; baseline?: ProjectRecord } | null>(null);
   const forkRef = useRef<{ generation: number; original: string; copy: string } | null>(null);
   const waitForPendingProjectSaves = useCallback(async (id: string) => {
     if (resolvedProjectIdRef.current !== id) return;
@@ -213,7 +214,8 @@ export function useDashboardProjectSave({
         }
         if (!revisionRef.current || revisionRef.current.generation !== workspaceGeneration || revisionRef.current.projectId !== effectiveProjectId) {
           revisionRef.current = { generation: workspaceGeneration, projectId: effectiveProjectId ?? "",
-            revision: currentProject?.project_id === effectiveProjectId ? currentProject.revision_token : undefined };
+            revision: currentProject?.project_id === effectiveProjectId ? currentProject.revision_token : undefined,
+            baseline: currentProject?.project_id === effectiveProjectId ? currentProject : undefined };
         }
         if (effectiveProjectId && revisionRef.current.revision) requestBody.expected_revision = revisionRef.current.revision;
         const applyChoice = async (choice: "copy" | "replace" | "cancel") => {
@@ -248,9 +250,21 @@ export function useDashboardProjectSave({
           data = await postJson<{ project: ProjectRecord }>("/api/projects", requestBody, { token });
         } catch (error) {
           if ((error as { status?: number }).status !== 409 || !effectiveProjectId) throw error;
-          const choice = await choose(effectiveProjectId);
-          await applyChoice(choice);
-          data = await postJson<{ project: ProjectRecord }>("/api/projects", requestBody, { token });
+          const latest = await getJson<{ project: ProjectRecord }>(`/api/projects/${effectiveProjectId}`, { token });
+          if (latestResultToSave === undefined && canRebaseCalculationRevision(revisionRef.current?.baseline, latest.project)) {
+            requestBody.expected_revision = latest.project.revision_token;
+          } else {
+            const choice = await choose(effectiveProjectId);
+            await applyChoice(choice);
+          }
+          try {
+            data = await postJson<{ project: ProjectRecord }>("/api/projects", requestBody, { token });
+          } catch (retryError) {
+            if ((retryError as { status?: number }).status === 409) {
+              throw Object.assign(new Error("Project changed again while saving. Your edits remain unsaved; reopen the latest project or save a copy."), { status: 409 });
+            }
+            throw retryError;
+          }
         }
         if (projectLoadRequestRef.current !== workspaceGeneration) {
           return null;
@@ -260,7 +274,7 @@ export function useDashboardProjectSave({
         if(identityOverride)payloadPreviewRef.current={...payloadPreviewRef.current,meta:{...payloadPreviewRef.current.meta,project_identity_v1:identityOverride},manual_fields:{...payloadPreviewRef.current.manual_fields,project_name:data.project.name}};
         resolvedProjectIdRef.current = data.project.project_id;
         markSaved(data.project.project_id,requestBody.project_input as ProjectInput,workspaceGeneration);
-        revisionRef.current = { generation: workspaceGeneration, projectId: data.project.project_id, revision: data.project.revision_token };
+        revisionRef.current = { generation: workspaceGeneration, projectId: data.project.project_id, revision: data.project.revision_token, baseline: data.project };
         if (effectiveProjectId && data.project.project_id !== effectiveProjectId) {
           forkRef.current = { generation: workspaceGeneration, original: effectiveProjectId, copy: data.project.project_id };
           // A queued save can run before React publishes the copied name.

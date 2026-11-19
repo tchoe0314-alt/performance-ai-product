@@ -1419,10 +1419,14 @@ export default function PreviewPanel({
       reviewNote: String(selectedCadObject.meta?.review_note || ""),
     });
   }, [getCadLayer, selectedCadObject]);
-  const selectedCadIds = useMemo(
-    () => Array.from(new Set([...(selectedBuildingId ? [selectedBuildingId] : []), ...selectedObjectIds, ...cadSelectionSet])),
-    [cadSelectionSet, selectedBuildingId, selectedObjectIds],
-  );
+  const selectedCadIds = useMemo(() => {
+    const explicitSelection = Array.from(new Set([...selectedObjectIds, ...cadSelectionSet]));
+    // A focused/inspected object can lag behind the selection shown in Object
+    // Manager. Once an explicit selection exists, it must be the sole source of
+    // truth for multi-object CAD commands.
+    if (explicitSelection.length) return explicitSelection;
+    return selectedBuildingId ? [selectedBuildingId] : [];
+  }, [cadSelectionSet, selectedBuildingId, selectedObjectIds]);
   const hasCadCommandActivity =
     cadPrecisionToolsVisible ||
     Boolean(cadActiveCommand) ||

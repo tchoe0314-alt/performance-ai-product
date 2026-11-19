@@ -483,7 +483,11 @@ class ArtifactService:
         if str(final_plan.get("units") or "").lower() not in {"ft", "feet"}:
             raise ValueError("LandXML pipe-network export currently supports feet only.")
         meta = final_plan.get("meta") or {}
-        for system in (meta.get("storm_pipes") or meta.get("storm_pipe_summary") or {}, meta.get("sanitary") or meta.get("sanitary_summary") or {}):
+        storm_system = meta.get("storm_pipes") or meta.get("storm_pipe_summary") or {}
+        review_system = meta.get("review_pipe_network") or {}
+        if not (storm_system.get("segments") or []) and review_system.get("review_only") is True and review_system.get("construction_release_allowed") is False:
+            storm_system = review_system
+        for system in (storm_system, meta.get("sanitary") or meta.get("sanitary_summary") or {}):
             for segment in system.get("segments") or []:
                 try:
                     length = float(segment["length_ft"])

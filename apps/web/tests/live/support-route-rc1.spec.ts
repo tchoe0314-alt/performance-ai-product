@@ -20,7 +20,9 @@ test.describe("standalone support route", () => {
     await page.goto("/support?category=bug", { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("heading", { name: "Report a Civora problem" })).toBeVisible();
     await expect(page.getByText("Sign in to Civora before sending an issue.")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open Civora to sign in" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Back to Civora" })).toHaveAttribute("href", "/");
+    await expect(page.getByRole("link", { name: "Open Civora to sign in" })).toHaveAttribute("href", "/");
+    await expect(page.getByRole("link", { name: "Explore the demo workspace" })).toHaveAttribute("href", "/demo/workspace");
   });
 
   test("submits and lists a redacted authenticated issue", async ({ page, request }) => {

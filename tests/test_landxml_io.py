@@ -102,3 +102,34 @@ class LandXmlIoTests(unittest.TestCase):
         self.assertIsNotNone(network)
         self.assertEqual(network.attrib["civoraLandxmlVerificationStatus"], "not_verified")
         self.assertEqual(network.attrib["civoraCivil3dVerificationStatus"], "not_verified")
+
+    def test_review_only_user_pipe_is_exported_when_hydraulic_result_is_blocked(self) -> None:
+        plan = {
+            "units": "ft",
+            "meta": {
+                "storm_pipes": {"success": False, "segments": []},
+                "review_pipe_network": {
+                    "source": "user_input",
+                    "status": "review_only_not_hydraulically_verified",
+                    "review_only": True,
+                    "construction_release_allowed": False,
+                    "segments": [{
+                        "id": "P-REVIEW-1",
+                        "canonical_id": "P-REVIEW-1",
+                        "path": [[0, 0], [100, 10]],
+                        "length_ft": 100.499,
+                        "diameter_in": 18,
+                        "slope_ft_ft": 0.01,
+                        "review_required": True,
+                        "construction_release_allowed": False,
+                    }],
+                },
+            },
+        }
+
+        root = ET.fromstring(build_landxml_pipe_network(plan, network_name="Review Geometry"))
+        pipe = root.find(".//Pipe")
+        self.assertIsNotNone(pipe)
+        self.assertEqual(pipe.attrib["civoraCanonicalId"], "P-REVIEW-1")
+        self.assertEqual(pipe.attrib["civoraReviewOnly"], "true")
+        self.assertEqual(pipe.attrib["civoraConstructionReleaseAllowed"], "false")

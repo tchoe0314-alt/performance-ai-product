@@ -61,7 +61,13 @@ export default defineConfig({
           url: `${managedBackendBaseURL}/api/health`,
           env: {
             ...process.env,
-            CIVORA_PRODUCT_MODE: "private_alpha",
+            // Disposable-local workflow suites create synthetic accounts and
+            // inject their tokens. All other runs retain private-alpha policy.
+            CIVORA_PRODUCT_MODE:
+              process.env.CIVORA_PHASE0_LOCAL_TESTS === "1" ? "local" : "private_alpha",
+            ...(process.env.CIVORA_PHASE0_LOCAL_TESTS === "1"
+              ? { CIVORA_RATE_LIMIT_AUTH_PER_MINUTE: "200" }
+              : {}),
             CIVORA_ALLOW_LOCAL_PILOT_CORS: "1",
             CIVORA_LOCAL_PILOT_CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000",
             CORS_ALLOW_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000",

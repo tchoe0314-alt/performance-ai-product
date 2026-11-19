@@ -1862,6 +1862,10 @@ export type ManualFields = {
     path?: Array<[number, number]>;
     utility_type?: string;
     layer?: string;
+    length_ft?: number;
+    diameter_in?: number;
+    slope_ft_ft?: number;
+    canonical_id?: string;
     source?: string;
     source_confidence?: string;
     review_required?: boolean;
@@ -1873,6 +1877,10 @@ export type ManualFields = {
     points: Array<[number, number]>;
     utility_type?: string;
     layer?: string;
+    length_ft?: number;
+    diameter_in?: number;
+    slope_ft_ft?: number;
+    canonical_id?: string;
     source?: string;
     source_confidence?: string;
     review_required?: boolean;

@@ -3624,7 +3624,16 @@ def _filter_base_preview_actions_for_expanded_plan(
             continue
         if has_primary and layer == "PAD" and label in {"BUILDABLE_AREA", "SITE", "LOT"}:
             continue
-        if has_primary and layer in primary_layers and task in {"rectangle", "polygon", "polyline", "circle"}:
+        # Expanded output replaces a canonical base layer only when it actually
+        # contains geometry for that same layer. A SITE/PAD-only expansion
+        # must not erase a user-edited BUILDING or PARKING object during
+        # recalculation.
+        if (
+            has_primary
+            and layer in primary_layers
+            and layer in expanded_primary_layers
+            and task in {"rectangle", "polygon", "polyline", "circle"}
+        ):
             continue
         if has_primary and layer in primary_layers and task == "text_note" and layer in expanded_primary_layers:
             continue
@@ -9816,7 +9825,11 @@ def _run_model_first_workflow(
             resume_payload.get("stage_statuses")
             or safe_dict(safe_dict(checkpoint_meta.get("stage_completeness")).get("statuses"))
         )
-        if not stage_statuses:
+        # A persisted phase checkpoint may contain no stage-completeness map
+        # (notably when the stage produced no canonical geometry). The explicit
+        # approved-stage identity is still authoritative for that one reviewed
+        # checkpoint; dropping it here recreates the same hold forever.
+        if not stage_statuses and not approved_stage_names:
             return set()
 
         resumable_statuses = {"complete", "assumed"}
@@ -9846,6 +9859,31 @@ def _run_model_first_workflow(
                 for action in safe_list(checkpoint_plan.get("actions"))
                 if isinstance(action, dict)
             ]
+            # The saved checkpoint may be a bounded SITE/PAD projection while
+            # the authoritative user building placements remain in parsed
+            # project input. Rehydrate those canonical footprints so later
+            # approved phases and quantity/export packaging cannot lose them.
+            restored_ids = {
+                safe_str(action.get("canonical_source_id"), "")
+                for action in restored_actions
+                if safe_str(action.get("canonical_source_id"), "")
+            }
+            for building in safe_list(parsed.get("buildings")):
+                rec = safe_dict(building)
+                building_id = safe_str(rec.get("id"), "")
+                if not building_id or building_id in restored_ids:
+                    continue
+                restored_actions.append(sanitize_action({
+                    "task": "rectangle",
+                    "layer": "BUILDING",
+                    "label": safe_str(rec.get("name") or rec.get("label"), "BUILDING"),
+                    "origin": [safe_float(rec.get("x"), 0.0), safe_float(rec.get("y"), 0.0)],
+                    "width": max(1.0, safe_float(rec.get("w"), 1.0)),
+                    "height": max(1.0, safe_float(rec.get("d"), 1.0)),
+                    "canonical_source_id": building_id,
+                    "canonical_source_type": "building",
+                    "meta": {"entity_id": building_id, "system": "layout", "is_final": True},
+                }))
             if restored_actions:
                 manager.project.meta["_expanded_plan"] = {"actions": deepcopy(restored_actions)}
                 parking_program = deepcopy(safe_dict(checkpoint_meta.get("parking_program")))
@@ -10243,6 +10281,26 @@ def _run_model_first_workflow(
     ]
     plan["meta"]["manager_export"] = manager_export
     _attach_canonical_stage_outputs(plan, manager.project, manager)
+    # Preserve supported user-authored pipe geometry as a distinct review-only
+    # export source even when the hydraulic engine is honestly blocked by
+    # missing standards. This is not a calculated storm result and must never
+    # replace or overstate one; it only keeps traceable supplied geometry from
+    # disappearing at the canonical-plan boundary.
+    review_pipe_segments = [
+        deepcopy(item)
+        for item in safe_list(parsed.get("pipe_network"))
+        if safe_dict(item)
+        and bool(safe_dict(item).get("review_required", True))
+        and safe_dict(item).get("construction_release_allowed") is False
+    ]
+    if review_pipe_segments:
+        plan["meta"]["review_pipe_network"] = {
+            "source": "user_input",
+            "status": "review_only_not_hydraulically_verified",
+            "review_only": True,
+            "construction_release_allowed": False,
+            "segments": review_pipe_segments,
+        }
     plan["actions"] = _filter_actions_for_dirty_systems(
         _merge_plan_actions(safe_list(plan.get("actions")), _canonical_export_actions(manager.project)),
         _dirty_systems_from_project(manager.project),

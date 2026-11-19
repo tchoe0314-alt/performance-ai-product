@@ -1416,6 +1416,29 @@ def export_dxf_artifact(
         # normal phase profile is useful for focused previews, but applying it
         # to a DXF silently drops valid systems from the review model.
         final_meta["review_export_include_all_systems"] = True
+        # Phase-batched calculations can retain supported user pipe inputs in
+        # the stored parsed payload even when a blocked hydraulic stage has no
+        # calculated segments. For LandXML only, carry that exact stored input
+        # into a clearly review-only export source instead of inventing a
+        # network or treating it as a hydraulic result.
+        if export_format == "landxml" and not dict(final_meta.get("review_pipe_network") or {}).get("segments"):
+            parsed_pipe_network = list(dict(result_data.get("parsed_payload") or {}).get("pipe_network") or [])
+            review_segments = [
+                dict(segment)
+                for segment in parsed_pipe_network
+                if isinstance(segment, dict)
+                and segment.get("source") != "generated"
+                and segment.get("review_required", True) is True
+                and segment.get("construction_release_allowed") is False
+            ]
+            if review_segments:
+                final_meta["review_pipe_network"] = {
+                    "source": "stored_parsed_user_input",
+                    "status": "review_only_not_hydraulically_verified",
+                    "review_only": True,
+                    "construction_release_allowed": False,
+                    "segments": review_segments,
+                }
     final_plan["meta"] = final_meta
     if normalized_export_scope == "review":
         if project_id:

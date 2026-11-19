@@ -43,6 +43,52 @@ def _blocker_inputs(plan: dict, name: str) -> set[str]:
 
 
 class EngineeringGenerationWorkflowTests(unittest.TestCase):
+    def test_traceable_building_quantity_and_review_pipe_reach_exports(self) -> None:
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        from backend.services.artifact_service import ArtifactService
+
+        payload = _supported_minimal_payload()
+        payload["buildings"] = [{"id": "B-1", "name": "Office", "type": "office", "x": 40, "y": 50, "w": 70, "d": 40}]
+        payload["utility_network"] = [{
+            "id": "P-1", "utility_type": "storm", "points": [[120, 120], [180, 80]],
+            "source": "manual_drawn", "review_required": True, "construction_release_allowed": False,
+        }]
+        payload["pipe_network"] = [{
+            "id": "P-1", "canonical_id": "P-1", "path": [[120, 120], [180, 80]],
+            "points": [[120, 120], [180, 80]], "utility_type": "storm",
+            "length_ft": 72.111, "diameter_in": 18, "slope_ft_ft": 0.01,
+            "source": "manual_drawn", "review_required": True, "construction_release_allowed": False,
+        }]
+        phased_payload = deepcopy(payload)
+        phased_payload["meta"] = {"orchestrator_meta": {"runtime_phase_batch_limit": 1}}
+        phased = planner.build_plan(phased_payload)
+        phased_buildings = [action for action in phased["actions"] if action.get("layer") == "BUILDING"]
+        self.assertEqual(len(phased_buildings), 1)
+        self.assertEqual(phased_buildings[0]["canonical_source_id"], "B-1")
+        plan = planner.build_plan(payload)
+        self.assertEqual(plan["meta"]["quantities"]["totals"]["building_area_sf"], 2800.0)
+        self.assertTrue(plan["meta"]["quantities"]["explain"]["quantity_audit"]["building_area_sf"]["trace_complete"])
+        self.assertEqual(plan["meta"]["review_pipe_network"]["segments"][0]["canonical_id"], "P-1")
+        with TemporaryDirectory() as directory:
+            artifact = ArtifactService(Path(directory)).export_landxml(user_id="synthetic", final_plan=plan)
+            text = artifact.read_text()
+        self.assertIn("<LandXML", text)
+        self.assertIn("P-1", text)
+        self.assertIn('civoraReviewOnly="true"', text)
+
+    def test_site_only_expansion_preserves_canonical_building_and_parking(self) -> None:
+        base = [
+            {"task": "rectangle", "layer": "BUILDING", "origin": [300, 120], "width": 170, "height": 90},
+            {"task": "rectangle", "layer": "PARKING", "origin": [240, 360], "width": 330, "height": 150},
+        ]
+        expanded = [
+            {"task": "rectangle", "layer": "SITE", "origin": [0, 0], "width": 900, "height": 700},
+            {"task": "polygon", "layer": "PAD", "points": [[20, 20], [880, 20], [880, 680], [20, 680]]},
+        ]
+        filtered = planner._filter_base_preview_actions_for_expanded_plan(base, expanded)
+        self.assertEqual([item["layer"] for item in filtered], ["BUILDING", "PARKING"])
+
     def test_final_plan_preserves_truth_labeled_grading_preview_samples(self) -> None:
         plan = planner.build_plan(_supported_minimal_payload())
 
@@ -228,6 +274,39 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
         for key in ("grading", "drainage", "storm_pipes", "sanitary", "utilities", "roadway", "quantities", "qa"):
             self.assertTrue(plan["meta"][key]["engineer_review_required"], key)
             self.assertFalse(plan["meta"][key]["production_usable"], key)
+
+    def test_approved_checkpoint_without_status_map_advances_to_next_stage(self) -> None:
+        payload = _supported_minimal_payload()
+        payload["meta"] = {
+            "orchestrator_meta": {
+                "runtime_phase_batch_limit": 1,
+                "runtime_approved_stages": ["layout"],
+                "runtime_resume": {
+                    "final_plan": {"meta": {"runtime_phase_checkpoint": {"stage_name": "layout"}}},
+                    "stage_statuses": {},
+                },
+            }
+        }
+        resumed = planner.build_plan(payload)
+        checkpoint = resumed["meta"]["runtime_phase_checkpoint"]
+        self.assertNotEqual(checkpoint["stage_name"], "layout")
+
+    def test_sparse_approved_layout_checkpoint_rehydrates_user_building(self) -> None:
+        payload = _supported_minimal_payload()
+        payload["buildings"] = [{"id": "B-1", "name": "Office", "x": 40, "y": 50, "w": 70, "d": 40}]
+        payload["meta"] = {"orchestrator_meta": {
+            "runtime_phase_batch_limit": 1,
+            "runtime_approved_stages": ["layout"],
+            "runtime_resume": {
+                "stage_statuses": {"layout": "complete"},
+                "final_plan": {"units": "ft", "actions": [{"task": "rectangle", "layer": "SITE", "origin": [0, 0], "width": 240, "height": 180}], "meta": {}},
+            },
+        }}
+        resumed = planner.build_plan(payload)
+        buildings = [action for action in resumed["actions"] if action.get("layer") == "BUILDING"]
+        self.assertEqual(len(buildings), 1)
+        self.assertEqual(buildings[0]["canonical_source_id"], "B-1")
+        self.assertEqual(buildings[0]["width"] * buildings[0]["height"], 2800.0)
 
     def test_drawn_semantic_civil_objects_reach_native_engine_stages(self) -> None:
         payload = _supported_minimal_payload()

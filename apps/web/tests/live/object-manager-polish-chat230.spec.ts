@@ -329,6 +329,33 @@ test.describe("Chat 230 Object Manager and inspector polish", () => {
     await expect(copiedOfficeOverlay).toHaveCount(0);
   });
 
+  test("CAD Rotate ignores a stale inspected object after explicit one-object selection", async ({ page }) => {
+    await openDemoWorkspace(page);
+    await runCommand(page, "add 28000 sf office building");
+    await runCommand(page, "add 140 parking spaces");
+    await openDrawPanel(page);
+
+    let officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    let parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await parkingRow.getByTestId("object-manager-select").click();
+    await parkingRow.getByTestId("object-manager-inspect").click();
+    await openDrawPanel(page);
+    officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Office Building - 28,000 sf" }).first();
+    parkingRow = page.getByTestId("object-manager-row").filter({ hasText: "Parking Field - 140 stalls" }).first();
+    await officeRow.getByTestId("object-manager-select").click();
+
+    await expect(page.getByTestId("object-manager-multi-select")).toContainText("1 object selected");
+    await expect(officeRow.getByTestId("object-manager-bulk-select")).toBeChecked();
+    await expect(parkingRow.getByTestId("object-manager-bulk-select")).not.toBeChecked();
+
+    await canvasObject(page, "Office Building").click();
+    const quickToolbar = page.getByTestId("selected-object-quick-toolbar").first();
+    await quickToolbar.getByTestId("selected-object-quick-rotate").click();
+    await expect(quickToolbar.getByTestId("selected-object-quick-status")).toContainText(
+      "ROTATE applied to 1 selected object.",
+    );
+  });
+
   test("selected canvas object can be moved and resized with visible handles", async ({ page }) => {
     await openDemoWorkspace(page);
     await runCommand(page, "add 28000 sf office building");

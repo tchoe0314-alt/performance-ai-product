@@ -186,6 +186,7 @@ _PLAN_META_KEYS = {
     "grading",
     "drainage",
     "storm_pipes",
+    "review_pipe_network",
     "sanitary",
     "parking_program",
     "alignments",
@@ -278,6 +279,13 @@ _CONVERGENCE_KEYS = {
 }
 
 _DISCIPLINE_KEYS = {
+    "review_pipe_network": {
+        "source",
+        "status",
+        "review_only",
+        "construction_release_allowed",
+        "segments",
+    },
     "grading": {
         "schema_version",
         "source",

@@ -46,6 +46,20 @@ def test_snapshot_is_immutable_and_discloses_source_and_all_warnings():
     assert not has_valid_preliminary_disclosure(repeated)
 
 
+def test_canonical_null_placeholders_do_not_block_representable_geometry():
+    plan = source()
+    plan["actions"] = [{
+        "task": "polyline",
+        "points": [[0, 0], [10, 5]],
+        "origin": None,
+        "center": None,
+        "radius": None,
+        "rotation": None,
+    }]
+    prepared = prepare_preliminary_snapshot(plan)
+    assert has_valid_preliminary_disclosure(prepared)
+
+
 @pytest.mark.parametrize("change", [
     {"units": "unknown"},
     {"actions": []},

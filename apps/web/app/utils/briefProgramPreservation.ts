@@ -13,6 +13,21 @@ export function preserveExplicitBriefProgram(fields: ManualFields, saved?: Proje
   if (fields.terrain === undefined && saved?.manual_fields?.terrain !== undefined) {
     fields = { ...fields, terrain: saved.manual_fields.terrain };
   }
+  // Generate may add review-only corridor concepts to the canvas. Rebuilding
+  // manual fields from those placements must not replace an explicit pipe run
+  // that carries the engineering attributes required for calculation/export.
+  // A current item with the same identity still wins, so intentional canvas
+  // edits remain authoritative.
+  const savedPipes = saved?.manual_fields?.pipe_network ?? [];
+  if (savedPipes.length) {
+    const currentPipes = fields.pipe_network ?? [];
+    const currentIds = new Set(currentPipes.map((pipe) => pipe.canonical_id || pipe.id).filter(Boolean));
+    const preserved = savedPipes.filter((pipe) => {
+      const identity = pipe.canonical_id || pipe.id;
+      return pipe.source !== "generated" && (!identity || !currentIds.has(identity));
+    });
+    if (preserved.length) fields = { ...fields, pipe_network: [...preserved, ...currentPipes] };
+  }
   const previous = saved?.manual_fields?.site_plan;
   const stored = saved?.meta?.site_inputs?.brief_edit_originals_v1;
   const edited = stored === undefined ? {} : validateBriefEditRecords(stored).fields;

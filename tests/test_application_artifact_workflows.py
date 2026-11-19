@@ -37,6 +37,17 @@ class FakeArtifactService:
         path.write_text("dxf")
         return path
 
+    def export_landxml(self, *, user_id, final_plan, stem=None, prefinalized=False):
+        self.dxf_export = {
+            "user_id": user_id,
+            "final_plan": dict(final_plan),
+            "stem": stem,
+            "prefinalized": prefinalized,
+        }
+        path = Path(tempfile.gettempdir()) / "unit-plan.landxml"
+        path.write_text("<LandXML/>")
+        return path
+
     def export_report_json(self, *, user_id, result_data, stem=None):
         self.report_export = {"user_id": user_id, "result_data": dict(result_data), "stem": stem}
         path = Path(tempfile.gettempdir()) / "unit-report.json"
@@ -2010,6 +2021,36 @@ class ApplicationArtifactWorkflowsTest(unittest.TestCase):
         self.assertFalse(audit["production_export_ready"])
         self.assertFalse(audit["export_blocked"])
         self.assertIn("construction_readiness_blocked", audit["review_findings"])
+
+    def test_landxml_review_rehydrates_only_stored_review_pipe_input(self):
+        service = FakeArtifactService()
+        store = FakeProjectStore()
+        result_data = {
+            "parsed_payload": {
+                "pipe_network": [
+                    {"id": "P-1", "canonical_id": "P-1", "length_ft": 100, "diameter_in": 18, "source": "manual_drawn", "review_required": True, "construction_release_allowed": False},
+                    {"id": "generated", "source": "generated", "review_required": True, "construction_release_allowed": False},
+                ],
+            },
+            "final_plan": {
+                "project_name": "Review LandXML",
+                "units": "ft",
+                "actions": [{"task": "polyline", "layer": "LOT", "points": [[0, 0], [1, 0]]}],
+            },
+        }
+        path = export_dxf_artifact(
+            artifact_service=service,
+            project_store=store,
+            user_id="u1",
+            project_id="p1",
+            result_data=result_data,
+            export_scope="review",
+            export_format="landxml",
+        )
+        self.assertEqual(path.suffix, ".landxml")
+        review = service.dxf_export["final_plan"]["meta"]["review_pipe_network"]
+        self.assertEqual([segment["canonical_id"] for segment in review["segments"]], ["P-1"])
+        self.assertFalse(review["construction_release_allowed"])
 
     def test_export_dxf_artifact_review_scope_discloses_stale_model_output(self):
         service = FakeArtifactService()

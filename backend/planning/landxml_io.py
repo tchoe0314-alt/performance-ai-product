@@ -178,6 +178,7 @@ def build_landxml_pipe_network(plan: Dict[str, Any], *, network_name: str = "Civ
     meta = safe_dict(plan.get("meta"))
     storm = safe_dict(meta.get("storm_pipes") or meta.get("storm_pipe_summary"))
     sanitary = safe_dict(meta.get("sanitary") or meta.get("sanitary_summary"))
+    review_network = safe_dict(meta.get("review_pipe_network"))
     root = ET.Element("LandXML", {"version": "1.2", "date": "generated"})
     networks = ET.SubElement(root, "PipeNetworks")
     network = ET.SubElement(
@@ -221,7 +222,10 @@ def build_landxml_pipe_network(plan: Dict[str, Any], *, network_name: str = "Civ
                     continue
                 ET.SubElement(centerline, "P").text = f"{x:.3f} {y:.3f} 0.000"
 
-    for idx, rec in enumerate(safe_list(storm.get("segments")), start=1):
+    storm_segments = safe_list(storm.get("segments"))
+    if not storm_segments and bool(review_network.get("review_only")) and review_network.get("construction_release_allowed") is False:
+        storm_segments = safe_list(review_network.get("segments"))
+    for idx, rec in enumerate(storm_segments, start=1):
         add_pipe("storm", safe_dict(rec), idx)
     for idx, rec in enumerate(safe_list(sanitary.get("segments")), start=1):
         add_pipe("sanitary", safe_dict(rec), idx)
