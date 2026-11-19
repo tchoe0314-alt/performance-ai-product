@@ -123,6 +123,8 @@ test("real website opens canonical geometry, edits it, saves both projections an
   await drawing.getByRole("button", { name: "Drawing DXF", exact: true }).click();
   const queued = await queuedEvent;
   expect(queued.status()).toBe(200);
+  const queuedRequest = queued.request().postDataJSON();
+  expect(queuedRequest.expected_revision).toMatch(/^[a-f0-9]{64}$/);
   const { job } = await queued.json();
   let completed: { export_manifest_v1: { source_canonical_revision: string; units: string; object_ids: string[]; calculation_results_included: boolean }; artifact: { download_path: string } };
   await expect.poll(async () => {
@@ -130,7 +132,7 @@ test("real website opens canonical geometry, edits it, saves both projections an
     completed = payload.job.result;
     return payload.job.status;
   }, { timeout: 60_000 }).toBe("completed");
-  expect(completed!.export_manifest_v1).toMatchObject({ source_canonical_revision: checkpoint.revision_token, units: "ft", object_ids: ["canonical-office"], calculation_results_included: false });
+  expect(completed!.export_manifest_v1).toMatchObject({ source_canonical_revision: queuedRequest.expected_revision, units: "ft", object_ids: ["canonical-office"], calculation_results_included: false });
   const artifact = await request.get(`${api}${completed!.artifact.download_path}`, { headers });
   expect(artifact.status()).toBe(200);
   const path = testInfo.outputPath("edited-reopened-office.dxf");
@@ -138,7 +140,7 @@ test("real website opens canonical geometry, edits it, saves both projections an
   const parsed = JSON.parse(execFileSync(process.env.CIVORA_TEST_PYTHON ?? "python3", ["-c", "import ezdxf,json,sys; d=ezdxf.readfile(sys.argv[1]); print(json.dumps({'units':d.header.get('$INSUNITS'),'buildings':[list(e.get_points()[0][:2]) for e in d.modelspace().query('LWPOLYLINE[layer==\"BUILDING\"]')]}))", path], { encoding: "utf8" }));
   expect(parsed).toEqual({ units: 2, buildings: [[175, 120]] });
   const after = (await (await request.get(`${api}/api/projects/${project.project_id}`, { headers })).json()).project;
-  expect(after.revision_token).toBe(checkpoint.revision_token);
+  expect(after.revision_token).toBe(queuedRequest.expected_revision);
   // Export audit records are intentionally appended; all other canonical and
   // compatibility fields must remain exactly the same.
   const beforeInput = structuredClone(checkpoint.project_input), afterInput = structuredClone(after.project_input);

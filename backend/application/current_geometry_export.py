@@ -181,6 +181,11 @@ def build_current_geometry_export_runner(*, artifact_service, project_store, upd
             check_revision(project, job["payload"]["expected_revision"])
         except ProjectRevisionConflict as exc:
             raise HTTPException(409, "Project changed after queuing. Save and export the current drawing again.") from exc
+        # Finalizing an artifact appends export history and may update this
+        # store-backed record in place. Pin the checked source revision before
+        # publication so the manifest identifies the geometry that was
+        # actually serialized, not the later audit-history revision.
+        source_revision = project["revision_token"]
         update_job_progress(job["job_id"], stage="Checking current drawing", detail="Validating the saved geometry; calculations are excluded.", progress=30)
         result = prepare_current_geometry_result(project)
         update_job_progress(job["job_id"], stage="Exporting current drawing", detail="Creating a preliminary drawing with scope and source disclosures.", progress=60)
@@ -188,7 +193,7 @@ def build_current_geometry_export_runner(*, artifact_service, project_store, upd
         manifest = {
             "version": 1,
             "project_id": project_id,
-            "source_canonical_revision": project["revision_token"],
+            "source_canonical_revision": source_revision,
             "units": result["final_plan"]["units"],
             "geometry_scope": SCOPE,
             "object_ids": deepcopy(result["metadata"]["current_geometry_export_v1"]["object_ids"]),
