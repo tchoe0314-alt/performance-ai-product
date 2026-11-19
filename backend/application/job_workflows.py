@@ -154,6 +154,23 @@ def _load_project_latest_result(
     return dict((fallback_project or {}).get("latest_result") or {})
 
 
+def _result_can_resume_for_input(result: Dict[str, Any], project_input: Dict[str, Any]) -> bool:
+    """Reject only a prior result proven stale against the queued input.
+
+    Older results without a canonical binding remain resumable for backwards
+    compatibility. A bound result from different editable inputs must not skip
+    already-completed stages, because doing so would retain stale geometry.
+    """
+    from backend.services.canonical_results import canvas_result_freshness
+
+    freshness = canvas_result_freshness(
+        result,
+        project_input,
+        require_engine_revision=False,
+    )
+    return freshness is None or safe_dict(freshness).get("status") != "stale"
+
+
 def queue_orchestrate_job(
     *,
     project_store: ProjectStoreProtocol,
@@ -1373,7 +1390,11 @@ def build_orchestrate_job_runner(
                     or dict(dict(existing_result.get("metadata") or {}).get("run_summary") or {}).get("phase_checkpoints")
                     or {}
                 )
-                if existing_final_plan and (stage_statuses or phase_checkpoints):
+                if (
+                    existing_final_plan
+                    and (stage_statuses or phase_checkpoints)
+                    and _result_can_resume_for_input(existing_result, run_payload)
+                ):
                     runtime_resume = {
                         "project_id": project_id,
                         "stage_statuses": stage_statuses,
@@ -1408,9 +1429,9 @@ def build_orchestrate_job_runner(
             run_meta["runtime_approved_stages"] = approved_stages[-20:]
         run_meta["runtime_phase_batch_limit"] = requested_batch_limit
         run_payload["meta"] = run_meta
-        # This runner has resolved the checkpoint and approvals from server
-        # storage. Refresh the aggregate projection before canonical resolution
-        # would otherwise restore the older saved execution metadata.
+        # The canonical aggregate carries server-resolved checkpoint and
+        # approval metadata. Refresh its projection only after a stale prior
+        # result has been excluded from runtime resume above.
         from backend.services.canonical_record import with_model_snapshot
         run_payload = with_model_snapshot(run_payload)
         run_signature = inspect.signature(run_orchestration)

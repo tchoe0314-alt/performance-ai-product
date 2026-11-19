@@ -7,6 +7,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from backend.application.job_workflows import (
+    _result_can_resume_for_input,
     build_artifact_export_job_runner,
     build_orchestrate_job_runner,
     cancel_existing_job,
@@ -143,6 +144,39 @@ class FakeUploadFile:
 
 
 class ApplicationJobWorkflowsTest(unittest.TestCase):
+    def test_runtime_resume_rejects_result_bound_to_pre_edit_geometry(self):
+        from backend.services.canonical_record import seal_record
+        from backend.services.canonical_results import bind_canvas_result
+
+        original = seal_record({
+            "name": "Demo",
+            "project_input": {
+                "manual_fields": {
+                    "site_objects": [
+                        {"id": "office", "type": "office_building", "x": 10, "y": 20, "w": 160, "d": 90}
+                    ]
+                }
+            },
+        })["project_input"]
+        prior_result = bind_canvas_result(
+            {"success": True, "final_plan": {"actions": [], "meta": {}}},
+            original,
+            calculation_executed=True,
+        )
+        edited = seal_record({
+            "name": "Demo",
+            "project_input": {
+                "manual_fields": {
+                    "site_objects": [
+                        {"id": "office", "type": "office_building", "x": 10, "y": 20, "w": 170, "d": 90}
+                    ]
+                }
+            },
+        })["project_input"]
+
+        self.assertTrue(_result_can_resume_for_input(prior_result, original))
+        self.assertFalse(_result_can_resume_for_input(prior_result, edited))
+
     def test_queue_orchestrate_job_validates_project(self):
         with self.assertRaises(HTTPException) as ctx:
             queue_orchestrate_job(
