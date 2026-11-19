@@ -274,8 +274,14 @@ for (const { assisted, target } of [
     await page.getByTestId("generate-main-action").click();
     const recalculationPayload = await (await recalculation).json();
     expect(recalculationPayload.job).toBeTruthy();
+    let lastRecalculationState = "";
     await expect.poll(async () => {
       const job = await jobSummary(recalculationPayload.job.job_id);
+      const state = JSON.stringify({ status: job.status, stage: job.stage, detail: job.stage_detail, progress: job.progress });
+      if (state !== lastRecalculationState) {
+        lastRecalculationState = state;
+        console.log(`[recalculation ${new Date().toISOString()}] ${state}`);
+      }
       if (job.status === "awaiting_approval") {
         const proceed = page.getByTestId("generate-main-action");
         if ((await proceed.textContent())?.includes("Continue after")) await proceed.click();
