@@ -5147,7 +5147,35 @@ function PerformanceAIDashboardView({
     flushSync(() => { applyProjectInput(next, false); setCurrentProject(previous => previous?.project_id === project.project_id ? { ...previous, project_input: next } : previous); markSystemsStale(); });
     window.setTimeout(() => void saveProjectRef.current({ silent: true }), 0);
   };
+  const handleProjectTypeChange = (nextProjectType: string) => {
+    const project = currentProjectRef.current;
+    const live = payloadPreviewRef.current;
+    if (!project || project.project_id !== currentProject?.project_id || ["viewer", "reviewer"].includes(project.access_role ?? "owner")) {
+      setStatusMessage("Open an editable project before changing its type.");
+      return;
+    }
+    if (nextProjectType === (live.manual_fields?.project_type ?? "")) return;
+    const next = withCanonicalCanvasSnapshot({
+      ...live,
+      canonical_project_v1: project.project_input?.canonical_project_v1,
+      manual_fields: { ...live.manual_fields, project_type: nextProjectType },
+    });
+    recordRecentChange({
+      type: "brief_classified",
+      label: "Set project type",
+      detail: nextProjectType ? `Project type set to ${nextProjectType}.` : "Project type cleared.",
+    });
+    flushSync(() => {
+      applyProjectInput(next, false);
+      setCurrentProject((previous) => previous?.project_id === project.project_id ? { ...previous, project_input: next } : previous);
+      markSystemsStale();
+    });
+    setStatusMessage(nextProjectType ? "Project type saved. Existing program requirements were preserved; affected results need recalculation." : "Project type cleared. Choose a type before generating a program-specific concept.");
+    window.setTimeout(() => void saveProjectRef.current({ silent: true }), 0);
+  };
   const { dashboardHomePanelProps, importSurveyPanelProps, siteSetupPanelProps } = useDashboardStartPanelProps({
+    projectType,
+    onProjectTypeChange: handleProjectTypeChange,
     siteName,
     fileName,
     lotBounds,

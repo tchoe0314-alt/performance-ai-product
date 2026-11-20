@@ -29,6 +29,8 @@ type SaveProject = (options?: {
 }) => Promise<ProjectRecord | null>;
 
 type UseDashboardStartPanelPropsInput = {
+  projectType: string;
+  onProjectTypeChange: (projectType: string) => void;
   siteName: string;
   fileName: string;
   lotBounds: { w: number; h: number };
@@ -134,6 +136,8 @@ type UseDashboardStartPanelPropsInput = {
 };
 
 export function useDashboardStartPanelProps({
+  projectType,
+  onProjectTypeChange,
   siteName,
   fileName,
   lotBounds,
@@ -351,6 +355,8 @@ export function useDashboardStartPanelProps({
   }, [onLotHeightChange, onLotWidthChange, onSiteAddressChange, siteAddress, siteScaleLocked]);
 
   const siteSetupPanelProps = useMemo<SiteSetupPanelProps>(() => ({
+    projectType,
+    onProjectTypeChange,
     address: {
       pendingAddressEdit,
       siteAddress,
@@ -451,6 +457,7 @@ export function useDashboardStartPanelProps({
     onLotHeightChange,
     onLotWidthChange,
     onOpenImport,
+    onProjectTypeChange,
     onRerunSiteContext,
     onCancelSiteContext,
     onReviewFoundContext,
@@ -466,6 +473,7 @@ export function useDashboardStartPanelProps({
     onlineFoundSources,
     oversizedSiteMessage,
     pendingAddressEdit,
+    projectType,
     roadFrontageMessage,
     siteAddress,
     siteAddressInputRef,
