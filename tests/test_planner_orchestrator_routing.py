@@ -302,6 +302,52 @@ class PlannerOrchestratorRoutingTests(unittest.TestCase):
 
         full_build.assert_called_once()
         self.assertTrue(result.success)
+        self.assertEqual(result.message, "Generated coordinated plan.")
+
+    def test_single_plan_flow_calls_blocked_terminal_output_a_review_draft(self):
+        blocked_plan = {
+            "meta": {
+                "coordination": {
+                    "unresolved_conflicts": [
+                        {
+                            "conflict_type": "storm_building_pad_geometry",
+                            "involved_objects": ["P-009", "Building 1"],
+                        }
+                    ]
+                },
+                "stage_completeness": {"statuses": {"qa": "failed"}},
+                "convergence_summary": {
+                    "unresolved_conflict_count": 1,
+                    "blocked_exports": ["drainage", "storm"],
+                },
+            },
+            "errors": ["Unresolved coordination conflict remains: storm_building_pad_geometry."],
+        }
+
+        with patch("planner_orchestrator.planner.build_plan", return_value=blocked_plan):
+            result = _single_plan_flow({"project_name": "Blocked review fixture"})
+
+        self.assertTrue(result.success, "transport completion semantics must remain unchanged")
+        self.assertIn("review draft", result.message.lower())
+        self.assertIn("requiring attention", result.message.lower())
+        self.assertNotIn("generated coordinated plan", result.message.lower())
+
+    def test_single_plan_flow_preserves_checkpoint_message_over_terminal_review_copy(self):
+        checkpoint_plan = {
+            "meta": {
+                "runtime_phase_checkpoint": {
+                    "yielded": True,
+                    "message": "Drainage checkpoint saved for approval.",
+                },
+                "stage_completeness": {"statuses": {"qa": "failed"}},
+            },
+            "errors": ["A later phase still needs review."],
+        }
+
+        with patch("planner_orchestrator.planner.build_plan", return_value=checkpoint_plan):
+            result = _single_plan_flow({"project_name": "Checkpoint fixture"})
+
+        self.assertEqual(result.message, "Drainage checkpoint saved for approval.")
 
 
 if __name__ == "__main__":

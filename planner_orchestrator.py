@@ -1240,6 +1240,30 @@ def _route_parse(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
 # CORE FLOWS
 # =============================================================================
 
+def _terminal_engineering_attention(final_plan: Dict[str, Any], errors: Sequence[str]) -> bool:
+    """Return true only for explicit terminal engineering blockers.
+
+    Job execution may complete while engineering review remains blocked.  Keep
+    those states separate without treating absent optional readiness metadata
+    as a failure.
+    """
+    meta = _safe_dict(final_plan.get("meta"))
+    coordination = _safe_dict(meta.get("coordination"))
+    convergence = _safe_dict(meta.get("convergence_summary"))
+    release_review = _safe_dict(meta.get("release_review"))
+    stage_statuses = _safe_dict(_safe_dict(meta.get("stage_completeness")).get("statuses"))
+    qa_status = _lower(stage_statuses.get("qa"))
+    return bool(
+        errors
+        or _safe_list(coordination.get("unresolved_conflicts"))
+        or _safe_int(convergence.get("unresolved_conflict_count"), 0) > 0
+        or qa_status in {"failed", "error", "blocked"}
+        or _safe_list(convergence.get("blocked_exports"))
+        or _safe_list(release_review.get("blocked_exports"))
+        or _safe_list(release_review.get("blocked_reasons"))
+    )
+
+
 def _single_plan_flow(
     parsed_payload: Dict[str, Any],
     *,
@@ -1269,6 +1293,8 @@ def _single_plan_flow(
     runtime_should_continue = bool(runtime_checkpoint.get("yielded"))
     if runtime_should_continue:
         message = _safe_str(runtime_checkpoint.get("message"), "Saved a phase checkpoint and prepared the next engineering phase.")
+    elif success and _terminal_engineering_attention(final_plan, errors):
+        message = "Generated a review draft with engineering issues requiring attention. Review the flagged issues and blocked outputs before relying on calculations or exports."
     else:
         message = "Generated coordinated plan." if success else _friendly_missing_requirements_message(missing_requirements)
 
