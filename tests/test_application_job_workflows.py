@@ -177,6 +177,47 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
         self.assertTrue(_result_can_resume_for_input(prior_result, original))
         self.assertFalse(_result_can_resume_for_input(prior_result, edited))
 
+    def test_runtime_resume_rejects_conflicting_effective_project_type(self):
+        prior_result = {
+            "success": True,
+            "parsed_payload": {"project_type": "generic_site", "site_type": "generic_site"},
+            "final_plan": {"actions": [{"task": "rectangle", "label": "Old generic layout"}], "meta": {}},
+        }
+        industrial = {
+            "manual_fields": {
+                "project_type": "industrial_site",
+                "site_type": "commercial_pad",
+            }
+        }
+
+        self.assertFalse(_result_can_resume_for_input(prior_result, industrial))
+
+    def test_runtime_resume_accepts_same_type_and_preserves_legacy_unknown_compatibility(self):
+        prior_result = {
+            "success": True,
+            "parsed_payload": {"project_type": "industrial_site", "site_type": "industrial_site"},
+            "final_plan": {"actions": [], "meta": {}},
+        }
+
+        self.assertTrue(
+            _result_can_resume_for_input(
+                prior_result,
+                {"manual_fields": {"project_type": "industrial_site"}},
+            )
+        )
+        self.assertTrue(
+            _result_can_resume_for_input(
+                prior_result,
+                {"manual_fields": {"project_type": "legacy_custom_type"}},
+            )
+        )
+        self.assertTrue(
+            _result_can_resume_for_input(
+                prior_result,
+                {"manual_fields": {"project_type": ""}},
+            )
+        )
+
     def test_queue_orchestrate_job_validates_project(self):
         with self.assertRaises(HTTPException) as ctx:
             queue_orchestrate_job(

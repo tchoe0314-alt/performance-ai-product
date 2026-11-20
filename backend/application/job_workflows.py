@@ -161,6 +161,9 @@ def _result_can_resume_for_input(result: Dict[str, Any], project_input: Dict[str
     compatibility. A bound result from different editable inputs must not skip
     already-completed stages, because doing so would retain stale geometry.
     """
+    if _resume_project_type_conflict(result, project_input):
+        return False
+
     from backend.services.canonical_results import canvas_result_freshness
 
     freshness = canvas_result_freshness(
@@ -169,6 +172,43 @@ def _result_can_resume_for_input(result: Dict[str, Any], project_input: Dict[str
         require_engine_revision=False,
     )
     return freshness is None or safe_dict(freshness).get("status") != "stale"
+
+
+def _normalized_selectable_project_type(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("value")
+    normalized = safe_str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    from planner_orchestrator import SELECTABLE_PROJECT_TYPES
+    return normalized if normalized in SELECTABLE_PROJECT_TYPES else ""
+
+
+def _normalized_effective_project_type(value: Any) -> str:
+    if isinstance(value, dict):
+        value = value.get("value")
+    normalized = safe_str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    from planner_orchestrator import SELECTABLE_PROJECT_TYPES
+    recognized_effective_types = set(SELECTABLE_PROJECT_TYPES) | {"generic_site"}
+    return normalized if normalized in recognized_effective_types else ""
+
+
+def _resume_project_type_conflict(result: Dict[str, Any], project_input: Dict[str, Any]) -> bool:
+    """Reject a checkpoint proven to use a different explicit Setup type.
+
+    Missing and unknown legacy values remain compatible: neither is sufficient
+    evidence to discard saved work. A recognized explicit selection is
+    authoritative, however, so a checkpoint that records a different trusted
+    effective type must restart at Layout instead of mixing old geometry with
+    new execution metadata.
+    """
+    manual_fields = safe_dict(project_input.get("manual_fields"))
+    explicit = _normalized_selectable_project_type(manual_fields.get("project_type"))
+    if not explicit:
+        return False
+    parsed_payload = safe_dict(result.get("parsed_payload"))
+    effective = _normalized_effective_project_type(
+        parsed_payload.get("project_type") or parsed_payload.get("site_type")
+    )
+    return bool(effective and effective != explicit)
 
 
 def queue_orchestrate_job(
@@ -1419,15 +1459,17 @@ def build_orchestrate_job_runner(
         resume_final_plan: Dict[str, Any] = {}
         stage_statuses: Dict[str, Any] = {}
         phase_checkpoints: Dict[str, Any] = {}
+        resume_type_conflict = False
         if (
             job_final_plan
             and (job_stage_statuses or job_phase_checkpoints)
-            and _result_can_resume_for_input(job_result, run_payload)
         ):
-            resume_result = job_result
-            resume_final_plan = job_final_plan
-            stage_statuses = job_stage_statuses
-            phase_checkpoints = job_phase_checkpoints
+            resume_type_conflict = _resume_project_type_conflict(job_result, run_payload)
+            if _result_can_resume_for_input(job_result, run_payload):
+                resume_result = job_result
+                resume_final_plan = job_final_plan
+                stage_statuses = job_stage_statuses
+                phase_checkpoints = job_phase_checkpoints
         if existing is not None:
                 existing_result = _load_project_latest_result(
                     project_store=project_store,
@@ -1449,12 +1491,32 @@ def build_orchestrate_job_runner(
                     not resume_final_plan
                     and existing_final_plan
                     and (existing_stage_statuses or existing_phase_checkpoints)
-                    and _result_can_resume_for_input(existing_result, run_payload)
                 ):
-                    resume_result = existing_result
-                    resume_final_plan = existing_final_plan
-                    stage_statuses = existing_stage_statuses
-                    phase_checkpoints = existing_phase_checkpoints
+                    resume_type_conflict = resume_type_conflict or _resume_project_type_conflict(
+                        existing_result, run_payload
+                    )
+                    if _result_can_resume_for_input(existing_result, run_payload):
+                        resume_result = existing_result
+                        resume_final_plan = existing_final_plan
+                        stage_statuses = existing_stage_statuses
+                        phase_checkpoints = existing_phase_checkpoints
+        if resume_type_conflict and job_id and not resume_final_plan:
+            update_job_progress(
+                job_id,
+                stage="Layout Refresh",
+                detail="The saved checkpoint used a different project type. Starting a fresh Layout for review and approval.",
+                progress=44,
+            )
+        if resume_type_conflict and not resume_final_plan:
+            # Approvals are bound to the rejected checkpoint geometry. Do not
+            # let an approval for the old type advance the newly generated
+            # Layout before the user has reviewed it.
+            run_meta = dict(run_payload.get("meta") or {})
+            run_meta.pop("runtime_approved_stages", None)
+            orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
+            orchestrator_meta.pop("runtime_approved_stages", None)
+            run_meta["orchestrator_meta"] = orchestrator_meta
+            run_payload["meta"] = run_meta
         if resume_final_plan:
             runtime_resume = {
                 "project_id": project_id,
