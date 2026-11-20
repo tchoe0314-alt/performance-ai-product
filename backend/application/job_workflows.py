@@ -7,7 +7,10 @@ from typing import Any, Callable, Dict, Optional, Protocol
 
 from fastapi import HTTPException
 from backend.application.project_snapshot import save_project_snapshot
-from backend.application.design_workflows import prepare_reactive_orchestration_payload
+from backend.application.design_workflows import (
+    prepare_reactive_orchestration_payload,
+    resume_result_conflicts_with_explicit_project_type,
+)
 from backend.planning.common import blocker_explanations, lower_text, safe_dict, safe_float, safe_int, safe_list, safe_str
 from backend.planning.release_gates import (
     construction_release_blockers_from_meta,
@@ -200,15 +203,7 @@ def _resume_project_type_conflict(result: Dict[str, Any], project_input: Dict[st
     effective type must restart at Layout instead of mixing old geometry with
     new execution metadata.
     """
-    manual_fields = safe_dict(project_input.get("manual_fields"))
-    explicit = _normalized_selectable_project_type(manual_fields.get("project_type"))
-    if not explicit:
-        return False
-    parsed_payload = safe_dict(result.get("parsed_payload"))
-    effective = _normalized_effective_project_type(
-        parsed_payload.get("project_type") or parsed_payload.get("site_type")
-    )
-    return bool(effective and effective != explicit)
+    return resume_result_conflicts_with_explicit_project_type(result, project_input)
 
 
 def queue_orchestrate_job(
@@ -235,7 +230,7 @@ def queue_orchestrate_job(
         )
         request_payload = prepare_reactive_orchestration_payload(
             request_payload,
-            checkpoint_final_plan=dict(latest_result.get("final_plan") or {}),
+            checkpoint_result=latest_result,
         )
         seeded_project_input = {
             **dict(existing.get("project_input") or {}),
@@ -1384,6 +1379,9 @@ def build_orchestrate_job_runner(
 
         persisted_runtime_checkpoint_stages: set[str] = set()
         final_tail_resume = False
+        resume_type_conflict = False
+        invalidated_active_approvals: list[str] = []
+        invalidated_effective_type = ""
 
         def _phase_progress_callback(
             stage_name: str,
@@ -1415,6 +1413,8 @@ def build_orchestrate_job_runner(
                 and final_tail_stage
                 and normalized_status == "complete"
             )
+            if resume_type_conflict and not resume_final_plan:
+                should_persist_phase = False
             if should_persist_phase and (checkpoint is not None or normalized_status in {"complete", "failed"}):
                 _persist_runtime_phase_checkpoint(
                     user_id=user_id,
@@ -1459,7 +1459,6 @@ def build_orchestrate_job_runner(
         resume_final_plan: Dict[str, Any] = {}
         stage_statuses: Dict[str, Any] = {}
         phase_checkpoints: Dict[str, Any] = {}
-        resume_type_conflict = False
         if (
             job_final_plan
             and (job_stage_statuses or job_phase_checkpoints)
@@ -1512,9 +1511,23 @@ def build_orchestrate_job_runner(
             # let an approval for the old type advance the newly generated
             # Layout before the user has reviewed it.
             run_meta = dict(run_payload.get("meta") or {})
-            run_meta.pop("runtime_approved_stages", None)
+            invalidated_active_approvals = [
+                str(item).strip()
+                for item in list(run_meta.pop("runtime_approved_stages", None) or [])
+                if str(item).strip()
+            ]
             orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
-            orchestrator_meta.pop("runtime_approved_stages", None)
+            invalidated_active_approvals.extend(
+                str(item).strip()
+                for item in list(orchestrator_meta.pop("runtime_approved_stages", None) or [])
+                if str(item).strip()
+            )
+            invalidated_active_approvals = list(dict.fromkeys(invalidated_active_approvals))
+            rejected_result = job_result if _resume_project_type_conflict(job_result, run_payload) else existing_result
+            rejected_parsed = safe_dict(rejected_result.get("parsed_payload"))
+            invalidated_effective_type = _normalized_effective_project_type(rejected_parsed.get("site_type"))
+            if not invalidated_effective_type:
+                invalidated_effective_type = _normalized_effective_project_type(rejected_parsed.get("project_type"))
             run_meta["orchestrator_meta"] = orchestrator_meta
             run_payload["meta"] = run_meta
         if resume_final_plan:
@@ -1594,6 +1607,17 @@ def build_orchestrate_job_runner(
             user_id=user_id,
         )
         enriched_metadata = dict(enriched.get("metadata") or {})
+        if resume_type_conflict and not resume_final_plan:
+            enriched_metadata["runtime_approval_reset"] = {
+                "reason": "project_type_changed",
+                "cleared_stages": invalidated_active_approvals,
+                "prior_effective_type": invalidated_effective_type,
+                "current_explicit_type": _normalized_selectable_project_type(
+                    safe_dict(run_payload.get("manual_fields")).get("project_type")
+                ),
+                "fresh_review_stage": "layout",
+            }
+            enriched["metadata"] = enriched_metadata
         runtime_checkpoint = dict(enriched_metadata.get("runtime_phase_checkpoint") or {})
         stage_name = str(runtime_checkpoint.get("stage_name") or "")
         runtime_should_continue = bool(enriched_metadata.get("runtime_should_continue"))

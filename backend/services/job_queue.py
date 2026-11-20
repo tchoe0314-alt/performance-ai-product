@@ -878,6 +878,42 @@ class JobQueueService:
         finally:
             connection.close()
 
+    def _update_job_payload_and_state(
+        self,
+        job_id: str,
+        *,
+        payload: Dict[str, Any],
+        status: str,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        """Persist an approval reset and its replacement checkpoint atomically."""
+        job_progress = dict((result or {}).get("job_progress") or {})
+        connection = self.db.connect()
+        try:
+            connection.execute(
+                """
+                UPDATE jobs
+                SET payload_json = ?, status = ?, updated_at = ?, stage = ?,
+                    stage_detail = ?, progress = ?, result_json = ?, error_text = ?
+                WHERE job_id = ?
+                """,
+                (
+                    _json_dumps(payload or {}),
+                    status,
+                    _now(),
+                    str(job_progress.get("stage") or ""),
+                    str(job_progress.get("detail") or ""),
+                    _coerce_progress(job_progress.get("progress")),
+                    _json_dumps(result or {}),
+                    error,
+                    job_id,
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
     def update_job_progress(self, job_id: str, *, stage: str, detail: str, progress: int) -> None:
         connection = self.db.connect()
         try:
@@ -1256,7 +1292,33 @@ class JobQueueService:
                             60,
                         )
                     )
-                    self._update_job_state(job_id, status="awaiting_approval", result=awaiting_result, error=None)
+                    approval_reset = dict(
+                        dict((result or {}).get("metadata") or {}).get("runtime_approval_reset") or {}
+                    )
+                    if approval_reset:
+                        active_payload = dict((current or {}).get("payload") or {})
+                        payload_meta = dict(active_payload.get("meta") or {})
+                        payload_meta.pop("runtime_approved_stages", None)
+                        orchestrator_meta = dict(payload_meta.get("orchestrator_meta") or {})
+                        orchestrator_meta.pop("runtime_approved_stages", None)
+                        payload_meta["orchestrator_meta"] = orchestrator_meta
+                        history = [
+                            dict(item)
+                            for item in list(payload_meta.get("runtime_approval_invalidation_history") or [])
+                            if isinstance(item, dict)
+                        ]
+                        history.append(dict(approval_reset))
+                        payload_meta["runtime_approval_invalidation_history"] = history[-20:]
+                        active_payload["meta"] = payload_meta
+                        self._update_job_payload_and_state(
+                            job_id,
+                            payload=active_payload,
+                            status="awaiting_approval",
+                            result=awaiting_result,
+                            error=None,
+                        )
+                    else:
+                        self._update_job_state(job_id, status="awaiting_approval", result=awaiting_result, error=None)
                 else:
                     previous_result = dict((current or {}).get("result") or {})
                     previous_metadata = dict(previous_result.get("metadata") or {})

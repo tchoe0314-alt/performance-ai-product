@@ -192,6 +192,33 @@ class ApplicationJobWorkflowsTest(unittest.TestCase):
 
         self.assertFalse(_result_can_resume_for_input(prior_result, industrial))
 
+        self.assertFalse(
+            _result_can_resume_for_input(
+                {
+                    "success": True,
+                    "parsed_payload": {
+                        "project_type": "industrial_site",
+                        "site_type": "commercial_pad",
+                    },
+                    "final_plan": {"actions": [], "meta": {}},
+                },
+                industrial,
+            )
+        )
+        self.assertFalse(
+            _result_can_resume_for_input(
+                {
+                    "success": True,
+                    "parsed_payload": {
+                        "project_type": "legacy_unknown",
+                        "site_type": "commercial_pad",
+                    },
+                    "final_plan": {"actions": [], "meta": {}},
+                },
+                industrial,
+            )
+        )
+
     def test_runtime_resume_accepts_same_type_and_preserves_legacy_unknown_compatibility(self):
         prior_result = {
             "success": True,

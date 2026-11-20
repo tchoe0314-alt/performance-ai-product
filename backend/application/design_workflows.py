@@ -252,11 +252,26 @@ def prepare_reactive_orchestration_payload(
     payload_data: Dict[str, Any],
     *,
     checkpoint_final_plan: Optional[Dict[str, Any]] = None,
+    checkpoint_result: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Attach canonical checkpoint state for focused reactive edit reruns."""
     payload = deepcopy(dict(payload_data or {}))
     payload = _canonical_calculation_payload(payload)
     meta = dict(payload.get("meta") or {})
+    if checkpoint_result is not None:
+        checkpoint_final_plan = dict(checkpoint_result.get("final_plan") or {})
+        if resume_result_conflicts_with_explicit_project_type(checkpoint_result, payload):
+            checkpoint_final_plan = {}
+            meta["requested_system"] = "full"
+            meta["project_type_checkpoint_invalidation"] = {
+                "reason": "project_type_changed",
+                "fresh_review_stage": "layout",
+            }
+            meta.pop("runtime_approved_stages", None)
+            orchestrator = dict(meta.get("orchestrator_meta") or {})
+            orchestrator.pop("runtime_approved_stages", None)
+            meta["orchestrator_meta"] = orchestrator
+            payload["meta"] = meta
     if checkpoint_final_plan is not None:
         # A server-resolved checkpoint (including an explicitly empty one) is
         # authoritative over all browser resume aliases. Clear inherited stage
@@ -319,6 +334,35 @@ def prepare_reactive_orchestration_payload(
     payload["meta"] = meta
     payload.pop("final_plan", None)
     return payload
+
+
+def _normalized_project_type(value: Any, *, allow_generic: bool = False) -> str:
+    if isinstance(value, dict):
+        value = value.get("value")
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    from planner_orchestrator import SELECTABLE_PROJECT_TYPES
+    recognized = set(SELECTABLE_PROJECT_TYPES)
+    if allow_generic:
+        recognized.add("generic_site")
+    return normalized if normalized in recognized else ""
+
+
+def resume_result_conflicts_with_explicit_project_type(
+    result: Dict[str, Any],
+    project_input: Dict[str, Any],
+) -> bool:
+    """Return true only for a proven effective-type mismatch."""
+    explicit = _normalized_project_type(
+        dict(project_input.get("manual_fields") or {}).get("project_type")
+    )
+    if not explicit:
+        return False
+    parsed = dict(result.get("parsed_payload") or {})
+    # Historical layout normalization consumes site_type first.
+    effective = _normalized_project_type(parsed.get("site_type"), allow_generic=True)
+    if not effective:
+        effective = _normalized_project_type(parsed.get("project_type"), allow_generic=True)
+    return bool(effective and effective != explicit)
 
 
 def _build_phase_checkpoints(

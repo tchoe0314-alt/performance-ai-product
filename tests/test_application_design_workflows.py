@@ -57,6 +57,65 @@ class ApplicationDesignWorkflowsTest(unittest.TestCase):
         self.assertNotIn("reactive_partial_rerun_request", payload["meta"])
         self.assertNotIn("orchestrator_meta", payload["meta"])
 
+    def test_mismatched_type_discards_all_selective_resume_aliases(self):
+        old_plan = {"project_name": "Old commercial", "actions": [{"label": "Old geometry"}]}
+        payload = prepare_reactive_orchestration_payload(
+            {
+                "project_id": "p1",
+                "manual_fields": {"project_type": "industrial_site"},
+                "final_plan": {"project_name": "Browser stale plan"},
+                "meta": {
+                    "requested_system": "grading",
+                    "runtime_resume": {"final_plan": {"project_name": "Top stale plan"}},
+                    "reactive_checkpoint_final_plan": {"project_name": "Reactive stale plan"},
+                    "orchestrator_meta": {
+                        "runtime_resume": {"final_plan": {"project_name": "Nested stale plan"}},
+                        "runtime_approved_stages": ["layout", "grading"],
+                    },
+                },
+            },
+            checkpoint_result={
+                "parsed_payload": {
+                    "project_type": "industrial_site",
+                    "site_type": "commercial_pad",
+                },
+                "final_plan": old_plan,
+            },
+        )
+
+        self.assertEqual(payload["meta"]["requested_system"], "full")
+        self.assertEqual(
+            payload["meta"]["project_type_checkpoint_invalidation"]["fresh_review_stage"],
+            "layout",
+        )
+        self.assertNotIn("final_plan", payload)
+        self.assertNotIn("runtime_resume", payload["meta"])
+        self.assertNotIn("reactive_checkpoint_final_plan", payload["meta"])
+        self.assertNotIn("reactive_partial_rerun_request", payload["meta"])
+        self.assertNotIn("runtime_resume", payload["meta"]["orchestrator_meta"])
+        self.assertNotIn("runtime_approved_stages", payload["meta"]["orchestrator_meta"])
+
+    def test_same_type_keeps_selective_checkpoint(self):
+        payload = prepare_reactive_orchestration_payload(
+            {
+                "manual_fields": {"project_type": "industrial_site"},
+                "meta": {"requested_system": "grading"},
+            },
+            checkpoint_result={
+                "parsed_payload": {
+                    "project_type": "industrial_site",
+                    "site_type": "industrial_site",
+                },
+                "final_plan": {"project_name": "Industrial checkpoint"},
+            },
+        )
+
+        self.assertTrue(payload["meta"]["reactive_partial_rerun_request"]["enabled"])
+        self.assertEqual(
+            payload["meta"]["orchestrator_meta"]["runtime_resume"]["final_plan"]["project_name"],
+            "Industrial checkpoint",
+        )
+
     def test_run_orchestration_accepts_prompt_fallback_when_prompt_text_missing(self):
         @dataclass
         class FakeRequest:

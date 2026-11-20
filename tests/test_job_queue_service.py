@@ -1247,6 +1247,111 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertEqual(record["status"], "completed")
         self.assertEqual(call_count["value"], 2)
 
+    def test_checkpoint_type_reset_clears_persisted_approvals_before_fresh_layout_approval(self):
+        calls = []
+
+        def runner(job):
+            payload = dict(job.get("payload") or {})
+            calls.append(payload)
+            approvals = list(
+                dict(dict(payload.get("meta") or {}).get("orchestrator_meta") or {}).get(
+                    "runtime_approved_stages"
+                )
+                or []
+            )
+            if len(calls) == 1:
+                return {
+                    "success": True,
+                    "parsed_payload": {
+                        "project_type": "industrial_site",
+                        "site_type": "industrial_site",
+                    },
+                    "final_plan": {"project_name": "Fresh Industrial", "meta": {}},
+                    "metadata": {
+                        "runtime_should_continue": True,
+                        "runtime_phase_checkpoint": {
+                            "stage_name": "layout",
+                            "message": "Fresh Layout requires approval.",
+                            "yielded": True,
+                        },
+                        "runtime_approval_reset": {
+                            "reason": "project_type_changed",
+                            "cleared_stages": approvals,
+                            "prior_effective_type": "commercial_pad",
+                            "current_explicit_type": "industrial_site",
+                            "fresh_review_stage": "layout",
+                        },
+                    },
+                }
+            return {
+                "success": True,
+                "parsed_payload": {"project_type": "industrial_site", "site_type": "industrial_site"},
+                "final_plan": {"project_name": "Fresh Industrial", "meta": {}},
+                "metadata": {
+                    "runtime_should_continue": True,
+                    "runtime_phase_checkpoint": {
+                        "stage_name": "grading",
+                        "message": "Grading requires approval.",
+                        "yielded": True,
+                    },
+                },
+            }
+
+        self.queue.register_handler("orchestrate", runner)
+        created = self.queue.submit_job(
+            user_id=self.user_id,
+            job_type="orchestrate",
+            payload={
+                "manual_fields": {"project_type": "industrial_site"},
+                "meta": {
+                    "orchestrator_meta": {
+                        "runtime_approved_stages": [
+                            "layout",
+                            "grading",
+                            "drainage",
+                            "storm_pipes",
+                        ]
+                    }
+                },
+            },
+        )
+        job_id = created["job_id"]
+
+        first = None
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            first = self.queue.get_job_detail(user_id=self.user_id, job_id=job_id)
+            if first and first["status"] == "awaiting_approval":
+                break
+            time.sleep(0.05)
+        self.assertEqual(first["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"], "layout")
+        self.assertNotIn(
+            "runtime_approved_stages",
+            first["payload"]["meta"]["orchestrator_meta"],
+        )
+        self.assertEqual(
+            first["payload"]["meta"]["runtime_approval_invalidation_history"][-1]["cleared_stages"],
+            ["layout", "grading", "drainage", "storm_pipes"],
+        )
+
+        self.queue.continue_job(user_id=self.user_id, job_id=job_id, expected_stage="layout")
+        second = None
+        deadline = time.time() + 4.0
+        while time.time() < deadline:
+            second = self.queue.get_job_detail(user_id=self.user_id, job_id=job_id)
+            if (
+                second
+                and second["status"] == "awaiting_approval"
+                and second["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"] == "grading"
+            ):
+                break
+            time.sleep(0.05)
+        self.assertEqual(
+            second["payload"]["meta"]["orchestrator_meta"]["runtime_approved_stages"],
+            ["layout"],
+        )
+        self.assertEqual(calls[1]["meta"]["orchestrator_meta"]["runtime_approved_stages"], ["layout"])
+
     def test_in_process_worker_start_is_deferred_until_after_queue_acknowledgement(self):
         started = threading.Event()
         queue = self.track_queue(JobQueueService(

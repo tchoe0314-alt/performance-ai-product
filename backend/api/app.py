@@ -899,7 +899,7 @@ def get_current_user(authorization: Optional[str] = Header(default=None)) -> Dic
     return user
 
 
-def _latest_project_final_plan_for_payload(
+def _latest_project_result_for_payload(
     current_user: Optional[Dict[str, Any]],
     payload_data: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -914,7 +914,7 @@ def _latest_project_final_plan_for_payload(
     )
     if not isinstance(latest_result, dict):
         return {}
-    return dict(latest_result.get("final_plan") or {})
+    return dict(latest_result)
 
 
 def _run_orchestration(
@@ -924,7 +924,7 @@ def _run_orchestration(
 ) -> Dict[str, Any]:
     payload_data = application_prepare_reactive_orchestration_payload(
         payload_data,
-        checkpoint_final_plan=_latest_project_final_plan_for_payload(current_user, payload_data),
+        checkpoint_result=_latest_project_result_for_payload(current_user, payload_data),
     )
     project_id = str(payload_data.get("project_id") or "")
     target = str(payload_data.get("meta", {}).get("generation_target") or payload_data.get("plan_type_hint") or "")
