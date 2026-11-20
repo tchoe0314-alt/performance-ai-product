@@ -1,16 +1,76 @@
+from copy import deepcopy
 import unittest
 from unittest.mock import patch
 
 from planner_orchestrator import (
     PlannerOrchestratorRequest,
+    _apply_explicit_project_type,
     _merge_manual_fields,
     _parse_from_prompt,
+    _route_parse,
     _should_use_multi_option,
     _single_plan_flow,
 )
 
 
 class PlannerOrchestratorRoutingTests(unittest.TestCase):
+    def test_supported_setup_type_outranks_neutral_parser_fallback_and_legacy_alias(self):
+        prompt = (
+            "Design a civil site plan for a 2-acre lot with one building, 120 ft by 120 ft, "
+            "parking for 48 spaces, a driveway, grading, storm drainage, sanitary sewer, and water service."
+        )
+        for selected in (
+            "commercial_pad",
+            "office_site",
+            "multifamily_site",
+            "mixed_use",
+            "industrial_site",
+            "roadway_corridor",
+            "constrained_site",
+            "retaining_wall_site",
+        ):
+            with self.subTest(selected=selected):
+                manual = {
+                    "project_type": selected,
+                    "site_type": "commercial_pad" if selected == "industrial_site" else "legacy_commercial",
+                    "site_plan": {"building_program_sf": 14_400, "parking_count": 48},
+                }
+                original = deepcopy(manual)
+                req = PlannerOrchestratorRequest(
+                    input_mode="assisted",
+                    prompt_text=prompt,
+                    manual_fields=manual,
+                )
+                with patch("planner_orchestrator.command_mode", side_effect=AssertionError("fast parser should be used")):
+                    parsed = _route_parse(req)
+                self.assertTrue(parsed["meta"]["fast_prompt_parse"])
+                self.assertEqual(parsed["project_type"], selected)
+                self.assertEqual(parsed["site_type"], selected)
+                self.assertEqual(parsed["site_plan"]["building_program_sf"], 14_400)
+                self.assertEqual(parsed["site_plan"]["parking_count"], 48)
+                self.assertEqual(manual, original, "execution precedence must not migrate saved legacy data")
+
+    def test_supported_setup_type_is_authoritative_in_manual_mode(self):
+        parsed = _route_parse(
+            PlannerOrchestratorRequest(
+                input_mode="manual",
+                manual_fields={
+                    "project_type": "industrial_site",
+                    "site_type": "commercial_pad",
+                    "site_plan": {"building_program_sf": 14_400, "parking_count": 48},
+                },
+            )
+        )
+        self.assertEqual((parsed["project_type"], parsed["site_type"]), ("industrial_site", "industrial_site"))
+        self.assertEqual(parsed["site_plan"]["building_program_sf"], 14_400)
+        self.assertEqual(parsed["site_plan"]["parking_count"], 48)
+
+    def test_blank_or_unknown_setup_type_does_not_override_parser_result(self):
+        parsed = {"project_type": "mixed_use", "site_type": "mixed_use"}
+        self.assertIs(_apply_explicit_project_type(parsed, {"project_type": ""}), parsed)
+        self.assertIs(_apply_explicit_project_type(parsed, {"project_type": "legacy_custom_type"}), parsed)
+        self.assertEqual(parsed, {"project_type": "mixed_use", "site_type": "mixed_use"})
+
     def test_large_fully_engineered_prompt_avoids_multi_option_in_assisted_mode(self):
         prompt = (
             "Design a fully engineered civil site plan for a 22-acre mixed-use development on irregular terrain.\n"

@@ -570,6 +570,39 @@ def _merge_manual_fields(parsed: Dict[str, Any], manual_fields: Dict[str, Any], 
     return _preserve_field_intent(out)
 
 
+SELECTABLE_PROJECT_TYPES = {
+    "commercial_pad",
+    "office_site",
+    "multifamily_site",
+    "mixed_use",
+    "industrial_site",
+    "roadway_corridor",
+    "constrained_site",
+    "retaining_wall_site",
+}
+
+
+def _apply_explicit_project_type(
+    parsed: Dict[str, Any], manual_fields: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Make a supported Setup selection authoritative for this execution.
+
+    Prompt parsing is allowed to fill an absent project type, but its generic
+    fallback must not replace an explicit Setup choice. ``site_type`` is an
+    older execution alias, so a conflicting saved alias must not steer the
+    current layout away from the explicit canonical ``project_type``. This
+    function works on a copy and does not migrate or delete the saved input.
+    Blank and unknown legacy values retain the existing parser behavior.
+    """
+    explicit = _lower(_safe_dict(manual_fields).get("project_type")).replace("-", "_").replace(" ", "_")
+    if explicit not in SELECTABLE_PROJECT_TYPES:
+        return parsed
+    resolved = deepcopy(parsed)
+    resolved["project_type"] = explicit
+    resolved["site_type"] = explicit
+    return resolved
+
+
 def _unwrap_manual_fields_payload(manual_fields: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     payload = _safe_dict(deepcopy(manual_fields))
     nested = _safe_dict(payload.get("manual_fields"))
@@ -1191,6 +1224,7 @@ def _route_parse(req: PlannerOrchestratorRequest) -> Dict[str, Any]:
         parsed = _parse_from_manual(req) if req.manual_fields else _parse_from_prompt(req)
 
     merged = _merge_manual_fields(parsed, req.manual_fields, allow_fill_for_blanks=req.allow_ai_fill_for_blanks)
+    merged = _apply_explicit_project_type(merged, req.manual_fields)
     merged.setdefault("meta", {})
     merged["meta"]["orchestrator_input_mode"] = mode
     merged["meta"]["strict_mode"] = req.strict_mode
