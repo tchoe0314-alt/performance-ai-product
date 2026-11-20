@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
+import { openWorkspaceTool } from "./helpers/workspaceNavigation";
 
 const api = process.env.PLAYWRIGHT_API_BASE_URL ?? "";
 const explicitlyLocal = process.env.CIVORA_PHASE0_LOCAL_TESTS === "1" && /^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(api);
@@ -24,7 +25,7 @@ test("Setup project type persists per project without replacing the saved progra
           units: "ft",
           project_type: projectType,
           lot: { x: 0, y: 0, w: 600, h: 400 },
-          site_plan: { building_area_sf: buildingAreaSf, required_parking: 48 },
+          site_plan: { building_program_sf: buildingAreaSf, parking_count: 48 },
         },
         meta: { site_inputs: { site_alignment_locked: true } },
       },
@@ -34,7 +35,7 @@ test("Setup project type persists per project without replacing the saved progra
   };
   const first = await createProject("Setup Type A", "", 14_400);
   await createProject("Setup Type B", "legacy_custom_campus", 24_000);
-  type GenerateQueueRequest = { request?: { manual_fields?: { project_type?: string; site_plan?: { building_area_sf?: number; required_parking?: number } } } };
+  type GenerateQueueRequest = { request?: { manual_fields?: { project_type?: string; site_plan?: { building_program_sf?: number; parking_count?: number } } } };
   let generateRequest: GenerateQueueRequest | null = null;
   await page.route("**/api/jobs/orchestrate", async (route) => {
     generateRequest = route.request().postDataJSON() as GenerateQueueRequest;
@@ -51,35 +52,39 @@ test("Setup project type persists per project without replacing the saved progra
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("header-projects-button").click();
   await page.getByRole("button", { name: "Open project Setup Type A" }).click();
+  await openWorkspaceTool(page, "Setup");
   const selector = page.getByLabel("Project type");
   await expect(selector).toHaveValue("");
   await selector.selectOption("industrial_site");
   await expect.poll(async () => {
     const response = await request.get(`${api}/api/projects/${first.project_id}`, { headers });
     const saved = (await response.json()).project.project_input.manual_fields;
-    return { type: saved.project_type, area: saved.site_plan?.building_area_sf, parking: saved.site_plan?.required_parking };
+    return { type: saved.project_type, area: saved.site_plan?.building_program_sf, parking: saved.site_plan?.parking_count };
   }).toEqual({ type: "industrial_site", area: 14_400, parking: 48 });
 
   await page.reload({ waitUntil: "domcontentloaded" });
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByLabel("Project type")).toHaveValue("industrial_site");
   await page.getByTestId("header-projects-button").click();
   await page.getByRole("button", { name: "Open project Setup Type B" }).click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByLabel("Project type")).toHaveValue("legacy_custom_campus");
   await expect(page.getByLabel("Project type").locator("option:checked")).toHaveText("Existing type: legacy_custom_campus");
   await page.getByTestId("header-projects-button").click();
   await page.getByRole("button", { name: "Open project Setup Type A" }).click();
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByLabel("Project type")).toHaveValue("industrial_site");
 
-  await page.getByRole("button", { name: "Generate", exact: true }).click();
+  await openWorkspaceTool(page, "Generate");
   await page.getByTestId("generate-main-action").click();
   await expect.poll(() => generateRequest).not.toBeNull();
   const capturedRequest = generateRequest as GenerateQueueRequest | null;
   expect(capturedRequest?.request?.manual_fields?.project_type).toBe("industrial_site");
-  expect(capturedRequest?.request?.manual_fields?.site_plan).toMatchObject({ building_area_sf: 14_400, required_parking: 48 });
+  expect(capturedRequest?.request?.manual_fields?.site_plan).toMatchObject({ building_program_sf: 14_400, parking_count: 48 });
   await expect.poll(async () => {
     const response = await request.get(`${api}/api/projects/${first.project_id}`, { headers });
     const saved = (await response.json()).project.project_input.manual_fields;
-    return { type: saved.project_type, area: saved.site_plan?.building_area_sf, parking: saved.site_plan?.required_parking };
+    return { type: saved.project_type, area: saved.site_plan?.building_program_sf, parking: saved.site_plan?.parking_count };
   }).toEqual({ type: "industrial_site", area: 14_400, parking: 48 });
 });
 
@@ -129,6 +134,7 @@ test("synthetic geocode persists confirmed provenance and rejects an uncertain r
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await page.getByTestId("header-projects-button").click();
   await page.getByRole("button", { name: "Open project Synthetic Geocode Persistence" }).click();
+  await openWorkspaceTool(page, "Setup");
   const address = page.getByLabel("Type project address");
   await address.fill("100 Synthetic Way, Test City, NC");
   await page.getByRole("button", { name: "Apply address" }).click();
@@ -139,6 +145,7 @@ test("synthetic geocode persists confirmed provenance and rejects an uncertain r
   expect(providerTraffic).toBe(0);
 
   await page.reload({ waitUntil: "domcontentloaded" });
+  await openWorkspaceTool(page, "Setup");
   await expect(page.getByLabel("Type project address")).toHaveValue("100 Synthetic Way, Test City, NC");
   geocodeMode = "uncertain";
   await page.getByLabel("Type project address").fill("Unrelated ambiguous location");
