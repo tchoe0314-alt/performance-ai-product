@@ -10032,7 +10032,12 @@ def _run_model_first_workflow(
             if sanitary_summary:
                 manager.latest_outputs["sanitary"] = deepcopy(sanitary_summary)
                 manager.project.meta["sanitary_summary"] = deepcopy(sanitary_summary)
-                _record_resumed_stage("sanitary", "Restored sanitary state from saved checkpoint.")
+            # An approved checkpoint can legitimately have no canonical
+            # sanitary summary (for example, accepted user geometry with zero
+            # routes).  The approval is still authoritative for this exact
+            # saved stage; requiring a truthy summary reruns Sanitary and
+            # recreates the same approval hold forever.
+            _record_resumed_stage("sanitary", "Restored sanitary state from saved checkpoint.")
 
         if _stage_is_resumable("utility_network"):
             utility_summary = deepcopy(safe_dict(checkpoint_meta.get("utilities")))

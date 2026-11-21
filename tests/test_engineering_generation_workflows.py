@@ -308,6 +308,42 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
             )
         )
 
+    def test_approved_empty_sanitary_checkpoint_advances_once(self) -> None:
+        payload = _supported_minimal_payload()
+        checkpoint = planner.build_plan(deepcopy(payload))
+        checkpoint_meta = checkpoint["meta"]
+        statuses = checkpoint_meta["stage_completeness"]["statuses"]
+        statuses["sanitary"] = "partial"
+        checkpoint_meta.pop("sanitary", None)
+
+        resumed_payload = deepcopy(payload)
+        resumed_payload["meta"] = {
+            "orchestrator_meta": {
+                "runtime_resume": {
+                    "final_plan": checkpoint,
+                    "stage_statuses": statuses,
+                },
+                "runtime_approved_stages": ["sanitary"],
+                "runtime_phase_batch_limit": 1,
+            }
+        }
+
+        resumed = planner.build_plan(resumed_payload)
+        runtime_checkpoint = resumed["meta"]["runtime_phase_checkpoint"]
+        self.assertEqual(runtime_checkpoint["stage_name"], "utility_network")
+        sanitary_rows = [
+            row for row in resumed["meta"]["stage_results"]
+            if row.get("stage_name") == "sanitary"
+        ]
+        self.assertTrue(sanitary_rows)
+        resumed_rows = [
+            row for row in sanitary_rows
+            if row.get("meta", {}).get("resumed_from_checkpoint")
+        ]
+        self.assertEqual(len(resumed_rows), 1)
+        self.assertTrue(resumed_rows[0].get("meta", {}).get("approved_checkpoint"))
+        self.assertFalse(any(row.get("message") == "Sanitary stage accepted user-supplied sanitary geometry." for row in sanitary_rows))
+
     def test_runtime_checkpoints_preserve_drawn_drainage_for_storm_generation(self) -> None:
         payload = _supported_minimal_payload()
         payload["disciplines"] = ["grading", "drainage", "storm", "sanitary", "water", "utility"]
