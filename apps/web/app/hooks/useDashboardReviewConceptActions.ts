@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 
 import type { BuildingPlacement, ChatMessage } from "../types";
-import { buildGenerateConceptPlacements, isReplaceableGeneratedReviewConcept } from "../utils/dashboardGenerateConcepts";
+import { buildGenerateConceptPlacementResult, isReplaceableGeneratedReviewConcept } from "../utils/dashboardGenerateConcepts";
 import {
   buildGradingDrainageReviewContextPlacements,
   type GradingDrainageReviewContextMode,
@@ -154,7 +154,7 @@ export function useDashboardReviewConceptActions({
   const createGenerateConceptObjects = useCallback(
     (target: SystemGenerationTarget, notes: string[]) => {
       const lot = resolveLotBounds();
-      const concept = buildGenerateConceptPlacements({
+      const outcome = buildGenerateConceptPlacementResult({
         target,
         notes,
         lot,
@@ -175,7 +175,14 @@ export function useDashboardReviewConceptActions({
         parkingAngle,
         parkingLoading,
       });
-      if (!concept.length) return 0;
+      if (outcome.blockers.length) {
+        const detail = `Generate blocked: ${outcome.blockers.join(" ")}`;
+        setStatusMessage(detail);
+        appendChatMessage("assistant", detail, "status");
+        return { count: 0, blockers: outcome.blockers };
+      }
+      const concept = outcome.placements;
+      if (!concept.length) return { count: 0, blockers: [] };
       setBuildingPlacements((prev) => [
         ...prev.filter((item) => !isReplaceableGeneratedReviewConcept(item)),
         ...concept,
@@ -190,9 +197,10 @@ export function useDashboardReviewConceptActions({
         undoBlockedReason: "Use Object Manager to hide/delete generated review concepts, then rerun Generate.",
       });
       setStatusMessage(`${concept.length} review concept object${concept.length === 1 ? "" : "s"} added to the canvas. Review required.`);
-      return concept.length;
+      return { count: concept.length, blockers: [] };
     },
     [
+      appendChatMessage,
       buildingDepth,
       buildingProgramSf,
       buildingPlacements,

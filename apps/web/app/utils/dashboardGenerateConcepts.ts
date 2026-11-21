@@ -1,33 +1,11 @@
 import type { BuildingPlacement, SiteObjectType } from "../types";
 import { parsePositiveNumber } from "./formatting";
+import { footprintInside, objectFootprints } from "./siteInterference";
 import type { EngineeringSystemKey, SystemGenerationTarget } from "./workflowConstants";
 
 type LotBounds = { w: number; h: number };
 
-export const isReplaceableGeneratedReviewConcept = (item: BuildingPlacement) =>
-  Boolean(item.meta?.generated_review_concept) && item.source === "generated";
-
-export function buildGenerateConceptPlacements({
-  target,
-  notes,
-  lot,
-  siteScaleLocked,
-  buildingPlacements,
-  projectType,
-  buildingProgramSf,
-  buildingWidth,
-  buildingDepth,
-  parkingCount,
-  parkingStallWidth,
-  parkingStallDepth,
-  parkingAisleWidth,
-  parkingAdaAisleWidth,
-  parkingAdaCount,
-  parkingCompactCount,
-  parkingCompactWidth,
-  parkingAngle,
-  parkingLoading,
-}: {
+export type GenerateConceptPlacementInput = {
   target: SystemGenerationTarget;
   notes: string[];
   lot: LotBounds;
@@ -47,8 +25,38 @@ export function buildGenerateConceptPlacements({
   parkingCompactWidth: string | number | null | undefined;
   parkingAngle: string | number | null | undefined;
   parkingLoading: "single" | "double";
-}) {
-  if (!lot.w || !lot.h || !siteScaleLocked) return [];
+};
+
+export type GenerateConceptPlacementResult = {
+  placements: BuildingPlacement[];
+  blockers: string[];
+};
+
+export const isReplaceableGeneratedReviewConcept = (item: BuildingPlacement) =>
+  Boolean(item.meta?.generated_review_concept) && item.source === "generated";
+
+export function buildGenerateConceptPlacementResult({
+  target,
+  notes,
+  lot,
+  siteScaleLocked,
+  buildingPlacements,
+  projectType,
+  buildingProgramSf,
+  buildingWidth,
+  buildingDepth,
+  parkingCount,
+  parkingStallWidth,
+  parkingStallDepth,
+  parkingAisleWidth,
+  parkingAdaAisleWidth,
+  parkingAdaCount,
+  parkingCompactCount,
+  parkingCompactWidth,
+  parkingAngle,
+  parkingLoading,
+}: GenerateConceptPlacementInput): GenerateConceptPlacementResult {
+  if (!lot.w || !lot.h || !siteScaleLocked) return { placements: [], blockers: [] };
   const now = Date.now();
   const targetSystems =
     target === "full"
@@ -74,6 +82,48 @@ export function buildGenerateConceptPlacements({
     auto_site_context_notes: notes.slice(0, 5),
   };
   const concept: BuildingPlacement[] = [];
+  const blockers: string[] = [];
+  const activeSite = existingObjects.find(item => item.type === "site" && item.placed !== false);
+  const activeBoundary = activeSite ? objectFootprints(activeSite)[0] : null;
+  const fitsBoundary = (item: BuildingPlacement) => !activeBoundary
+    || objectFootprints(item).every(footprint => footprintInside(activeBoundary, footprint));
+  const moveTo = (item: BuildingPlacement, x: number, y: number): BuildingPlacement => {
+    const dx = x - (item.x ?? 0), dy = y - (item.y ?? 0);
+    return {
+      ...item,
+      x,
+      y,
+      geometry: item.geometry?.map(point => [point[0] + dx, point[1] + dy] as [number, number]),
+    };
+  };
+  const fitToBoundary = (item: BuildingPlacement): BuildingPlacement | null => {
+    if (!activeBoundary || fitsBoundary(item)) return item;
+    const maxX = Math.max(0, lot.w - item.w), maxY = Math.max(0, lot.h - item.d);
+    const x = Math.max(0, Math.min(item.x ?? 0, maxX));
+    const y = Math.max(0, Math.min(item.y ?? 0, maxY));
+    const stepX = Math.max(lot.w / 40, 1), stepY = Math.max(lot.h / 40, 1);
+    const candidates: Array<[number, number]> = [[x, y]];
+    for (let step = 1; step <= 40; step += 1) {
+      candidates.push(
+        [x, Math.max(0, y - step * stepY)],
+        [x, Math.min(maxY, y + step * stepY)],
+        [Math.max(0, x - step * stepX), y],
+        [Math.min(maxX, x + step * stepX), y],
+      );
+    }
+    for (let row = 0; row <= 20; row += 1) for (let column = 0; column <= 20; column += 1) {
+      candidates.push([maxX * column / 20, maxY * row / 20]);
+    }
+    const visited = new Set<string>();
+    for (const [candidateX, candidateY] of candidates) {
+      const key = `${candidateX.toFixed(6)}:${candidateY.toFixed(6)}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      const moved = moveTo(item, candidateX, candidateY);
+      if (fitsBoundary(moved)) return moved;
+    }
+    return null;
+  };
   const addConcept = (item: BuildingPlacement) => {
     // Explicit geometry is in site coordinates. Its selection bounds must not
     // cover the entire site merely because it was generated from the site.
@@ -84,7 +134,7 @@ export function buildGenerateConceptPlacements({
       w: Math.max(...points.map(point => point[0])) - Math.min(...points.map(point => point[0])),
       d: Math.max(...points.map(point => point[1])) - Math.min(...points.map(point => point[1])),
     } : {};
-    concept.push({
+    const candidate: BuildingPlacement = {
       ...item,
       ...bounds,
       generated: true,
@@ -101,7 +151,13 @@ export function buildGenerateConceptPlacements({
     ...baseMeta,
     ...(item.meta ?? {}),
       },
-    });
+    };
+    const fitted = fitToBoundary(candidate);
+    if (!fitted) {
+      blockers.push(`${item.label} cannot fit inside the active site boundary without changing its required geometry.`);
+      return;
+    }
+    concept.push(fitted);
   };
   const canonicalProgramArea = parsePositiveNumber(buildingProgramSf);
   const dimensionProgramArea = parsePositiveNumber(buildingWidth) && parsePositiveNumber(buildingDepth)
@@ -334,5 +390,9 @@ export function buildGenerateConceptPlacements({
       meta: { cad_layer: "C-GRADE", ui_color: "#94a3b8" },
     });
   }
-  return concept;
+  return { placements: concept, blockers: [...new Set(blockers)] };
+}
+
+export function buildGenerateConceptPlacements(input: GenerateConceptPlacementInput) {
+  return buildGenerateConceptPlacementResult(input).placements;
 }

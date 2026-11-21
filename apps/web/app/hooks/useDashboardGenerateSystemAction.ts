@@ -51,7 +51,7 @@ type UseDashboardGenerateSystemActionInput = {
   assumedTerrainSlopePct: string;
   autoSiteContextFlowSummary: AutoSiteContextFlowSummary;
   buildPayloadFromOverrides: BuildPayloadFromOverrides;
-  createGenerateConceptObjects: (target: SystemGenerationTarget, reviewNotes: string[]) => number;
+  createGenerateConceptObjects: (target: SystemGenerationTarget, reviewNotes: string[]) => { count: number; blockers: string[] };
   currentGenerateLayoutContext: GenerateLayoutContext | null;
   effectiveDemoWorkspaceEnabled: boolean;
   ensureSiteLocked: (action: string) => boolean;
@@ -259,10 +259,24 @@ export function useDashboardGenerateSystemAction({
       // Publish Generate's own geometry before capturing a calculation snapshot.
       // Otherwise React's batched commit looks like a later user edit to the
       // freshness guard and archives an otherwise current result.
-      let conceptCount = 0;
+      let conceptResult = { count: 0, blockers: [] as string[] };
       flushSync(() => {
-        conceptCount = createGenerateConceptObjects(target, reviewNotes);
+        conceptResult = createGenerateConceptObjects(target, reviewNotes);
       });
+      if (conceptResult.blockers.length) {
+        const detail = conceptResult.blockers.join(" ");
+        const summary = blockedSummary(detail, "Revise the program or site boundary, then run Generate again.");
+        recordGenerateSummary(summary);
+        updateProjectStatus({
+          state: "blocked",
+          area: "generate",
+          title: "Generate does not fit the site",
+          detail,
+          nextAction: summary.next_action,
+        });
+        return;
+      }
+      const conceptCount = conceptResult.count;
       const requestPayload = payloadBuilderRef.current({}, undefined, projectId || null);
       const nextManualFields = {
         ...(requestPayload.manual_fields ?? {}),
