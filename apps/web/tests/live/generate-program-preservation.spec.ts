@@ -69,6 +69,27 @@ test("Generate respects the explicitly selected project type without changing th
     id: "authored", label: "Authored", type: "industrial_building", source: "manual_drawn", w: 100, d: 80,
     meta: { generated_review_concept: true },
   })).toBe(false);
+
+  const untouchedRoad = {
+    id: "old-road", label: "Old generated access", type: "road" as const,
+    source: "generated" as const, generated: true, placed: true, x: 10, y: 10, w: 100, d: 24,
+    meta: { generated_review_concept: true },
+  };
+  const editedBuilding = {
+    id: "edited-building", label: "Edited industrial", type: "industrial_building" as const,
+    source: "manual_drawn" as const, generated: true, placed: true, x: 100, y: 100, w: 179, d: 85,
+    meta: { generated_review_concept: true },
+  };
+  const replacements = buildGenerateConceptPlacements(conceptArgs({
+    projectType: "industrial_site",
+    buildingPlacements: [editedBuilding, untouchedRoad],
+  }));
+  const merged = [editedBuilding, untouchedRoad]
+    .filter(item => !isReplaceableGeneratedReviewConcept(item))
+    .concat(replacements);
+  expect(merged.find(item => item.id === editedBuilding.id)).toMatchObject({ w: 179, d: 85 });
+  expect(merged.some(item => item.id === untouchedRoad.id)).toBe(false);
+  expect(merged.some(item => item.type === "driveway" && item.source === "generated")).toBe(true);
 });
 
 test("combined Generate intent preserves canonical program and never invents a missing building", () => {
