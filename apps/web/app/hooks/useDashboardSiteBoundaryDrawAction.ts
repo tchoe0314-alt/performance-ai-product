@@ -25,6 +25,18 @@ type BuildManualFields = (
   >,
 ) => ReturnType<typeof buildDashboardManualFields>;
 
+export function siteBoundaryAreaAcres(
+  points: Array<[number, number]>,
+  units: "ft" | "m",
+): number {
+  if (points.length < 3) return 0;
+  const squareUnits = Math.abs(points.reduce((sum, point, index) => {
+    const next = points[(index + 1) % points.length];
+    return sum + point[0] * next[1] - next[0] * point[1];
+  }, 0)) / 2;
+  return squareUnits / (units === "m" ? 4046.8564224 : SQFT_PER_ACRE);
+}
+
 type UseDashboardSiteBoundaryDrawActionInput = {
   buildManualFields: BuildManualFields;
   buildingCount: string;
@@ -130,7 +142,7 @@ export function useDashboardSiteBoundaryDrawAction({
       const boundarySource = payload.source ?? "manual_drawn";
       const boundaryUnits = payload.units ?? (units || "ft");
       const normalizedGeometry = validPoints.map(([x, y]) => [x - minX, y - minY] as [number, number]);
-      const acres = (width * height) / (boundaryUnits === "m" ? 4046.8564224 : SQFT_PER_ACRE);
+      const acres = siteBoundaryAreaAcres(normalizedGeometry, boundaryUnits);
       const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const nextSite: BuildingPlacement = {
         id: siteId,
