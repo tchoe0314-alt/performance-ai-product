@@ -199,9 +199,15 @@ export function buildDashboardManualFields({
     const buildingOverrides = placementOverrides.filter((placement) =>
       buildingTypes.has(placement.type as SiteObjectType),
     );
-    const authoredBuildingOverrides = buildingOverrides.filter(
-      (placement) => !placement.generated && placement.meta?.generated_review_concept !== true,
-    );
+    const authoredBuildingOverrides = buildingOverrides.filter((placement) => {
+      // Editing a generated review concept deliberately changes its source to
+      // manual_drawn, while retaining its generated lineage for audit.  The
+      // lineage flags must not make the stale form dimensions authoritative
+      // again on recalculation.
+      const untouchedReviewConcept =
+        placement.source === "generated" && placement.meta?.generated_review_concept === true;
+      return !untouchedReviewConcept;
+    });
     // The scalar fields remain as compatibility inputs for the planner, but a
     // single authored canonical building is the source of truth after a canvas
     // edit. Leaving these scalars at their original form values silently

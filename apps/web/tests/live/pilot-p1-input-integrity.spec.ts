@@ -75,3 +75,37 @@ test("a single authored building keeps planner compatibility dimensions in sync 
   expect(edited.building_depth).toBe(90);
   expect(edited.site_objects?.find((item) => item.id === "office")?.w).toBe(170);
 });
+
+test("an edited generated concept keeps its authored width through recalculation payloads", () => {
+  const edited = fields({
+    nextBuildingWidth: "169",
+    nextBuildingDepth: "85",
+    nextBuildingCount: "1",
+    buildingPlacements: [{
+      id: "industrial-concept",
+      label: "Industrial building concept",
+      type: "industrial_building",
+      x: 100,
+      y: 100,
+      w: 179,
+      d: 85,
+      placed: true,
+      source: "manual_drawn",
+      generated: true,
+      meta: {
+        generated_review_concept: true,
+        requested_project_type: "industrial_site",
+      },
+    }],
+  });
+
+  expect(edited.building_width).toBe(179);
+  expect(edited.building_depth).toBe(85);
+  expect(edited.site_objects?.find((item) => item.id === "industrial-concept")).toMatchObject({
+    w: 179,
+    d: 85,
+    source: "manual_drawn",
+    generated: true,
+    meta: { generated_review_concept: true },
+  });
+});
