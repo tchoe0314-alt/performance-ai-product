@@ -124,7 +124,11 @@ import {
   panelErrorMessage,
 } from "./utils/dashboardStatus";
 import { buildDashboardWorkflowState } from "./utils/dashboardWorkflowState";
-import { buildDashboardArtifactPayload } from "./utils/dashboardPayloads";
+import {
+  buildAuthoritativePreviewTransportPayload,
+  buildDashboardArtifactPayload,
+  buildPreviewRequestIdentity,
+} from "./utils/dashboardPayloads";
 import { runDashboardApplyProjectInput } from "./utils/dashboardProjectRestoreActions";
 import { buildDashboardObjectSelectionView } from "./utils/dashboardObjectSelectionView";
 import {
@@ -3327,7 +3331,7 @@ function PerformanceAIDashboardView({
     };
     if (approvalPreviewStage) approvalPreviewStageRef.current = approvalPreviewStage;
     try {
-      const data = await postJson<PreviewResponse>("/api/preview", previewPayload, {
+      const data = await postJson<PreviewResponse>("/api/preview", buildAuthoritativePreviewTransportPayload(previewPayload), {
         token,
       });
       if (projectLoadRequestRef.current !== workspaceGeneration) return;
@@ -3364,7 +3368,11 @@ function PerformanceAIDashboardView({
     }
     const requestKey = JSON.stringify({
       projectId: payload.project_id || null,
-      result: payload.result,
+      result: buildPreviewRequestIdentity({
+        payload,
+        jobId: visibleActiveJob?.job_id,
+        jobUpdatedAt: visibleActiveJob?.updated_at,
+      }),
       previewQuality,
       previewLabelDensity,
       previewInteraction,

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { ACTIVE_JOB_POLL_INTERVAL_MS, runActiveJobPoll, shouldLoadActiveJobDetail, shouldPollActiveJob } from "../../app/hooks/useJobPolling";
 import { shouldDiscardSavedResultResponse, shouldRetrySavedResultHydration } from "../../app/utils/savedResultHydration";
+import { buildAuthoritativePreviewTransportPayload, buildPreviewRequestIdentity } from "../../app/utils/dashboardPayloads";
 
 test("saved result hydration retries only for a settled project without a result", () => {
   const base = { token: "synthetic", workspaceRestoreState: "restored", projectId: "project-a", hasBackendResult: false };
@@ -69,4 +70,61 @@ test("job polling never overlaps and releases its guard after settlement", async
   release();
   expect(await first).toBe(true);
   expect(inFlight.current).toBe(false);
+});
+
+test("project preview transport omits the ignored result but inline preview retains it", () => {
+  const largeResult = { metadata: { marker: "x".repeat(1_000_000) }, final_plan: { site_objects: [] } };
+  const projectPayload = { project_id: "project-a", result: largeResult, preview_quality: "high" };
+  const transport = buildAuthoritativePreviewTransportPayload(projectPayload);
+  expect(transport.result).toBeUndefined();
+  expect(JSON.stringify(projectPayload).length).toBeGreaterThan(1_000_000);
+  expect(JSON.stringify(transport).length).toBeLessThan(200);
+  expect(projectPayload.result).toBe(largeResult);
+
+  const inlinePayload = { project_id: null, result: largeResult };
+  expect(buildAuthoritativePreviewTransportPayload(inlinePayload)).toBe(inlinePayload);
+  expect(inlinePayload.result).toBe(largeResult);
+});
+
+test("project preview identity deduplicates exact repeats and refreshes for stage or revision changes", () => {
+  const payload = {
+    project_id: "project-a",
+    result: {
+      metadata: {
+        _workflow_run_id: "run-1",
+        calculation_save_v1: { calculation_id: "calc-1" },
+        canvas_result_binding_v1: { input_signature: "input-1" },
+        runtime_phase_checkpoint: { stage_name: "Grading", yielded: true },
+      },
+    },
+  };
+  const identity = buildPreviewRequestIdentity({ payload, jobId: "job-1", jobUpdatedAt: 10 });
+  expect(buildPreviewRequestIdentity({ payload, jobId: "job-1", jobUpdatedAt: 10 })).toEqual(identity);
+  expect(buildPreviewRequestIdentity({ payload, jobId: "job-1", jobUpdatedAt: 11 })).not.toEqual(identity);
+  expect(buildPreviewRequestIdentity({
+    payload: {
+      ...payload,
+      result: {
+        metadata: {
+          ...payload.result.metadata,
+          runtime_phase_checkpoint: { stage_name: "Drainage", yielded: true },
+        },
+      },
+    },
+    jobId: "job-1",
+    jobUpdatedAt: 10,
+  })).not.toEqual(identity);
+  expect(buildPreviewRequestIdentity({
+    payload: {
+      ...payload,
+      result: {
+        metadata: {
+          ...payload.result.metadata,
+          canvas_result_binding_v1: { input_signature: "input-2" },
+        },
+      },
+    },
+    jobId: "job-1",
+    jobUpdatedAt: 10,
+  })).not.toEqual(identity);
 });

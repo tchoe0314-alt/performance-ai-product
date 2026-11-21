@@ -79,3 +79,46 @@ export function buildDashboardArtifactPayload({
   }
   return payload;
 }
+
+/**
+ * Project-bound preview requests are resolved from the tenant-scoped saved
+ * project on the server. Sending a client copy of the result in that case is
+ * both redundant and misleading: the backend deliberately ignores it in
+ * favour of the authoritative saved result. Keep the inline result fallback
+ * for previews which do not have a project identity.
+ */
+export function buildAuthoritativePreviewTransportPayload(
+  payload: PreviewRequestPayload,
+): PreviewRequestPayload {
+  if (!String(payload.project_id ?? "").trim()) return payload;
+  const { result: _ignoredResult, final_plan: _ignoredFinalPlan, ...authoritativePayload } = payload;
+  return authoritativePayload;
+}
+
+export function buildPreviewRequestIdentity({
+  payload,
+  jobId,
+  jobUpdatedAt,
+}: {
+  payload: PreviewRequestPayload;
+  jobId?: string | null;
+  jobUpdatedAt?: number | string | null;
+}): unknown {
+  const projectId = String(payload.project_id ?? "").trim();
+  if (!projectId) return { projectId: null, result: payload.result ?? payload.final_plan ?? null };
+
+  const metadata = (payload.result?.metadata ?? {}) as Record<string, unknown>;
+  const checkpoint = (metadata.runtime_phase_checkpoint ?? {}) as Record<string, unknown>;
+  const calculation = (metadata.calculation_save_v1 ?? {}) as Record<string, unknown>;
+  const binding = (metadata.canvas_result_binding_v1 ?? {}) as Record<string, unknown>;
+  return {
+    projectId,
+    jobId: jobId ?? null,
+    jobUpdatedAt: jobUpdatedAt ?? null,
+    workflowRunId: metadata._workflow_run_id ?? null,
+    calculationId: calculation.calculation_id ?? null,
+    inputSignature: binding.input_signature ?? null,
+    checkpointStage: checkpoint.stage_name ?? null,
+    checkpointYielded: checkpoint.yielded === true,
+  };
+}
