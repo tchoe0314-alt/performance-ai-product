@@ -149,7 +149,10 @@ export default function useAuthState({
       setAuthPassword(""); setAuthInvitationToken("");
       const refreshResults = await Promise.allSettled([
         refreshProjectsRef.current(data.token),
-        refreshJobsRef.current(data.token, { suppressError: true }),
+        // Authentication is a cold-start boundary: there is no in-memory
+        // active job yet, so the ordinary tracked-job optimization cannot know
+        // whether the server has a resumable review hold.
+        refreshJobsRef.current(data.token, { suppressError: true, force: true }),
       ]);
       if (generation !== authGenerationRef.current) return;
       const refreshNeedsRetry = refreshResults.some((result) => result.status === "rejected");
@@ -234,7 +237,10 @@ export default function useAuthState({
         setAuthStatusError("");
         void Promise.allSettled([
           refreshProjectsRef.current(stored),
-          refreshJobsRef.current(stored, { suppressError: true }),
+          // Restore server-owned jobs before deriving the active project hold.
+          // Otherwise a reload after a connection loss looks like no run ever
+          // started until another action happens to refresh the job list.
+          refreshJobsRef.current(stored, { suppressError: true, force: true }),
         ]);
       })
       .catch((error) => {

@@ -3,7 +3,6 @@ import { useCallback } from "react";
 
 import type {
   BuildingPlacement,
-  JobSummary,
   MapAnalysis,
   PlanResponse,
   PreviewResponse,
@@ -67,7 +66,6 @@ type UseDashboardWorkspaceResetOptions = {
   setGenerateFlowSummary: Dispatch<SetStateAction<GenerateFlowSummary | null>>;
   setImageUploadNote: Dispatch<SetStateAction<string | null>>;
   setImageUploadState: Dispatch<SetStateAction<"idle" | "uploading" | "uploaded" | "detecting" | "failed">>;
-  setJobs: Dispatch<SetStateAction<JobSummary[]>>;
   setJobToasts: Dispatch<SetStateAction<WorkspaceToast[]>>;
   setJobsPanelStatusMessage: Dispatch<SetStateAction<string>>;
   setLayerManagerOpen: Dispatch<SetStateAction<boolean>>;
@@ -172,7 +170,6 @@ export function useDashboardWorkspaceReset({
   setGenerateFlowSummary,
   setImageUploadNote,
   setImageUploadState,
-  setJobs,
   setJobToasts,
   setJobsPanelStatusMessage,
   setLayerManagerOpen,
@@ -247,7 +244,6 @@ export function useDashboardWorkspaceReset({
     setSelectedRunId("");
     setActiveJobId("");
     setSelectedJobId("");
-    setJobs([]);
     setJobToasts([]);
     setApprovalInFlight(false);
     setApprovalPhaseLabel(null);
@@ -343,7 +339,6 @@ export function useDashboardWorkspaceReset({
     setGenerateFlowSummary,
     setImageUploadNote,
     setImageUploadState,
-    setJobs,
     setJobToasts,
     setJobsPanelStatusMessage,
     setLayerManagerOpen,

@@ -3773,7 +3773,6 @@ function PerformanceAIDashboardView({
     setGenerateFlowSummary,
     setImageUploadNote,
     setImageUploadState,
-    setJobs,
     setJobToasts,
     setJobsPanelStatusMessage,
     setLayerManagerOpen,
