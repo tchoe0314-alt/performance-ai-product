@@ -30,7 +30,12 @@ test("Review never presents an unchecked empty list as a clean zero", () => {
 });
 
 test("Deliver separates current drawing from revision-bound calculated readiness", () => {
-  expect(buildCalculatedExportReadiness("recalculate grading", "calc-12")).toEqual({ state: "Blocked", detail: "recalculate grading", reference: "calc-12" });
-  expect(buildCalculatedExportReadiness("", "calc-13")).toEqual({ state: "Current", detail: "Calculated results match the active saved project and may be exported for qualified review.", reference: "calc-13" });
-  expect(buildCalculatedExportReadiness("", undefined).reference).toBe("not available");
+  expect(buildCalculatedExportReadiness("recalculate grading", "calc-12")).toMatchObject({ state: "Blocked", detail: "recalculate grading", reference: "calc-12" });
+  const referenced = buildCalculatedExportReadiness("", "calc-13");
+  expect(referenced).toMatchObject({ state: "Current", detail: "Calculated results match the active saved project and may be exported for qualified review.", reference: "calc-13" });
+  expect(referenced.revisionDisclosure).toContain("calc-13");
+  const legacy = buildCalculatedExportReadiness("", undefined);
+  expect(legacy.reference).toBe("not available");
+  expect(legacy.detail).toContain("does not record a calculation reference");
+  expect(legacy.revisionDisclosure).not.toContain("bound to calculation revision");
 });

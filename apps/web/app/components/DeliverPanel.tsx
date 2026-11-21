@@ -89,10 +89,16 @@ type DeliverPanelProps = {
 };
 
 export function buildCalculatedExportReadiness(exportBlockReason: string, calculationReference?: string) {
+  const reference = calculationReference || "not available";
   return {
     state: exportBlockReason ? "Blocked" : "Current",
-    detail: exportBlockReason || "Calculated results match the active saved project and may be exported for qualified review.",
-    reference: calculationReference || "not available",
+    detail: exportBlockReason || (calculationReference
+      ? "Calculated results match the active saved project and may be exported for qualified review."
+      : "Calculated results match the active saved project, but this result does not record a calculation reference."),
+    reference,
+    revisionDisclosure: calculationReference
+      ? `Calculated review exports are bound to calculation revision ${calculationReference} and never use unsaved edits.`
+      : "Calculated review exports use the current saved calculation, but this result cannot display a calculation reference. They never use unsaved edits.",
   } as const;
 }
 
@@ -338,7 +344,7 @@ export function DeliverPanel({
             Quantities
           </button>
         </div>
-        <p data-testid="deliver-export-source-disclosure" className="mt-3 text-xs text-slate-600">Calculated review exports are bound to the calculation revision shown above and never use unsaved edits. Current drawing exports save canvas geometry first and carry no calculation-currentness claim. Preliminary; not for construction.</p>
+        <p data-testid="deliver-export-source-disclosure" className="mt-3 text-xs text-slate-600">{calculatedExportReadiness.revisionDisclosure} Current drawing exports save canvas geometry first and carry no calculation-currentness claim. Preliminary; not for construction.</p>
         <button type="button" onClick={onOpenExportHistory} className="mt-3 rounded-[7px] border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
           Downloads
         </button>
