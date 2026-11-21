@@ -93,6 +93,34 @@ test("layout preview binding catches non-geometric brief changes and distinguish
   expect(Number.isNaN(layoutRequirementContext({ ...input, meta: { edit_controls_v1: { parkingCount: "1.5" } } }).requiredParking)).toBe(true);
 });
 
+test("layout preview binding tracks project type and building program independently", () => {
+  const input = {
+    manual_fields: {
+      units: "ft",
+      project_type: "industrial_site",
+      site_plan: { building_program_sf: 50_000, building_type: "warehouse", parking_count: 60 },
+    },
+  };
+  const source = { projectId: "industrial-project", placements: "unchanged", inputKey: liveInputFingerprint(input) };
+
+  expect(layoutInputsMatch(source, input)).toBe(true);
+  expect(layoutInputsMatch(source, {
+    ...input,
+    manual_fields: { ...input.manual_fields, project_type: "commercial_site" },
+  })).toBe(false);
+  expect(layoutInputsMatch(source, {
+    ...input,
+    manual_fields: {
+      ...input.manual_fields,
+      site_plan: { ...input.manual_fields.site_plan, building_program_sf: 75_000 },
+    },
+  })).toBe(false);
+  expect(input.manual_fields).toMatchObject({
+    project_type: "industrial_site",
+    site_plan: { building_program_sf: 50_000, building_type: "warehouse", parking_count: 60 },
+  });
+});
+
 test("dependency approval applies all objects atomically and rejects stale or cross-project previews", () => {
   const source = fixture();
   const before = JSON.stringify(source);
