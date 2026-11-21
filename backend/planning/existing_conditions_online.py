@@ -162,6 +162,44 @@ def fetch_usgs_elevation_point(lat: float, lng: float, *, units: str = "Feet", s
     }
 
 
+def classify_public_terrain_context(terrain_grid: Dict[str, Any]) -> Dict[str, Any]:
+    grid = safe_dict(terrain_grid)
+    if not grid.get("success"):
+        return {
+            "terrain_context_state": "unavailable",
+            "coverage_complete": False,
+            "vertical_datum_known": False,
+            "grading_input_eligible": False,
+            "grading_input_blockers": ["Public terrain grid is unavailable."],
+        }
+    rows = max(0, safe_int(grid.get("rows")))
+    cols = max(0, safe_int(grid.get("cols")))
+    expected_count = rows * cols
+    sample_count = max(0, safe_int(grid.get("sample_count")))
+    missing_count = max(0, safe_int(grid.get("missing_sample_count"), max(0, expected_count - sample_count)))
+    coverage_complete = expected_count > 0 and sample_count >= expected_count and missing_count == 0
+    vertical_datum_known = bool(safe_str(grid.get("vertical_datum")))
+    blockers = ["Public terrain context is not accepted project survey/control."]
+    if not coverage_complete:
+        blockers.append("Terrain sample coverage is partial or cannot be verified for the full requested grid.")
+    if not vertical_datum_known:
+        blockers.append("Vertical datum is unknown, so elevations cannot be reconciled to accepted project control.")
+    state = (
+        "context_partial_coverage"
+        if not coverage_complete
+        else "context_unknown_vertical_datum"
+        if not vertical_datum_known
+        else "context_only"
+    )
+    return {
+        "terrain_context_state": state,
+        "coverage_complete": coverage_complete,
+        "vertical_datum_known": vertical_datum_known,
+        "grading_input_eligible": False,
+        "grading_input_blockers": blockers,
+    }
+
+
 def fetch_usgs_elevation_grid(
     bbox: Dict[str, Any],
     *,
@@ -274,7 +312,7 @@ def fetch_usgs_elevation_grid(
         or source_attributes.get("SourceDataDate")
         or source_attributes.get("Date")
     )
-    return {
+    result = {
         "success": True,
         "status": "ready",
         "source": USGS_3DEP_GET_SAMPLES_URL,
@@ -299,6 +337,8 @@ def fetch_usgs_elevation_grid(
         "survey_backed": False,
         "truth_label": "USGS 3DEP elevation grid is public terrain context; it is not project survey/control or an accepted grading surface.",
     }
+    result.update(classify_public_terrain_context(result))
+    return result
 
 
 def _contour_interval_ft(elevation_range_ft: float) -> float:
@@ -2100,6 +2140,7 @@ def fetch_online_existing_conditions(
         worldwide_context=worldwide_context,
         source_results=source_results,
     )
+    terrain_provenance = classify_public_terrain_context(terrain_grid)
     dem_lidar = {
         "ready": bool(terrain_grid.get("success") or elevation.get("success")),
         "source": safe_str(terrain_grid.get("source") or elevation.get("source"), "missing"),
@@ -2125,6 +2166,7 @@ def fetch_online_existing_conditions(
         "lidar_coverage_count": len(safe_list(safe_dict(online_layers.get("gis_layers")).get("lidar_coverage"))),
         "surface_ready": bool(terrain_grid.get("success") and terrain_grid.get("surface_ready")),
         "truth_label": "Public DEM surface context only; project grading still needs accepted source review and survey/control where required.",
+        **terrain_provenance,
     }
     canonical = {
         "survey": {"source": "missing", "point_count": 0, "points": []},
@@ -2216,6 +2258,7 @@ __all__ = [
     "USGS_3DEP_IMAGE_SERVER_URL",
     "build_online_existing_conditions_discovery_report",
     "build_online_source_urls",
+    "classify_public_terrain_context",
     "bbox_around_point",
     "bbox_center",
     "fetch_arcgis_layer_geojson",

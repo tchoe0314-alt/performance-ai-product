@@ -4,6 +4,7 @@ from time import sleep
 
 from backend.planning.existing_conditions_online import (
     ONLINE_DISCOVERY_VERSION,
+    classify_public_terrain_context,
     derive_review_contours_from_terrain_grid,
     fetch_arcgis_layer_geojson,
     fetch_configured_parcels,
@@ -344,7 +345,31 @@ class ExistingConditionsOnlineTests(unittest.TestCase):
         self.assertEqual(result["vertical_datum"], "North American Vertical Datum of 1988 (NAVD 88)")
         self.assertGreater(result["elevation_range_ft"], 8)
         self.assertFalse(result["survey_backed"])
+        self.assertEqual(result["terrain_context_state"], "context_only")
+        self.assertTrue(result["coverage_complete"])
+        self.assertTrue(result["vertical_datum_known"])
+        self.assertFalse(result["grading_input_eligible"])
         self.assertIn("not project survey/control", result["truth_label"])
+
+    def test_public_terrain_context_names_partial_coverage_and_unknown_datum(self) -> None:
+        partial = classify_public_terrain_context({
+            "success": True, "rows": 3, "cols": 3, "sample_count": 7,
+            "missing_sample_count": 2, "vertical_datum": "",
+        })
+        self.assertEqual(partial["terrain_context_state"], "context_partial_coverage")
+        self.assertFalse(partial["coverage_complete"])
+        self.assertFalse(partial["vertical_datum_known"])
+        self.assertFalse(partial["grading_input_eligible"])
+        self.assertIn("partial", " ".join(partial["grading_input_blockers"]).lower())
+        self.assertIn("datum", " ".join(partial["grading_input_blockers"]).lower())
+
+        unknown_datum = classify_public_terrain_context({
+            "success": True, "rows": 2, "cols": 2, "sample_count": 4,
+            "missing_sample_count": 0, "vertical_datum": None,
+        })
+        self.assertEqual(unknown_datum["terrain_context_state"], "context_unknown_vertical_datum")
+        self.assertTrue(unknown_datum["coverage_complete"])
+        self.assertFalse(unknown_datum["grading_input_eligible"])
 
     def test_public_dem_grid_derives_review_contours_without_claiming_survey(self) -> None:
         grid = fetch_usgs_elevation_grid(

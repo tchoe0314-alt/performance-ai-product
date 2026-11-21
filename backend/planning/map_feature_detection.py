@@ -1016,8 +1016,10 @@ def _grading_context_hint(
     boundary_bbox: Optional[tuple[float, float, float, float]],
 ) -> Dict[str, Any]:
     if terrain_grid.get("success"):
+        context_state = safe_str(terrain_grid.get("terrain_context_state"), "public_dem_surface_context")
+        grading_blockers = [safe_str(item) for item in safe_list(terrain_grid.get("grading_input_blockers")) if safe_str(item)]
         return {
-            "status": "public_dem_surface_context",
+            "status": context_state,
             "source": safe_str(terrain_grid.get("source_type"), "public_dem_elevation_grid"),
             "sample_count": safe_int(terrain_grid.get("sample_count")),
             "min_elevation_ft": terrain_grid.get("min_elevation_ft"),
@@ -1025,8 +1027,12 @@ def _grading_context_hint(
             "elevation_range_ft": terrain_grid.get("elevation_range_ft"),
             "horizontal_resolution": terrain_grid.get("horizontal_resolution"),
             "vertical_datum": terrain_grid.get("vertical_datum"),
+            "coverage_complete": bool(terrain_grid.get("coverage_complete")),
+            "vertical_datum_known": bool(terrain_grid.get("vertical_datum_known")),
+            "grading_input_eligible": False,
+            "grading_input_blockers": grading_blockers,
             "confidence": "source-backed-review-context",
-            "message": "Public DEM samples support terrain visualization and preliminary drainage context, not survey-controlled grading.",
+            "message": "Public DEM samples support terrain visualization and preliminary drainage context only; coverage, datum, and project control must be accepted before grading reliance.",
             "next_action": "Review the DEM source and replace or confirm it with project survey/control before production grading reliance.",
             "review_required": True,
             "site_boundary_present": bool(boundary_bbox),

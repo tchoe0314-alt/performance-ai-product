@@ -365,6 +365,34 @@ class MapFeatureDetectionTests(unittest.TestCase):
         self.assertFalse(summary["construction_release_allowed"])
         self.assertIn("review-required", summary["one_sentence"])
 
+    def test_partial_public_terrain_remains_context_only_for_grading(self) -> None:
+        report = build_map_feature_detection_report(
+            source_results={
+                "terrain_grid": {
+                    "success": True,
+                    "source_type": "usgs_3dep_elevation_grid",
+                    "sample_count": 7,
+                    "min_elevation_ft": 500.0,
+                    "max_elevation_ft": 510.0,
+                    "terrain_context_state": "context_partial_coverage",
+                    "coverage_complete": False,
+                    "vertical_datum_known": False,
+                    "grading_input_eligible": False,
+                    "grading_input_blockers": [
+                        "Terrain sample coverage is partial or cannot be verified for the full requested grid.",
+                        "Vertical datum is unknown, so elevations cannot be reconciled to accepted project control.",
+                    ],
+                }
+            },
+        )
+
+        grading = report["site_intelligence_summary_v1"]["grading_context"]
+        self.assertEqual(grading["status"], "context_partial_coverage")
+        self.assertFalse(grading["coverage_complete"])
+        self.assertFalse(grading["vertical_datum_known"])
+        self.assertFalse(grading["grading_input_eligible"])
+        self.assertIn("datum", " ".join(grading["grading_input_blockers"]).lower())
+
     def test_elevation_source_creates_review_required_terrain_candidate(self) -> None:
         report = build_map_feature_detection_report(
             source_results={
