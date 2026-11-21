@@ -9,6 +9,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 
+def worker_revision(env: dict[str, str] | None = None) -> str:
+    source = os.environ if env is None else env
+    for key in ("CIVORA_BUILD_VERSION", "RAILWAY_GIT_COMMIT_SHA", "GIT_COMMIT_SHA"):
+        value = str(source.get(key) or "").strip()
+        if value:
+            return value[:40]
+    return ""
+
+
 def normalize_worker_poll_seconds(value: object, default: float = 1.0) -> str:
     try:
         poll_seconds = float(str(value or "").strip())
@@ -36,6 +45,7 @@ def _worker_health_payload(job_queue: Any) -> dict[str, Any]:
         "status": "ok",
         "service": "civora-job-worker",
         "role": "worker",
+        "revision": worker_revision(),
         "worker_count": int(stats.get("worker_count") or 0),
         "alive_workers": int(stats.get("alive_workers") or 0),
         "registered_handlers": list(stats.get("registered_handlers") or []),

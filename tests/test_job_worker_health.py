@@ -5,7 +5,7 @@ import threading
 import urllib.error
 import urllib.request
 
-from backend.scripts.run_job_worker import build_health_server, normalize_worker_poll_seconds
+from backend.scripts.run_job_worker import build_health_server, normalize_worker_poll_seconds, worker_revision
 
 
 class _FakeJobQueue:
@@ -30,6 +30,13 @@ def test_worker_polling_cannot_be_disabled_by_zero_or_invalid_interval() -> None
     assert normalize_worker_poll_seconds("0.25") == "0.25"
 
 
+def test_worker_revision_uses_explicit_build_then_provider_identity() -> None:
+    assert worker_revision({"CIVORA_BUILD_VERSION": "candidate-123", "RAILWAY_GIT_COMMIT_SHA": "railway-456"}) == "candidate-123"
+    assert worker_revision({"RAILWAY_GIT_COMMIT_SHA": "a" * 64}) == "a" * 40
+    assert worker_revision({"GIT_COMMIT_SHA": "fallback-789"}) == "fallback-789"
+    assert worker_revision({}) == ""
+
+
 def test_worker_health_server_reports_safe_aggregate_status() -> None:
     server = build_health_server(_FakeJobQueue(), host="127.0.0.1", port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -45,6 +52,7 @@ def test_worker_health_server_reports_safe_aggregate_status() -> None:
             "status": "ok",
             "service": "civora-job-worker",
             "role": "worker",
+            "revision": "",
             "worker_count": 1,
             "alive_workers": 1,
             "registered_handlers": ["source_context"],
