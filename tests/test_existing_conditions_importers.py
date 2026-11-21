@@ -93,6 +93,49 @@ class ExistingConditionsImporterTests(unittest.TestCase):
             self.assertEqual(imported["coordinate_system"]["name"], "EPSG:2276")
             self.assertEqual(imported["coordinate_system"]["units"], "ft")
 
+    def test_projected_geojson_preserves_asymmetric_parcel_axis_scale_origin_and_chamfer(self) -> None:
+        ring = [
+            [500000.0, 4100000.0],
+            [500100.0, 4100000.0],
+            [500100.0, 4100060.0],
+            [500020.0, 4100060.0],
+            [500000.0, 4100040.0],
+            [500000.0, 4100000.0],
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "asymmetric-parcel.geojson"
+            path.write_text(json.dumps({
+                "type": "FeatureCollection",
+                "features": [{
+                    "type": "Feature",
+                    "id": "parcel-offset-m",
+                    "properties": {"layer": "parcel"},
+                    "geometry": {"type": "Polygon", "coordinates": [ring]},
+                }],
+            }), encoding="utf-8")
+
+            imported = import_geojson(path, coordinate_system={
+                "epsg": "EPSG:32615", "units": "m", "source": "synthetic projected fixture",
+            })
+            merged = merge_imported_existing_conditions(imported)
+
+        persisted = merged["gis_layers"]["parcels"][0]["geometry"]["coordinates"][0]
+        xs = [point[0] for point in persisted]
+        ys = [point[1] for point in persisted]
+        signed_area = sum(
+            persisted[index][0] * persisted[index + 1][1]
+            - persisted[index + 1][0] * persisted[index][1]
+            for index in range(len(persisted) - 1)
+        ) / 2.0
+
+        self.assertEqual(merged["coordinate_system"]["epsg"], "EPSG:32615")
+        self.assertEqual(merged["coordinate_system"]["units"], "m")
+        self.assertEqual((min(xs), min(ys)), (500000.0, 4100000.0))
+        self.assertEqual((max(xs) - min(xs), max(ys) - min(ys)), (100.0, 60.0))
+        self.assertGreater(signed_area, 0.0, "Ring orientation and top-left chamfer must remain counter-clockwise.")
+        self.assertEqual(signed_area, 5800.0)
+        self.assertEqual(persisted[-3:], [[500020.0, 4100060.0], [500000.0, 4100040.0], [500000.0, 4100000.0]])
+
     def test_import_surface_grid_csv_builds_grid_surface(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "surface.csv"
