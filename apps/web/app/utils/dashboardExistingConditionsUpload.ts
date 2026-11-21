@@ -1,5 +1,32 @@
 import type { UploadExistingConditionsResponse } from "../types";
 
+export function buildImportedSurveyProvenance(data: UploadExistingConditionsResponse) {
+  const canonical = data.canonical_existing_conditions ?? {};
+  const coordinateSystem = canonical.coordinate_system && typeof canonical.coordinate_system === "object"
+    ? canonical.coordinate_system as Record<string, unknown>
+    : {};
+  const controlPackage = canonical.survey_control_package && typeof canonical.survey_control_package === "object"
+    ? canonical.survey_control_package as Record<string, unknown>
+    : {};
+  const eligibility = canonical.grading_input_eligibility && typeof canonical.grading_input_eligibility === "object"
+    ? canonical.grading_input_eligibility as Record<string, unknown>
+    : {};
+  return {
+    survey_coordinate_system: coordinateSystem,
+    survey_control_package: controlPackage,
+    survey_grading_eligibility: {
+      review_context_usable: eligibility.review_context_usable === true,
+      accepted_grading_input: eligibility.accepted_grading_input === true,
+      coordinate_units: typeof eligibility.coordinate_units === "string" ? eligibility.coordinate_units : null,
+      horizontal_datum: typeof eligibility.horizontal_datum === "string" ? eligibility.horizontal_datum : null,
+      vertical_datum: typeof eligibility.vertical_datum === "string" ? eligibility.vertical_datum : null,
+      control_verified: eligibility.control_verified === true,
+      blockers: Array.isArray(eligibility.blockers) ? eligibility.blockers as Array<Record<string, unknown>> : [],
+      truth_label: typeof eligibility.truth_label === "string" ? eligibility.truth_label : "Imported survey/control acceptance is not established.",
+    },
+  };
+}
+
 export function mapSurveyPointsToSite(
   points: number[][],
   width: number | null | undefined,

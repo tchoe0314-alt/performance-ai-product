@@ -117,6 +117,12 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
 
             self.assertTrue(result["success"])
             self.assertEqual(result["canonical_existing_conditions"]["survey"]["point_count"], 3)
+            eligibility = result["canonical_existing_conditions"]["grading_input_eligibility"]
+            self.assertTrue(eligibility["review_context_usable"])
+            self.assertFalse(eligibility["accepted_grading_input"])
+            self.assertIsNone(eligibility["coordinate_units"])
+            self.assertIsNone(eligibility["vertical_datum"])
+            self.assertFalse(eligibility["control_verified"])
             self.assertTrue(result["existing_conditions_summary"]["survey"]["ready"])
             self.assertIn("existing_conditions_package", result)
             self.assertEqual(result["existing_conditions_package"]["status"], "blocked")

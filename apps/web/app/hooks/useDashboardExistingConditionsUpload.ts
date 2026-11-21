@@ -13,6 +13,7 @@ import type {
 import { uploadStatusMessage } from "../utils/dashboardStatus";
 import {
   buildExistingConditionsSourceEffects,
+  buildImportedSurveyProvenance,
   mapSurveyPointsToSite,
   summarizeExistingConditionsUpload,
 } from "../utils/dashboardExistingConditionsUpload";
@@ -101,6 +102,7 @@ export function useDashboardExistingConditionsUpload({
             .map((point) => [Number(point.x), Number(point.y), Number(point.z)])
             .filter((point) => point.every((value) => Number.isFinite(value)))
         : [];
+      const surveyProvenance = buildImportedSurveyProvenance(data);
       // A stored file is not an accepted replacement. Preserve the active source
       // (including its warnings and points) when parsing fails.
       if (data.success !== true || ((data.file_type === "csv" || /\.csv$/i.test(file.name)) && surveyPoints.length < 3)) {
@@ -125,6 +127,7 @@ export function useDashboardExistingConditionsUpload({
         survey_points: surveyPoints,
         survey_bounds: (survey.bounds as SiteInputs["survey_bounds"]) ?? null,
         survey_elevation_range: (survey.elevation_range as SiteInputs["survey_elevation_range"]) ?? null,
+        ...surveyProvenance,
         use_survey_for_grading: useSurveyForGrading,
             existing_conditions_import: {
               filename: data.filename || file.name,

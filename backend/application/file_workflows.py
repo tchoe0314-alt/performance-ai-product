@@ -364,6 +364,19 @@ def upload_existing_conditions_file(
     summary = summarize_existing_conditions({"meta": package_meta})
     package_meta["existing_conditions_summary"] = summary
     package = build_existing_conditions_package({"meta": package_meta})
+    survey_control = dict(package.get("survey_control_package") or {})
+    coordinate_system = dict(merged.get("coordinate_system") or {})
+    survey_point_count = int((merged.get("survey") or {}).get("point_count") or 0)
+    grading_input_eligibility = {
+        "review_context_usable": survey_point_count >= 3,
+        "accepted_grading_input": survey_point_count >= 3 and survey_control.get("production_usable") is True,
+        "coordinate_units": coordinate_system.get("units") or None,
+        "horizontal_datum": survey_control.get("horizontal_datum") or None,
+        "vertical_datum": survey_control.get("vertical_datum") or None,
+        "control_verified": survey_control.get("control_verified") is True,
+        "blockers": survey_control.get("blockers") or [],
+        "truth_label": "Imported points may support review grading, but accepted grading input requires explicit coordinate units, datum, benchmark, source, and verified control.",
+    }
 
     return {
         "success": bool(merged.get("success")),
@@ -384,6 +397,8 @@ def upload_existing_conditions_file(
             "sources": merged.get("sources"),
             "metadata_only_sources": merged.get("metadata_only_sources"),
             "canonical_existing_conditions_model": merged.get("canonical_existing_conditions_model"),
+            "survey_control_package": survey_control,
+            "grading_input_eligibility": grading_input_eligibility,
         },
         "import_validation": merged.get("import_validation"),
         "import_matrix": (merged.get("import_validation") or {}).get("import_matrix") or (merged.get("import_validation") or {}).get("importer_production_matrix"),

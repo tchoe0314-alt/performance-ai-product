@@ -1672,6 +1672,18 @@ export type SiteInputs = {
   survey_point_warnings?: string[];
   survey_bounds?: { min_x?: number; min_y?: number; max_x?: number; max_y?: number } | null;
   survey_elevation_range?: { min?: number; max?: number } | null;
+  survey_coordinate_system?: Record<string, unknown>;
+  survey_control_package?: Record<string, unknown>;
+  survey_grading_eligibility?: {
+    review_context_usable?: boolean;
+    accepted_grading_input?: boolean;
+    coordinate_units?: string | null;
+    horizontal_datum?: string | null;
+    vertical_datum?: string | null;
+    control_verified?: boolean;
+    blockers?: Array<Record<string, unknown>>;
+    truth_label?: string;
+  };
   survey_point_columns?: {
     x?: string;
     y?: string;
