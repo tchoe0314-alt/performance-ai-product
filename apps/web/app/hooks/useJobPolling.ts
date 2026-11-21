@@ -26,17 +26,21 @@ export function shouldPollActiveJob(status: string | undefined, documentHidden: 
   return !normalizedStatus || ["queued", "running", "cancelling"].includes(normalizedStatus);
 }
 
+export function shouldLoadActiveJobDetail(status: string | undefined): boolean {
+  const normalizedStatus = String(status || "").toLowerCase();
+  return ["awaiting_approval", "completed", "failed", "cancelled"].includes(normalizedStatus);
+}
+
 export async function runActiveJobPoll(input: {
   status?: string;
   documentHidden: boolean;
   inFlight: { current: boolean };
-  load: () => Promise<unknown> | unknown;
   refresh: () => Promise<unknown> | unknown;
 }): Promise<boolean> {
   if (!shouldPollActiveJob(input.status, input.documentHidden) || input.inFlight.current) return false;
   input.inFlight.current = true;
   try {
-    await Promise.allSettled([Promise.resolve(input.load()), Promise.resolve(input.refresh())]);
+    await Promise.resolve(input.refresh());
     return true;
   } finally {
     input.inFlight.current = false;
@@ -57,6 +61,7 @@ export default function useJobPolling({
   lastStaleJobWarningRef,
 }: UseJobPollingOptions) {
   const pollInFlightRef = useRef(false);
+  const lastDetailLoadRef = useRef("");
   const loadJobRef = useRef(onLoadJob);
   const refreshJobsRef = useRef(onRefreshJobs);
 
@@ -80,7 +85,6 @@ export default function useJobPolling({
         status: visibleActiveJob?.status,
         documentHidden: document.hidden,
         inFlight: pollInFlightRef,
-        load: () => loadJobRef.current(activeJobId),
         refresh: () => refreshJobsRef.current(token, { suppressError: true, force: true }),
       });
     };
@@ -95,6 +99,26 @@ export default function useJobPolling({
     }, ACTIVE_JOB_POLL_INTERVAL_MS);
     return () => window.clearInterval(interval);
   }, [token, activeJobId, visibleActiveJob?.status]);
+
+  useEffect(() => {
+    if (!token || !activeJobId || !visibleActiveJob) return;
+    const normalizedStatus = String(visibleActiveJob.status || "").toLowerCase();
+    if (!shouldLoadActiveJobDetail(normalizedStatus)) {
+      return;
+    }
+    const detailSignature = `${activeJobId}:${normalizedStatus}:${visibleActiveJob.updated_at ?? ""}`;
+    if (lastDetailLoadRef.current === detailSignature) return;
+    lastDetailLoadRef.current = detailSignature;
+    // The jobs list already carries stage/progress state. Loading the full
+    // result on every two-second tick repeatedly serialized multi-megabyte
+    // plans while the worker was calculating. Fetch the authoritative result
+    // only when the job reaches a review or terminal boundary.
+    void Promise.resolve(loadJobRef.current(activeJobId)).catch(() => {
+      if (lastDetailLoadRef.current === detailSignature) {
+        lastDetailLoadRef.current = "";
+      }
+    });
+  }, [token, activeJobId, visibleActiveJob]);
 
   useEffect(() => {
     if (!currentProjectActiveJob) {

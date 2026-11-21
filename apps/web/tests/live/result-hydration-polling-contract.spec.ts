@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { ACTIVE_JOB_POLL_INTERVAL_MS, runActiveJobPoll, shouldPollActiveJob } from "../../app/hooks/useJobPolling";
+import { ACTIVE_JOB_POLL_INTERVAL_MS, runActiveJobPoll, shouldLoadActiveJobDetail, shouldPollActiveJob } from "../../app/hooks/useJobPolling";
 import { shouldDiscardSavedResultResponse, shouldRetrySavedResultHydration } from "../../app/utils/savedResultHydration";
 
 test("saved result hydration retries only for a settled project without a result", () => {
@@ -39,19 +39,23 @@ test("job polling is bounded to visible active jobs", () => {
     expect(shouldPollActiveJob(status, false)).toBe(false);
   }
   expect(shouldPollActiveJob("running", true)).toBe(false);
+  for (const status of ["awaiting_approval", "completed", "failed", "cancelled"]) {
+    expect(shouldLoadActiveJobDetail(status)).toBe(true);
+  }
+  for (const status of [undefined, "queued", "running", "cancelling"]) {
+    expect(shouldLoadActiveJobDetail(status)).toBe(false);
+  }
 });
 
 test("job polling never overlaps and releases its guard after settlement", async () => {
   const inFlight = { current: false };
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
-  let loads = 0;
   let refreshes = 0;
   const first = runActiveJobPoll({
     status: "running",
     documentHidden: false,
     inFlight,
-    load: () => { loads += 1; return pending; },
     refresh: () => { refreshes += 1; return pending; },
   });
   expect(inFlight.current).toBe(true);
@@ -59,10 +63,9 @@ test("job polling never overlaps and releases its guard after settlement", async
     status: "running",
     documentHidden: false,
     inFlight,
-    load: () => { loads += 1; },
     refresh: () => { refreshes += 1; },
   })).toBe(false);
-  expect([loads, refreshes]).toEqual([1, 1]);
+  expect(refreshes).toBe(1);
   release();
   expect(await first).toBe(true);
   expect(inFlight.current).toBe(false);
