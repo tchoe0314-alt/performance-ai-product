@@ -169,6 +169,7 @@ _PLAN_META_KEYS = {
     "stage_completeness",
     "stage_results",
     "runtime_phase_checkpoint",
+    "performance",
     "routing",
     "strict_mode",
     "planner_score",

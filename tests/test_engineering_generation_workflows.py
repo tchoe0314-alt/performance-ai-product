@@ -327,6 +327,48 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
             checkpoint = planner.build_plan(payload)
         self.assertTrue(checkpoint["meta"]["runtime_phase_checkpoint"]["yielded"])
         self.assertNotIn("quantities", checkpoint["meta"])
+        performance = checkpoint["meta"]["performance"]
+        self.assertIn("approval wait", performance["measurement_scope"])
+        stage_samples = [
+            item
+            for item in performance["runtime_phase_timings"]
+            if item.get("phase") == "stage_execution"
+        ]
+        self.assertEqual(len(stage_samples), 1)
+        self.assertEqual(
+            stage_samples[0]["stage_name"],
+            checkpoint["meta"]["runtime_phase_checkpoint"]["stage_name"],
+        )
+        self.assertGreaterEqual(stage_samples[0]["duration_ms"], 0)
+        self.assertGreaterEqual(stage_samples[0]["checkpoint_serialization_ms"], 0)
+
+    def test_runtime_timing_survives_checkpoint_resume_without_payload_details(self) -> None:
+        payload = _supported_minimal_payload()
+        payload["meta"] = {"orchestrator_meta": {"runtime_phase_batch_limit": 1}}
+        checkpoint = planner.build_plan(payload)
+        approved_stage = checkpoint["meta"]["runtime_phase_checkpoint"]["stage_name"]
+
+        resumed_payload = _supported_minimal_payload()
+        resumed_payload["meta"] = {
+            "orchestrator_meta": {
+                "runtime_phase_batch_limit": 1,
+                "runtime_approved_stages": [approved_stage],
+                "runtime_resume": {
+                    "final_plan": checkpoint,
+                    "stage_statuses": checkpoint["meta"]["stage_completeness"]["statuses"],
+                },
+            }
+        }
+        resumed = planner.build_plan(resumed_payload)
+        timings = resumed["meta"]["performance"]["runtime_phase_timings"]
+
+        self.assertTrue(any(item.get("phase") == "checkpoint_reconstruction" for item in timings))
+        self.assertGreaterEqual(
+            len([item for item in timings if item.get("phase") == "stage_execution"]),
+            2,
+        )
+        self.assertTrue(all("project_name" not in item for item in timings))
+        self.assertTrue(all("actions" not in item for item in timings))
 
     def test_sparse_approved_layout_checkpoint_rehydrates_user_building(self) -> None:
         payload = _supported_minimal_payload()

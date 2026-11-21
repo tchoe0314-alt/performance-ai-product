@@ -9856,6 +9856,7 @@ def _run_model_first_workflow(
     option_family: str = "base",
     progress_callback: Optional[Callable[..., None]] = None,
 ) -> PlannerExecutionContext:
+    workflow_started = perf_counter()
     manager = _bootstrap_manager(parsed)
     _register_default_dependencies(manager)
     manual_mode = _manual_mode_enabled(parsed)
@@ -9876,6 +9877,14 @@ def _run_model_first_workflow(
     orchestrator_meta = safe_dict(safe_dict(parsed.get("meta")).get("orchestrator_meta"))
     runtime_phase_batch_limit = max(0, safe_int(orchestrator_meta.get("runtime_phase_batch_limit"), 0))
     runtime_resume_plan = safe_dict(safe_dict(orchestrator_meta.get("runtime_resume")).get("final_plan"))
+    prior_runtime_performance = safe_dict(
+        safe_dict(runtime_resume_plan.get("meta")).get("performance")
+    )
+    runtime_phase_timings = [
+        deepcopy(item)
+        for item in safe_list(prior_runtime_performance.get("runtime_phase_timings"))[-40:]
+        if isinstance(item, dict)
+    ]
     from backend.services.canonical_results import ENGINE_REVISION
     runtime_checkpoint_engine_is_current = (
         not runtime_resume_plan
@@ -10048,7 +10057,15 @@ def _run_model_first_workflow(
             )
         return resumed
 
+    resume_started = perf_counter()
     resumed_stage_names = _seed_runtime_resume_state()
+    if runtime_resume_plan:
+        runtime_phase_timings.append({
+            "phase": "checkpoint_reconstruction",
+            "duration_ms": round((perf_counter() - resume_started) * 1000.0, 3),
+            "restored_stage_count": len(resumed_stage_names),
+        })
+        runtime_phase_timings[:] = runtime_phase_timings[-40:]
     newly_completed_stage_count = 0
 
     max_passes = max(2, safe_int(safe_dict(parsed.get("meta")).get("planner_passes"), 2))
@@ -10118,6 +10135,18 @@ def _run_model_first_workflow(
         }
         return checkpoint_state
 
+    def _runtime_performance() -> Dict[str, Any]:
+        samples = [deepcopy(item) for item in runtime_phase_timings[-40:]]
+        return {
+            "runtime_phase_timings": samples,
+            "measured_sample_count": len(samples),
+            "measurement_scope": (
+                "Worker stage execution, checkpoint reconstruction, checkpoint serialization, terminal packaging, "
+                "and per-invocation worker time only; "
+                "approval wait, queue wait, browser polling, and network time are excluded."
+            ),
+        }
+
     def _build_runtime_checkpoint_plan(stage_name: str, message: str) -> Dict[str, Any]:
         checkpoint_plan = sanitize_plan(
             project_model_to_plan(
@@ -10167,6 +10196,7 @@ def _run_model_first_workflow(
         checkpoint_plan["meta"]["utilities"] = _checkpoint_stage_summary(manager.project.meta.get("utility_summary"))
         checkpoint_plan["meta"]["profiles"] = {"count": len(safe_list(manager.project.meta.get("profiles")))}
         checkpoint_plan["meta"]["cross_sections"] = {"count": len(safe_list(manager.project.meta.get("cross_sections")))}
+        checkpoint_plan["meta"]["performance"] = _runtime_performance()
         return checkpoint_plan
 
     def _run_declared_stage(stage_name: str, runner: Any, *args: Any) -> Any:
@@ -10183,15 +10213,30 @@ def _run_model_first_workflow(
                 "running",
                 f"Running {stage_progress.get(stage_name, ('Engineering Run', 48))[0].lower()}.",
             )
+            stage_started = perf_counter()
             result = runner(*args)
+            stage_timing = {
+                "phase": "stage_execution",
+                "stage_name": stage_name,
+                "pass_index": pass_index,
+                "duration_ms": round((perf_counter() - stage_started) * 1000.0, 3),
+            }
+            runtime_phase_timings.append(stage_timing)
+            runtime_phase_timings[:] = runtime_phase_timings[-40:]
             latest = _latest_stage_result(ctx, stage_name)
             checkpoint_plan: Optional[Dict[str, Any]] = None
             if bool(getattr(latest, "success", True)):
                 try:
+                    checkpoint_started = perf_counter()
                     checkpoint_plan = _build_runtime_checkpoint_plan(
                         stage_name,
                         safe_str(getattr(latest, "message", "")),
                     )
+                    stage_timing["checkpoint_serialization_ms"] = round(
+                        (perf_counter() - checkpoint_started) * 1000.0,
+                        3,
+                    )
+                    checkpoint_plan["meta"]["performance"] = _runtime_performance()
                 except Exception:
                     checkpoint_plan = None
             _emit_stage_progress(
@@ -10307,6 +10352,13 @@ def _run_model_first_workflow(
             else:
                 ctx.add_stage("coordination", True, "Reached max planner passes; preserving best coordinated state.", pass_index=pass_index, planner_score=score_total)
     except _RuntimePhaseYield as yielded:
+        runtime_phase_timings.append({
+            "phase": "worker_invocation_total",
+            "duration_ms": round((perf_counter() - workflow_started) * 1000.0, 3),
+            "terminal": False,
+        })
+        runtime_phase_timings[:] = runtime_phase_timings[-40:]
+        yielded.plan.setdefault("meta", {})["performance"] = _runtime_performance()
         ctx.final_plan = sanitize_plan(dict(yielded.plan))
         return ctx
 
@@ -10316,6 +10368,7 @@ def _run_model_first_workflow(
         except Exception:
             pass
 
+    terminal_packaging_started = perf_counter()
     plan = project_model_to_plan(manager.project, parsed.get("project_name") or "Generated Plan")
     plan.setdefault("meta", {})
     plan["meta"]["planner_workflow"] = "model_first"
@@ -10337,6 +10390,7 @@ def _run_model_first_workflow(
     plan["meta"]["rerun_history"] = deepcopy(ctx.rerun_history)
     plan["meta"]["routing"] = {"path": route.path, "reasons": list(route.reasons)}
     plan["meta"]["strict_mode"] = _strict_mode_enabled(parsed)
+    plan["meta"]["performance"] = _runtime_performance()
     manager_export = manager.export_metrics(summary_only=True) if hasattr(manager, "export_metrics") else {}
     plan["meta"]["project_manager"] = {
         "metrics": {k: getattr(v, "value", None) for k, v in manager.metrics.items()},
@@ -10832,6 +10886,17 @@ def _run_model_first_workflow(
             "signoff_summary": f"Assisted engineering run completed with trust score {trust_score:.1f}.",
         }
 
+    runtime_phase_timings.append({
+        "phase": "terminal_packaging",
+        "duration_ms": round((perf_counter() - terminal_packaging_started) * 1000.0, 3),
+    })
+    runtime_phase_timings.append({
+        "phase": "worker_invocation_total",
+        "duration_ms": round((perf_counter() - workflow_started) * 1000.0, 3),
+        "terminal": True,
+    })
+    runtime_phase_timings[:] = runtime_phase_timings[-40:]
+    plan["meta"]["performance"] = _runtime_performance()
     ctx.final_plan = sanitize_plan(plan)
     return ctx
 
