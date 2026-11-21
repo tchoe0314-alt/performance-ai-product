@@ -10,6 +10,7 @@ export function ObjectDetailedGeometryProperties({ item, objects = [], onCommit 
   const [datum, setDatum] = useState(saved?.datum ?? ""), [source, setSource] = useState(saved?.source ?? ""), [clearance, setClearance] = useState(saved?.requiredClearanceFt == null ? "" : String(saved.requiredClearanceFt));
   const [reviewed, setReviewed] = useState(Boolean(saved?.reviewed && saved.geometryBinding === detailedGeometryBinding(item))), [complete, setComplete] = useState(saved?.complete ?? false), [error, setError] = useState("");
   const canonicalSaved = saved as CanonicalPipeProfile | undefined;
+  const [protectEndpointInverts, setProtectEndpointInverts] = useState(Boolean(canonicalSaved?.protectEndpointInverts));
   const diameterFt = Number(item.meta?.pipe_diameter_ft ?? 0);
   const [inverts, setInverts] = useState((item.geometry ?? []).map((_, i) => canonicalSaved?.invertElevationsFt?.[i] == null ? "" : String(canonicalSaved.invertElevationsFt[i])));
   const [network, setNetwork] = useState<CanonicalPipeProfile["network"]>(canonicalSaved?.network ?? (String(item.meta?.network) === "sanitary" ? "sanitary" : String(item.meta?.network) === "water" ? "water" : "storm"));
@@ -36,6 +37,7 @@ export function ObjectDetailedGeometryProperties({ item, objects = [], onCommit 
       const value: CanonicalPipeProfile = {
         ...evidence,
         network,
+        protectEndpointInverts,
         invertElevationsFt,
         centerElevationsFt: invertElevationsFt.map(invert => invert + radiusFt),
         endpointStructures: [
@@ -61,6 +63,7 @@ export function ObjectDetailedGeometryProperties({ item, objects = [], onCommit 
       <label className="block">Detailed geometry evidence source<input className={input} value={source} onChange={e => setSource(e.target.value)} /></label>
       <label className="block">Detailed required clearance (ft)<input type="number" min="0" step="any" className={input} value={clearance} onChange={e => setClearance(e.target.value)} /></label>
       {isPipe ? <>
+        <label className="flex gap-2"><input type="checkbox" checked={protectEndpointInverts} onChange={event => setProtectEndpointInverts(event.target.checked)} />Preserve these explicit endpoint inverts during automatic rerouting. Block reroutes that cannot meet the configured minimum slope.</label>
         <label className="block">Pipe network<select aria-label="Pipe network" className={input} value={network} onChange={event => setNetwork(event.target.value as CanonicalPipeProfile["network"])}><option value="storm">Storm</option><option value="sanitary">Sanitary</option><option value="water">Water</option></select></label>
         <label className="block">Start structure<select aria-label="Pipe start structure" className={input} value={fromNodeId} onChange={event => setFromNodeId(event.target.value)}><option value="">Choose structure</option>{endpointObjects.map(object => <option key={object.id} value={object.id}>{object.label} · {object.id}</option>)}</select></label>
         <label className="block">End structure<select aria-label="Pipe end structure" className={input} value={toNodeId} onChange={event => setToNodeId(event.target.value)}><option value="">Choose structure</option>{endpointObjects.map(object => <option key={object.id} value={object.id}>{object.label} · {object.id}</option>)}</select></label>

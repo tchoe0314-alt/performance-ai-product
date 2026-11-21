@@ -4236,6 +4236,25 @@ def _path_station_at_midpoint(path: Sequence[Sequence[float]]) -> float:
     return round(max(polyline_length(path), 0.0) / 2.0, 3)
 
 
+def _protected_invert_reroute_evidence(segment: Dict[str, Any], path: Sequence[Sequence[float]]) -> Dict[str, Any]:
+    protected = segment.get("endpoint_inverts_protected") is True
+    length_ft = polyline_length(path)
+    start_invert = safe_float(segment.get("start_invert_ft", segment.get("start_invert")), 0.0)
+    end_invert = safe_float(segment.get("end_invert_ft", segment.get("end_invert")), 0.0)
+    available_drop_ft = start_invert - end_invert
+    min_slope = max(safe_float(segment.get("effective_min_slope_ft_ft"), PIPE_MIN_SLOPE), 0.0)
+    required_drop_ft = length_ft * min_slope
+    return {
+        "protected": protected,
+        "length_ft": round(length_ft, 3),
+        "available_drop_ft": round(available_drop_ft, 3),
+        "required_drop_ft": round(required_drop_ft, 3),
+        "effective_min_slope_ft_ft": round(min_slope, 6),
+        "actual_slope_ft_ft": round(available_drop_ft / max(length_ft, 1e-9), 6),
+        "feasible": (not protected) or (available_drop_ft + 1e-9 >= required_drop_ft and available_drop_ft > 0.0),
+    }
+
+
 def _normalized_summary_segments(project: ProjectModel, manager: ProjectManager) -> List[Dict[str, Any]]:
     segments: List[Dict[str, Any]] = []
 
@@ -4260,7 +4279,11 @@ def _normalized_summary_segments(project: ProjectModel, manager: ProjectManager)
                 "cover_end_ft": safe_float(rec.get("cover_end_ft"), PIPE_MIN_COVER_FT),
                 "min_cover_ft": PIPE_MIN_COVER_FT,
                 "slope_ft_ft": slope_ft_ft,
-                "min_slope_ft_ft": PIPE_MIN_SLOPE,
+                "min_slope_ft_ft": safe_float(rec.get("effective_min_slope_ft_ft"), PIPE_MIN_SLOPE),
+                "effective_min_slope_ft_ft": safe_float(rec.get("effective_min_slope_ft_ft"), PIPE_MIN_SLOPE),
+                "endpoint_inverts_protected": rec.get("endpoint_inverts_protected") is True,
+                "canonical_id": safe_str(rec.get("canonical_id") or rec.get("id") or rec.get("pipe")),
+                "invert_provenance": deepcopy(safe_dict(rec.get("invert_provenance"))),
                 "gravity": True,
                 "from_name": safe_str(rec.get("from"), ""),
                 "to_name": safe_str(rec.get("to"), ""),
@@ -6502,7 +6525,10 @@ def _precoordinate_vertical_hierarchy(project: ProjectModel, manager: ProjectMan
             continue
         original_path = deepcopy(path)
         for rect in building_pads:
-            path = _reroute_around_rect(path, rect)
+            candidate_path = _reroute_around_rect(path, rect)
+            evidence = _protected_invert_reroute_evidence(row, candidate_path)
+            if bool(evidence.get("feasible")):
+                path = candidate_path
         if path != original_path:
             row["path"] = deepcopy(path)
             row["route_points"] = deepcopy(path)
@@ -6515,6 +6541,9 @@ def _precoordinate_vertical_hierarchy(project: ProjectModel, manager: ProjectMan
                 }
             )
             storm_changed = True
+        if row.get("endpoint_inverts_protected") is True:
+            row["slope_ft_ft"] = round((safe_float(row.get("start_invert_ft", row.get("start_invert"))) - safe_float(row.get("end_invert_ft", row.get("end_invert")))) / max(polyline_length(path), 1e-9), 5)
+            continue
         target_start = _surface_at(path, 0) - PRECOORDINATION_STORM_MAIN_COVER_FT
         target_end = _surface_at(path, -1) - PRECOORDINATION_STORM_MAIN_COVER_FT
         current_start = safe_float(row.get("start_invert_ft", row.get("start_invert")), target_start)
@@ -8143,13 +8172,23 @@ def _apply_conflict_resolution(
                     if refreshed is None:
                         continue
                     target_system, rec = refreshed
+                    fixed_invert_evidence = _protected_invert_reroute_evidence(rec, candidate_path)
+                    if bool(fixed_invert_evidence.get("protected")) and not bool(fixed_invert_evidence.get("feasible")):
+                        reason = f"Protected endpoint inverts on {safe_str(rec.get('name'), names[0])} provide {fixed_invert_evidence['available_drop_ft']:.3f} ft fall; the {fixed_invert_evidence['length_ft']:.3f} ft reroute requires {fixed_invert_evidence['required_drop_ft']:.3f} ft at the configured minimum slope."
+                        rejected = {"valid": False, "score": 1e9, "why_failed": reason, "fixed_invert_evidence": fixed_invert_evidence}
+                        if best_near_valid is None:
+                            best_near_valid = rejected
+                        evaluated_candidates.append({"strategy": safe_str(candidate_row.get("strategy"), "reroute_around_obstacle"), "source_mode": safe_str(candidate_row.get("source_mode")), "target": safe_str(rec.get("name"), names[0]), "valid": False, "score": 1e9, "fixed_invert_evidence": fixed_invert_evidence, "failure_breakdown": {"rejected_reason": reason}})
+                        continue
                     if "route_points" in rec:
                         rec["route_points"] = candidate_path
                     else:
                         rec["path"] = candidate_path
                     length_ft = polyline_length(candidate_path)
                     rec["length_ft"] = round(length_ft, 3)
-                    if safe_float(rec.get("slope_ft_ft"), 0.0) > 0.0:
+                    if bool(fixed_invert_evidence.get("protected")):
+                        rec["slope_ft_ft"] = fixed_invert_evidence["actual_slope_ft_ft"]
+                    elif safe_float(rec.get("slope_ft_ft"), 0.0) > 0.0:
                         start_invert = safe_float(rec.get("start_invert_ft", rec.get("start_invert", DEFAULT_PAD_ELEV - 4.0)), DEFAULT_PAD_ELEV - 4.0)
                         drop = safe_float(rec.get("slope_ft_ft"), 0.0) * length_ft
                         if "end_invert_ft" in rec:

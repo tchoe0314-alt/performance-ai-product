@@ -1894,6 +1894,8 @@ export type ManualFields = {
     to_node?: string;
     invert_start_ft?: number;
     invert_end_ft?: number;
+    endpoint_inverts_protected?: boolean;
+    invert_provenance?: { source: string; datum: string; reviewed: true };
     endpoint_structures?: Array<{
       id: string;
       name?: string;

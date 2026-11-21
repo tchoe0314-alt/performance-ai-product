@@ -3,6 +3,7 @@ import type {BuildingPlacement} from "../../app/types";
 import {dependencyLinks,dependencyRecords,geometryQuantity,planDependencyGraph,setDependencyLink,validateDependencyGraph} from "../../app/utils/dependencyGraph";
 import {resolveDependencyProposal} from "../../app/utils/canonicalDependencyPolicies";
 import {withCanonicalCanvasSnapshot,resolveCanonicalCanvasInput} from "../../app/utils/canonicalCanvasProject";
+import {canonicalPipeSegmentFromPlacement,detailedGeometryBinding,type CanonicalPipeProfile} from "../../app/utils/detailedObjectGeometry";
 const object=(id:string,type:BuildingPlacement["type"],meta:BuildingPlacement["meta"]={}):BuildingPlacement=>({id,label:id,type,x:id==="a"?100:300,y:100,w:50,d:50,placed:true,source:"manual_drawn",meta});
 const fixtures:Array<[BuildingPlacement,BuildingPlacement]>=[
   [object("a","road"),object("b","parking")],
@@ -74,4 +75,32 @@ test("linked road width rebuilds cul-de-sac transitions and rectangular setbacks
   const building=object("a","building"),setback={...object("b","setback_zone"),x:90,y:90,w:70,d:70},linked={...building,...setDependencyLink(building,setback,"follow")};
   const expanded=planDependencyGraph([linked,setback],[{...linked,w:100},setback],null);
   expect(expanded.placements[1].w).toBe(120);expect(expanded.placements[1].x).toBe(90);
+});
+test("a moved reviewed structure updates only its connected pipe endpoint and derived length/slope",()=>{
+  const inlet={...object("inlet","inlet"),x:0,y:0,w:1,d:1};
+  const outfall={...object("outfall","outfall"),x:30,y:40,w:1,d:1};
+  const route:[[number,number],[number,number]]=[[0,0],[30,40]];
+  const pipe:BuildingPlacement={...object("pipe","utility_corridor"),x:0,y:0,w:30,d:40,geometryType:"polyline",geometry:route,meta:{coordinate_units:"ft",pipe_diameter_ft:1}};
+  const profile:CanonicalPipeProfile={version:1,datum:"reviewed datum",source:"reviewed source",reviewed:true,requiredClearanceFt:null,geometryBinding:detailedGeometryBinding(pipe),network:"storm",protectEndpointInverts:true,centerElevationsFt:[100.5,100],invertElevationsFt:[100,99.5],endpointStructures:[{id:inlet.id,name:inlet.label,x:0,y:0,rimElevationFt:110,sumpElevationFt:99},{id:outfall.id,name:outfall.label,x:30,y:40,rimElevationFt:109,sumpElevationFt:99}]};
+  const reviewedPipe={...pipe,meta:{...pipe.meta,pipe_profile_v1:profile,canonical_revision:4}};
+  const source=[inlet,outfall,reviewedPipe],moved={...inlet,x:10};
+  const originalSegment=canonicalPipeSegmentFromPlacement(reviewedPipe,source)!;
+  expect(originalSegment.length_ft).toBe(50);
+  expect(originalSegment.slope_ft_ft*100).toBe(1);
+  const result=planDependencyGraph(source,[moved,outfall,reviewedPipe],null);
+  expect(result.status).toBe("applied");
+  const updated=result.placements[2];
+  expect(updated.id).toBe(reviewedPipe.id);
+  expect(updated.geometry).toEqual([[10,0],[30,40]]);
+  expect((updated.meta?.pipe_profile_v1 as CanonicalPipeProfile).invertElevationsFt).toEqual([100,99.5]);
+  expect(updated.meta?.canonical_revision).toBe(5);
+  const segment=canonicalPipeSegmentFromPlacement(updated,result.placements)!;
+  expect(segment.length_ft).toBeCloseTo(44.72136,5);
+  expect(segment.slope_ft_ft*100).toBeCloseTo(1.11803,5);
+  expect(segment.endpoint_inverts_protected).toBe(true);
+  expect(segment.invert_provenance).toEqual({source:"reviewed source",datum:"reviewed datum",reviewed:true});
+  expect(source[2]).toEqual(reviewedPipe);
+  expect(planDependencyGraph([inlet,outfall,{...reviewedPipe,locked:true}],[moved,outfall,{...reviewedPipe,locked:true}],null).status).toBe("blocked");
+  expect(planDependencyGraph(source,[moved,outfall,{...reviewedPipe,geometry:[[5,0],[30,40]],meta:{...reviewedPipe.meta,pipe_profile_v1:{...profile,geometryBinding:detailedGeometryBinding({...reviewedPipe,geometry:[[5,0],[30,40]]})}}}],null).status).toBe("blocked");
+  expect(planDependencyGraph(source,[moved,outfall,updated],null).status).toBe("applied");
 });

@@ -7,6 +7,7 @@ export type ComponentModel = Evidence & { complete: boolean; components: Occupie
 export type PipeProfile = Evidence & { centerElevationsFt: number[] };
 export type CanonicalPipeProfile = PipeProfile & {
   network: "storm" | "sanitary" | "water";
+  protectEndpointInverts?: boolean;
   invertElevationsFt: number[];
   endpointStructures: [
     { id: string; name: string; x: number; y: number; rimElevationFt: number; sumpElevationFt: number },
@@ -90,6 +91,8 @@ export function canonicalPipeSegmentFromPlacement(item: BuildingPlacement, objec
     to_node: end.id,
     invert_start_ft: invertStart,
     invert_end_ft: invertEnd,
+    endpoint_inverts_protected: profile.protectEndpointInverts === true,
+    invert_provenance: profile.protectEndpointInverts === true ? { source: profile.source, datum: profile.datum, reviewed: true } : undefined,
     endpoint_structures: profile.endpointStructures.map(endpoint => ({
       id: endpoint.id, name: endpoint.name, x: endpoint.x, y: endpoint.y,
       rim_elevation_ft: endpoint.rimElevationFt, sump_elevation_ft: endpoint.sumpElevationFt,
@@ -99,6 +102,35 @@ export function canonicalPipeSegmentFromPlacement(item: BuildingPlacement, objec
     review_required: true,
     construction_release_allowed: false,
   };
+}
+
+/**
+ * Move only the route endpoint explicitly attached to a moved structure.
+ * Elevations are supplied evidence, so this never invents or interpolates them.
+ */
+export function reconcileCanonicalPipeEndpoint(
+  item: BuildingPlacement,
+  structureBefore: BuildingPlacement,
+  structureAfter: BuildingPlacement,
+): BuildingPlacement | null {
+  const profile = item.meta?.pipe_profile_v1 as CanonicalPipeProfile | undefined;
+  if (!profile || !("network" in profile) || validatePipeProfile(profile, item) || !item.geometry) return null;
+  const endpointIndex = profile.endpointStructures.findIndex(endpoint => endpoint.id === structureBefore.id);
+  if (endpointIndex < 0) return null;
+  const structurePoint = (object: BuildingPlacement): Point => object.geometry?.[0] ?? [Number(object.x ?? 0), Number(object.y ?? 0)];
+  const beforePoint = structurePoint(structureBefore), afterPoint = structurePoint(structureAfter);
+  const vertexIndex = endpointIndex === 0 ? 0 : item.geometry.length - 1;
+  const routePoint = item.geometry[vertexIndex];
+  if (![...beforePoint, ...afterPoint].every(Number.isFinite) || Math.hypot(beforePoint[0] - routePoint[0], beforePoint[1] - routePoint[1]) > 0.01) return null;
+  if (afterPoint[0] === routePoint[0] && afterPoint[1] === routePoint[1]) return item;
+  const geometry = item.geometry.map(point => [...point] as Point);
+  geometry[vertexIndex] = [...afterPoint];
+  const endpointStructures = profile.endpointStructures.map((endpoint, index) => index === endpointIndex
+    ? { ...endpoint, x: afterPoint[0], y: afterPoint[1] }
+    : { ...endpoint }) as CanonicalPipeProfile["endpointStructures"];
+  const moved = { ...item, geometry };
+  const nextProfile: CanonicalPipeProfile = { ...profile, endpointStructures, geometryBinding: detailedGeometryBinding(moved) };
+  return { ...moved, meta: { ...item.meta, pipe_profile_v1: nextProfile } };
 }
 export function componentFootprint(item: BuildingPlacement, c: OccupiedComponent): Point[] {
   const unit = item.meta?.coordinate_units === "m" ? .3048 : 1;

@@ -325,11 +325,16 @@ export function buildDashboardManualFields({
     if (stormPipeNetwork.length) {
       manualFields.pipe_network = stormPipeNetwork.map((feature) => {
         const placement = canonicalPlacementOverrides.find((item) => item.id === feature.id);
-        return (placement ? canonicalPipeSegmentFromPlacement(placement, canonicalPlacementOverrides) : null) ?? {
+        const canonical = placement ? canonicalPipeSegmentFromPlacement(placement, canonicalPlacementOverrides) : null;
+        // Once reviewed profile evidence exists it is authoritative. If that
+        // evidence is stale or disconnected, omit it instead of silently
+        // reviving the route as an undetailed compatibility pipe.
+        if (placement?.meta?.pipe_profile_v1) return canonical;
+        return canonical ?? {
           ...feature,
           path: feature.points,
         };
-      });
+      }).filter((feature): feature is NonNullable<typeof feature> => Boolean(feature));
     }
     if (inferredDrainageInlets.length) manualFields.drainage_structures = inferredDrainageInlets;
     if (inferredOutfalls.length) {

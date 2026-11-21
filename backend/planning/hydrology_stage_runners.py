@@ -1155,6 +1155,28 @@ def run_storm_pipe_stage(
             stats.setdefault("target_outfall_name", preferred_target_name)
             storm_pipe_summary["stats"] = stats
         storm_pipe_summary = _apply_verified_tailwater_input(storm_pipe_summary, drainage_profile)
+        summary_segments = [safe_dict(item) for item in safe_list(storm_pipe_summary.get("segments"))]
+        for segment in summary_segments:
+            segment["effective_min_slope_ft_ft"] = min_pipe_slope
+        summary_by_id = {safe_str(segment.get("canonical_id") or segment.get("id") or segment.get("pipe")): segment for segment in summary_segments if safe_str(segment.get("canonical_id") or segment.get("id") or segment.get("pipe"))}
+        protection_errors: List[str] = []
+        for authored in [safe_dict(item) for item in safe_list(execution_payload.get("pipe_network"))]:
+            if authored.get("endpoint_inverts_protected") is not True:
+                continue
+            canonical_id = safe_str(authored.get("canonical_id") or authored.get("id"))
+            segment = summary_by_id.get(canonical_id)
+            authored_path = safe_list(authored.get("path") or authored.get("points"))
+            if segment is None:
+                protection_errors.append(f"Protected authored pipe {canonical_id or '(missing id)'} could not be matched to the calculated storm network. Its endpoint inverts were not adjusted.")
+                continue
+            segment_path = safe_list(segment.get("path") or segment.get("route_points"))
+            start_invert, end_invert = authored.get("invert_start_ft"), authored.get("invert_end_ft")
+            if authored_path != segment_path or start_invert is None or end_invert is None:
+                protection_errors.append(f"Protected authored pipe {canonical_id} does not match the calculated route and invert evidence. Reconcile the canonical pipe before coordination.")
+                continue
+            segment.update({"canonical_id": canonical_id, "endpoint_inverts_protected": True, "invert_provenance": deepcopy(safe_dict(authored.get("invert_provenance"))), "start_invert": safe_float(start_invert), "start_invert_ft": safe_float(start_invert), "end_invert": safe_float(end_invert), "end_invert_ft": safe_float(end_invert)})
+        if protection_errors:
+            storm_pipe_summary.setdefault("errors", []).extend(protection_errors)
         storm_pipe_summary = enrich_storm_production_depth(storm_pipe_summary, drainage_meta)
         selected_outfall_name = safe_str(safe_dict(storm_pipe_summary.get("explain")).get("selected_outfall_name"), "")
         selected_outfall = next(

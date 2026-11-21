@@ -220,6 +220,49 @@ class ConflictResolutionEngineTest(unittest.TestCase):
         self.assertGreater(len(rerouted), 2)
         self.assertFalse(any(_point_inside_buffered_rect(point, rect) for point in rerouted))
 
+    def test_protected_storm_inverts_accept_feasible_detour_and_rollback_infeasible_one(self) -> None:
+        def solve(fall_ft: float, protected: bool):
+            project, manager = _manager_with_summaries()
+            project.meta["_expanded_plan"] = {"actions": [{"task": "rectangle", "layer": "BUILDING", "origin": [40.0, -10.0], "width": 20.0, "height": 20.0, "label": "LOCKED-PAD", "locked": True}]}
+            segment = {
+                "pipe": "AUTHORED-STORM", "id": "AUTHORED-STORM", "canonical_id": "AUTHORED-STORM",
+                "from": "A", "to": "B", "path": [[0.0, 0.0], [100.0, 0.0]], "length_ft": 100.0,
+                "diameter_in": 12.0, "start_invert": 100.0, "end_invert": 100.0 - fall_ft,
+                "start_invert_ft": 100.0, "end_invert_ft": 100.0 - fall_ft,
+                "cover_start_ft": 10.0, "cover_end_ft": 10.0 + fall_ft,
+                "flow_cfs": 0.5, "capacity_cfs": 2.0, "capacity_ratio": 0.25,
+                "slope_ft_ft": fall_ft / 100.0, "effective_min_slope_ft_ft": 0.003,
+                "endpoint_inverts_protected": protected,
+                "invert_provenance": {"source": "explicit fixture", "datum": "fixture", "reviewed": True},
+            }
+            manager.latest_outputs["storm_pipe_summary"] = {"segments": [deepcopy(segment)]}
+            project.meta["storm_pipe_summary"] = {"segments": [deepcopy(segment)]}
+            manager.latest_outputs["sanitary"] = {"segments": [], "stats": {}, "manholes": []}
+            project.meta["sanitary_summary"] = {"segments": [], "stats": {}, "manholes": []}
+            manager.latest_outputs["utilities"] = {"conflict_hooks": {"utility_segments": []}}
+            project.meta["utility_summary"] = {"conflict_hooks": {"utility_segments": []}}
+            conflict = next(item for item in _detect_coordination_conflicts(project, manager) if item["conflict_type"] == "storm_building_pad_geometry")
+            return project, manager, segment, _apply_conflict_resolution(project, manager, conflict, assisted_mode=False)
+
+        _, feasible_manager, _, feasible = solve(0.396, True)
+        self.assertTrue(feasible["success"])
+        feasible_segment = feasible_manager.latest_outputs["storm_pipe_summary"]["segments"][0]
+        self.assertEqual(feasible_segment["length_ft"], 132.0)
+        self.assertEqual(feasible_segment["start_invert"], 100.0)
+        self.assertEqual(feasible_segment["end_invert"], 99.604)
+
+        _, blocked_manager, original, blocked = solve(0.306, True)
+        self.assertFalse(blocked["success"])
+        self.assertIn("requires 0.396 ft", blocked["failure_reason"])
+        self.assertEqual(blocked_manager.latest_outputs["storm_pipe_summary"]["segments"][0], original)
+        self.assertTrue(all(not row["valid"] for row in blocked["evaluated_candidates"]))
+
+        _, generated_manager, _, generated = solve(0.306, False)
+        self.assertTrue(generated["success"])
+        generated_segment = generated_manager.latest_outputs["storm_pipe_summary"]["segments"][0]
+        self.assertEqual(generated_segment["length_ft"], 132.0)
+        self.assertLess(generated_segment["end_invert_ft"], 99.694)
+
     def test_terminal_shift_moves_service_endpoint_out_of_building_pad(self) -> None:
         project, manager = _manager_with_summaries()
         project.meta["_expanded_plan"] = {

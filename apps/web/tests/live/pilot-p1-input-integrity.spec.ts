@@ -3,6 +3,7 @@ import { parseNonNegativeNumber, parseNonNegativeInteger, parsePositiveNumber } 
 import { projectEditKey } from "../../app/hooks/useProjectTabBranch";
 import { buildDashboardManualFields } from "../../app/utils/dashboardManualFields";
 import { resolveCanonicalCanvasInput, withCanonicalCanvasSnapshot } from "../../app/utils/canonicalCanvasProject";
+import { detailedGeometryBinding, type CanonicalPipeProfile } from "../../app/utils/detailedObjectGeometry";
 
 const fields = (overrides: Partial<Parameters<typeof buildDashboardManualFields>[0]> = {}) => buildDashboardManualFields({
   nextSiteName: "Empty canvas renamed", nextFileName: "empty-plan", nextUnits: "ft", nextProjectType: "commercial",
@@ -108,4 +109,15 @@ test("an edited generated concept keeps its authored width through recalculation
     generated: true,
     meta: { generated_review_concept: true },
   });
+});
+
+test("stale reviewed pipe evidence cannot fall back to an undetailed compatibility pipe", () => {
+  const inlet = { id: "inlet", label: "Inlet", type: "inlet" as const, x: 0, y: 0, w: 1, d: 1, placed: true, source: "manual_drawn" as const };
+  const outfall = { id: "outfall", label: "Outfall", type: "outfall" as const, x: 30, y: 40, w: 1, d: 1, placed: true, source: "manual_drawn" as const };
+  const pipe = { id: "pipe", label: "Storm pipe", type: "utility_corridor" as const, x: 0, y: 0, w: 30, d: 40, placed: true, source: "manual_drawn" as const, geometryType: "polyline" as const, geometry: [[0,0],[30,40]] as [number,number][], meta: { network: "storm", coordinate_units: "ft", pipe_diameter_ft: 1 } };
+  const profile:CanonicalPipeProfile = { version: 1, datum: "reviewed datum", source: "reviewed source", reviewed: true, requiredClearanceFt: null, geometryBinding: detailedGeometryBinding(pipe), network: "storm", centerElevationsFt: [100.5,100], invertElevationsFt: [100,99.5], endpointStructures: [{ id: inlet.id, name: inlet.label, x: 0, y: 0, rimElevationFt: 110, sumpElevationFt: 99 }, { id: outfall.id, name: outfall.label, x: 30, y: 40, rimElevationFt: 109, sumpElevationFt: 99 }] };
+  const reviewed = { ...pipe, meta: { ...pipe.meta, pipe_profile_v1: profile } };
+  expect(fields({ buildingPlacements: [inlet,outfall,reviewed] }).pipe_network).toHaveLength(1);
+  expect(fields({ buildingPlacements: [{...inlet,x:10},outfall,reviewed] }).pipe_network).toEqual([]);
+  expect(fields({ buildingPlacements: [inlet,outfall,{...pipe,meta:{...pipe.meta,pipe_profile_v1:undefined}}] }).pipe_network).toHaveLength(1);
 });

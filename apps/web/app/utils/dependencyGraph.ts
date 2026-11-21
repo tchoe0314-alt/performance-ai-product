@@ -3,6 +3,7 @@ import { canonicalControlState } from "./canonicalEditCommands";
 import { applyBuildingParkingDependency, parkingDependencyRelationship, type CanonicalDependencyProposal } from "./canonicalDependencyPolicies";
 import { readCulDeSac, reconcileCulDeSacUpdate } from "./parametricRoad";
 import {geometryIssues,validateObjectGroups} from "./siteObjectDefinition";
+import {canonicalPipeSegmentFromPlacement,reconcileCanonicalPipeEndpoint,type CanonicalPipeProfile} from "./detailedObjectGeometry";
 
 export const DEPENDENCY_KINDS = ["road_parking", "building_parking", "building_setback", "road_culdesac", "access_road", "pond_drainage", "utility_building"] as const;
 export type DependencyKind = typeof DEPENDENCY_KINDS[number];
@@ -124,6 +125,26 @@ export function planDependencyGraph(source:BuildingPlacement[],requested:Buildin
   const old=new Map(source.map(item=>[item.id,item]));const next=new Map(requested.map(item=>[item.id,item]));
   let asks=false;const reports:CanonicalDependencyProposal["reflowReports"]=[];
   const changed=new Set(source.filter(item=>next.has(item.id)&&geometryKey(item)!==geometryKey(next.get(item.id)!)).map(item=>item.id));
+  // Reviewed pipe profiles provide an explicit endpoint connection even when
+  // there is no generic Follow edge. Keep that endpoint coordinated without
+  // translating the rest of the route or changing supplied elevations.
+  for(const structureBefore of source) {
+    const structureAfter=next.get(structureBefore.id);
+    if(!structureAfter||!["inlet","outfall","manhole"].includes(String(structureBefore.type))||geometryKey(structureBefore)===geometryKey(structureAfter))continue;
+    for(const pipeBefore of source) {
+      const pipeCurrent=next.get(pipeBefore.id);if(!pipeCurrent)continue;
+      const profile=pipeCurrent.meta?.pipe_profile_v1 as CanonicalPipeProfile|undefined;
+      const connected=profile?.endpointStructures?.some(endpoint=>endpoint.id===structureBefore.id)===true;
+      if(changed.has(pipeBefore.id)) {
+        if(connected&&!canonicalPipeSegmentFromPlacement(pipeCurrent,[...next.values()]))return fail(`${pipeCurrent.label} and ${structureAfter.label} contain contradictory endpoint edits. Align the explicit pipe endpoint and reviewed structure evidence before applying this transaction.`);
+        continue;
+      }
+      const reconciled=reconcileCanonicalPipeEndpoint(pipeCurrent,structureBefore,structureAfter);
+      if(!reconciled||reconciled===pipeCurrent)continue;
+      if(protectedObject(pipeBefore))return fail(`${pipeBefore.label} is protected and cannot follow the moved ${structureBefore.label} endpoint. Unlock it or revise the connection explicitly.`);
+      next.set(pipeBefore.id,{...reconciled,meta:{...reconciled.meta,canonical_revision:Number(pipeBefore.meta?.canonical_revision??0)+1,dependency_review_v1:{kind:"utility_building",source_id:structureBefore.id,review_only:true,needs_engineering_review:true}}});
+    }
+  }
   // A deletion cannot leave a live link dangling; removing/replacing its link is an explicit override.
   const visited=new Set<string>();
   const propagate=(id:string):string|null=>{
