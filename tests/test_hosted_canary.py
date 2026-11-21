@@ -60,7 +60,8 @@ def _report(**overrides):
     values = {
         "frontend_url": "https://civora.example",
         "api_base_url": "https://api.civora.example",
-        "expected_revision": "abcdef1234567890",
+        "expected_frontend_revision": "abcdef1234567890",
+        "expected_backend_revision": "abcdef1234567890",
         "expected_product_mode": "private_alpha",
         "frontend": {"status": 200, "body_has_civora": True, "revision": "abcdef1234567890"},
         "health": _health(),
@@ -88,7 +89,8 @@ class HostedCanaryTests(unittest.TestCase):
             with patch.dict("os.environ", {"CIVORA_CANARY_EMAIL": "", "CIVORA_CANARY_PASSWORD": ""}), \
                  patch("backend.scripts.run_hosted_canary._request", side_effect=captures):
                 report = _capture(frontend_url="https://civora.example", api_base_url="https://api.civora.example",
-                                  expected_revision="abcdef1234567890", expected_product_mode="private_alpha",
+                                  expected_frontend_revision="abcdef1234567890",
+                                  expected_backend_revision="abcdef1234567890", expected_product_mode="private_alpha",
                                   timeout=1, require_authenticated=False)
             self.assertTrue(report["checks"]["health_success"])
             self.assertFalse(report["success"])
@@ -116,7 +118,7 @@ class HostedCanaryTests(unittest.TestCase):
 
     def test_revision_and_cors_mismatch_are_blocking(self) -> None:
         report = _report(
-            expected_revision="999999999999",
+            expected_backend_revision="999999999999",
             cors={"status": 200, "allow_origin": "https://wrong.example"},
         )
 
@@ -138,6 +140,24 @@ class HostedCanaryTests(unittest.TestCase):
             self.assertFalse(report["success"])
             self.assertFalse(report["frontend_revision_matches"])
             self.assertIn("frontend_revision_mismatch", {item["code"] for item in report["public_blockers"]})
+
+    def test_split_frontend_and_backend_revisions_are_checked_independently(self) -> None:
+        report = _report(
+            expected_frontend_revision="1111111111111111",
+            expected_backend_revision="abcdef1234567890",
+            frontend={"status": 200, "body_has_civora": True, "revision": "1111111111111111"},
+        )
+        self.assertTrue(report["success"])
+        self.assertTrue(report["frontend_revision_matches"])
+        self.assertTrue(report["revision_matches"])
+
+        wrong_backend = _report(
+            expected_frontend_revision="1111111111111111",
+            expected_backend_revision="2222222222222222",
+            frontend={"status": 200, "body_has_civora": True, "revision": "1111111111111111"},
+        )
+        self.assertFalse(wrong_backend["success"])
+        self.assertIn("hosted_revision_mismatch", {item["code"] for item in wrong_backend["public_blockers"]})
 
     def test_authenticated_runtime_and_operational_evidence_can_pass(self) -> None:
         report = _report(authenticated_runtime=_runtime(), require_authenticated=True)

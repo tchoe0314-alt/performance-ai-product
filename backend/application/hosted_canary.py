@@ -30,7 +30,8 @@ def build_hosted_canary_report(
     *,
     frontend_url: str,
     api_base_url: str,
-    expected_revision: str,
+    expected_frontend_revision: str,
+    expected_backend_revision: str,
     expected_product_mode: str,
     frontend: Mapping[str, Any],
     health: Mapping[str, Any],
@@ -69,9 +70,9 @@ def build_hosted_canary_report(
         public_blockers.append(_record("storage_pool_request_errors", "The hosted database pool reports request errors.", area="storage"))
     if str(health_record.get("product_mode") or "").lower() != str(expected_product_mode or "").lower():
         public_blockers.append(_record("product_mode_mismatch", "The hosted product mode does not match the canary expectation.", area="release"))
-    if not _revision_matches(expected_revision, actual_revision):
+    if not _revision_matches(expected_backend_revision, actual_revision):
         public_blockers.append(_record("hosted_revision_mismatch", "The hosted backend revision does not match the canary revision.", area="revision"))
-    if not _revision_matches(expected_revision, frontend_revision):
+    if not _revision_matches(expected_frontend_revision, frontend_revision):
         public_blockers.append(_record("frontend_revision_mismatch", "The hosted website revision is missing or does not match the canary revision.", area="revision"))
     if deployment.get("backend_status") != "online" or deployment.get("api_status") != "configured":
         public_blockers.append(_record("deployment_not_ready", "The hosted deployment summary is not online and configured.", area="deployment"))
@@ -95,7 +96,7 @@ def build_hosted_canary_report(
         authenticated_report = build_hosted_operational_evidence(
             health=health_record,
             runtime=authenticated_runtime,
-            expected_revision=expected_revision,
+            expected_revision=expected_backend_revision,
             base_url=api_base_url,
         )
         authenticated_blockers = list(authenticated_report.get("runtime_blockers") or []) + list(authenticated_report.get("operational_blockers") or [])
@@ -110,11 +111,12 @@ def build_hosted_canary_report(
         "generated_at": time.time(),
         "frontend_url": str(frontend_url or "").rstrip("/"),
         "api_base_url": str(api_base_url or "").rstrip("/"),
-        "expected_revision": str(expected_revision or ""),
+        "expected_frontend_revision": str(expected_frontend_revision or ""),
+        "expected_backend_revision": str(expected_backend_revision or ""),
         "hosted_revision": actual_revision,
         "frontend_revision": frontend_revision,
-        "frontend_revision_matches": _revision_matches(expected_revision, frontend_revision),
-        "revision_matches": _revision_matches(expected_revision, actual_revision),
+        "frontend_revision_matches": _revision_matches(expected_frontend_revision, frontend_revision),
+        "revision_matches": _revision_matches(expected_backend_revision, actual_revision),
         "expected_product_mode": str(expected_product_mode or ""),
         "hosted_product_mode": str(health_record.get("product_mode") or ""),
         "success": success,

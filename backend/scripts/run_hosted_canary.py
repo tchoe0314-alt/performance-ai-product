@@ -80,7 +80,8 @@ def _capture(
     *,
     frontend_url: str,
     api_base_url: str,
-    expected_revision: str,
+    expected_frontend_revision: str,
+    expected_backend_revision: str,
     expected_product_mode: str,
     timeout: float,
     require_authenticated: bool,
@@ -150,7 +151,8 @@ def _capture(
         report = build_hosted_canary_report(
             frontend_url=frontend_url,
             api_base_url=api_base_url,
-            expected_revision=expected_revision,
+            expected_frontend_revision=expected_frontend_revision,
+            expected_backend_revision=expected_backend_revision,
             expected_product_mode=expected_product_mode,
             frontend=frontend,
             health=health,
@@ -181,7 +183,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run a low-impact Civora hosted availability and release-truth canary.")
     parser.add_argument("--frontend-url", default=os.getenv("CIVORA_CANARY_FRONTEND_URL") or "https://civoraai.com")
     parser.add_argument("--api-base-url", default=os.getenv("CIVORA_CANARY_API_BASE_URL") or "https://api.civoraai.com")
-    parser.add_argument("--expected-revision", default=os.getenv("CIVORA_EXPECTED_REVISION") or _revision())
+    parser.add_argument("--expected-frontend-revision", default=os.getenv("CIVORA_EXPECTED_FRONTEND_REVISION") or "")
+    parser.add_argument("--expected-backend-revision", default=os.getenv("CIVORA_EXPECTED_BACKEND_REVISION") or "")
     parser.add_argument("--expected-product-mode", default=os.getenv("CIVORA_EXPECTED_PRODUCT_MODE") or "private_alpha")
     parser.add_argument("--output", default="reports/release/hosted-canary.json")
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
@@ -207,7 +210,8 @@ def main() -> None:
                 report = _capture(
                     frontend_url=frontend_url,
                     api_base_url=api_base_url,
-                    expected_revision=args.expected_revision,
+                    expected_frontend_revision=args.expected_frontend_revision,
+                    expected_backend_revision=args.expected_backend_revision,
                     expected_product_mode=args.expected_product_mode,
                     timeout=max(1.0, args.timeout_seconds),
                     require_authenticated=args.require_authenticated,
