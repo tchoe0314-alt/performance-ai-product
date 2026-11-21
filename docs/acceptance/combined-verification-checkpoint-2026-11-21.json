@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "kind": "combined_verification_preparation_not_a_run",
+  "candidate_revision": "857b3f3918394dedfb610b59b0a51c9e438ec94e",
+  "suite": {
+    "version": "2026-11-18.1",
+    "major_case_count": 26,
+    "historical_family_count": 131,
+    "catalog_sha256": "855a90e9e689ac7dd95b1678185b9705b3297203b210b37b4baedf778104900f",
+    "historical_live_baseline_sha256": "652dacf2dd0d3b21e7fbedc7274c677645cdbb3bd6d0b73a15751bcdfb63a45f"
+  },
+  "fixture": {
+    "building_id": "office",
+    "initial_dimensions_ft": [169, 85],
+    "revised_dimensions_ft": [179, 85],
+    "initial_area_sq_ft": 14365,
+    "revised_area_sq_ft": 15215,
+    "expected_delta_sq_ft": 850,
+    "storm_pipe_id": "SYN-STORM-PIPE-1"
+  },
+  "performance": {
+    "terminal_budget_ms": 120000,
+    "known_failed_baseline_ms": 138574,
+    "resolved": false
+  },
+  "prerequisites": {
+    "disk_available_kib_observed": 6000000,
+    "python": "3.11.15",
+    "node": "25.8.2",
+    "existing_python_environment": "../civora-acceptance-worktree/.venv311",
+    "existing_browser_dependencies": "../civora-acceptance-worktree/apps/web/node_modules",
+    "fresh_disposable_storage_required": true
+  },
+  "execution_classes": {
+    "combined_local": ["PRJ-01", "DRAW-01", "IMP-01", "GEN-01", "GEN-02", "CAN-01", "GRADE-01", "STORM-01", "UTIL-01", "QTY-01", "REV-01", "DEL-01", "CHAT-01", "UX-01", "UX-02", "PERF-01", "REL-01"],
+    "authenticated_live": ["PUB-01", "PRJ-01", "DRAW-01", "IMP-01", "GEN-01", "GEN-02", "CAN-01", "GRADE-01", "STORM-01", "UTIL-01", "QTY-01", "REV-01", "DEL-01", "CHAT-01", "UX-01", "UX-02", "PERF-01", "REL-01"],
+    "native_civil_3d": ["C3D-01"],
+    "separate_authorization_or_external": ["AUTH-X", "COLLAB-01", "SEC-01", "OPS-01", "DATA-01", "BILL-01", "PE-01"]
+  },
+  "go_no_go": {
+    "combined_local": "GO_WITH_FRESH_DISPOSABLE_STORAGE_AND_EXACT_COMPONENT_IDENTITY",
+    "live_release": "NO_GO",
+    "all_feature_acceptance": "NO_GO"
+  }
+}

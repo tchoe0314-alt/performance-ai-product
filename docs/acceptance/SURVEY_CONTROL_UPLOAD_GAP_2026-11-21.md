@@ -1,6 +1,13 @@
 # Survey-control upload gap
 
-Status: confirmed product gap on integration candidate `33005d7d`. This is not a live acceptance result.
+Status: historical gap recorded on `33005d7d`; partially addressed in code through candidate `857b3f39`. This is not a local or live acceptance result.
+
+The current candidate now stores a server-owned immutable source ID and digest,
+binds it to the owning project, and lets an existing project reviewer record an
+accept/reject decision against that exact source. Replacement, stale, missing,
+and cross-project evidence fail closed, and the UI shows the server-recorded
+decision. That decision remains review-only and does not certify survey control
+or unlock grading/construction use.
 
 ## What exists
 
@@ -9,17 +16,17 @@ Status: confirmed product gap on integration candidate `33005d7d`. This is not a
 - Imported coordinates, units, CRS, horizontal/vertical datum, embedded control metadata, eligibility, and exact blockers are persisted and shown after reopen.
 - The importer can preserve a control package already embedded in a supported source. It does not infer missing control, datum, or verification.
 
-## What does not exist
+## What still does not exist
 
-There is no distinct user-facing, authorized survey-control package workflow that:
+There is no qualified survey-control acceptance workflow that:
 
 1. identifies the survey/control artifact separately from general context data;
 2. records the qualified verifier and verification authority;
 3. binds benchmark ID/elevation, CRS, horizontal and vertical datum, units, artifact hash, and attestation to the saved project;
-4. lets an authorized reviewer accept or reject that immutable package; and
-5. records an auditable acceptance event before `control_verified` may become true.
+4. establishes that the reviewer has the required survey-control verification authority, not only ordinary project-review permission; and
+5. records the separately accepted engineering-control revision before `control_verified` may become true.
 
-Typing datum, units, or benchmark text is therefore not verification. A general source upload may carry embedded evidence for review, but Civora must keep grading eligibility blocked unless the imported package already contains trustworthy explicit verification. The current UI correctly surfaces that blocker; it does not provide the missing authorization step.
+Typing datum, units, or benchmark text is therefore not verification. A general source upload may carry embedded evidence for review, but Civora must keep grading eligibility blocked unless the imported package already contains trustworthy explicit verification. The current UI correctly surfaces that blocker and records project review; it does not invent the missing professional authorization or certification step.
 
 ## Required acceptance evidence
 
