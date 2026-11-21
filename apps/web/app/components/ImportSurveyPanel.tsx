@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 
 import { bestSurveySourceLabel, SURVEY_SOURCE_HIERARCHY } from "../utils/surveySourceHierarchy";
+import { SurveyControlReviewCard, type SurveyControlReviewCardProps } from "./SurveyControlReviewCard";
 
 type ImageUploadState = "idle" | "uploading" | "detecting" | "failed" | "ready";
 
@@ -23,6 +24,7 @@ type ImportSurveyPanelProps = {
   onUploadImage: (file: File) => Promise<void>;
   onUploadExistingConditions: (file: File) => Promise<void>;
   importedBoundaryAction?: { label: string; detail: string; enabled: boolean; onApply: () => void };
+  surveyControlReview?: SurveyControlReviewCardProps;
   onOpenPlanPdf: () => void;
   onAnalyzeMapSnapshot: () => void;
   onFitToSite: () => void;
@@ -51,6 +53,7 @@ export function ImportSurveyPanel({
   onUploadImage,
   onUploadExistingConditions,
   importedBoundaryAction,
+  surveyControlReview,
   onOpenPlanPdf,
   onAnalyzeMapSnapshot,
   onFitToSite,
@@ -103,6 +106,7 @@ export function ImportSurveyPanel({
               {surveyUploadMessage}
             </p>
           ) : null}
+          {surveyControlReview ? <SurveyControlReviewCard {...surveyControlReview} /> : null}
           {sourceEffectRows.length ? (
             <div data-testid="source-effects-summary" className="rounded-xl border border-sky-100 bg-sky-50/80 p-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-700">Source effects</p>

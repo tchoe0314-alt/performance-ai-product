@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { postForm } from "../../lib/api";
+import { postForm, postJson } from "../../lib/api";
 import type {
   ChatMessage,
   ProjectInput,
@@ -17,6 +17,14 @@ import {
   mapSurveyPointsToSite,
   summarizeExistingConditionsUpload,
 } from "../utils/dashboardExistingConditionsUpload";
+import {
+  canReviewSurveyControl,
+  latestMatchingSurveyControlReview,
+  sameSurveyControlReviewTarget,
+  surveyControlReviewMessage,
+  surveyControlReviewTarget,
+  type SurveyControlReviewRecord,
+} from "../utils/surveyControlReview";
 
 type SaveProject = (options?: {
   silent?: boolean;
@@ -70,8 +78,78 @@ export function useDashboardExistingConditionsUpload({
   useSurveyForGrading,
 }: UseDashboardExistingConditionsUploadOptions) {
   const [latestImportedBoundaryInput, setLatestImportedBoundaryInput] = useState<ProjectInput | null>(null);
-  useEffect(() => setLatestImportedBoundaryInput(null), [currentProject?.project_id]);
+  const [surveyReviewPending, setSurveyReviewPending] = useState(false);
+  const [surveyReviewError, setSurveyReviewError] = useState("");
+  const [surveyReviewResult, setSurveyReviewResult] = useState<SurveyControlReviewRecord | null>(null);
+  const currentProjectRef = useRef(currentProject);
+  const surveyReviewRequestRef = useRef(0);
+  const reviewTarget = surveyControlReviewTarget(currentProject);
+  const reviewTargetKey = reviewTarget ? `${reviewTarget.projectId}:${reviewTarget.sourceId}:${reviewTarget.sourceDigest}` : "";
+  currentProjectRef.current = currentProject;
+  useEffect(() => {
+    surveyReviewRequestRef.current += 1;
+    setLatestImportedBoundaryInput(null);
+    setSurveyReviewPending(false);
+    setSurveyReviewError("");
+    setSurveyReviewResult(null);
+  }, [currentProject?.project_id]);
+  useEffect(() => {
+    surveyReviewRequestRef.current += 1;
+    setSurveyReviewPending(false);
+    setSurveyReviewError("");
+    setSurveyReviewResult(null);
+  }, [reviewTargetKey]);
+
+  const recordSurveyControlReview = useCallback(async (decision: "accepted_for_review" | "rejected") => {
+    const target = surveyControlReviewTarget(currentProjectRef.current);
+    if (!token || !target) {
+      setSurveyReviewError("The current saved survey source is unavailable. Reopen the project and try again.");
+      return;
+    }
+    if (!canReviewSurveyControl(currentProjectRef.current)) {
+      setSurveyReviewError("Reviewer access is required to record a survey-control decision.");
+      return;
+    }
+    if (decision === "accepted_for_review" && !target.completeForReview) {
+      setSurveyReviewError("The current source has missing or mismatched control evidence and cannot be accepted for review.");
+      return;
+    }
+    const requestId = ++surveyReviewRequestRef.current;
+    setSurveyReviewPending(true);
+    setSurveyReviewError("");
+    try {
+      const response = await postJson<{ success: boolean; survey_control_review?: SurveyControlReviewRecord }>(
+        `/api/projects/${encodeURIComponent(target.projectId)}/survey-control-review`,
+        { source_id: target.sourceId, source_digest: target.sourceDigest, decision },
+        { token },
+      );
+      const review = response.survey_control_review ?? null;
+      if (requestId !== surveyReviewRequestRef.current || !sameSurveyControlReviewTarget(currentProjectRef.current, target)) return;
+      if (!response.success || !review
+          || review.project_id !== target.projectId
+          || review.source_id !== target.sourceId
+          || String(review.source_digest ?? "").toLowerCase() !== target.sourceDigest) {
+        setSurveyReviewError("The server did not bind the decision to the current survey source. No review state was applied.");
+        return;
+      }
+      setSurveyReviewResult(review);
+      setStatusMessage(surveyControlReviewMessage(review));
+    } catch (error) {
+      if (requestId !== surveyReviewRequestRef.current || !sameSurveyControlReviewTarget(currentProjectRef.current, target)) return;
+      const detail = error instanceof Error ? error.message : "Survey-control review failed.";
+      setSurveyReviewError(`${detail} The current source remains unreviewed.`);
+    } finally {
+      if (requestId === surveyReviewRequestRef.current && sameSurveyControlReviewTarget(currentProjectRef.current, target)) {
+        setSurveyReviewPending(false);
+      }
+    }
+  }, [setStatusMessage, token]);
+
   const uploadExistingConditions = useCallback(async (file: File) => {
+    surveyReviewRequestRef.current += 1;
+    setSurveyReviewPending(false);
+    setSurveyReviewError("");
+    setSurveyReviewResult(null);
     const supportedSurveyPattern = /\.(csv|txt|geojson|json|dxf|shp|zip|gpkg|tif|tiff|las|laz|xml|landxml)$/i;
     if (!supportedSurveyPattern.test(file.name)) {
       const message = "Survey/topo upload failed: Unsupported file. Use CSV/TXT, DXF, LAS/LAZ, GeoTIFF, GeoJSON, SHP/ZIP, GPKG, XML, or LandXML.";
@@ -224,5 +302,24 @@ export function useDashboardExistingConditionsUpload({
     useSurveyForGrading,
   ]);
 
-  return { uploadExistingConditions, latestImportedBoundaryInput };
+  const savedSurveyReview = latestMatchingSurveyControlReview(currentProject);
+  const visibleSurveyReview = surveyReviewResult ?? savedSurveyReview;
+  const surveyControlReview = reviewTarget ? {
+    canReview: canReviewSurveyControl(currentProject),
+    completeForReview: reviewTarget.completeForReview,
+    pending: surveyReviewPending,
+    message: surveyReviewError
+      || (surveyReviewPending ? "Recording this exact source and digest with the server…" : surveyControlReviewMessage(visibleSurveyReview)),
+    tone: surveyReviewError
+      ? "error" as const
+      : visibleSurveyReview?.decision === "accepted_for_review"
+        ? "success" as const
+        : visibleSurveyReview?.decision === "rejected" || !reviewTarget.completeForReview
+          ? "warning" as const
+          : "neutral" as const,
+    onAccept: () => { void recordSurveyControlReview("accepted_for_review"); },
+    onReject: () => { void recordSurveyControlReview("rejected"); },
+  } : undefined;
+
+  return { uploadExistingConditions, latestImportedBoundaryInput, surveyControlReview };
 }

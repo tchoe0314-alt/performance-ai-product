@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 
 import { bestSurveySourceLabel, SURVEY_SOURCE_HIERARCHY } from "../utils/surveySourceHierarchy";
 import { DisclosurePanel } from "./ui";
+import { SurveyControlReviewCard, type SurveyControlReviewCardProps } from "./SurveyControlReviewCard";
 
 type ImageUploadState = "idle" | "uploading" | "detecting" | "ready" | "failed" | string;
 
@@ -22,6 +23,7 @@ type SetupSurveyTerrainSectionProps = {
   onAnalyzeMapSnapshot: () => void;
   onUploadImage: (file: File) => Promise<void>;
   onUploadExistingConditions: (file: File) => Promise<void>;
+  surveyControlReview?: SurveyControlReviewCardProps;
 };
 
 export function SetupSurveyTerrainSection({
@@ -41,6 +43,7 @@ export function SetupSurveyTerrainSection({
   onAnalyzeMapSnapshot,
   onUploadImage,
   onUploadExistingConditions,
+  surveyControlReview,
 }: SetupSurveyTerrainSectionProps) {
   const bestSourceLabel = bestSurveySourceLabel({
     surveyFileName,
@@ -99,6 +102,9 @@ export function SetupSurveyTerrainSection({
         }`}>
           {surveyUploadMessage}
         </p>
+      ) : null}
+      {surveyControlReview ? (
+        <div className="mt-3"><SurveyControlReviewCard {...surveyControlReview} /></div>
       ) : null}
       {sourceEffectRows.length ? (
         <div data-testid="source-effects-summary" className="mt-3 rounded-xl border border-sky-100 bg-sky-50/80 p-3">

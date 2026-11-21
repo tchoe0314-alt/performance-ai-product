@@ -2796,7 +2796,7 @@ function PerformanceAIDashboardView({
     token,
   });
 
-  const { uploadExistingConditions, latestImportedBoundaryInput } = useDashboardExistingConditionsUpload({
+  const { uploadExistingConditions, latestImportedBoundaryInput, surveyControlReview } = useDashboardExistingConditionsUpload({
     appendChatMessage,
     currentProject,
     lotHeightValue: parsePositiveNumber(lotHeight),
@@ -5270,6 +5270,7 @@ function PerformanceAIDashboardView({
     onAnalyzeMapSnapshot: analyzeMapSnapshot,
     onUploadImage: uploadImage,
     onUploadExistingConditions: uploadExistingConditions,
+    surveyControlReview,
     importedBoundaryAction: importedParcelBoundary.status === "ready"
       ? {
           label: buildingPlacements.some((item) => item.type === "site") ? "Replace with imported parcel" : "Use as site boundary",
