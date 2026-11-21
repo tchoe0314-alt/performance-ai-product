@@ -140,7 +140,7 @@ export function useDashboardSiteBoundaryDrawAction({
         return;
       }
       const boundarySource = payload.source ?? "manual_drawn";
-      const boundaryUnits = payload.units ?? (units || "ft");
+      const boundaryUnits: "ft" | "m" = payload.units ?? (units === "m" ? "m" : "ft");
       const normalizedGeometry = validPoints.map(([x, y]) => [x - minX, y - minY] as [number, number]);
       const acres = siteBoundaryAreaAcres(normalizedGeometry, boundaryUnits);
       const siteId = `site-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
