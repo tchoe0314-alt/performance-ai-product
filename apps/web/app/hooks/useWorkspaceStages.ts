@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SidePanelKey } from "../utils/workspaceShell";
-import { emptyStageMemory, parseStageMemory, rememberStagePanel, rememberedStagePanel, stageForPanel, stageStorageKey, type WorkspaceStage, type WorkspaceStageMemory } from "../utils/workspaceStages";
+import { emptyStageMemory, parseStageMemory, rememberStagePanel, rememberedStagePanel, shouldHydrateStageScope, stageForPanel, stageStorageKey, type WorkspaceStage, type WorkspaceStageMemory } from "../utils/workspaceStages";
 
 /** Per-tab view preferences only. Never writes project input or calculation state. */
 export function useWorkspaceStages({account,project,generation,panel,onOpenPanel}: {
@@ -20,6 +20,16 @@ export function useWorkspaceStages({account,project,generation,panel,onOpenPanel
     if(!account)return;
     const key=stageStorageKey(account,project,generation);
     const previous=scope.current;
+    // Result/project hydration can advance the load generation several times
+    // after a saved project is already interactive. Re-reading and reopening
+    // that same project's remembered panel here can overwrite a stage the user
+    // just selected (for example Review briefly becomes active while Generate
+    // is reopened). A generation change is only a new preference scope for an
+    // unsaved draft; saved projects are scoped by their stable project id.
+    if(!shouldHydrateStageScope(previous,{account,project,generation})){
+      scope.current={account,project,generation,key};
+      return;
+    }
     let raw:string|null=null;
     try{raw=sessionStorage.getItem(key);}catch{/* View preferences must not block editing. */}
     // First-save and first-edit copies keep the view. Opening another project

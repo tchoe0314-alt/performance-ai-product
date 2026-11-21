@@ -34,3 +34,12 @@ export function rememberedStagePanel(memory:WorkspaceStageMemory,stage:Workspace
 export function stageStorageKey(account:string,project:string,generation:number) {
   return `civora-workspace-stages-v1:${JSON.stringify([account,project||`draft-${generation}`])}`;
 }
+export type WorkspaceStageScope={account:string;project:string;generation:number};
+export function shouldHydrateStageScope(previous:WorkspaceStageScope|null,next:WorkspaceStageScope){
+  if(!previous)return true;
+  if(previous.account!==next.account||previous.project!==next.project)return true;
+  // A saved project's stable id owns its tab preferences. Background result
+  // hydration may advance the load generation, but it is not a new view scope.
+  if(next.project)return false;
+  return previous.generation!==next.generation;
+}

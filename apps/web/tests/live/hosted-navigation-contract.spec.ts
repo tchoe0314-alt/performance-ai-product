@@ -13,7 +13,7 @@ for (const width of [320, 1440]) {
     await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible();
     await expect(workspaceToolButton(page, "Setup")).toBeVisible();
     await workspaceToolButton(page, "Setup").click({ trial: true });
-    for (const [name, panel] of [[/^Setup$/, "site_existing"], [/^Generate$/, "generate"], [/^Deliver$/, "deliverables"]] as const) {
+    for (const [name, panel] of [[/^Setup$/, "site_existing"], [/^Generate$/, "generate"], [/^Review$/, "analysis"], [/^Deliver$/, "deliverables"]] as const) {
       await openWorkspacePanelByName(page, name);
       await expect(page.getByTestId("workspace-stage-panel")).toHaveValue(panel);
       const drawer = page.getByTestId("workspace-right-panel");
@@ -21,6 +21,7 @@ for (const width of [320, 1440]) {
       await expect(drawer.getByText(sidePanelCopy[panel].title, { exact: true }).first()).toBeVisible();
       if (panel === "site_existing") await expect(drawer.getByTestId("setup-address-truth")).toBeVisible();
       if (panel === "generate") await expect(drawer.getByTestId("generate-main-action")).toBeVisible();
+      if (panel === "analysis") await expect(drawer.getByTestId("clean-review-panel")).toBeVisible();
       if (panel === "deliverables") await expect(drawer.getByRole("button", { name: /Make Review Package/i })).toBeVisible();
     }
   });

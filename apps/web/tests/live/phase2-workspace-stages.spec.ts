@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
-import { WORKSPACE_STAGE_KEYS,WORKSPACE_STAGES,emptyStageMemory,parseStageMemory,rememberStagePanel,rememberedStagePanel,stageForPanel,stageStorageKey } from "../../app/utils/workspaceStages";
+import { WORKSPACE_STAGE_KEYS,WORKSPACE_STAGES,emptyStageMemory,parseStageMemory,rememberStagePanel,rememberedStagePanel,shouldHydrateStageScope,stageForPanel,stageStorageKey } from "../../app/utils/workspaceStages";
 import { withCanonicalCanvasSnapshot } from "../../app/utils/canonicalCanvasProject";
 import AxeBuilder from "@axe-core/playwright";
 
@@ -14,6 +14,9 @@ test("stage memory validates panels and keeps global tools out of remembered des
   expect(parseStageMemory("broken")).toEqual(emptyStageMemory());
   expect(parseStageMemory('{"version":2,"active":"explore"}')).toEqual(emptyStageMemory());
   expect(stageStorageKey("owner-a","project-a",1)).not.toBe(stageStorageKey("owner-b","project-a",1));
+  expect(shouldHydrateStageScope({account:"owner-a",project:"project-a",generation:1},{account:"owner-a",project:"project-a",generation:2})).toBe(false);
+  expect(shouldHydrateStageScope({account:"owner-a",project:"",generation:1},{account:"owner-a",project:"",generation:2})).toBe(true);
+  expect(shouldHydrateStageScope({account:"owner-a",project:"project-a",generation:1},{account:"owner-a",project:"project-b",generation:2})).toBe(true);
   const panels=WORKSPACE_STAGE_KEYS.flatMap(stage=>WORKSPACE_STAGES[stage].panels);
   expect(new Set(panels).size).toBe(panels.length);
   for(const stage of WORKSPACE_STAGE_KEYS)expect(stageForPanel(WORKSPACE_STAGES[stage].defaultPanel)).toBe(stage);
