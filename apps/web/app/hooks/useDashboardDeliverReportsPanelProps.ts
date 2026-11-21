@@ -180,6 +180,7 @@ export function useDashboardDeliverReportsPanelProps({
 }: UseDashboardDeliverReportsPanelPropsInput) {
   const deliverPanelProps = useMemo<DeliverPanelProps>(() => ({
     reviewPackageFlowSummary,
+    calculationReference,
     planPreviewUrl,
     hasBackendResult,
     placedObjectCount,
@@ -237,6 +238,7 @@ export function useDashboardDeliverReportsPanelProps({
   }), [
     addressLabel,
     autoSiteContextFlowSummary,
+    calculationReference,
     exportActionMessage,
     exportBlockReason,
     hasBackendResult,

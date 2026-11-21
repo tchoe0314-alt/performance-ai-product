@@ -57,6 +57,7 @@ import {
   SITE_GRADING_HARD_BLOCK_ACRES,
   SITE_WARNING_ACRES,
   formatStageLabel,
+  isHardGenerateBlocker,
   statusLabelForQuantityReview,
   type EngineeringSystemKey,
   type ReactiveValidationState,
@@ -78,6 +79,7 @@ import {
 } from "./utils/dashboardGenerateLayoutContext";
 import {
   buildDashboardCivil3DWorkflowBlockers,
+  buildDashboardNextAction,
   buildDashboardWorkflowActionHints,
 } from "./utils/dashboardWorkflowHints";
 import {
@@ -4502,6 +4504,20 @@ function PerformanceAIDashboardView({
       systemReadinessRows,
     ],
   );
+  const nextWorkflowAction = useMemo(() => {
+    const firstBlockedSystem = systemReadinessRows.find((row) => row.blockers.some(isHardGenerateBlocker));
+    const firstBlocker = firstBlockedSystem?.blockers.find(isHardGenerateBlocker);
+    return buildDashboardNextAction({
+      hasLocationEvidence,
+      siteSizeSet,
+      hasSiteBoundary: buildingPlacements.some((item) => item.type === "site"),
+      siteScaleLocked,
+      placedObjectCount,
+      firstSystemBlocker: firstBlockedSystem && firstBlocker ? `${firstBlockedSystem.label}: ${firstBlocker}` : undefined,
+      resultTruth,
+      exportBlockReason,
+    });
+  }, [buildingPlacements, exportBlockReason, hasLocationEvidence, placedObjectCount, resultTruth, siteScaleLocked, siteSizeSet, systemReadinessRows]);
   const capabilityAuditRows = useMemo<CapabilityExposure[]>(() => buildDashboardCapabilityAuditRows({
     currentPlanMeta: currentPlanMeta as Record<string, unknown>,
     manualFields: currentProject?.project_input?.manual_fields as Record<string, unknown> | undefined,
@@ -5960,7 +5976,7 @@ function PerformanceAIDashboardView({
       onCollapseTools={()=>setRightRailCollapsed(true)}
       toolPanelContext={sidePanelForRender}
       token={effectiveDemoWorkspaceEnabled?null:token}
-      briefChat={<div className="space-y-3"><section className="flex items-center justify-between gap-2 text-xs" aria-label="Active brief"><div className="min-w-0"><h2 className="truncate font-semibold">{siteName||currentProject?.name||"Untitled Project"}</h2><p className="text-slate-500">{placedObjectCount} objects · {projectStatusDisplayLabel[projectStatusSummary.state]}</p></div><button type="button" aria-label="Edit brief" className="shrink-0 rounded border px-2 py-1" onClick={()=>handleOpenSidePanel("site_existing")}>Edit</button></section><ActiveBriefSummary input={payloadPreview} savedInput={currentProject?.project_input} onClassify={classifyBrief} onEdit={editBrief} docked /><ChatPanel {...chatPanelProps}/></div>}
+      briefChat={<div className="space-y-3"><section className="flex items-center justify-between gap-2 text-xs" aria-label="Active brief"><div className="min-w-0"><h2 className="truncate font-semibold">{siteName||currentProject?.name||"Untitled Project"}</h2><p className="text-slate-500">{placedObjectCount} objects · {projectStatusDisplayLabel[projectStatusSummary.state]}</p></div><button type="button" aria-label="Edit brief" className="shrink-0 rounded border px-2 py-1" onClick={()=>handleOpenSidePanel("site_existing")}>Edit</button></section><button type="button" data-testid="workspace-next-action" onClick={()=>handleOpenSidePanel(nextWorkflowAction.panel)} className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-left text-xs text-blue-950"><span className="block font-semibold">Next: {nextWorkflowAction.label}</span><span className="mt-1 block text-blue-800">{nextWorkflowAction.detail}</span></button><ActiveBriefSummary input={payloadPreview} savedInput={currentProject?.project_input} onClassify={classifyBrief} onEdit={editBrief} docked /><ChatPanel {...chatPanelProps}/></div>}
       inspectorHealth={<div className="space-y-4 text-xs"><section><p className="text-[10px] text-slate-500">SELECTION</p><h2 className="mt-1 font-semibold">{selectedBuilding?.label||"Nothing selected"}</h2>{selectedBuilding&&<button type="button" onClick={()=>handleOpenSidePanel("objects")} className="mt-2 rounded border px-2 py-1">Properties</button>}</section><section><p className="text-[10px] text-slate-500">HEALTH</p><h2 className="mt-1 font-semibold">{projectStatusDisplayLabel[projectStatusSummary.state]}</h2><button type="button" onClick={()=>handleOpenSidePanel("analysis")} className="mt-2 rounded border px-2 py-1">Review</button></section></div>}
       delta={<div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs" data-testid="workspace-live-delta-summary"><span><strong>Recalculate:</strong> {reactiveRerunSummary.enabled?reactiveRerunSummary.rerunStages.join(", ")||"None":"None"}</span><span><strong>Changed:</strong> {reactiveChangedSystems.join(", ")||"None"}</span></div>}
       onCancelActiveTool={handleCancelActiveTool}

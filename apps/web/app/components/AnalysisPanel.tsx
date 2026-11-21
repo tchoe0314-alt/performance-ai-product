@@ -19,6 +19,25 @@ type AnalysisPanelProps = {
   onOpenDashboard: () => void;
 };
 
+export function buildAnalysisTruthCopy(resultTruth: AnalysisPanelProps["resultTruth"], issueCount: number, blockedSystemCount: number) {
+  const reviewIsCurrent = resultTruth.canClaimSystemsCurrent;
+  return {
+    reviewIsCurrent,
+    headline: issueCount
+      ? `${issueCount} item${issueCount === 1 ? "" : "s"} need attention`
+      : blockedSystemCount > 0
+        ? "Setup needs input before a full review"
+        : reviewIsCurrent
+          ? "No active review issues"
+          : "Review has not been checked for the current model",
+    emptyIssues: !reviewIsCurrent
+      ? `${resultTruth.label}. Run or complete the current review before interpreting an empty issue list as a clean result.`
+      : blockedSystemCount > 0
+        ? "No conflicts are detected yet. Complete the needed inputs, then run the review scan."
+        : "This project has no active review issues.",
+  };
+}
+
 export function AnalysisPanel({
   resultTruth,
   modelIssueCount,
@@ -31,6 +50,8 @@ export function AnalysisPanel({
 }: AnalysisPanelProps) {
   const needsSystemInput = blockedSystemCount > 0;
   const hasAttentionItems = issues.length > 0 || needsSystemInput;
+  const truthCopy = buildAnalysisTruthCopy(resultTruth, issues.length, blockedSystemCount);
+  const reviewIsCurrent = truthCopy.reviewIsCurrent;
 
   return (
     <div className="space-y-3" data-testid="clean-review-panel">
@@ -45,13 +66,9 @@ export function AnalysisPanel({
           </span>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-950">
-              {issues.length
-                ? `${issues.length} item${issues.length === 1 ? "" : "s"} need attention`
-                : needsSystemInput
-                  ? "Setup needs input before a full review"
-                  : "No active review issues"}
+              {truthCopy.headline}
             </p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">{resultTruth.canClaimSystemsCurrent ? systemsCompleteCount : 0} systems current · {blockedSystemCount} need input</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{reviewIsCurrent ? `${systemsCompleteCount} systems current` : "Systems not checked for current model"} · {blockedSystemCount} need input</p>
           </div>
         </div>
         <div className="mt-3 grid grid-cols-2 divide-x divide-slate-100 border-y border-slate-100 py-2 text-center text-xs">
@@ -86,9 +103,7 @@ export function AnalysisPanel({
           ))}
           {!issues.length ? (
             <p className="px-3 py-5 text-center text-xs text-slate-500">
-              {needsSystemInput
-                ? "No conflicts are detected yet. Complete the needed inputs, then run the review scan."
-                : "This project has no active review issues."}
+              {truthCopy.emptyIssues}
             </p>
           ) : null}
         </div>

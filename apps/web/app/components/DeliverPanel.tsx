@@ -46,6 +46,7 @@ type DeliverPanelProps = {
   sidebarTrustScore: string;
   exportActionMessage: string;
   exportBlockReason: string;
+  calculationReference?: string;
   planSheetSet: PlanSheetSet;
   planSheetBlockers: string[];
   projectName: string;
@@ -87,6 +88,14 @@ type DeliverPanelProps = {
   onSmartFixAction: (recommendation: SmartFixRecommendation) => void;
 };
 
+export function buildCalculatedExportReadiness(exportBlockReason: string, calculationReference?: string) {
+  return {
+    state: exportBlockReason ? "Blocked" : "Current",
+    detail: exportBlockReason || "Calculated results match the active saved project and may be exported for qualified review.",
+    reference: calculationReference || "not available",
+  } as const;
+}
+
 function reviewPackageMissingItemsForDisplay(items: string[]) {
   const visible: string[] = [];
   const seen = new Set<string>();
@@ -120,6 +129,7 @@ export function DeliverPanel({
   sidebarTrustScore,
   exportActionMessage,
   exportBlockReason,
+  calculationReference,
   planSheetSet,
   planSheetBlockers,
   projectName,
@@ -195,6 +205,7 @@ export function DeliverPanel({
     ...planSheetBlockers.slice(0, 3).map(Boolean),
   ].filter(Boolean).length;
   const packageNeedsInput = Boolean(reviewPackageFlowSummary?.blocked || currentPackageMissingCount);
+  const calculatedExportReadiness = buildCalculatedExportReadiness(exportBlockReason, calculationReference);
 
   return (
     <div className="space-y-3" data-testid="clean-deliver-panel">
@@ -287,7 +298,12 @@ export function DeliverPanel({
 
       <PanelCard testId="deliver-export-actions">
         <p className="text-sm font-semibold text-slate-900">Exports</p>
-        {(onExportCurrentDrawingDxf || onExportCurrentDrawingPdf) && <details className="mt-2 text-xs" data-testid="current-drawing-export"><summary className="cursor-pointer font-medium">Drawing only</summary><p className="mt-2 text-slate-600">Saved footprints and linework. No calculations or parking-stall detailing.</p><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" className="rounded border px-2 py-2" onClick={onExportCurrentDrawingDxf}>Drawing DXF</button><button type="button" className="rounded border px-2 py-2" onClick={onExportCurrentDrawingPdf}>Drawing PDF</button></div></details>}
+        {(onExportCurrentDrawingDxf || onExportCurrentDrawingPdf) && <details className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs" data-testid="current-drawing-export"><summary className="cursor-pointer font-semibold">Current drawing only</summary><p className="mt-2 text-slate-600">Saves current footprints and linework before download. It does not include or imply current engineering calculations, quantities, or parking-stall detailing.</p><div className="mt-2 grid grid-cols-2 gap-2"><button type="button" className="rounded border bg-white px-2 py-2" onClick={onExportCurrentDrawingDxf}>Drawing DXF</button><button type="button" className="rounded border bg-white px-2 py-2" onClick={onExportCurrentDrawingPdf}>Drawing PDF</button></div></details>}
+        <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${exportBlockReason ? "border-amber-200 bg-amber-50 text-amber-900" : "border-emerald-200 bg-emerald-50 text-emerald-900"}`} data-testid="calculated-export-readiness">
+          <p className="font-semibold">Calculated review package · {calculatedExportReadiness.state}</p>
+          <p className="mt-1">{calculatedExportReadiness.detail}</p>
+          <p className="mt-1 text-[11px]">Calculation revision: {calculatedExportReadiness.reference}</p>
+        </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -322,7 +338,7 @@ export function DeliverPanel({
             Quantities
           </button>
         </div>
-        <p data-testid="deliver-export-source-disclosure" className="mt-3 text-xs text-slate-600">Calculated exports use generated/saved snapshots, not unsaved edits. Drawing only saves the current canvas first. Preliminary; not for construction.</p>
+        <p data-testid="deliver-export-source-disclosure" className="mt-3 text-xs text-slate-600">Calculated review exports are bound to the calculation revision shown above and never use unsaved edits. Current drawing exports save canvas geometry first and carry no calculation-currentness claim. Preliminary; not for construction.</p>
         <button type="button" onClick={onOpenExportHistory} className="mt-3 rounded-[7px] border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
           Downloads
         </button>
