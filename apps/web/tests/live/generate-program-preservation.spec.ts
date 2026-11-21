@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { withCanonicalCanvasSnapshot, resolveCanonicalCanvasInput } from "../../app/utils/canonicalCanvasProject";
-import { buildGenerateConceptPlacements } from "../../app/utils/dashboardGenerateConcepts";
+import { buildGenerateConceptPlacements, isReplaceableGeneratedReviewConcept } from "../../app/utils/dashboardGenerateConcepts";
 import { resolveDashboardGenerationTarget } from "../../app/utils/dashboardGenerateIntent";
 
 const conceptArgs = (overrides: Partial<Parameters<typeof buildGenerateConceptPlacements>[0]> = {}) => ({
@@ -10,6 +10,7 @@ const conceptArgs = (overrides: Partial<Parameters<typeof buildGenerateConceptPl
   lot: { w: 1000, h: 1000 },
   siteScaleLocked: true,
   buildingPlacements: [],
+  projectType: "office_site",
   buildingProgramSf: 28_800,
   buildingWidth: "229",
   buildingDepth: "126",
@@ -24,6 +25,50 @@ const conceptArgs = (overrides: Partial<Parameters<typeof buildGenerateConceptPl
   parkingAngle: 90,
   parkingLoading: "double" as const,
   ...overrides,
+});
+
+test("Generate respects the explicitly selected project type without changing the program", () => {
+  const industrial = buildGenerateConceptPlacements(conceptArgs({ projectType: "industrial_site", buildingProgramSf: 14_400 }));
+  const industrialBuilding = industrial.find(item => item.type === "industrial_building");
+  expect(industrialBuilding?.label).toContain("industrial building");
+  expect(industrialBuilding?.meta?.requested_area_sf).toBe(14_400);
+  expect(industrialBuilding?.meta?.requested_project_type).toBe("industrial_site");
+  expect(industrialBuilding?.meta?.building_use).toBe("industrial");
+  expect(industrial.some(item => item.type === "office_building")).toBe(false);
+
+  const commercial = buildGenerateConceptPlacements(conceptArgs({ projectType: "commercial_pad" }));
+  expect(commercial.some(item => item.type === "retail_building")).toBe(true);
+
+  const existingIndustrial = buildGenerateConceptPlacements(conceptArgs({
+    projectType: "industrial_site",
+    buildingPlacements: [{ id: "existing", label: "Existing industrial", type: "industrial_building", x: 1, y: 1, w: 100, d: 80, placed: true }],
+  }));
+  expect(existingIndustrial.some(item => item.meta?.generated_program_object)).toBe(false);
+
+  const editedGenerated = buildGenerateConceptPlacements(conceptArgs({
+    projectType: "industrial_site",
+    buildingPlacements: [{
+      id: "edited-generated",
+      label: "Authored industrial footprint",
+      type: "industrial_building",
+      x: 1,
+      y: 1,
+      w: 179,
+      d: 85,
+      placed: true,
+      source: "manual_drawn",
+      meta: { generated_review_concept: true, requested_area_sf: 14_400 },
+    }],
+  }));
+  expect(editedGenerated.some(item => item.meta?.generated_program_object)).toBe(false);
+  expect(isReplaceableGeneratedReviewConcept({
+    id: "untouched", label: "Untouched", type: "industrial_building", source: "generated", w: 100, d: 80,
+    meta: { generated_review_concept: true },
+  })).toBe(true);
+  expect(isReplaceableGeneratedReviewConcept({
+    id: "authored", label: "Authored", type: "industrial_building", source: "manual_drawn", w: 100, d: 80,
+    meta: { generated_review_concept: true },
+  })).toBe(false);
 });
 
 test("combined Generate intent preserves canonical program and never invents a missing building", () => {

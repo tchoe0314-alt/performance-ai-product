@@ -4,12 +4,16 @@ import type { EngineeringSystemKey, SystemGenerationTarget } from "./workflowCon
 
 type LotBounds = { w: number; h: number };
 
+export const isReplaceableGeneratedReviewConcept = (item: BuildingPlacement) =>
+  Boolean(item.meta?.generated_review_concept) && item.source === "generated";
+
 export function buildGenerateConceptPlacements({
   target,
   notes,
   lot,
   siteScaleLocked,
   buildingPlacements,
+  projectType,
   buildingProgramSf,
   buildingWidth,
   buildingDepth,
@@ -29,6 +33,7 @@ export function buildGenerateConceptPlacements({
   lot: LotBounds;
   siteScaleLocked?: boolean;
   buildingPlacements: BuildingPlacement[];
+  projectType?: string | null;
   buildingProgramSf?: string | number | null;
   buildingWidth: string | number | null | undefined;
   buildingDepth: string | number | null | undefined;
@@ -50,7 +55,10 @@ export function buildGenerateConceptPlacements({
       ? (["roads", "parking", "grading", "drainage", "utilities"] as EngineeringSystemKey[])
       : ([target] as EngineeringSystemKey[]);
   const wants = (system: EngineeringSystemKey) => targetSystems.includes(system);
-  const existingObjects = buildingPlacements.filter((item) => !Boolean(item.meta?.generated_review_concept));
+  // A generated review concept becomes authored canonical geometry once the
+  // user edits it. Preserve that object on rerun; only replace untouched
+  // generated review-layer objects.
+  const existingObjects = buildingPlacements.filter((item) => !isReplaceableGeneratedReviewConcept(item));
   const hasExistingType = (...types: SiteObjectType[]) =>
     existingObjects.some((item) => item.placed && item.type && types.includes(item.type));
   const hasExistingNetwork = (network: string) =>
@@ -102,14 +110,26 @@ export function buildGenerateConceptPlacements({
   // Never invent a program. The canonical brief is authoritative when it is
   // present; dimensions are a legacy fallback only when no brief target exists.
   const requestedBuildingArea = canonicalProgramArea ? Math.round(canonicalProgramArea) : dimensionProgramArea;
-  if (target === "full" && requestedBuildingArea && !hasExistingType("building", "office_building", "pad")) {
+  const selectedProjectType = String(projectType ?? "").trim().toLowerCase();
+  const generatedBuilding = selectedProjectType === "industrial_site"
+    ? { type: "industrial_building" as const, use: "industrial", label: "industrial building" }
+    : selectedProjectType === "commercial_pad"
+      ? { type: "retail_building" as const, use: "retail", label: "retail building" }
+      : selectedProjectType === "multifamily_site"
+        ? { type: "multifamily_building" as const, use: "multifamily", label: "multifamily building" }
+        : selectedProjectType === "office_site"
+          ? { type: "office_building" as const, use: "office", label: "office building" }
+          : { type: "building" as const, use: "unspecified", label: "building" };
+  if (target === "full" && requestedBuildingArea && !hasExistingType(
+    "building", "office_building", "retail_building", "multifamily_building", "industrial_building", "pad",
+  )) {
     const requestedArea = requestedBuildingArea;
     const buildingDepthFt = Math.max(80, Math.min(lot.h * 0.18, Math.round(Math.sqrt(requestedArea / 2))));
     const buildingWidthFt = Math.max(150, Math.min(lot.w * 0.34, Math.round(requestedArea / buildingDepthFt)));
     addConcept({
-      id: `generate-office-${now}`,
-      label: `Review office building concept - ${requestedArea.toLocaleString()} sf`,
-      type: "office_building",
+      id: `generate-${generatedBuilding.use}-${now}`,
+      label: `Review ${generatedBuilding.label} concept - ${requestedArea.toLocaleString()} sf`,
+      type: generatedBuilding.type,
       x: lot.w * 0.36,
       y: lot.h * 0.22,
       w: buildingWidthFt,
@@ -119,6 +139,8 @@ export function buildGenerateConceptPlacements({
     cad_layer: "C-BLDG",
     ui_color: "#64748b",
     requested_area_sf: requestedArea,
+    requested_project_type: selectedProjectType || null,
+    building_use: generatedBuilding.use,
     generated_program_object: true,
       },
     });

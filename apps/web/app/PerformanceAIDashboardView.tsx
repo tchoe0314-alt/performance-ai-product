@@ -1619,6 +1619,7 @@ function PerformanceAIDashboardView({
     appendChatMessage,
     buildingDepth,
     buildingPlacements,
+    projectType,
     buildingProgramSf: typeof payloadPreview.manual_fields?.site_plan?.building_program_sf === "number"
       ? payloadPreview.manual_fields.site_plan.building_program_sf
       : null,

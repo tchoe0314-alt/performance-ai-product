@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 
 import type { BuildingPlacement, ChatMessage } from "../types";
-import { buildGenerateConceptPlacements } from "../utils/dashboardGenerateConcepts";
+import { buildGenerateConceptPlacements, isReplaceableGeneratedReviewConcept } from "../utils/dashboardGenerateConcepts";
 import {
   buildGradingDrainageReviewContextPlacements,
   type GradingDrainageReviewContextMode,
@@ -18,6 +18,7 @@ type UseDashboardReviewConceptActionsInput = {
   buildingDepth: string;
   buildingPlacements: BuildingPlacement[];
   buildingProgramSf?: number | null;
+  projectType?: string | null;
   buildingWidth: string;
   clearGeneratedPreview: () => void;
   ensureSiteBoundary: (reason: string) => boolean;
@@ -56,6 +57,7 @@ export function useDashboardReviewConceptActions({
   buildingDepth,
   buildingPlacements,
   buildingProgramSf,
+  projectType,
   buildingWidth,
   clearGeneratedPreview,
   ensureSiteBoundary,
@@ -158,6 +160,7 @@ export function useDashboardReviewConceptActions({
         lot,
         siteScaleLocked,
         buildingPlacements,
+        projectType,
         buildingProgramSf,
         buildingWidth,
         buildingDepth,
@@ -174,7 +177,7 @@ export function useDashboardReviewConceptActions({
       });
       if (!concept.length) return 0;
       setBuildingPlacements((prev) => [
-        ...prev.filter((item) => !Boolean(item.meta?.generated_review_concept)),
+        ...prev.filter((item) => !isReplaceableGeneratedReviewConcept(item)),
         ...concept,
       ]);
       setPreviewMode("2d");
@@ -193,6 +196,7 @@ export function useDashboardReviewConceptActions({
       buildingDepth,
       buildingProgramSf,
       buildingPlacements,
+      projectType,
       buildingWidth,
       parkingAdaAisleWidth,
       parkingAdaCount,
