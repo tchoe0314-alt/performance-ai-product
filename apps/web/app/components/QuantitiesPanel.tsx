@@ -30,8 +30,10 @@ export type QuantityReviewRowView = {
 
 export type ConstructionTakeoffView = {
   earthwork?: {
-    cut_cy?: number;
-    fill_cy?: number;
+    cut_cy?: number | null;
+    fill_cy?: number | null;
+    unit?: string;
+    status?: string;
     haul_quantity_inferred?: boolean;
   };
   pipes_by_system_and_diameter?: Array<{
@@ -41,12 +43,15 @@ export type ConstructionTakeoffView = {
     horizontal_length_ft?: number;
     three_dimensional_length_ft?: number | null;
     source_object_ids?: string[];
+    unit?: string;
+    rate_provenance?: { status?: string; unit_rate?: number | null; currency?: string | null; source?: string | null };
   }>;
   structures_by_system_and_type?: Array<{
     system?: string;
     structure_type?: string;
     count?: number;
     source_object_ids?: string[];
+    unit?: string;
   }>;
 };
 
@@ -249,6 +254,7 @@ export function QuantitiesPanel({
               <p className="mt-1 text-slate-700">Horizontal: {formatMetric(pipe.horizontal_length_ft ?? null, "ft")}</p>
               <p className="mt-1 text-slate-700">3D: {pipe.three_dimensional_length_ft == null ? "Not reported" : formatMetric(pipe.three_dimensional_length_ft, "ft")}</p>
               <p className="mt-1 break-all text-[11px] text-slate-500">Basis: {pipe.measurement_basis || "Unspecified"} · Sources: {(pipe.source_object_ids ?? []).join(", ") || "Missing"}</p>
+              <p className="mt-1 break-all text-[11px] text-slate-500">Rate: {pipe.rate_provenance?.status === "source_provided" ? `${pipe.rate_provenance.currency || "USD"} ${pipe.rate_provenance.unit_rate} / ${pipe.unit || "ft"} · ${pipe.rate_provenance.source}` : "Missing — no group rate applied"}</p>
             </div>
           ))}
           {(constructionTakeoff.structures_by_system_and_type ?? []).length ? (

@@ -128,9 +128,23 @@ test("construction breakdown renders explicit bases and is preserved in the revi
   expect(rendered).toContain("centerline_horizontal");
   expect(rendered).toContain("structure_face_to_face_horizontal");
   expect(rendered).toContain("Haul quantity: not inferred");
+  expect(rendered).toContain("Missing — no group rate applied");
   expect(rendered).toContain("Distinct structures");
   expect(rendered).toContain("manhole");
 
   expect(quantityConstructionTakeoffForReport({ quantities: { tables: { construction_takeoff: constructionTakeoff } } })).toEqual(constructionTakeoff);
   expect(quantityConstructionTakeoffForReport({})).toBeNull();
+});
+
+test("missing construction evidence renders pending instead of zero", () => {
+  const rendered = JSON.stringify(QuantitiesPanel({
+    rows: [], staleSystemCount: 0, trustScoreLabel: "Ready", onExportReport: () => {},
+    formatMetric: (value, unit) => value == null ? "Pending" : `${value} ${unit}`,
+    statusLabelForQuantityReview: (status) => status,
+    constructionTakeoff: { earthwork: { cut_cy: null, fill_cy: null, unit: "cy", status: "missing", haul_quantity_inferred: false } },
+  }));
+  expect(rendered).toContain("Earthwork cut");
+  expect(rendered).toContain("Earthwork fill");
+  expect(rendered).toContain("Pending");
+  expect(rendered).not.toContain("0 cy");
 });

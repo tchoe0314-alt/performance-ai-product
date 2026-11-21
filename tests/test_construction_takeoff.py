@@ -43,6 +43,8 @@ def test_construction_takeoff_separates_cut_fill_pipe_groups_and_structures():
     assert takeoff["earthwork"] == {
         "cut_cy": 100.0,
         "fill_cy": 50.0,
+        "unit": "cy",
+        "status": "current",
         "derivation_method": "canonical_cut_and_fill_cf_divided_by_27",
         "haul_quantity_inferred": False,
     }
@@ -56,6 +58,8 @@ def test_construction_takeoff_separates_cut_fill_pipe_groups_and_structures():
     storm_18 = takeoff["pipes_by_system_and_diameter"][1]
     assert storm_18["three_dimensional_length_ft"] == round(math.sqrt(2516), 3)
     assert storm_18["measurement_basis"] == "centerline_horizontal"
+    assert storm_18["unit"] == "ft"
+    assert storm_18["rate_provenance"] == {"status": "missing", "unit_rate": None, "currency": None, "source": None}
     assert [(row["system"], row["structure_type"], row["count"]) for row in takeoff["structures_by_system_and_type"]] == [
         ("sanitary", "manhole", 1),
         ("storm", "inlet", 2),
@@ -88,3 +92,30 @@ def test_explicit_face_measurement_is_not_mixed_with_centerline_basis():
         ("centerline_horizontal", 50.0),
         ("structure_face_to_face_horizontal", 60.0),
     ]
+
+
+def test_missing_earthwork_and_rates_remain_missing_not_zero_or_implied():
+    plan = _plan()
+    del plan["meta"]["grading"]
+    takeoff, totals = _construction(plan)
+    assert takeoff["earthwork"] == {
+        "cut_cy": None,
+        "fill_cy": None,
+        "unit": "cy",
+        "status": "missing",
+        "derivation_method": None,
+        "haul_quantity_inferred": False,
+    }
+    assert "earthwork_cut_cy" not in totals
+    assert "earthwork_fill_cy" not in totals
+    assert all(row["rate_provenance"]["status"] == "missing" for row in takeoff["pipes_by_system_and_diameter"])
+
+
+def test_explicit_rate_provenance_is_preserved_without_applying_it_to_other_groups():
+    plan = _plan()
+    plan["meta"]["storm_pipes"]["segments"][0].update({"unit_rate": 125, "rate_currency": "USD", "rate_source": "Approved synthetic price book ST-18"})
+    takeoff, _ = _construction(plan)
+    storm_18 = next(row for row in takeoff["pipes_by_system_and_diameter"] if row["system"] == "storm" and row["diameter_in"] == 18)
+    sanitary_18 = next(row for row in takeoff["pipes_by_system_and_diameter"] if row["system"] == "sanitary" and row["diameter_in"] == 18)
+    assert storm_18["rate_provenance"] == {"status": "source_provided", "unit_rate": 125.0, "currency": "USD", "source": "Approved synthetic price book ST-18"}
+    assert sanitary_18["rate_provenance"]["status"] == "missing"

@@ -192,7 +192,7 @@ def _construction_takeoff(meta: Dict[str, Any], *, legacy_feet: bool) -> Dict[st
         ("sanitary", _safe_list(sanitary.get("segments"))),
         ("utility", utility_segments),
     ]
-    pipe_groups: Dict[Tuple[str, float | None, str], Dict[str, Any]] = {}
+    pipe_groups: Dict[Tuple[str, float | None, str, float | None, str], Dict[str, Any]] = {}
     for default_system, raw_segments in pipe_sources:
         for raw_segment in raw_segments:
             segment = _safe_dict(raw_segment)
@@ -201,10 +201,18 @@ def _construction_takeoff(meta: Dict[str, Any], *, legacy_feet: bool) -> Dict[st
             diameter = _safe_float(raw_diameter, 0.0) if raw_diameter is not None else None
             default_basis = "centerline_horizontal" if segment.get("path") or segment.get("route_points") else "source_reported_unspecified"
             basis = _safe_str(segment.get("measurement_basis"), default_basis)
-            key = (system, diameter, basis)
+            raw_rate = segment.get("unit_rate", segment.get("unit_cost"))
+            unit_rate = _safe_float(raw_rate, 0.0) if raw_rate is not None else None
+            rate_source = _safe_str(segment.get("rate_source") or segment.get("unit_price_source"))
+            key = (system, diameter, basis, unit_rate, rate_source)
             row = pipe_groups.setdefault(key, {
                 "system": system, "diameter_in": diameter, "measurement_basis": basis,
                 "horizontal_length_ft": 0.0, "three_dimensional_length_ft": None, "source_object_ids": [],
+                "unit": "ft", "rate_provenance": {
+                    "status": "source_provided" if unit_rate is not None and rate_source else "missing",
+                    "unit_rate": unit_rate, "currency": _safe_str(segment.get("rate_currency"), "USD") if unit_rate is not None else None,
+                    "source": rate_source or None,
+                },
             })
             row["horizontal_length_ft"] += _route_length_ft(segment, legacy_feet=legacy_feet)
             length_3d = segment.get("length_3d_ft")
@@ -238,17 +246,21 @@ def _construction_takeoff(meta: Dict[str, Any], *, legacy_feet: bool) -> Dict[st
             source_id = _safe_str(structure.get("id") or structure.get("name"), f"{system}:{structure_type}:{index}")
             structure_groups.setdefault((system, structure_type), set()).add(source_id)
     structure_rows = [
-        {"system": system, "structure_type": structure_type, "count": len(source_ids), "source_object_ids": sorted(source_ids)}
+        {"system": system, "structure_type": structure_type, "count": len(source_ids), "unit": "ea", "source_object_ids": sorted(source_ids)}
         for (system, structure_type), source_ids in sorted(structure_groups.items())
     ]
 
     grading = _safe_dict(meta.get("grading") or meta.get("grading_summary"))
     earthwork = _safe_dict(grading.get("earthwork") or meta.get("earthwork") or meta.get("earthwork_summary"))
+    cut_cf = _safe_float(earthwork.get("cut_cf"), 0.0) if earthwork.get("cut_cf") is not None else None
+    fill_cf = _safe_float(earthwork.get("fill_cf"), 0.0) if earthwork.get("fill_cf") is not None else None
     return {
         "earthwork": {
-            "cut_cy": _round(_safe_float(earthwork.get("cut_cf"), 0.0) / 27.0),
-            "fill_cy": _round(_safe_float(earthwork.get("fill_cf"), 0.0) / 27.0),
-            "derivation_method": "canonical_cut_and_fill_cf_divided_by_27",
+            "cut_cy": _round(cut_cf / 27.0) if cut_cf is not None else None,
+            "fill_cy": _round(fill_cf / 27.0) if fill_cf is not None else None,
+            "unit": "cy",
+            "status": "current" if cut_cf is not None and fill_cf is not None else "missing",
+            "derivation_method": "canonical_cut_and_fill_cf_divided_by_27" if cut_cf is not None and fill_cf is not None else None,
             "haul_quantity_inferred": False,
         },
         "pipes_by_system_and_diameter": pipe_rows,
@@ -1209,9 +1221,11 @@ class QuantityEngine:
             "coordination_unresolved_conflict_count": unit_counts["coordination_unresolved_conflict_count"],
             "fg_contour_count": unit_counts["fg_contour_count"],
             "eg_contour_count": unit_counts["eg_contour_count"],
-            "earthwork_cut_cy": construction_takeoff["earthwork"]["cut_cy"],
-            "earthwork_fill_cy": construction_takeoff["earthwork"]["fill_cy"],
         }
+        if construction_takeoff["earthwork"]["cut_cy"] is not None:
+            totals["earthwork_cut_cy"] = construction_takeoff["earthwork"]["cut_cy"]
+        if construction_takeoff["earthwork"]["fill_cy"] is not None:
+            totals["earthwork_fill_cy"] = construction_takeoff["earthwork"]["fill_cy"]
 
         tables = {
             "summary": summary_table,
