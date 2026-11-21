@@ -243,6 +243,36 @@ class RealMathBigPassTests(unittest.TestCase):
         self.assertFalse(result["crossing_rule_checks"][0]["pressure_gravity_valid"])
         self.assertFalse(result["protected_zone_checks"][0]["valid"])
 
+    def test_utility_coordination_keeps_missing_measurements_unknown(self) -> None:
+        result = validate_utility_coordination(
+            [
+                {"name": "UNKNOWN", "system_type": "water", "hydraulic_mode": "pressure"},
+                {"name": "TRUE-ZERO", "system_type": "water", "cover_ft": 0.0, "hydraulic_mode": "pressure"},
+            ],
+            clearance_checks=[
+                {"id": "MISSING"},
+                {"id": "ZERO", "horizontal_clearance_ft": 0.0},
+                {"id": "PASS", "horizontal_clearance_ft": 4.0},
+            ],
+        )
+
+        missing_cover, true_zero_cover = result["segment_checks"]
+        self.assertIsNone(missing_cover["min_cover_ft"])
+        self.assertFalse(missing_cover["cover_evaluated"])
+        self.assertFalse(missing_cover["cover_valid"])
+        self.assertEqual(true_zero_cover["min_cover_ft"], 0.0)
+        self.assertTrue(true_zero_cover["cover_evaluated"])
+        self.assertFalse(true_zero_cover["cover_valid"])
+
+        missing, true_zero, passing = result["clearance_checks"]
+        self.assertFalse(missing["evaluated"])
+        self.assertFalse(missing["valid"])
+        self.assertTrue(true_zero["evaluated"])
+        self.assertFalse(true_zero["valid"])
+        self.assertTrue(passing["evaluated"])
+        self.assertTrue(passing["valid"])
+        self.assertFalse(result["valid"])
+
 
 if __name__ == "__main__":
     unittest.main()

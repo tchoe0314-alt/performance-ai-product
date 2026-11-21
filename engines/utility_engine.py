@@ -913,7 +913,8 @@ def validate_utility_coordination(
             for value in (rec.get("cover_start_ft"), rec.get("cover_end_ft"), rec.get("cover_ft"))
             if isinstance(value, (int, float)) and not isinstance(value, bool)
         ]
-        min_cover = min(cover_values) if cover_values else 0.0
+        min_cover = min(cover_values) if cover_values else None
+        cover_evaluated = min_cover is not None
         hydraulic_mode = str(rec.get("hydraulic_mode") or ("gravity" if system_type in UtilityEngine.GRAVITY_SYSTEMS else "pressure")).lower()
         system_modes[system_type] = hydraulic_mode
         slope = rec.get("slope_ft_ft")
@@ -925,12 +926,13 @@ def validate_utility_coordination(
             {
                 "segment": name,
                 "system_type": system_type,
-                "min_cover_ft": round(min_cover, 3),
-                "cover_valid": min_cover >= min_cover_ft,
+                "min_cover_ft": round(min_cover, 3) if min_cover is not None else None,
+                "cover_evaluated": cover_evaluated,
+                "cover_valid": cover_evaluated and min_cover >= min_cover_ft,
                 "hydraulic_mode": hydraulic_mode or "pressure",
                 "slope_ft_ft": slope,
                 "slope_valid": slope_valid,
-                "valid": min_cover >= min_cover_ft and slope_valid,
+                "valid": cover_evaluated and min_cover >= min_cover_ft and slope_valid,
             }
         )
 
@@ -981,6 +983,7 @@ def validate_utility_coordination(
         vertical = rec.get("vertical_clearance_ft")
         horizontal_value = float(horizontal) if isinstance(horizontal, (int, float)) and not isinstance(horizontal, bool) else None
         vertical_value = float(vertical) if isinstance(vertical, (int, float)) and not isinstance(vertical, bool) else None
+        clearance_evaluated = horizontal_value is not None or vertical_value is not None
         horizontal_valid = horizontal_value is None or horizontal_value >= min_horizontal_separation_ft
         vertical_valid = vertical_value is None or vertical_value >= min_vertical_separation_ft
         clearance_rows.append(
@@ -988,9 +991,10 @@ def validate_utility_coordination(
                 "check": str(rec.get("id") or rec.get("name") or f"CLR-{index}"),
                 "horizontal_clearance_ft": horizontal_value,
                 "vertical_clearance_ft": vertical_value,
+                "evaluated": clearance_evaluated,
                 "horizontal_valid": horizontal_valid,
                 "vertical_valid": vertical_valid,
-                "valid": horizontal_valid and vertical_valid,
+                "valid": clearance_evaluated and horizontal_valid and vertical_valid,
             }
         )
 
