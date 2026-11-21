@@ -1,6 +1,6 @@
 # Civora core acceptance run card
 
-Status: preparation only. This document does not record a test run or live acceptance.
+Status: preparation only, pinned to the pre-survey-integration product revision below. This document does not record a test run or live acceptance. A later integration candidate must replace the component identities in its run evidence rather than treating this historical pin as current.
 
 ## Sources and identity
 

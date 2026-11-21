@@ -2,11 +2,13 @@
   "schema_version": 1,
   "kind": "acceptance_preparation_not_a_run",
   "candidate": {
+    "status": "pinned_historical_pre_survey_intake",
     "git_revision": "944ce3455c9d18db7cbe88c35867d66bbd8da84e",
     "frontend_expected_revision": "944ce3455c9d18db7cbe88c35867d66bbd8da84e",
     "api_expected_revision": "944ce3455c9d18db7cbe88c35867d66bbd8da84e",
     "worker_expected_revision": "944ce3455c9d18db7cbe88c35867d66bbd8da84e",
-    "live_baseline_reverification_required": true
+    "live_baseline_reverification_required": true,
+    "note": "This is the frozen product revision used to author the run card. A later integration candidate must record its own exact frontend, API, and worker revisions before execution."
   },
   "suite_sources": {
     "suite_version": "2026-11-18.1",
