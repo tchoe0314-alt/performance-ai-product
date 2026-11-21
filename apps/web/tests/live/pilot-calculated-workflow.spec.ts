@@ -31,9 +31,9 @@ for (const { assisted, target } of [
   };
   const created = await request.post(`${api}/api/projects`, { headers, data: { name, project_input: withCanonicalCanvasSnapshot({
     input_mode: assisted ? "assisted" : "user", allow_ai_fill_for_blanks: assisted,
-    manual_fields: { project_name: name, units: "ft", project_type: "commercial_pad", building_width: small ? 60 : 160, building_depth: small ? 40 : 90,
+    manual_fields: { project_name: name, units: "ft", project_type: "commercial_pad", building_width: small ? 60 : 169, building_depth: small ? 40 : 85,
       terrain: "2% slope west to east", setback: 20, lot: { x: 0, y: 0, w: small ? 240 : 900, h: small ? 180 : 700 },
-      site_plan: { building_program_sf: small ? 2400 : 14400, building_count: 1, building_type: "office", parking_count: small ? 12 : 60 },
+      site_plan: { building_program_sf: small ? 2400 : 14365, building_count: 1, building_type: "office", parking_count: small ? 12 : 60 },
       pipe_network: target === "full" ? [{
         id: "SYN-STORM-PIPE-1", label: "Synthetic storm trunk", utility_type: "storm",
         points: [[600, 420], [760, 500]], path: [[600, 420], [760, 500]],
@@ -48,7 +48,8 @@ for (const { assisted, target } of [
       }] : [],
       site_objects: [
         { id: "parcel", label: "Synthetic parcel", type: "site", x: 0, y: 0, w: small ? 240 : 900, d: small ? 180 : 700, placed: true },
-        { id: "office", label: "Synthetic office", type: "office_building", x: small ? 80 : 300, y: small ? 40 : 120, w: small ? 60 : 160, d: small ? 40 : 90, placed: true },
+        { id: "office", label: "Synthetic office", type: "office_building", x: small ? 80 : 300, y: small ? 40 : 120, w: small ? 60 : 169, d: small ? 40 : 85, placed: true,
+          ...(small ? {} : { source: "manual_drawn", generated: true, meta: { generated_review_concept: true, requested_project_type: "commercial_pad" } }) },
         { id: "parking", label: "Synthetic parking", type: "parking", x: small ? 60 : 240, y: small ? 115 : 360, w: small ? 120 : 330, d: small ? 50 : 150, placed: true, meta: { requested_stalls: small ? 12 : 60 } },
       ] }, meta: {
         site_inputs: { site_alignment_locked: true },
@@ -64,7 +65,7 @@ for (const { assisted, target } of [
   await page.getByRole("button", { name: `Open project ${name}`, exact: true }).click();
   await expect(page.getByTestId("project-status-summary")).toContainText("Project opened");
   if (target === "full") {
-    // Prove this is the frozen 160 x 90 fixture before Generate. A similarly
+    // Prove this is the audited edited-concept 169 x 85 fixture before Generate. A similarly
     // named hosted QA project with only a 28,000-sf program auto-sizes a review
     // concept and is not evidence for this canonical edit/export contract.
     await openWorkspaceTool(page, "Draw");
@@ -73,8 +74,8 @@ for (const { assisted, target } of [
     const officeRow = page.getByTestId("object-manager-row").filter({ hasText: "Synthetic office" }).first();
     await officeRow.getByTestId("object-manager-select").click();
     await officeRow.getByTestId("object-manager-inspect").click();
-    await expect(page.getByTestId("selected-object-width-input")).toHaveValue("160");
-    await expect(page.getByTestId("selected-object-depth-input")).toHaveValue("90");
+    await expect(page.getByTestId("selected-object-width-input")).toHaveValue("169");
+    await expect(page.getByTestId("selected-object-depth-input")).toHaveValue("85");
     const stored = (await (await request.get(`${api}/api/projects/${project.project_id}`, { headers })).json()).project;
     expect(stored.project_input.manual_fields.pipe_network).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -224,7 +225,7 @@ for (const { assisted, target } of [
   await expect.poll(async () => Boolean((await saved()).latest_result?.final_plan), { timeout: 30_000 }).toBe(true);
   let checkpoint = await saved();
   const initialBuildingArea = checkpoint.latest_result.final_plan.meta.quantities?.totals?.building_area_sf;
-  if (target === "full") expect(initialBuildingArea).toBe(14_400);
+  if (target === "full") expect(initialBuildingArea).toBe(169 * 85);
   expect(checkpoint.result_freshness_v1.status).toBe("current");
   expect(checkpoint.latest_result.final_plan.meta.quantities).toBeTruthy();
   const calculationId = checkpoint.latest_result.metadata.calculation_save_v1.calculation_id;
@@ -314,10 +315,11 @@ for (const { assisted, target } of [
     const revisedOffice = revisedCheckpoint.latest_result.final_plan.actions.find((action: { canonical_source_id?: string; layer?: string }) => action.canonical_source_id === "office" && action.layer === "BUILDING");
     expect(revisedOffice?.width).toBe(revisedWidth);
     expect(revisedOffice?.height).toBe(originalDepth);
-    expect(revisedOffice.width * revisedOffice.height - originalWidth * originalDepth).toBe(900);
+    const expectedBuildingAreaDelta = 10 * originalDepth;
+    expect(revisedOffice.width * revisedOffice.height - originalWidth * originalDepth).toBe(expectedBuildingAreaDelta);
     const revisedBuildingArea = revisedCheckpoint.latest_result.final_plan.meta.quantities?.totals?.building_area_sf;
-    expect(revisedBuildingArea).toBe(15_300);
-    expect(revisedBuildingArea - initialBuildingArea).toBe(900);
+    expect(revisedBuildingArea).toBe(revisedWidth * originalDepth);
+    expect(revisedBuildingArea - initialBuildingArea).toBe(expectedBuildingAreaDelta);
     const revisedStages = revisedCheckpoint.latest_result.final_plan.meta.stage_results ?? [];
     for (const stageName of ["grading", "drainage", "storm_pipes", "sanitary", "utility_network"]) {
       const stages = revisedStages.filter((item: { stage_name?: string }) => item.stage_name === stageName);
