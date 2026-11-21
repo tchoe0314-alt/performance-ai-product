@@ -111,6 +111,22 @@ def test_missing_earthwork_and_rates_remain_missing_not_zero_or_implied():
     assert all(row["rate_provenance"]["status"] == "missing" for row in takeoff["pipes_by_system_and_diameter"])
 
 
+def test_measured_zero_earthwork_remains_current_instead_of_missing():
+    plan = _plan()
+    plan["meta"]["grading"]["earthwork"] = {"cut_cf": 0.0, "fill_cf": 0.0, "net_cf": 0.0}
+    takeoff, totals = _construction(plan)
+    assert takeoff["earthwork"] == {
+        "cut_cy": 0.0,
+        "fill_cy": 0.0,
+        "unit": "cy",
+        "status": "current",
+        "derivation_method": "canonical_cut_and_fill_cf_divided_by_27",
+        "haul_quantity_inferred": False,
+    }
+    assert totals["earthwork_cut_cy"] == 0.0
+    assert totals["earthwork_fill_cy"] == 0.0
+
+
 def test_explicit_rate_provenance_is_preserved_without_applying_it_to_other_groups():
     plan = _plan()
     plan["meta"]["storm_pipes"]["segments"][0].update({"unit_rate": 125, "rate_currency": "USD", "rate_source": "Approved synthetic price book ST-18"})

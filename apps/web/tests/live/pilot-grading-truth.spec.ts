@@ -31,6 +31,23 @@ test("known surface cells preserve signed cut/fill depth and exact volumes", () 
   expect(view.padTieIns).toEqual([]);
 });
 
+test("a genuinely balanced current surface remains measured zero instead of no-data", () => {
+  const view = buildDashboardGradingEarthworkUx({ lotBounds: { w: 10, h: 10 },
+    gradingSummary: { earthwork: { cut_cf: 0, fill_cf: 0, net_cf: 0 }, surface_model: {
+      schema_version: "surface_artifact_v1", model: "grid", source_type: "synthetic-controlled",
+      control_verified: true, bounds: [0, 0, 10, 10], surface_comparison: { cells: [
+        { x: 5, y: 5, width: 10, height: 10, existing_elevation_ft: 100, proposed_elevation_ft: 100, delta_ft: 0, cut_cf: 0, fill_cf: 0 },
+      ] }, contours: [], spot_elevations: [], slope_arrows: [], flow_paths: [] } },
+    cutFillNet: null, managerMetrics: {}, buildingPlacements: [], gradingBlocker: null,
+    siteTooLargeForGrading: false, gradingResultSummary: { sourceQuality: "synthetic-controlled" },
+    gradingSourceSummary: "Synthetic controlled surface", hasGradingSurface: true });
+  expect(view.surfaceModel?.comparisonCells).toEqual([expect.objectContaining({
+    mode: "balanced", existingElevationFt: 100, proposedElevationFt: 100, deltaFt: 0, cutCf: 0, fillCf: 0,
+  })]);
+  expect(view.haulBalance).toMatchObject({ cutCf: 0, fillCf: 0, netCf: 0 });
+  expect(view.surfaceComparison.deltaLabel).not.toBe("Surface comparison not calculated");
+});
+
 test("saved grading revision is hidden as soon as an edit makes grading stale", () => {
   expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "fresh", resultCurrent: true })).toBe(true);
   expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "not_generated", resultCurrent: true })).toBe(true);
