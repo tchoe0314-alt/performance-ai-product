@@ -26,6 +26,26 @@ test("imported parcel validator preserves concavity and blocks ambiguous or unsa
   expect(importedParcelBoundaryFromProjectInput(featureInput({ type: "Polygon", coordinates: [ring] }, "ft", [{ id: "parcel-b", properties: {}, geometry: { type: "Polygon", coordinates: [ring] } }])).status).toBe("ambiguous");
 });
 
+test("imported parcel validator rejects a preserved interior exclusion instead of flattening it", () => {
+  const outer = [[0, 0], [600, 0], [600, 400], [0, 400], [0, 0]];
+  const exclusion = [[280, 160], [320, 160], [320, 240], [280, 240], [280, 160]];
+  const corridor = { left: 260, right: 340, bottom: 190, top: 210 };
+  const overlapWidth = Math.max(0, Math.min(corridor.right, 320) - Math.max(corridor.left, 280));
+  const overlapHeight = Math.max(0, Math.min(corridor.top, 240) - Math.max(corridor.bottom, 160));
+  const ringArea = (ring: number[][]) => Math.abs(ring.slice(0, -1).reduce((sum, point, index) => {
+    const next = ring[index + 1];
+    return sum + point[0] * next[1] - next[0] * point[1];
+  }, 0) / 2);
+
+  expect(ringArea(outer) - ringArea(exclusion)).toBe(236_800);
+  expect(overlapWidth * overlapHeight).toBe(800);
+  expect([[260, 190], [340, 190], [340, 210], [260, 210]].every(([x, y]) => x < 280 || x > 320 || y < 160 || y > 240)).toBe(true);
+  expect(importedParcelBoundaryFromProjectInput(featureInput({ type: "Polygon", coordinates: [outer, exclusion] }, "ft"))).toEqual({
+    status: "invalid",
+    reason: "Parcel polygons with interior holes require explicit engineering review and cannot be flattened into one boundary.",
+  });
+});
+
 test("generated review concepts respect a concave parcel and an infeasible notch stays blocked", () => {
   const boundary: Array<[number, number]> = [
     [0, 0], [1000, 0], [1000, 700], [600, 700], [600, 620], [400, 620], [400, 700], [0, 700],
@@ -173,4 +193,37 @@ test("explicit imported parcel action replaces only after confirmation and persi
     await expect(page.getByTestId("survey-upload-status")).toContainText("Maximum allowed size is 1 MiB", { timeout: 30_000 });
     expect(JSON.stringify(await saved())).toBe(stableInput);
   }
+
+  const changedRing = [[1500, 2500], [1900, 2500], [1900, 2900], [1700, 2700], [1500, 2900], [1500, 2500]];
+  const changedGeojson = JSON.stringify({
+    type: "FeatureCollection",
+    features: [{ type: "Feature", id: "changed-concave-parcel", properties: { layer: "parcel" }, geometry: { type: "Polygon", coordinates: [changedRing] } }],
+  });
+  const abortUpload = async (route: import("@playwright/test").Route) => route.abort("connectionreset");
+  await page.route("**/api/upload-existing-conditions", abortUpload);
+  await uploadInput.setInputFiles({ name: "interrupted-concave.geojson", mimeType: "application/geo+json", buffer: Buffer.from(changedGeojson) });
+  await expect(page.getByTestId("survey-upload-status")).toContainText("Backend connection needs attention", { timeout: 30_000 });
+  expect(JSON.stringify(await saved())).toBe(stableInput);
+  await page.unroute("**/api/upload-existing-conditions", abortUpload);
+
+  let rejectedProjectSaves = 0;
+  const rejectTwoProjectSaves = async (route: import("@playwright/test").Route) => {
+    if (route.request().method() === "POST" && rejectedProjectSaves < 2) {
+      rejectedProjectSaves += 1;
+      await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: "Synthetic revision conflict" }) });
+      return;
+    }
+    await route.continue();
+  };
+  await page.route("**/api/projects", rejectTwoProjectSaves);
+  await uploadInput.setInputFiles({ name: "conflicted-concave.geojson", mimeType: "application/geo+json", buffer: Buffer.from(changedGeojson) });
+  await expect(page.getByTestId("survey-upload-status")).toContainText("project save failed. Active source unchanged", { timeout: 30_000 });
+  expect(rejectedProjectSaves).toBe(2);
+  expect(JSON.stringify(await saved())).toBe(stableInput);
+  await page.unroute("**/api/projects", rejectTwoProjectSaves);
+
+  await uploadInput.setInputFiles({ name: "conflicted-concave-retry.geojson", mimeType: "application/geo+json", buffer: Buffer.from(changedGeojson) });
+  await expect(page.getByTestId("survey-upload-status")).toContainText("imported", { timeout: 30_000 });
+  await expect.poll(async () => String((await saved()).meta?.site_inputs?.existing_conditions_import?.filename ?? ""), { timeout: 30_000 }).toBe("conflicted-concave-retry.geojson");
+  expect(JSON.stringify(await saved())).not.toBe(stableInput);
 });

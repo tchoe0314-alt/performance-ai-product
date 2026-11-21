@@ -136,6 +136,37 @@ class ExistingConditionsImporterTests(unittest.TestCase):
         self.assertEqual(signed_area, 5800.0)
         self.assertEqual(persisted[-3:], [[500020.0, 4100060.0], [500000.0, 4100040.0], [500000.0, 4100000.0]])
 
+    def test_projected_geojson_preserves_parcel_interior_ring_without_embedded_crs(self) -> None:
+        outer = [[0.0, 0.0], [600.0, 0.0], [600.0, 400.0], [0.0, 400.0], [0.0, 0.0]]
+        exclusion = [[280.0, 160.0], [320.0, 160.0], [320.0, 240.0], [280.0, 240.0], [280.0, 160.0]]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "parcel-with-exclusion.geojson"
+            path.write_text(json.dumps({
+                "type": "FeatureCollection",
+                "features": [{
+                    "type": "Feature",
+                    "id": "parcel-with-exclusion",
+                    "properties": {"layer": "parcel"},
+                    "geometry": {"type": "Polygon", "coordinates": [outer, exclusion]},
+                }],
+            }), encoding="utf-8")
+
+            imported = import_geojson(path, coordinate_system={
+                "epsg": "EPSG:2276", "units": "ft", "source": "synthetic projected fixture",
+            })
+            merged = merge_imported_existing_conditions(imported)
+
+        coordinates = merged["gis_layers"]["parcels"][0]["geometry"]["coordinates"]
+        ring_area = lambda ring: abs(sum(
+            ring[index][0] * ring[index + 1][1] - ring[index + 1][0] * ring[index][1]
+            for index in range(len(ring) - 1)
+        ) / 2.0)
+        self.assertTrue(imported["success"])
+        self.assertEqual(coordinates, [outer, exclusion])
+        self.assertEqual(ring_area(coordinates[0]) - ring_area(coordinates[1]), 236_800.0)
+        self.assertEqual(merged["coordinate_system"]["epsg"], "EPSG:2276")
+        self.assertEqual(merged["coordinate_system"]["units"], "ft")
+
     def test_import_surface_grid_csv_builds_grid_surface(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "surface.csv"

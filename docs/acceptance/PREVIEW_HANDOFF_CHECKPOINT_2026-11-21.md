@@ -24,7 +24,7 @@ The last complete live baseline remains the classification source. Focused local
 | PUB-01 | FAIL (historical live) | Public Support routing requires a fresh live rerun; no public route was exercised here. |
 | PRJ-01 | PARTIAL | Local create/save/reopen/copy/inaccessible-state checks exist; full access/archive matrix is incomplete. |
 | DRAW-01 | PARTIAL | Core and advanced drawing persistence have focused local coverage; complete advertised layer/topology/control acceptance is not rerun here. |
-| IMP-01 | PARTIAL | Synthetic survey/GeoJSON truth checks exist; CAD, oversize and duplicate-file behavior remain incomplete. |
+| IMP-01 | PARTIAL | Synthetic survey/GeoJSON truth, duplicate, unsupported, size-limit and interior-ring safeguards pass locally; CAD fidelity remains incomplete. |
 | GEN-01 | FAIL (historical live) | The original requested-building omission still needs the exact fresh live fixture rerun on the candidate. |
 | GEN-02 | PARTIAL | Irregular-boundary code/tests exist; fresh live containment evidence remains. |
 | CAN-01 | PARTIAL | Authored geometry and propagation pass focused/local checks; full candidate-to-live revision chain remains. |
@@ -39,7 +39,7 @@ The last complete live baseline remains the classification source. Focused local
 | UX-01 | PARTIAL | Compact canvas controls and focused navigation checks exist; complete visible-control reconciliation remains. |
 | UX-02 | PARTIAL | Public/narrow responsive checks exist; authenticated full workspace matrix remains. |
 | PERF-01 | PARTIAL | One authored recalculation completed in 104.009 s under the 120 s gate. This preview check proves 705-byte handoffs, not total runtime or p50/p95. |
-| REL-01 | PARTIAL | Save-conflict recovery, bounded polling, compact previews and stage-freshness pass locally; interruption/network/retry matrix remains. |
+| REL-01 | PARTIAL | Upload interruption and project-save conflict preserve the active source and a normal retry converges; calculation interruption/reconnect matrix remains. |
 | SEC-01 | BLOCKED | Requires approved multi-identity authorization and worker/artifact receipts. |
 | OPS-01 | BLOCKED | Requires isolated hosted rollback/restore and exact component receipts. |
 | DATA-01 | BLOCKED | Requires a dedicated lifecycle identity, retention criteria and deletion confirmation. |
@@ -64,8 +64,12 @@ GEN-02 now has a focused local delta. The normal import/apply action preserved a
 
 IMP-01 adverse recovery now has a focused local browser pass. Re-importing byte-identical GeoJSON leaves the saved project input and survey-control review state unchanged and says the source is already active. A PDF selected through the ordinary upload control is rejected as unsupported without a request or saved-state change. With the documented existing-conditions limit configured to 1 MiB, a 1 MiB-plus synthetic GeoJSON receives the exact maximum-size message and preserves the last valid source. TXT remains an advertised input type: arbitrary TXT is stored immutably as a failed metadata-only review source, not misclassified as an unsupported extension, and it cannot replace the active project source. CAD fidelity, duplicate-file storage lifecycle and production-size/load behavior remain outside this focused pass.
 
+An exact projected-feet Polygon fixture also proves the interior-ring boundary. The backend import was given CRS/units through its documented coordinate-system argument rather than a non-standard embedded projected GeoJSON `crs`; it preserved the 600×400-ft exterior and 40×80-ft exclusion verbatim, with a net 236,800-sf area. The frontend refuses to flatten that exclusion into the active one-ring site boundary and gives the explicit engineering-review message. The adverse corridor crosses 800 sf of the exclusion even though all four corridor corners lie outside the hole, demonstrating why exterior-only corner checks are insufficient. Hole-aware active boundaries remain unsupported; the safe behavior is explicit rejection with the current boundary unchanged.
+
+REL-01 now has a focused ordinary-upload recovery pass in the same disposable browser flow. A connection-reset upload reports backend attention and leaves the saved project byte-identical. A valid upload followed by two deterministic 409 project-save responses reports that the source was not applied and again leaves the saved input unchanged. Removing the fault and retrying once saves the new source normally. The check used the normal upload and save hooks and authoritative backend reads, not direct client-state assertions. It proves project-state convergence, not immutable-upload storage deduplication or recovery of a running engineering calculation.
+
 The earlier broad TypeScript check remains independently red and is not waived by these focused passes. Its concrete categories are a `PreviewRequestPayload.preview_mode` narrowing error in `PerformanceAIDashboardView`, legacy fixture typing in `generate-program-preservation`, optional slope assertions in `phase1-dependency-graph-contract`, and stale preview/result payload shapes in `result-hydration-polling-contract`. A first attempt without a local dependency link also produced dependency-resolution noise; the linked-dependency rerun above is the meaningful list. None of those errors originated in the IMP-01 files, whose targeted ESLint check passes. They require a separate bounded correction pass rather than being hidden in import acceptance.
 
 ## Next distinct case
 
-The highest-value distinct next case is **REL-01** import interruption recovery: simulate a dropped upload and a project-save conflict after a valid upload, then verify the active source remains current and one normal retry converges without duplicate project state. Server-side retention of byte-identical immutable upload files also needs an explicit lifecycle policy; this pass proves project idempotency, not storage deduplication.
+The highest-value distinct next reliability slice is a bounded running-calculation interruption/reconnect check: disconnect during polling, preserve the authoritative job and revision, reconnect without duplicate dispatch, and confirm stale output never becomes current. Server-side retention of byte-identical immutable upload files still needs an explicit lifecycle policy; the completed import pass proves project idempotency, not storage deduplication.
