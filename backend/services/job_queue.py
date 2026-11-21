@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Optional
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 import json
+import logging
 import os
 import threading
 import time
@@ -14,6 +15,39 @@ from .database import Database
 
 
 JobRunner = Callable[[Dict[str, Any]], Dict[str, Any]]
+LOGGER = logging.getLogger("uvicorn.error")
+
+_DIAGNOSTIC_STAGE_ORDER = (
+    "layout",
+    "grading",
+    "drainage",
+    "storm_pipes",
+    "sanitary",
+    "utility_network",
+    "coordination_resolution",
+    "earthwork",
+    "sheets",
+    "qa",
+)
+_DIAGNOSTIC_STAGES = {*_DIAGNOSTIC_STAGE_ORDER, "none", "unknown"}
+_DIAGNOSTIC_REASONS = {
+    "approval_queued",
+    "advanced",
+    "cas_rejected",
+    "repeated_checkpoint",
+}
+_DIAGNOSTIC_CHECKPOINT_CAUSES = {
+    "atomic_approval_accepted",
+    "atomic_approval_rejected",
+    "advanced_to_next_stage",
+    "approval_missing_at_runner",
+    "repeated_after_fresh_restart",
+    "repeated_after_job_checkpoint_resume",
+    "repeated_after_project_checkpoint_fallback",
+    "repeated_after_stale_checkpoint_restart",
+    "repeated_after_type_conflict_restart",
+    "unknown",
+}
 
 
 class JobCancelledError(RuntimeError):
@@ -26,6 +60,90 @@ def _now() -> float:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
+
+
+def _diagnostic_job_ids() -> set[str]:
+    try:
+        until = float(os.getenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH") or "")
+    except (TypeError, ValueError):
+        return set()
+    now = _now()
+    if until <= now or until > now + 900:
+        return set()
+    correlation_id = str(os.getenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_IDS") or "").strip()
+    if not correlation_id.startswith("job_") or len(correlation_id) > 80 or "," in correlation_id:
+        return set()
+    return {correlation_id}
+
+
+def _job_attempt(record: Dict[str, Any]) -> int:
+    meta = dict(dict(record.get("payload") or {}).get("meta") or {})
+    retry_history = [item for item in list(meta.get("job_retry_history") or []) if isinstance(item, dict)]
+    return max(1, min(99, len(retry_history) + 1))
+
+
+def _next_diagnostic_stage(stage_name: str) -> str:
+    try:
+        index = _DIAGNOSTIC_STAGE_ORDER.index(str(stage_name or "").strip())
+    except ValueError:
+        return "unknown"
+    return _DIAGNOSTIC_STAGE_ORDER[index + 1] if index + 1 < len(_DIAGNOSTIC_STAGE_ORDER) else "none"
+
+
+def _transition_reason_category(*, prior_stage: str, approved_stage: str, next_stage: str) -> str:
+    if prior_stage and prior_stage == approved_stage == next_stage:
+        return "repeated_checkpoint"
+    return "advanced"
+
+
+def _log_job_transition(
+    *,
+    record: Dict[str, Any],
+    prior_stage: str,
+    approved_stage: str,
+    next_stage: str,
+    reason_category: str,
+    checkpoint_cause: str = "unknown",
+) -> None:
+    """Emit a minimal, explicitly allowlisted lifecycle diagnostic.
+
+    Activation is confined to exact operational job IDs. No project, account,
+    geometry, payload, result, error text, or arbitrary metadata is accepted.
+    """
+    correlation_id = str(record.get("job_id") or "").strip()
+    if correlation_id not in _diagnostic_job_ids():
+        return
+    normalized = {
+        "prior_stage": str(prior_stage or "none").strip(),
+        "approved_stage": str(approved_stage or "none").strip(),
+        "next_stage": str(next_stage or "none").strip(),
+        "reason_category": str(reason_category or "").strip(),
+        "checkpoint_cause": str(checkpoint_cause or "unknown").strip(),
+    }
+    if any(normalized[key] not in _DIAGNOSTIC_STAGES for key in ("prior_stage", "approved_stage", "next_stage")):
+        return
+    if normalized["reason_category"] not in _DIAGNOSTIC_REASONS:
+        return
+    if normalized["checkpoint_cause"] not in _DIAGNOSTIC_CHECKPOINT_CAUSES:
+        return
+    LOGGER.info(
+        "JOB_LIFECYCLE %s",
+        json.dumps(
+            {
+                "approved_stage": normalized["approved_stage"],
+                "attempt": _job_attempt(record),
+                "checkpoint_cause": normalized["checkpoint_cause"],
+                "correlation_id": correlation_id,
+                "event": "approval_transition",
+                "next_stage": normalized["next_stage"],
+                "prior_stage": normalized["prior_stage"],
+                "reason_category": normalized["reason_category"],
+                "server_timestamp": round(_now(), 3),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    )
 
 
 def _json_safe(value: Any) -> Any:
@@ -603,12 +721,28 @@ class JobQueueService:
             result=result,
         )
         if not transitioned:
+            _log_job_transition(
+                record=record,
+                prior_stage=stage_name or "unknown",
+                approved_stage=stage_name or "unknown",
+                next_stage="unknown",
+                reason_category="cas_rejected",
+                checkpoint_cause="atomic_approval_rejected",
+            )
             current = self.get_job(user_id=user_id, job_id=job_id)
             if current is None:
                 return None
             if current["status"] != "awaiting_approval":
                 raise ValueError("This review checkpoint is no longer waiting for approval.")
             raise ValueError("The visible review checkpoint is stale. Refresh before continuing.")
+        _log_job_transition(
+            record=record,
+            prior_stage=stage_name or "unknown",
+            approved_stage=stage_name or "unknown",
+            next_stage=_next_diagnostic_stage(stage_name),
+            reason_category="approval_queued",
+            checkpoint_cause="atomic_approval_accepted",
+        )
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
         if self._worker_count > 0 and str(record.get("job_type") or "") in self._handlers:
@@ -1331,6 +1465,43 @@ class JobQueueService:
                         dict((result or {}).get("metadata") or {}).get("runtime_phase_checkpoint") or {}
                     )
                     stage_name = str(checkpoint.get("stage_name") or "").strip()
+                    prior_checkpoint = dict(
+                        dict((job.get("result") or {}).get("metadata") or {}).get("runtime_phase_checkpoint")
+                        or {}
+                    )
+                    prior_stage = str(prior_checkpoint.get("stage_name") or "").strip()
+                    approved_stages = {
+                        str(item).strip()
+                        for item in list(
+                            dict(
+                                dict(dict(job.get("payload") or {}).get("meta") or {}).get("orchestrator_meta")
+                                or {}
+                            )
+                            .get("runtime_approved_stages", [])
+                        )
+                        if str(item).strip()
+                    }
+                    approved_stage = prior_stage if prior_stage in approved_stages else "none"
+                    result_metadata = dict((result or {}).get("metadata") or {})
+                    checkpoint_cause = str(
+                        result_metadata.pop("_runtime_checkpoint_transition_cause_v1", "unknown")
+                        or "unknown"
+                    )
+                    if result is not None:
+                        result = dict(result)
+                        result["metadata"] = result_metadata
+                    _log_job_transition(
+                        record=job,
+                        prior_stage=prior_stage or "unknown",
+                        approved_stage=approved_stage,
+                        next_stage=stage_name or "unknown",
+                        reason_category=_transition_reason_category(
+                            prior_stage=prior_stage,
+                            approved_stage=approved_stage,
+                            next_stage=stage_name,
+                        ),
+                        checkpoint_cause=checkpoint_cause,
+                    )
                     checkpoint_message = str(checkpoint.get("message") or "").strip()
                     detail = (
                         f"{checkpoint_message} Review it and approve when you want to continue."

@@ -1,4 +1,7 @@
+import json
+import logging
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -124,8 +127,11 @@ def test_double_continue_consumes_checkpoint_once(tmp_path, monkeypatch):
     queue.shutdown()
 
 
-def test_continue_does_not_overwrite_newer_claimed_generation(tmp_path, monkeypatch):
+def test_continue_does_not_overwrite_newer_claimed_generation(tmp_path, monkeypatch, caplog):
     _db, queue, user_id, job_id = _awaiting_job(tmp_path)
+    monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_IDS", job_id)
+    monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH", str(time.time() + 300))
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
     original_detail = queue.get_job_detail
     approval_read = threading.Event()
     release_continue = threading.Event()
@@ -169,4 +175,13 @@ def test_continue_does_not_overwrite_newer_claimed_generation(tmp_path, monkeypa
     assert record["stage"] == "Utility"
     assert record["stage_detail"] == "Newer generation claimed."
     assert record["payload"]["meta"]["orchestrator_meta"].get("runtime_approved_stages") in (None, [])
+    events = [
+        json.loads(item.getMessage().split("JOB_LIFECYCLE ", 1)[1])
+        for item in caplog.records
+        if "JOB_LIFECYCLE " in item.getMessage()
+    ]
+    assert [(item["reason_category"], item["prior_stage"], item["approved_stage"], item["next_stage"]) for item in events] == [
+        ("cas_rejected", "sanitary", "sanitary", "unknown")
+    ]
+    assert events[0]["checkpoint_cause"] == "atomic_approval_rejected"
     queue.shutdown()

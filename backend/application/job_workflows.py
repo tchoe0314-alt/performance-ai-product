@@ -1455,6 +1455,10 @@ def build_orchestrate_job_runner(
             or dict(dict(job_result.get("metadata") or {}).get("run_summary") or {}).get("phase_checkpoints")
             or {}
         )
+        prior_runtime_checkpoint = dict(
+            dict(job_result.get("metadata") or {}).get("runtime_phase_checkpoint") or {}
+        )
+        prior_runtime_stage = safe_str(prior_runtime_checkpoint.get("stage_name"))
         resume_result: Dict[str, Any] = {}
         resume_final_plan: Dict[str, Any] = {}
         stage_statuses: Dict[str, Any] = {}
@@ -1620,6 +1624,23 @@ def build_orchestrate_job_runner(
             enriched["metadata"] = enriched_metadata
         runtime_checkpoint = dict(enriched_metadata.get("runtime_phase_checkpoint") or {})
         stage_name = str(runtime_checkpoint.get("stage_name") or "")
+        if prior_runtime_stage:
+            if stage_name != prior_runtime_stage:
+                checkpoint_transition_cause = "advanced_to_next_stage"
+            elif prior_runtime_stage not in approved_stages:
+                checkpoint_transition_cause = "approval_missing_at_runner"
+            elif resume_result is job_result:
+                checkpoint_transition_cause = "repeated_after_job_checkpoint_resume"
+            elif resume_final_plan:
+                checkpoint_transition_cause = "repeated_after_project_checkpoint_fallback"
+            elif resume_type_conflict:
+                checkpoint_transition_cause = "repeated_after_type_conflict_restart"
+            elif job_final_plan:
+                checkpoint_transition_cause = "repeated_after_stale_checkpoint_restart"
+            else:
+                checkpoint_transition_cause = "repeated_after_fresh_restart"
+            enriched_metadata["_runtime_checkpoint_transition_cause_v1"] = checkpoint_transition_cause
+            enriched["metadata"] = enriched_metadata
         runtime_should_continue = bool(enriched_metadata.get("runtime_should_continue"))
         if stage_name in {"coordination_resolution", "earthwork", "sheets", "qa"}:
             runtime_should_continue = False
