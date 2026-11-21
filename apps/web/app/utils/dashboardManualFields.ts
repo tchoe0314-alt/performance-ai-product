@@ -422,15 +422,38 @@ export function buildDashboardManualFields({
     }, 0);
     const resolvedParkingCount =
       parkingCountValue !== null ? parkingCountValue : parkingFromPlacements > 0 ? parkingFromPlacements : null;
-    const requestedOfficeArea = buildingOverrides
-      .map((placement) => Number(placement.meta?.requested_area_sf))
-      .find((value) => Number.isFinite(value) && value > 0);
+    const requestedBuilding = buildingOverrides
+      .map((placement) => ({
+        area: Number(placement.meta?.requested_area_sf),
+        type:
+          String(placement.meta?.building_use || "").trim() ||
+          (placement.type === "industrial_building"
+            ? "industrial"
+            : placement.type === "office_building"
+              ? "office"
+              : placement.type === "retail_building"
+                ? "retail"
+                : ""),
+      }))
+      .find((value) => Number.isFinite(value.area) && value.area > 0);
+    const requestedBuildingArea = requestedBuilding?.area;
+    const requestedBuildingType = requestedBuilding?.type ||
+      (nextProjectType === "industrial_site"
+        ? "industrial"
+        : nextProjectType === "commercial_pad"
+          ? "commercial"
+          : "");
 
-    if (resolvedParkingCount !== null || requestedOfficeArea || buildingCountValue !== null) {
+    if (resolvedParkingCount !== null || requestedBuildingArea || buildingCountValue !== null) {
       manualFields.site_plan = {
         ...(resolvedParkingCount !== null ? { parking_count: resolvedParkingCount } : {}),
         ...(buildingCountValue !== null ? { building_count: buildingCountValue } : {}),
-        ...(requestedOfficeArea ? { building_program_sf: requestedOfficeArea, building_type: "office" } : {}),
+        ...(requestedBuildingArea
+          ? {
+              building_program_sf: requestedBuildingArea,
+              ...(requestedBuildingType ? { building_type: requestedBuildingType } : {}),
+            }
+          : {}),
       };
     }
 

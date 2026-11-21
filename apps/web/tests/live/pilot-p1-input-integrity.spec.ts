@@ -111,6 +111,52 @@ test("an edited generated concept keeps its authored width through recalculation
   });
 });
 
+test("generated program compatibility preserves the selected building use", () => {
+  const industrial = fields({
+    nextProjectType: "industrial_site",
+    nextBuildingCount: "1",
+    nextParkingCount: "48",
+    buildingPlacements: [{
+      id: "industrial-program",
+      label: "Review industrial building concept - 14,400 sf",
+      type: "industrial_building",
+      x: 100,
+      y: 100,
+      w: 180,
+      d: 80,
+      placed: true,
+      source: "generated",
+      generated: true,
+      meta: {
+        requested_area_sf: 14_400,
+        requested_project_type: "industrial_site",
+        building_use: "industrial",
+      },
+    }],
+  });
+  expect(industrial.site_plan).toMatchObject({
+    building_program_sf: 14_400,
+    building_type: "industrial",
+    parking_count: 48,
+  });
+
+  const office = fields({
+    nextProjectType: "office_site",
+    buildingPlacements: [{
+      id: "office-program",
+      label: "Review office building concept",
+      type: "office_building",
+      x: 0,
+      y: 0,
+      w: 100,
+      d: 100,
+      placed: true,
+      meta: { requested_area_sf: 10_000 },
+    }],
+  });
+  expect(office.site_plan).toMatchObject({ building_program_sf: 10_000, building_type: "office" });
+});
+
 test("stale reviewed pipe evidence cannot fall back to an undetailed compatibility pipe", () => {
   const inlet = { id: "inlet", label: "Inlet", type: "inlet" as const, x: 0, y: 0, w: 1, d: 1, placed: true, source: "manual_drawn" as const };
   const outfall = { id: "outfall", label: "Outfall", type: "outfall" as const, x: 30, y: 40, w: 1, d: 1, placed: true, source: "manual_drawn" as const };

@@ -49,6 +49,17 @@ The last complete live baseline remains the classification source. Focused local
 
 Major-case totals are therefore unchanged by this focused delta: **0 full PASS, 2 historical FAIL, 14 PARTIAL, 10 BLOCKED**. There are no `NOT_RUN` case labels, but many individual criteria remain unexecuted as listed.
 
+## Local case results versus historical live status
+
+The aggregate above is the last complete **live** classification. It must not erase later, narrower local case results, and those local results must not be presented as live acceptance:
+
+- `PRJ-01`: local synthetic case PASS at `d1cdc517` for project duplication and inaccessible-project state clearing. Archive/role/live coverage remains outside that local scope.
+- `REV-01`: local focused case PASS at product `ed10548c` with acceptance alignment recorded at `e1252f00`; it covers Review navigation/currentness and normal local downloads, not every hosted failure/history state.
+- `UX-01`: local focused case PASS at `e1252f00` for the card's desktop interaction/navigation assertions. Full live control inventory and supported-browser coverage remain separate.
+- `GEN-01`: local focused PASS on the descendant of `05d6407c` recorded by the next commit. A genuinely blank Industrial project generated one 14,400-sf Industrial review building and a 48-stall parking concept, preserved `industrial_site` through the real worker, and stopped at an explicit Grading approval. The prior live GEN-01 failure remains historical until this exact case runs live.
+
+The GEN-01 run also truthfully retained a failed Layout checkpoint (`spacing and overlap checks failed`) and review-only generated objects. This is not engineering acceptance and it does not make downstream grading, drainage, utilities, Review, or Deliver pass.
+
 ## Next distinct case
 
 The highest-value distinct next case is **GEN-01** with a fresh, disposable Industrial fixture: verify the requested building/program survives Generate, save/reopen and the first review checkpoint. That directly adjudicates the historical live failure without repeating this preview handoff test or requiring native Civil 3D, billing, or account changes.
