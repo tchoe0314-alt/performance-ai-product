@@ -154,4 +154,23 @@ test("explicit imported parcel action replaces only after confirmation and persi
   expect(reopened.manual_fields?.site_objects?.filter(item => item.type === "site")).toHaveLength(1);
   expect(reopened.manual_fields?.site_objects?.find(item => item.type === "site")?.geometry).toEqual(expected);
   expect(reopened.meta?.site_inputs?.site_boundary_source).toBe("imported");
+
+  const stableInput = JSON.stringify(reopened);
+  await openWorkspaceTool(page, "Setup");
+  await page.getByTestId("workspace-stage-panel").selectOption("import_survey");
+  const uploadInput = page.locator('input[type="file"][accept*=".geojson"]');
+  await uploadInput.setInputFiles({ name: "concave-parcel-copy.geojson", mimeType: "application/geo+json", buffer: Buffer.from(geojson) });
+  await expect(page.getByTestId("survey-upload-status")).toContainText("Duplicate source unchanged", { timeout: 30_000 });
+  expect(JSON.stringify(await saved())).toBe(stableInput);
+
+  await uploadInput.setInputFiles({ name: "ordinary-unsupported.pdf", mimeType: "application/pdf", buffer: Buffer.from("synthetic unsupported input") });
+  await expect(page.getByTestId("survey-upload-status")).toContainText("Unsupported file", { timeout: 30_000 });
+  expect(JSON.stringify(await saved())).toBe(stableInput);
+
+  if (process.env.CIVORA_TEST_SMALL_UPLOAD_LIMIT === "1") {
+    const oversized = Buffer.concat([Buffer.from(geojson), Buffer.alloc(1024 * 1024, 32)]);
+    await uploadInput.setInputFiles({ name: "oversized-synthetic.geojson", mimeType: "application/geo+json", buffer: oversized });
+    await expect(page.getByTestId("survey-upload-status")).toContainText("Maximum allowed size is 1 MiB", { timeout: 30_000 });
+    expect(JSON.stringify(await saved())).toBe(stableInput);
+  }
 });

@@ -166,18 +166,21 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
             )
             self.assertFalse(replacement["survey_control_evidence_review"]["grading_authorized"])
 
-    def test_upload_existing_conditions_rejects_unsupported_extension_before_storage(self):
+    def test_upload_existing_conditions_keeps_invalid_txt_as_failed_review_source(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             upload = UploadFile(filename="notes.txt", file=BytesIO(b"not source data"))
-            with self.assertRaises(HTTPException) as ctx:
-                upload_existing_conditions_file(
-                    upload_dir=Path(tmpdir),
-                    file=upload,
-                    current_user={"user_id": "u1"},
-                )
+            result = upload_existing_conditions_file(
+                upload_dir=Path(tmpdir),
+                file=upload,
+                current_user={"user_id": "u1"},
+            )
 
-            self.assertEqual(ctx.exception.status_code, 415)
-            self.assertFalse((Path(tmpdir) / "u1_notes.txt").exists())
+            self.assertFalse(result["success"])
+            self.assertEqual(result["file_type"], "txt")
+            self.assertIn("no supported import data", result["message"])
+            self.assertTrue((Path(tmpdir) / result["stored_filename"]).exists())
+            self.assertFalse(result["imports"][0]["canonical_import"]["canonicalized"])
+            self.assertTrue(result["imports"][0]["canonical_import"]["metadata_only"])
 
     def test_upload_existing_conditions_reports_dependency_blocked_file_as_failed_source(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -18,7 +18,7 @@ export function panelErrorMessage(error: unknown, fallback: string): string {
   if (kind === "backend_unreachable") return "Backend connection needs attention. Check the backend connection, then retry.";
   if (kind === "api_blocked") return "Backend access needs attention. Check account or app/backend access settings, then retry.";
   if (kind === "rate_limited") return "Rate limited. Wait about a minute, then retry.";
-  if (kind === "upload_too_large") return "Upload too large. Choose a smaller file or compress it, then retry.";
+  if (kind === "upload_too_large") return apiErrorMessage(error, "Upload too large. Choose a smaller file or compress it, then retry.");
   if (kind === "unsupported_file") return "Unsupported file. Use an accepted file type for this upload.";
   return apiErrorMessage(error, fallback);
 }

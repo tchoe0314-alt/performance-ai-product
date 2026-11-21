@@ -146,10 +146,6 @@ export function useDashboardExistingConditionsUpload({
   }, [setStatusMessage, token]);
 
   const uploadExistingConditions = useCallback(async (file: File) => {
-    surveyReviewRequestRef.current += 1;
-    setSurveyReviewPending(false);
-    setSurveyReviewError("");
-    setSurveyReviewResult(null);
     const supportedSurveyPattern = /\.(csv|txt|geojson|json|dxf|shp|zip|gpkg|tif|tiff|las|laz|xml|landxml)$/i;
     if (!supportedSurveyPattern.test(file.name)) {
       const message = "Survey/topo upload failed: Unsupported file. Use CSV/TXT, DXF, LAS/LAZ, GeoTIFF, GeoJSON, SHP/ZIP, GPKG, XML, or LandXML.";
@@ -191,6 +187,19 @@ export function useDashboardExistingConditionsUpload({
         return;
       }
       const currentInput = currentProject?.project_input ?? payloadPreview;
+      const activeImport = currentInput?.meta?.site_inputs?.existing_conditions_import;
+      const activeDigest = String(activeImport?.source_sha256 ?? currentInput?.meta?.site_inputs?.survey_file?.source_sha256 ?? "").trim().toLowerCase();
+      const uploadedDigest = String(data.source_sha256 ?? "").trim().toLowerCase();
+      if (activeDigest && uploadedDigest && activeDigest === uploadedDigest) {
+        const message = `Duplicate source unchanged: ${file.name} matches the active source. Project data and review state were not changed.`;
+        setSurveyUploadMessage(message);
+        setStatusMessage(message);
+        return;
+      }
+      surveyReviewRequestRef.current += 1;
+      setSurveyReviewPending(false);
+      setSurveyReviewError("");
+      setSurveyReviewResult(null);
       const nextSiteInputs = {
         ...(currentInput?.meta?.site_inputs ?? {}),
         survey_file: {
