@@ -119,6 +119,8 @@ export function useDashboardExistingConditionsUpload({
           filename: data.filename || file.name,
           stored_filename: storedFilename,
           survey_url: data.file_url || "",
+          source_sha256: data.source_sha256 || "",
+          source_reference: data.uploaded_source_reference ?? {},
         },
         survey_file_type: data.file_type,
         survey_parse_success: Boolean(data.success && surveyPoints.length),
@@ -128,10 +130,14 @@ export function useDashboardExistingConditionsUpload({
         survey_bounds: (survey.bounds as SiteInputs["survey_bounds"]) ?? null,
         survey_elevation_range: (survey.elevation_range as SiteInputs["survey_elevation_range"]) ?? null,
         ...surveyProvenance,
+        survey_control_evidence_review: data.survey_control_evidence_review ?? {},
         use_survey_for_grading: useSurveyForGrading,
             existing_conditions_import: {
               filename: data.filename || file.name,
               stored_filename: storedFilename,
+              source_sha256: data.source_sha256 || "",
+              uploaded_source_reference: data.uploaded_source_reference ?? {},
+              survey_control_evidence_review: data.survey_control_evidence_review ?? {},
               file_type: data.file_type,
               source_effect_rows: sourceEffectRows,
               import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix ?? [],
@@ -153,6 +159,7 @@ export function useDashboardExistingConditionsUpload({
           existing_conditions_summary: data.existing_conditions_summary,
           canonical_existing_conditions: data.canonical_existing_conditions,
           canonical_existing_conditions_model: data.canonical_existing_conditions?.canonical_existing_conditions_model,
+          survey_control_evidence_review: data.survey_control_evidence_review,
           import_matrix: data.import_matrix ?? data.import_validation?.import_matrix ?? data.import_validation?.importer_production_matrix,
           canonical_vs_metadata_only: data.canonical_vs_metadata_only ?? data.import_validation?.canonical_vs_metadata_only,
         },
@@ -185,9 +192,9 @@ export function useDashboardExistingConditionsUpload({
       });
       appendChatMessage("assistant", summarizeExistingConditionsUpload(data), "status");
       setSurveyUploadMessage(
-        data.existing_conditions_package?.status === "ready"
-          ? "Survey/topo imported and ready for review."
-          : "Survey/topo imported; exact review needs are recorded.",
+        data.survey_control_evidence_review?.status === "complete_for_review"
+          ? "Survey/topo source and control metadata match for review only; this does not authorize grading."
+          : "Survey/topo imported for review only; exact control gaps or mismatches are recorded.",
       );
       setStatusMessage(
         data.existing_conditions_package?.status === "ready"

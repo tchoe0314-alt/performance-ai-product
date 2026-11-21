@@ -1524,6 +1524,8 @@ export type SurveyFileInput = {
   filename?: string;
   stored_filename?: string;
   survey_url?: string;
+  source_sha256?: string;
+  source_reference?: Record<string, unknown>;
 };
 
 export type MapSnapshotInput = {
@@ -1674,6 +1676,7 @@ export type SiteInputs = {
   survey_elevation_range?: { min?: number; max?: number } | null;
   survey_coordinate_system?: Record<string, unknown>;
   survey_control_package?: Record<string, unknown>;
+  survey_control_evidence_review?: Record<string, unknown>;
   survey_grading_eligibility?: {
     review_context_usable?: boolean;
     accepted_grading_input?: boolean;
@@ -2303,6 +2306,9 @@ export type UploadExistingConditionsResponse = {
   message?: string;
   filename?: string;
   stored_filename?: string;
+  source_sha256?: string;
+  uploaded_source_reference?: Record<string, unknown>;
+  survey_control_evidence_review?: Record<string, unknown>;
   file_url?: string;
   file_type?: string;
   imports?: Array<Record<string, unknown>>;

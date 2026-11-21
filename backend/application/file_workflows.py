@@ -34,6 +34,7 @@ from backend.planning.gis_provider_registry import (
     build_provider_registry,
     check_registry_health,
 )
+from backend.planning.survey_control import validate_survey_control_evidence_for_review
 
 
 class AuthStoreProtocol(Protocol):
@@ -295,6 +296,7 @@ def upload_existing_conditions_file(
     target = upload_dir / stored_name
 
     _copy_upload_with_limit(file=file, target=target, max_bytes=_upload_limit_bytes("existing_conditions"))
+    source_sha256 = _source_sha256(target)
 
     suffix = target.suffix.lower()
     imports = []
@@ -366,6 +368,29 @@ def upload_existing_conditions_file(
     package = build_existing_conditions_package({"meta": package_meta})
     survey_control = dict(package.get("survey_control_package") or {})
     coordinate_system = dict(merged.get("coordinate_system") or {})
+    uploaded_source_reference = {
+        "source_id": stored_name,
+        "source": safe_name,
+        "stored_filename": stored_name,
+        "source_digest": f"sha256:{source_sha256}",
+        "owner_user_id": str(current_user["user_id"]),
+        "immutable": True,
+    }
+    survey_control_evidence_review = validate_survey_control_evidence_for_review(
+        {
+            **survey_control,
+            "survey_source": safe_name,
+            "source_digest": uploaded_source_reference["source_digest"],
+        },
+        imported_source={
+            **uploaded_source_reference,
+            "coordinate_system": coordinate_system,
+            "horizontal_datum": survey_control.get("horizontal_datum"),
+            "vertical_datum": survey_control.get("vertical_datum"),
+            "benchmark_id": survey_control.get("benchmark_id"),
+            "benchmark_elevation": survey_control.get("benchmark_elevation"),
+        },
+    )
     survey_point_count = int((merged.get("survey") or {}).get("point_count") or 0)
     grading_input_eligibility = {
         "review_context_usable": survey_point_count >= 3,
@@ -383,7 +408,9 @@ def upload_existing_conditions_file(
         "message": "Existing conditions uploaded." if merged.get("success") else "Existing conditions stored, but no supported import data was recognized.",
         "filename": safe_name,
         "stored_filename": stored_name,
-        "source_sha256": _source_sha256(target),
+        "source_sha256": source_sha256,
+        "uploaded_source_reference": uploaded_source_reference,
+        "survey_control_evidence_review": survey_control_evidence_review,
         "file_url": f"/api/uploads/{stored_name}",
         "file_type": suffix.lstrip("."),
         "format_classification": classification,
@@ -398,6 +425,8 @@ def upload_existing_conditions_file(
             "metadata_only_sources": merged.get("metadata_only_sources"),
             "canonical_existing_conditions_model": merged.get("canonical_existing_conditions_model"),
             "survey_control_package": survey_control,
+            "uploaded_source_reference": uploaded_source_reference,
+            "survey_control_evidence_review": survey_control_evidence_review,
             "grading_input_eligibility": grading_input_eligibility,
         },
         "import_validation": merged.get("import_validation"),

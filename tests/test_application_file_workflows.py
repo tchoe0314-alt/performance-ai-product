@@ -132,6 +132,39 @@ class ApplicationFileWorkflowsTest(unittest.TestCase):
             self.assertFalse(result["import_matrix"][0]["production_usable"])
             self.assertIn("Survey import needs benchmark evidence before it is production-usable.", result["import_matrix"][0]["blocker_messages"])
             self.assertEqual(result["canonical_vs_metadata_only"]["canonical_source_count"], 1)
+            self.assertEqual(
+                result["uploaded_source_reference"]["source_digest"],
+                f"sha256:{result['source_sha256']}",
+            )
+            self.assertTrue(result["uploaded_source_reference"]["immutable"])
+            self.assertTrue(result["survey_control_evidence_review"]["review_only"])
+            self.assertFalse(result["survey_control_evidence_review"]["grading_authorized"])
+
+    def test_replacement_survey_gets_distinct_source_binding_and_review(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            first = upload_existing_conditions_file(
+                upload_dir=root,
+                file=UploadFile(filename="survey.csv", file=BytesIO(b"x,y,z\n0,0,1\n1,0,2\n0,1,3\n")),
+                current_user={"user_id": "u1"},
+            )
+            replacement = upload_existing_conditions_file(
+                upload_dir=root,
+                file=UploadFile(filename="survey.csv", file=BytesIO(b"x,y,z\n10,10,4\n11,10,5\n10,11,6\n")),
+                current_user={"user_id": "u1"},
+            )
+
+            self.assertNotEqual(first["stored_filename"], replacement["stored_filename"])
+            self.assertNotEqual(first["source_sha256"], replacement["source_sha256"])
+            self.assertNotEqual(
+                first["survey_control_evidence_review"]["source_digest"],
+                replacement["survey_control_evidence_review"]["source_digest"],
+            )
+            self.assertEqual(
+                replacement["survey_control_evidence_review"]["source_digest"],
+                replacement["uploaded_source_reference"]["source_digest"],
+            )
+            self.assertFalse(replacement["survey_control_evidence_review"]["grading_authorized"])
 
     def test_upload_existing_conditions_rejects_unsupported_extension_before_storage(self):
         with tempfile.TemporaryDirectory() as tmpdir:
