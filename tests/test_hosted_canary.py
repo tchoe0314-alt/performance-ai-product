@@ -62,6 +62,7 @@ def _report(**overrides):
         "api_base_url": "https://api.civora.example",
         "expected_frontend_revision": "abcdef1234567890",
         "expected_backend_revision": "abcdef1234567890",
+        "expected_worker_revision": "abcdef1234567890",
         "expected_product_mode": "private_alpha",
         "frontend": {"status": 200, "body_has_civora": True, "revision": "abcdef1234567890"},
         "health": _health(),
@@ -69,6 +70,12 @@ def _report(**overrides):
         "cors": {"status": 200, "allow_origin": "https://civora.example"},
         "unauthenticated_runtime_status": 401,
         "unauthenticated_production_env_status": 401,
+        "worker_identity": {
+            "status": "ok",
+            "service": "civora-job-worker",
+            "role": "worker",
+            "revision": "abcdef1234567890",
+        },
     }
     values.update(overrides)
     return build_hosted_canary_report(**values)
@@ -91,7 +98,9 @@ class HostedCanaryTests(unittest.TestCase):
                 report = _capture(frontend_url="https://civora.example", api_base_url="https://api.civora.example",
                                   expected_frontend_revision="abcdef1234567890",
                                   expected_backend_revision="abcdef1234567890", expected_product_mode="private_alpha",
-                                  timeout=1, require_authenticated=False)
+                                  expected_worker_revision="abcdef1234567890",
+                                  timeout=1, require_authenticated=False,
+                                  worker_identity={"status": "ok", "service": "civora-job-worker", "role": "worker", "revision": "abcdef1234567890"})
             self.assertTrue(report["checks"]["health_success"])
             self.assertFalse(report["success"])
             self.assertEqual(report["frontend_revision"], "")
@@ -126,6 +135,64 @@ class HostedCanaryTests(unittest.TestCase):
         codes = {item["code"] for item in report["public_blockers"]}
         self.assertIn("hosted_revision_mismatch", codes)
         self.assertIn("cors_not_ready", codes)
+
+    def test_worker_revision_mismatch_is_blocking(self) -> None:
+        report = _report(worker_identity={
+            "status": "ok",
+            "service": "civora-job-worker",
+            "role": "worker",
+            "revision": "9999999999999999",
+        })
+
+        self.assertFalse(report["success"])
+        self.assertEqual(report["worker_checks_status"], "blocked")
+        self.assertFalse(report["worker_revision_matches"])
+        self.assertIn("worker_revision_mismatch", {item["code"] for item in report["public_blockers"]})
+
+    def test_missing_worker_identity_fails_closed(self) -> None:
+        report = _report(worker_identity=None)
+
+        self.assertFalse(report["success"])
+        self.assertEqual(report["worker_checks_status"], "blocked")
+        self.assertFalse(report["checks"]["worker_identity_captured"])
+        self.assertIn("worker_identity_unavailable", {item["code"] for item in report["public_blockers"]})
+
+    def test_capture_accepts_worker_identity_only_from_protected_runtime(self) -> None:
+        runtime = _runtime()
+        runtime["worker_identity"] = {
+            "status": "ok",
+            "service": "civora-job-worker",
+            "role": "worker",
+            "revision": "abcdef1234567890",
+        }
+        captures = [
+            (200, {}, b"Civora", 1),
+            (200, {}, b'{"service":"civora-web","revision":"abcdef1234567890"}', 1),
+            (200, {}, json.dumps(_health()).encode(), 1),
+            (200, {}, b'{"success":true,"auth_enabled":true}', 1),
+            (401, {}, b"{}", 1),
+            (401, {}, b"{}", 1),
+            (200, {"access-control-allow-origin": "https://civora.example"}, b"", 1),
+            (200, {}, b'{"token":"synthetic-token"}', 1),
+            (200, {}, json.dumps(runtime).encode(), 1),
+            (200, {}, b"{}", 1),
+        ]
+        with patch.dict("os.environ", {"CIVORA_CANARY_EMAIL": "qa@example.test", "CIVORA_CANARY_PASSWORD": "synthetic"}), \
+             patch("backend.scripts.run_hosted_canary._request", side_effect=captures):
+            report = _capture(
+                frontend_url="https://civora.example",
+                api_base_url="https://api.civora.example",
+                expected_frontend_revision="abcdef1234567890",
+                expected_backend_revision="abcdef1234567890",
+                expected_worker_revision="abcdef1234567890",
+                expected_product_mode="private_alpha",
+                timeout=1,
+                require_authenticated=True,
+            )
+
+        self.assertTrue(report["success"])
+        self.assertEqual(report["worker_checks_status"], "ready")
+        self.assertTrue(report["checks"]["worker_identity_captured"])
 
     def test_required_authenticated_canary_does_not_pass_without_evidence(self) -> None:
         report = _report(require_authenticated=True)

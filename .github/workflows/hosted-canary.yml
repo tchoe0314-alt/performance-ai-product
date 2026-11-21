@@ -11,6 +11,10 @@ on:
         description: Full deployed backend commit (blank uses approved backend revision)
         required: false
         type: string
+      expected_worker_revision:
+        description: Full deployed worker commit (blank uses approved worker revision)
+        required: false
+        type: string
       require_authenticated:
         description: Require configured authenticated canary credentials
         required: false
@@ -44,16 +48,19 @@ jobs:
         env:
           CANARY_EXPECTED_FRONTEND_REVISION: ${{ inputs.expected_frontend_revision }}
           CANARY_EXPECTED_BACKEND_REVISION: ${{ inputs.expected_backend_revision }}
+          CANARY_EXPECTED_WORKER_REVISION: ${{ inputs.expected_worker_revision }}
           CIVORA_CANARY_EMAIL: ${{ secrets.CIVORA_CANARY_EMAIL }}
           CIVORA_CANARY_PASSWORD: ${{ secrets.CIVORA_CANARY_PASSWORD }}
         run: |
           expected_frontend_revision="${CANARY_EXPECTED_FRONTEND_REVISION:-$(cat .github/production-frontend-revision.txt)}"
           expected_backend_revision="${CANARY_EXPECTED_BACKEND_REVISION:-$(cat .github/production-backend-revision.txt)}"
+          expected_worker_revision="${CANARY_EXPECTED_WORKER_REVISION:-$(cat .github/production-worker-revision.txt)}"
           args=(
             --frontend-url https://civoraai.com
             --api-base-url https://api.civoraai.com
             --expected-frontend-revision "$expected_frontend_revision"
             --expected-backend-revision "$expected_backend_revision"
+            --expected-worker-revision "$expected_worker_revision"
             --expected-product-mode private_alpha
             --attempts 12
             --retry-delay-seconds 10
@@ -78,6 +85,7 @@ jobs:
           print(f"- Hosted revision: `{report.get('hosted_revision', 'missing')}`")
           print(f"- Public checks: `{report.get('public_checks_ready', False)}`")
           print(f"- Authenticated checks: `{report.get('authenticated_checks_status', 'not captured')}`")
+          print(f"- Worker checks: `{report.get('worker_checks_status', 'not captured')}`")
           print(f"- Public blockers: `{len(report.get('public_blockers') or [])}`")
           print(f"- Authenticated blockers: `{len(report.get('authenticated_blockers') or [])}`")
           PY

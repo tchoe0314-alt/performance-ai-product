@@ -82,9 +82,11 @@ def _capture(
     api_base_url: str,
     expected_frontend_revision: str,
     expected_backend_revision: str,
+    expected_worker_revision: str,
     expected_product_mode: str,
     timeout: float,
     require_authenticated: bool,
+    worker_identity: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     timings: Dict[str, float] = {}
     frontend_status, _frontend_headers, frontend_body, timings["frontend"] = _request(frontend_url, timeout=timeout)
@@ -148,11 +150,19 @@ def _capture(
         elif email or password:
             raise RuntimeError("Configure both CIVORA_CANARY_EMAIL and CIVORA_CANARY_PASSWORD or neither.")
 
+        # Worker identity is accepted only from the already protected operator
+        # runtime response (or an in-process caller such as the contract tests).
+        # The public canary never discovers or calls a worker URL.
+        resolved_worker_identity = worker_identity
+        if resolved_worker_identity is None and isinstance(authenticated_runtime, Mapping):
+            candidate = authenticated_runtime.get("worker_identity")
+            resolved_worker_identity = candidate if isinstance(candidate, Mapping) else None
         report = build_hosted_canary_report(
             frontend_url=frontend_url,
             api_base_url=api_base_url,
             expected_frontend_revision=expected_frontend_revision,
             expected_backend_revision=expected_backend_revision,
+            expected_worker_revision=expected_worker_revision,
             expected_product_mode=expected_product_mode,
             frontend=frontend,
             health=health,
@@ -161,6 +171,7 @@ def _capture(
             unauthenticated_runtime_status=runtime_guard_status,
             unauthenticated_production_env_status=production_env_guard_status,
             authenticated_runtime=authenticated_runtime,
+            worker_identity=resolved_worker_identity,
             require_authenticated=require_authenticated,
         )
         report["request_timings_ms"] = timings
@@ -185,6 +196,7 @@ def main() -> None:
     parser.add_argument("--api-base-url", default=os.getenv("CIVORA_CANARY_API_BASE_URL") or "https://api.civoraai.com")
     parser.add_argument("--expected-frontend-revision", default=os.getenv("CIVORA_EXPECTED_FRONTEND_REVISION") or "")
     parser.add_argument("--expected-backend-revision", default=os.getenv("CIVORA_EXPECTED_BACKEND_REVISION") or "")
+    parser.add_argument("--expected-worker-revision", default=os.getenv("CIVORA_EXPECTED_WORKER_REVISION") or "")
     parser.add_argument("--expected-product-mode", default=os.getenv("CIVORA_EXPECTED_PRODUCT_MODE") or "private_alpha")
     parser.add_argument("--output", default="reports/release/hosted-canary.json")
     parser.add_argument("--timeout-seconds", type=float, default=30.0)
@@ -212,6 +224,7 @@ def main() -> None:
                     api_base_url=api_base_url,
                     expected_frontend_revision=args.expected_frontend_revision,
                     expected_backend_revision=args.expected_backend_revision,
+                    expected_worker_revision=args.expected_worker_revision,
                     expected_product_mode=args.expected_product_mode,
                     timeout=max(1.0, args.timeout_seconds),
                     require_authenticated=args.require_authenticated,

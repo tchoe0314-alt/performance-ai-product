@@ -32,6 +32,7 @@ def build_hosted_canary_report(
     api_base_url: str,
     expected_frontend_revision: str,
     expected_backend_revision: str,
+    expected_worker_revision: str,
     expected_product_mode: str,
     frontend: Mapping[str, Any],
     health: Mapping[str, Any],
@@ -40,6 +41,7 @@ def build_hosted_canary_report(
     unauthenticated_runtime_status: int,
     unauthenticated_production_env_status: int,
     authenticated_runtime: Optional[Mapping[str, Any]] = None,
+    worker_identity: Optional[Mapping[str, Any]] = None,
     require_authenticated: bool = False,
 ) -> Dict[str, Any]:
     frontend_record = _mapping(frontend)
@@ -54,6 +56,7 @@ def build_hosted_canary_report(
     actual_revision = str(deployment.get("commit_sha") or deployment.get("build_version") or "").strip()
     frontend_revision = str(frontend_record.get("revision") or "").strip()
     frontend_origin = f"{urlparse(frontend_url).scheme}://{urlparse(frontend_url).netloc}"
+    worker_record = _mapping(worker_identity)
 
     public_blockers = []
     if int(frontend_record.get("status") or 0) not in range(200, 400):
@@ -74,6 +77,17 @@ def build_hosted_canary_report(
         public_blockers.append(_record("hosted_revision_mismatch", "The hosted backend revision does not match the canary revision.", area="revision"))
     if not _revision_matches(expected_frontend_revision, frontend_revision):
         public_blockers.append(_record("frontend_revision_mismatch", "The hosted website revision is missing or does not match the canary revision.", area="revision"))
+    worker_revision = str(worker_record.get("revision") or "").strip()
+    if not worker_record:
+        public_blockers.append(_record("worker_identity_unavailable", "The canary did not receive authenticated or private worker identity evidence.", area="worker"))
+    elif (
+        str(worker_record.get("status") or "").lower() != "ok"
+        or str(worker_record.get("service") or "") != "civora-job-worker"
+        or str(worker_record.get("role") or "") != "worker"
+    ):
+        public_blockers.append(_record("worker_identity_invalid", "The supplied worker evidence is not a healthy Civora worker identity.", area="worker"))
+    elif not _revision_matches(expected_worker_revision, worker_revision):
+        public_blockers.append(_record("worker_revision_mismatch", "The hosted worker revision does not match the canary revision.", area="worker"))
     if deployment.get("backend_status") != "online" or deployment.get("api_status") != "configured":
         public_blockers.append(_record("deployment_not_ready", "The hosted deployment summary is not online and configured.", area="deployment"))
     if operational_summary.get("ready_for_ui") is not True:
@@ -113,10 +127,14 @@ def build_hosted_canary_report(
         "api_base_url": str(api_base_url or "").rstrip("/"),
         "expected_frontend_revision": str(expected_frontend_revision or ""),
         "expected_backend_revision": str(expected_backend_revision or ""),
+        "expected_worker_revision": str(expected_worker_revision or ""),
         "hosted_revision": actual_revision,
         "frontend_revision": frontend_revision,
         "frontend_revision_matches": _revision_matches(expected_frontend_revision, frontend_revision),
         "revision_matches": _revision_matches(expected_backend_revision, actual_revision),
+        "worker_revision": worker_revision,
+        "worker_revision_matches": _revision_matches(expected_worker_revision, worker_revision),
+        "worker_checks_status": "ready" if not any(item.get("area") == "worker" for item in public_blockers) else "blocked",
         "expected_product_mode": str(expected_product_mode or ""),
         "hosted_product_mode": str(health_record.get("product_mode") or ""),
         "success": success,
@@ -139,6 +157,9 @@ def build_hosted_canary_report(
             "production_env_auth_guard_status": int(unauthenticated_production_env_status or 0),
             "cors_status": int(cors_record.get("status") or 0),
             "cors_allow_origin": str(cors_record.get("allow_origin") or ""),
+            "worker_identity_captured": bool(worker_record),
+            "worker_service": str(worker_record.get("service") or ""),
+            "worker_role": str(worker_record.get("role") or ""),
         },
         "authenticated_evidence": {
             "captured": authenticated_runtime is not None,
@@ -149,7 +170,7 @@ def build_hosted_canary_report(
         },
         "construction_ready": False,
         "public_beta_allowed": False,
-        "truth_label": "The hosted canary proves selected availability, security, revision, recovery, and optional authenticated runtime facts. It does not approve public launch, billing, professional review, or construction use.",
+        "truth_label": "The hosted canary proves selected availability, security, per-component revision, recovery, and optional authenticated runtime facts. Worker identity must come from an existing authenticated or private deployment path; a public worker endpoint is not required or approved. It does not approve public launch, billing, professional review, or construction use.",
     }
 
 
