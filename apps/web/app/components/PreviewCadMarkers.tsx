@@ -1,6 +1,7 @@
 import type { BuildingPlacement } from "../types";
 import type { CadSymbolKind } from "../utils/cadToolTypes";
 import { displayedCadDimensionLabel } from "../utils/cadDimensionBinding";
+import { buildPreviewMarkerVisual } from "../utils/previewCanvasDetail";
 
 type PreviewRect = {
   left: number;
@@ -20,6 +21,7 @@ type PreviewCadMarkersProps = {
   mapAnchoredRectPercent: (item: BuildingPlacement) => PreviewRect;
   shouldRevealObjectLabel: (item: BuildingPlacement) => boolean;
   getObjectGeometryPoints: (item: BuildingPlacement) => Array<[number, number]>;
+  canvasScale: number;
 };
 
 const symbolGlyphs: Record<CadSymbolKind, string> = {
@@ -53,6 +55,7 @@ export function PreviewCadMarkers({
   mapAnchoredRectPercent,
   shouldRevealObjectLabel,
   getObjectGeometryPoints,
+  canvasScale,
 }: PreviewCadMarkersProps) {
   return (
     <>
@@ -61,10 +64,11 @@ export function PreviewCadMarkers({
         .map((item) => {
           const symbol = String(item.meta?.cad_symbol || "utility_marker") as CadSymbolKind;
           const [x, y] = sitePointToPreviewPercent(firstGeometryPoint(item));
+          const visual = buildPreviewMarkerVisual(canvasScale, selectedBuildingId === item.id);
           return (
-            <g key={`cad-symbol-${item.id}`} data-testid="cad-symbol">
-              <circle cx={x} cy={y} r={1.05} fill="#ffffff" stroke="#0f172a" strokeWidth={0.22} />
-              <text x={x} y={y + 0.48} textAnchor="middle" fontSize="1.55" fill="#0f172a" fontWeight={800}>
+            <g key={`cad-symbol-${item.id}`} data-testid="cad-symbol" data-marker-detail={canvasScale < 0.85 ? "overview" : canvasScale >= 1.5 ? "detail" : "standard"}>
+              <circle cx={x} cy={y} r={visual.radius} fill="#ffffff" stroke="#0f172a" strokeWidth={visual.strokeWidth} />
+              <text x={x} y={y + visual.fontSize * 0.31} textAnchor="middle" fontSize={visual.fontSize} fill="#0f172a" fontWeight={800}>
                 {symbolGlyphs[symbol] ?? "U"}
               </text>
             </g>

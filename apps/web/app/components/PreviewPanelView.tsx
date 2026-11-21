@@ -2796,6 +2796,7 @@ export default function PreviewPanel({
                     gradingEarthworkUx,
                     semanticLayerVisibility,
                     presentationActive: aiRealismEnabled,
+                    canvasScale: activeCanvasView.scale,
                   },
                   waterFireFlowHitTargetsProps: {
                     waterFireFlow,

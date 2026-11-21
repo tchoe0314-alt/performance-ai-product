@@ -53,7 +53,7 @@ const TOOL_ICONS: Partial<Record<CadToolName, LucideIcon>> = {
 
 export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelProps) {
   return (
-    <section className="rounded-[8px] border border-slate-200/90 bg-white p-3" data-testid="draw-cad-tools-section">
+    <section className="rounded-[8px] border border-slate-200/90 bg-white p-2.5" data-testid="draw-cad-tools-section">
       <div className="flex items-center gap-2.5 text-left">
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-slate-900">Tools</span>
@@ -62,7 +62,7 @@ export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelPro
           </span>
         </span>
       </div>
-      <div className="mt-3 space-y-2">
+      <div className="mt-2 space-y-1.5">
         {groups.map((group, groupIndex) => {
           const toolGrid = (
             <div className="civora-tool-grid">
@@ -77,10 +77,10 @@ export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelPro
                     title={`${item.label} · ${item.hint}`}
                     aria-label={item.label}
                     data-tool-label="true"
-                    className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-[6px] border border-transparent px-1 py-1.5 text-center text-slate-600 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-100"
+                    className="flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-[6px] border border-transparent px-1 py-1 text-center text-slate-600 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950 focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-100"
                   >
-                    <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
-                    <span className="max-w-full truncate text-[10px] font-semibold leading-none">{item.label}</span>
+                    <Icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                    <span className="max-w-full truncate text-[9px] font-semibold leading-none">{item.label}</span>
                   </button>
                 );
               })}
@@ -94,12 +94,12 @@ export function DrawCadToolsPanel({ groups, onSelectTool }: DrawCadToolsPanelPro
             );
           }
           return (
-            <details key={group.title} className="border-t border-slate-100 pt-2">
-              <summary className="flex cursor-pointer items-center gap-2 px-1 py-1 text-xs font-semibold text-slate-600">
+            <details key={group.title} className="border-t border-slate-100 pt-1.5">
+              <summary className="flex min-h-9 cursor-pointer items-center gap-2 px-1 py-1 text-xs font-semibold text-slate-600">
                 <span className="min-w-0 flex-1">{group.title}</span>
                 <span className="text-[10px] text-slate-400">{group.tools.length}</span>
               </summary>
-              <div className="mt-2">{toolGrid}</div>
+              <div className="mt-1.5">{toolGrid}</div>
             </details>
           );
         })}

@@ -92,6 +92,7 @@ type PreviewPlanCanvasLayersProps = {
   gradingEarthworkUx?: GradingEarthworkUx | null;
   semanticLayerVisibility?: Partial<Record<PreviewSemanticLayer, boolean>>;
   presentationActive?: boolean;
+  canvasScale: number;
 };
 
 export function PreviewPlanCanvasLayers({
@@ -143,6 +144,7 @@ export function PreviewPlanCanvasLayers({
   gradingEarthworkUx,
   semanticLayerVisibility = {},
   presentationActive = false,
+  canvasScale,
 }: PreviewPlanCanvasLayersProps) {
   if (!overlayBoundsResolved || previewMode !== "2d") return null;
   const hasSurveyOrTerrainEvidence = surveyPointCount > 0 || hasTerrainSurfaceEvidence;
@@ -239,6 +241,7 @@ export function PreviewPlanCanvasLayers({
                 mapAnchoredRectPercent={mapAnchoredRectPercent}
                 shouldRevealObjectLabel={shouldRevealObjectLabel}
                 getObjectGeometryPoints={getObjectGeometryPoints}
+                canvasScale={canvasScale}
               />
               <PreviewParkingModules
                 objects={layerVisibleObjects}

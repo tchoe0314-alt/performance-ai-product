@@ -47,26 +47,26 @@ export function PreviewCanvasHud({
 }: PreviewCanvasHudProps) {
   return (
     <>
-      <div className="pointer-events-none absolute left-4 top-16 z-[45] flex items-start gap-2 max-md:top-20">
+      <div className="pointer-events-none absolute left-3 top-14 z-[45] flex items-start gap-1.5 max-md:left-2 max-md:top-16">
         <div
           aria-label="Plan north arrow"
           data-testid="plan-north-arrow"
           role="img"
-          className="flex h-16 w-12 flex-col items-center justify-center rounded-lg border border-slate-300 bg-white/92 text-slate-800 shadow-sm backdrop-blur"
+          className="flex h-12 w-10 flex-col items-center justify-center rounded-md border border-slate-300 bg-white/92 text-slate-800 shadow-sm backdrop-blur"
         >
-          <Navigation className="h-5 w-5 -rotate-45" />
-          <span className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em]">N</span>
+          <Navigation className="h-4 w-4 -rotate-45" />
+          <span className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.14em]">N</span>
         </div>
         <div
           aria-label="Plan scale bar"
           data-testid="plan-scale-bar"
-          className="rounded-lg border border-slate-300 bg-white/92 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600 shadow-sm backdrop-blur"
+          className="rounded-md border border-slate-300 bg-white/92 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.1em] text-slate-600 shadow-sm backdrop-blur"
         >
           <div className="mb-1 flex items-center justify-between gap-4">
             <span>Scale</span>
             <span>{displayLength(scaleLengthFt, displayUnits)}</span>
           </div>
-          <div className="flex h-3 w-28 overflow-hidden rounded-sm border border-slate-800 bg-white">
+          <div className="flex h-2.5 w-20 overflow-hidden rounded-sm border border-slate-800 bg-white">
             {[0, 1, 2, 3].map((segment) => (
               <span
                 key={`scale-segment-${segment}`}
@@ -77,7 +77,7 @@ export function PreviewCanvasHud({
         </div>
       </div>
       <div
-        className="civora-preview-zoom-controls absolute right-4 top-[4.75rem] z-[45] flex flex-col overflow-hidden rounded-lg border border-slate-300 bg-white/92 shadow-sm backdrop-blur"
+        className="civora-preview-zoom-controls absolute right-3 top-[4.25rem] z-[45] flex flex-col overflow-hidden rounded-md border border-slate-300 bg-white/92 shadow-sm backdrop-blur max-md:right-2"
         onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}
       >
@@ -86,7 +86,7 @@ export function PreviewCanvasHud({
           aria-label="Zoom in canvas"
           title="Zoom in canvas"
           onClick={onZoomIn}
-          className="inline-flex h-9 w-9 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50"
+          className="inline-flex h-10 w-10 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 md:h-8 md:w-8"
         >
           <ZoomIn className="h-4 w-4" />
         </button>
@@ -95,7 +95,7 @@ export function PreviewCanvasHud({
           aria-label="Zoom out canvas"
           title="Zoom out canvas"
           onClick={onZoomOut}
-          className="inline-flex h-9 w-9 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50"
+          className="inline-flex h-10 w-10 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 md:h-8 md:w-8"
         >
           <ZoomOut className="h-4 w-4" />
         </button>
@@ -104,7 +104,7 @@ export function PreviewCanvasHud({
           aria-label="Reset canvas view"
           title="Reset canvas view"
           onClick={onResetView}
-          className="inline-flex h-9 w-9 items-center justify-center text-slate-700 transition hover:bg-slate-50"
+          className="inline-flex h-10 w-10 items-center justify-center text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 md:h-8 md:w-8"
         >
           <RotateCcw className="h-4 w-4" />
         </button>
