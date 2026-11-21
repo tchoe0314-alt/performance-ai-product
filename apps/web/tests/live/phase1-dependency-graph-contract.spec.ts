@@ -86,7 +86,8 @@ test("a moved reviewed structure updates only its connected pipe endpoint and de
   const source=[inlet,outfall,reviewedPipe],moved={...inlet,x:10};
   const originalSegment=canonicalPipeSegmentFromPlacement(reviewedPipe,source)!;
   expect(originalSegment.length_ft).toBe(50);
-  expect(originalSegment.slope_ft_ft*100).toBe(1);
+  expect(originalSegment.slope_ft_ft).toBeDefined();
+  expect(Number(originalSegment.slope_ft_ft)*100).toBe(1);
   const result=planDependencyGraph(source,[moved,outfall,reviewedPipe],null);
   expect(result.status).toBe("applied");
   const updated=result.placements[2];
@@ -96,7 +97,8 @@ test("a moved reviewed structure updates only its connected pipe endpoint and de
   expect(updated.meta?.canonical_revision).toBe(5);
   const segment=canonicalPipeSegmentFromPlacement(updated,result.placements)!;
   expect(segment.length_ft).toBeCloseTo(44.72136,5);
-  expect(segment.slope_ft_ft*100).toBeCloseTo(1.11803,5);
+  expect(segment.slope_ft_ft).toBeDefined();
+  expect(Number(segment.slope_ft_ft)*100).toBeCloseTo(1.11803,5);
   expect(segment.endpoint_inverts_protected).toBe(true);
   expect(segment.invert_provenance).toEqual({source:"reviewed source",datum:"reviewed datum",reviewed:true});
   expect(source[2]).toEqual(reviewedPipe);

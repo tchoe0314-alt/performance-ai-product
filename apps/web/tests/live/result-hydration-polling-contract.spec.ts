@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { ACTIVE_JOB_POLL_INTERVAL_MS, runActiveJobPoll, shouldLoadActiveJobDetail, shouldPollActiveJob } from "../../app/hooks/useJobPolling";
 import { shouldDiscardSavedResultResponse, shouldRetrySavedResultHydration } from "../../app/utils/savedResultHydration";
 import { buildAuthoritativePreviewTransportPayload, buildPreviewRequestIdentity } from "../../app/utils/dashboardPayloads";
+import type { PreviewRequestPayload } from "../../app/types";
 
 test("saved result hydration retries only for a settled project without a result", () => {
   const base = { token: "synthetic", workspaceRestoreState: "restored", projectId: "project-a", hasBackendResult: false };
@@ -73,31 +74,32 @@ test("job polling never overlaps and releases its guard after settlement", async
 });
 
 test("project preview transport omits the ignored result but inline preview retains it", () => {
-  const largeResult = { metadata: { marker: "x".repeat(1_000_000) }, final_plan: { site_objects: [] } };
-  const projectPayload = { project_id: "project-a", result: largeResult, preview_quality: "high" };
+  const largeResult: NonNullable<PreviewRequestPayload["result"]> = {
+    metadata: { _workflow_run_id: `run-${"x".repeat(1_000_000)}` },
+    final_plan: { actions: [] },
+  };
+  const projectPayload: PreviewRequestPayload = { project_id: "project-a", result: largeResult, preview_quality: "high" };
   const transport = buildAuthoritativePreviewTransportPayload(projectPayload);
   expect(transport.result).toBeUndefined();
   expect(JSON.stringify(projectPayload).length).toBeGreaterThan(1_000_000);
   expect(JSON.stringify(transport).length).toBeLessThan(200);
   expect(projectPayload.result).toBe(largeResult);
 
-  const inlinePayload = { project_id: null, result: largeResult };
+  const inlinePayload: PreviewRequestPayload = { project_id: null, result: largeResult };
   expect(buildAuthoritativePreviewTransportPayload(inlinePayload)).toBe(inlinePayload);
   expect(inlinePayload.result).toBe(largeResult);
 });
 
 test("project preview identity deduplicates exact repeats and refreshes for stage or revision changes", () => {
-  const payload = {
-    project_id: "project-a",
-    result: {
+  const result: NonNullable<PreviewRequestPayload["result"]> = {
       metadata: {
         _workflow_run_id: "run-1",
-        calculation_save_v1: { calculation_id: "calc-1" },
-        canvas_result_binding_v1: { input_signature: "input-1" },
+        calculation_save_v1: { calculation_id: "calc-1", disposition: "active", reason: "synthetic fixture" },
+        canvas_result_binding_v1: { version: 1, scope: "canvas_manual_fields_and_site_inputs", input_signature: "input-1" },
         runtime_phase_checkpoint: { stage_name: "Grading", yielded: true },
       },
-    },
   };
+  const payload: PreviewRequestPayload = { project_id: "project-a", result };
   const identity = buildPreviewRequestIdentity({ payload, jobId: "job-1", jobUpdatedAt: 10 });
   expect(buildPreviewRequestIdentity({ payload, jobId: "job-1", jobUpdatedAt: 10 })).toEqual(identity);
   expect(buildPreviewRequestIdentity({ payload, jobId: "job-1", jobUpdatedAt: 11 })).not.toEqual(identity);
@@ -106,7 +108,7 @@ test("project preview identity deduplicates exact repeats and refreshes for stag
       ...payload,
       result: {
         metadata: {
-          ...payload.result.metadata,
+          ...result.metadata,
           runtime_phase_checkpoint: { stage_name: "Drainage", yielded: true },
         },
       },
@@ -119,8 +121,8 @@ test("project preview identity deduplicates exact repeats and refreshes for stag
       ...payload,
       result: {
         metadata: {
-          ...payload.result.metadata,
-          canvas_result_binding_v1: { input_signature: "input-2" },
+          ...result.metadata,
+          canvas_result_binding_v1: { version: 1, scope: "canvas_manual_fields_and_site_inputs", input_signature: "input-2" },
         },
       },
     },

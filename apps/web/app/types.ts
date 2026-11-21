@@ -1498,6 +1498,12 @@ export type PlanResponse = {
     can_assist_if_enabled?: boolean;
   };
   metadata?: {
+    _workflow_run_id?: string;
+    runtime_phase_checkpoint?: {
+      stage_name?: string;
+      status?: string;
+      yielded?: boolean;
+    };
     iterations?: IterationRecord[];
     calculation_scope_v1?: { version: number; requested_system: "roads" | "parking" | "grading" | "drainage" | "utilities" | "full"; omitted_fields: string[] };
     canvas_result_binding_v1?: { version: number; scope: string; input_signature: string; live_input_key_v1?: string };
@@ -1649,6 +1655,11 @@ export type SiteInputs = {
   civora_vision_active_learning_queue_v1?: Record<string, unknown>;
   civora_vision_ground_truth_coverage_v1?: Record<string, unknown>;
   existing_conditions_package?: Record<string, unknown>;
+  existing_conditions_import?: Record<string, unknown> & {
+    filename?: string;
+    stored_filename?: string;
+    source_sha256?: string;
+  };
   source_context_detection_coverage_v1?: Record<string, unknown>;
   source_context_fetch_metrics_v1?: Record<string, unknown>;
   source_context_cache_v1?: Record<string, unknown>;

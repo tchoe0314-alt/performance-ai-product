@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { withCanonicalCanvasSnapshot, resolveCanonicalCanvasInput } from "../../app/utils/canonicalCanvasProject";
 import { buildGenerateConceptPlacements, isReplaceableGeneratedReviewConcept } from "../../app/utils/dashboardGenerateConcepts";
 import { resolveDashboardGenerationTarget } from "../../app/utils/dashboardGenerateIntent";
+import type { BuildingPlacement } from "../../app/types";
 
 const conceptArgs = (overrides: Partial<Parameters<typeof buildGenerateConceptPlacements>[0]> = {}) => ({
   target: "full" as const,
@@ -96,7 +97,8 @@ test("Generate respects the explicitly selected project type without changing th
     projectType: "industrial_site",
     buildingPlacements: [editedBuilding, untouchedRoad],
   }));
-  const merged = [editedBuilding, untouchedRoad]
+  const existing: BuildingPlacement[] = [editedBuilding, untouchedRoad];
+  const merged = existing
     .filter(item => !isReplaceableGeneratedReviewConcept(item))
     .concat(replacements);
   expect(merged.find(item => item.id === editedBuilding.id)).toMatchObject({ w: 179, d: 85 });

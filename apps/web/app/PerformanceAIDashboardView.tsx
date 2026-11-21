@@ -3330,7 +3330,7 @@ function PerformanceAIDashboardView({
       setPreviewRefreshing(true);
       setPreviewRefreshNote((prev) => prev || "Refreshing preview...");
     }
-    const previewPayload = {
+    const previewPayload: PreviewRequestPayload = {
       ...payload,
       preview_quality: previewQuality,
       label_density: previewLabelDensity,
@@ -3388,8 +3388,7 @@ function PerformanceAIDashboardView({
       previewLayerList,
     });
     if (previewRequestInFlightRef.current.has(requestKey)) return;
-    let request: Promise<void>;
-    request = requestPreview(payload, { silent: true, track: options?.track })
+    const request: Promise<void> = requestPreview(payload, { silent: true, track: options?.track })
       .then(() => {
         if (projectLoadRequestRef.current !== previewGeneration || previewFingerprint !== liveInputFingerprint(payloadPreviewRef.current)) return;
         if (options?.successMessage && !options?.silentStatus) {

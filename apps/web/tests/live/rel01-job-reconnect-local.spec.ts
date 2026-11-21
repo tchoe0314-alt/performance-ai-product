@@ -85,12 +85,11 @@ test("REL-01 reconnects to the same held job without approving or dispatching ag
   expect(orchestratePosts).toBe(1);
 
   await context.setOffline(true);
-  let heldJob: HeldJob | null = null;
   await expect.poll(async () => {
     const response = await request.get(`${api}/api/jobs/${jobId}`, { headers });
-    heldJob = (await response.json()).job;
-    return heldJob?.status;
+    return ((await response.json()).job as HeldJob).status;
   }, { timeout: 120_000, intervals: [500, 1_000, 2_000] }).toBe("awaiting_approval");
+  const heldJob = (await (await request.get(`${api}/api/jobs/${jobId}`, { headers })).json()).job as HeldJob;
   expect(heldJob?.result?.metadata?.runtime_phase_checkpoint).toMatchObject({ stage_name: "layout", yielded: true });
   expect(heldJob?.can_resume).toBe(true);
   expect(continuePosts).toBe(0);
