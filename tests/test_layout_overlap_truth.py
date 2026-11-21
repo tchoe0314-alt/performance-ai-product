@@ -1,4 +1,7 @@
-from backend.planning.core_stage_runners import _layout_overlap_issues
+from backend.planning.core_stage_runners import (
+    _building_actions_viable,
+    _layout_overlap_issues,
+)
 
 
 def _rectangle(layer: str, x: float, y: float, width: float, height: float) -> dict:
@@ -27,3 +30,23 @@ def test_original_gen01_overlap_remains_a_hard_failure() -> None:
     assert _layout_overlap_issues(actions) == [
         "Parking overlaps or crowds building footprints."
     ]
+
+
+def test_gen01_building_must_remain_inside_the_parcel() -> None:
+    representative = [_rectangle("BUILDING", 292, 66, 170, 14_400 / 170)]
+    assert _building_actions_viable(
+        representative,
+        lot_x=0,
+        lot_y=0,
+        lot_w=500,
+        lot_h=300,
+    )
+
+    forced_tight = [_rectangle("BUILDING", 148.8, 39.6, 81.6, 14_400 / 81.6)]
+    assert not _building_actions_viable(
+        forced_tight,
+        lot_x=0,
+        lot_y=0,
+        lot_w=240,
+        lot_h=180,
+    )

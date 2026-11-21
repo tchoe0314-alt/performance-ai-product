@@ -123,6 +123,57 @@ test("combined Generate intent preserves canonical program and never invents a m
     .some(item => item.type === "office_building")).toBe(false);
 });
 
+test("generated program fits representative parcels exactly and fails closed on an unfit parcel", () => {
+  for (const lot of [{ w: 600, h: 400 }, { w: 500, h: 300 }, { w: 1000, h: 700 }]) {
+    const placements = buildGenerateConceptPlacements(conceptArgs({
+      projectType: "industrial_site",
+      buildingProgramSf: 14_400,
+      parkingCount: 48,
+      lot,
+    }));
+    const building = placements.find(item => item.type === "industrial_building")!;
+    const parking = placements.find(item => item.type === "parking")!;
+    expect(building).toBeTruthy();
+    expect((building.w ?? 0) * (building.d ?? 0)).toBeCloseTo(14_400, 6);
+    expect((building.x ?? 0) + (building.w ?? 0)).toBeLessThanOrEqual(lot.w);
+    expect((building.y ?? 0) + (building.d ?? 0)).toBeLessThanOrEqual(lot.h);
+    expect((building.x ?? 0) - ((parking.x ?? 0) + (parking.w ?? 0))).toBeGreaterThanOrEqual(2);
+  }
+
+  const tight = buildGenerateConceptPlacements(conceptArgs({
+    projectType: "industrial_site",
+    buildingProgramSf: 14_400,
+    parkingCount: 48,
+    lot: { w: 240, h: 180 },
+  }));
+  expect(tight.some(item => item.type === "industrial_building")).toBe(false);
+  expect(tight.every(item => (item.x ?? 0) >= 0 && (item.y ?? 0) >= 0
+    && (item.x ?? 0) + (item.w ?? 0) <= 240
+    && (item.y ?? 0) + (item.d ?? 0) <= 180)).toBe(true);
+
+  const authored = {
+    id: "authored-industrial",
+    label: "Authored industrial",
+    type: "industrial_building" as const,
+    x: 12,
+    y: 18,
+    w: 120,
+    d: 80,
+    placed: true,
+    source: "manual_drawn" as const,
+  };
+  const withAuthored = buildGenerateConceptPlacements(conceptArgs({
+    projectType: "industrial_site",
+    buildingProgramSf: 14_400,
+    parkingCount: 48,
+    lot: { w: 600, h: 400 },
+    buildingPlacements: [authored],
+  }));
+  expect(withAuthored.some(item => item.meta?.generated_program_object)).toBe(false);
+  const authoredAfterGeneration = [authored, ...withAuthored].find(item => item.id === authored.id);
+  expect(authoredAfterGeneration).toEqual(authored);
+});
+
 test("exact audited Generate command creates and persists the 28,800 sf building and 12 stalls", async ({ page, context, request }) => {
   const api = process.env.PLAYWRIGHT_API_BASE_URL ?? "";
   test.skip(process.env.CIVORA_PHASE0_LOCAL_TESTS !== "1" || !/^http:\/\/(127\.0\.0\.1|localhost):/.test(api), "Disposable localhost only.");

@@ -120,35 +120,46 @@ export function buildGenerateConceptPlacements({
         : selectedProjectType === "office_site"
           ? { type: "office_building" as const, use: "office", label: "office building" }
           : { type: "building" as const, use: "unspecified", label: "building" };
+  const plannedParkingX = lot.w * 0.16;
+  const plannedParkingWidth = Math.min(lot.w * 0.42, 360);
+  const plannedParkingDepth = Math.min(lot.h * 0.28, 220);
   if (target === "full" && requestedBuildingArea && !hasExistingType(
     "building", "office_building", "retail_building", "multifamily_building", "industrial_building", "pad",
   )) {
     const requestedArea = requestedBuildingArea;
-    const buildingDepthFt = Math.max(80, Math.min(lot.h * 0.18, Math.round(Math.sqrt(requestedArea / 2))));
-    const buildingWidthFt = Math.max(150, Math.min(lot.w * 0.34, Math.round(requestedArea / buildingDepthFt)));
-    addConcept({
-      id: `generate-${generatedBuilding.use}-${now}`,
-      label: `Review ${generatedBuilding.label} concept - ${requestedArea.toLocaleString()} sf`,
-      type: generatedBuilding.type,
-      // Keep the program building in the right-side band. The parking review
-      // court occupies x=16%..58% of the parcel, so the former 36% origin
-      // placed the two rectangles on top of each other on ordinary sites.
-      // A 62% origin plus the existing 34%-of-lot width cap leaves a visible
-      // separation while keeping the building inside the right parcel edge.
-      x: lot.w * 0.62,
-      y: lot.h * 0.22,
-      w: buildingWidthFt,
-      d: buildingDepthFt,
-      systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
-      meta: {
-    cad_layer: "C-BLDG",
-    ui_color: "#64748b",
-    requested_area_sf: requestedArea,
-    requested_project_type: selectedProjectType || null,
-    building_use: generatedBuilding.use,
-    generated_program_object: true,
-      },
-    });
+    const buildingX = Math.max(lot.w * 0.62, plannedParkingX + plannedParkingWidth + 2);
+    const buildingY = lot.h * 0.22;
+    const availableWidth = lot.w * 0.96 - buildingX;
+    const availableDepth = lot.h * 0.96 - buildingY;
+    let buildingDepthFt = Math.max(80, Math.min(lot.h * 0.18, Math.round(Math.sqrt(requestedArea / 2))));
+    let buildingWidthFt = requestedArea / buildingDepthFt;
+    if (buildingWidthFt > availableWidth && availableWidth > 0) {
+      buildingWidthFt = availableWidth;
+      buildingDepthFt = requestedArea / buildingWidthFt;
+    }
+    const programFits = availableWidth > 0 && availableDepth > 0
+      && buildingWidthFt > 0 && buildingDepthFt > 0
+      && buildingWidthFt <= availableWidth && buildingDepthFt <= availableDepth;
+    if (programFits) {
+      addConcept({
+        id: `generate-${generatedBuilding.use}-${now}`,
+        label: `Review ${generatedBuilding.label} concept - ${requestedArea.toLocaleString()} sf`,
+        type: generatedBuilding.type,
+        x: buildingX,
+        y: buildingY,
+        w: buildingWidthFt,
+        d: buildingDepthFt,
+        systemDependencies: ["roads", "parking", "grading", "drainage", "utilities"],
+        meta: {
+      cad_layer: "C-BLDG",
+      ui_color: "#64748b",
+      requested_area_sf: requestedArea,
+      requested_project_type: selectedProjectType || null,
+      building_use: generatedBuilding.use,
+      generated_program_object: true,
+        },
+      });
+    }
   }
   if (wants("roads") && !hasExistingType("road", "driveway", "entrance")) {
     addConcept({
@@ -196,10 +207,10 @@ export function buildGenerateConceptPlacements({
       id: `generate-parking-${now}`,
       label: `Review parking concept - ${Math.round(stalls)} stalls`,
       type: "parking",
-      x: lot.w * 0.16,
+      x: plannedParkingX,
       y: lot.h * 0.18,
-      w: Math.min(lot.w * 0.42, 360),
-      d: Math.min(lot.h * 0.28, 220),
+      w: plannedParkingWidth,
+      d: plannedParkingDepth,
       stallCount: Math.round(stalls),
       systemDependencies: ["roads", "parking", "grading", "drainage"],
       meta: {
