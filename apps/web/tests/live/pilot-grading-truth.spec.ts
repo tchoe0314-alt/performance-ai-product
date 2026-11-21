@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { buildDashboardGradingEarthworkUx, shouldShowCurrentGradingComparison } from "../../app/utils/dashboardGradingEarthworkView";
+import { buildDashboardGradingEarthworkUx, formatSignedElevationDelta, shouldShowCurrentGradingComparison } from "../../app/utils/dashboardGradingEarthworkView";
 
 test("an uncalculated site has no invented earthwork, elevation or pad checks", () => {
   const view = buildDashboardGradingEarthworkUx({ lotBounds: { w: 300, h: 200 },
@@ -37,4 +37,20 @@ test("saved grading revision is hidden as soon as an edit makes grading stale", 
   expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "stale", resultCurrent: true })).toBe(false);
   expect(shouldShowCurrentGradingComparison({ hasGradingSurface: true, gradingStatus: "fresh", resultCurrent: false })).toBe(false);
   expect(shouldShowCurrentGradingComparison({ hasGradingSurface: false, gradingStatus: "fresh", resultCurrent: true })).toBe(false);
+});
+
+test("unknown elevation cells remain no-data while signed depths follow proposed minus existing", () => {
+  const view = buildDashboardGradingEarthworkUx({ lotBounds: { w: 20, h: 10 },
+    gradingSummary: { earthwork: { cut_cf: 0, fill_cf: 0, net_cf: 0 }, surface_model: {
+      schema_version: "surface_artifact_v1", bounds: [0, 0, 20, 10], surface_comparison: { cells: [
+        { x: 5, y: 5, width: 10, height: 10, existing_elevation_ft: null, proposed_elevation_ft: 100, delta_ft: null, cut_cf: 0, fill_cf: 0, mode: "balanced" },
+        { x: 15, y: 5, width: 10, height: 10, existing_elevation_ft: 100, proposed_elevation_ft: 102, delta_ft: 2, cut_cf: 0, fill_cf: 200, mode: "cut" },
+      ] } } }, cutFillNet: 0, managerMetrics: {}, buildingPlacements: [], gradingBlocker: null,
+    siteTooLargeForGrading: false, gradingResultSummary: {}, gradingSourceSummary: "Public terrain context",
+    hasGradingSurface: true });
+  expect(view.surfaceModel?.comparisonCells).toHaveLength(1);
+  expect(view.surfaceModel?.comparisonCells[0]).toMatchObject({ existingElevationFt: 100, proposedElevationFt: 102, deltaFt: 2, mode: "fill" });
+  expect(formatSignedElevationDelta(-1)).toBe("-1.00");
+  expect(formatSignedElevationDelta(2)).toBe("+2.00");
+  expect(formatSignedElevationDelta(-0)).toBe("0.00");
 });

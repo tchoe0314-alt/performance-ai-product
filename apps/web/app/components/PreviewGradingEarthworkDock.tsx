@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { GradingEarthworkUx } from "../types";
+import { formatSignedElevationDelta } from "../utils/dashboardGradingEarthworkView";
 
 type PreviewGradingEarthworkDockProps = {
   gradingEarthworkUx: GradingEarthworkUx;
@@ -47,7 +48,7 @@ export function PreviewGradingEarthworkDock({ gradingEarthworkUx, formatMetric }
       </div>
       {selectedCell ? <div data-testid="grading-selected-area" className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
         <div className="flex items-center justify-between gap-2"><p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">Selected cell</p><button type="button" className="text-[10px] font-semibold text-slate-500" onClick={() => setSelectedCellId(null)}>Clear</button></div>
-        <div className="mt-1 grid grid-cols-3 gap-2 text-[11px]"><p>EG <strong>{selectedCell.existingElevationFt.toFixed(2)} ft</strong></p><p>FG <strong>{selectedCell.proposedElevationFt.toFixed(2)} ft</strong></p><p>Depth <strong>{selectedCell.deltaFt > 0 ? "+" : ""}{selectedCell.deltaFt.toFixed(2)} ft</strong></p></div>
+        <div className="mt-1 grid grid-cols-3 gap-2 text-[11px]"><p>EG <strong>{selectedCell.existingElevationFt.toFixed(2)} ft</strong></p><p>FG <strong>{selectedCell.proposedElevationFt.toFixed(2)} ft</strong></p><p>Depth <strong>{formatSignedElevationDelta(selectedCell.deltaFt)} ft</strong></p></div>
         <p className="mt-1 text-[10px] text-slate-500">{selectedCell.deltaFt < 0 ? "Cut" : selectedCell.deltaFt > 0 ? "Fill" : "Balanced"} · selected-area excavation {formatMetric(selectedCell.cutCf, "cf")} · fill {formatMetric(selectedCell.fillCf, "cf")}</p>
       </div> : null}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.12em]"><span className="text-rose-700">■ Cut</span><span className="text-sky-700">■ Fill</span><span className="text-emerald-700">■ Balanced</span></div>

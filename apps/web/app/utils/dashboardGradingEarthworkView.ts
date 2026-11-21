@@ -17,6 +17,18 @@ type LotBoundsForGrading = {
   h?: number;
 };
 
+function finiteSurfaceNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function formatSignedElevationDelta(value: number, digits = 2): string {
+  const normalized = Object.is(value, -0) ? 0 : value;
+  return `${normalized > 0 ? "+" : ""}${normalized.toFixed(digits)}`;
+}
+
 export function shouldShowCurrentGradingComparison({
   hasGradingSurface,
   gradingStatus,
@@ -102,9 +114,9 @@ export function buildDashboardGradingEarthworkUx({
       : {};
   const parseSurfacePoint = (value: unknown): [number, number] | null => {
     if (!Array.isArray(value) || value.length < 2) return null;
-    const x = Number(value[0]);
-    const y = Number(value[1]);
-    return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null;
+    const x = finiteSurfaceNumber(value[0]);
+    const y = finiteSurfaceNumber(value[1]);
+    return x !== null && y !== null ? [x, y] : null;
   };
   const surfaceModel: GradingEarthworkUx["surfaceModel"] | undefined = rawSurfaceModel.schema_version
     ? {
@@ -119,8 +131,8 @@ export function buildDashboardGradingEarthworkUx({
                 const points = Array.isArray(rec.points)
                   ? rec.points.map(parseSurfacePoint).filter((pt): pt is [number, number] => Boolean(pt))
                   : [];
-                const level = Number(rec.level);
-                return Number.isFinite(level) && points.length >= 2 ? { level, points } : null;
+                const level = finiteSurfaceNumber(rec.level);
+                return level !== null && points.length >= 2 ? { level, points } : null;
               })
               .filter((item): item is NonNullable<typeof item> => Boolean(item))
               .slice(0, 180)
@@ -129,10 +141,10 @@ export function buildDashboardGradingEarthworkUx({
           ? rawSurfaceModel.spot_elevations
               .map((item) => {
                 const rec = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
-                const x = Number(rec.x);
-                const y = Number(rec.y);
-                const z = Number(rec.z);
-                return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x, y, z } : null;
+                const x = finiteSurfaceNumber(rec.x);
+                const y = finiteSurfaceNumber(rec.y);
+                const z = finiteSurfaceNumber(rec.z);
+                return x !== null && y !== null && z !== null ? { x, y, z } : null;
               })
               .filter((item): item is NonNullable<typeof item> => Boolean(item))
               .slice(0, 48)
@@ -141,12 +153,12 @@ export function buildDashboardGradingEarthworkUx({
           ? rawSurfaceModel.slope_arrows
               .map((item) => {
                 const rec = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
-                const x = Number(rec.x);
-                const y = Number(rec.y);
-                const dx = Number(rec.dx);
-                const dy = Number(rec.dy);
-                const slopePct = Number(rec.slope_pct);
-                return [x, y, dx, dy, slopePct].every(Number.isFinite) ? { x, y, dx, dy, slopePct } : null;
+                const x = finiteSurfaceNumber(rec.x);
+                const y = finiteSurfaceNumber(rec.y);
+                const dx = finiteSurfaceNumber(rec.dx);
+                const dy = finiteSurfaceNumber(rec.dy);
+                const slopePct = finiteSurfaceNumber(rec.slope_pct);
+                return x !== null && y !== null && dx !== null && dy !== null && slopePct !== null ? { x, y, dx, dy, slopePct } : null;
               })
               .filter((item): item is NonNullable<typeof item> => Boolean(item))
               .slice(0, 64)
@@ -159,10 +171,10 @@ export function buildDashboardGradingEarthworkUx({
                   ? rec.points
                       .map((point) => {
                         const pointRec = point && typeof point === "object" ? (point as Record<string, unknown>) : {};
-                        const x = Number(pointRec.x);
-                        const y = Number(pointRec.y);
-                        const z = Number(pointRec.z);
-                        return Number.isFinite(x) && Number.isFinite(y) ? { x, y, z: Number.isFinite(z) ? z : undefined } : null;
+                        const x = finiteSurfaceNumber(pointRec.x);
+                        const y = finiteSurfaceNumber(pointRec.y);
+                        const z = finiteSurfaceNumber(pointRec.z);
+                        return x !== null && y !== null ? { x, y, z: z ?? undefined } : null;
                       })
                       .filter((point): point is NonNullable<typeof point> => Boolean(point))
                   : [];
@@ -175,18 +187,19 @@ export function buildDashboardGradingEarthworkUx({
           ? rawSurfaceComparison.cells
               .map((item, index) => {
                 const rec = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
-                const x = Number(rec.x);
-                const y = Number(rec.y);
-                const width = Number(rec.width);
-                const height = Number(rec.height);
-                const existingElevationFt = Number(rec.existing_elevation_ft);
-                const proposedElevationFt = Number(rec.proposed_elevation_ft);
-                const deltaFt = Number(rec.delta_ft);
-                const cutCf = Number(rec.cut_cf);
-                const fillCf = Number(rec.fill_cf);
-                const mode = String(rec.mode || "balanced");
-                const normalizedMode: "cut" | "fill" | "balanced" =
-                  mode === "cut" || mode === "fill" ? mode : "balanced";
+                const x = finiteSurfaceNumber(rec.x);
+                const y = finiteSurfaceNumber(rec.y);
+                const width = finiteSurfaceNumber(rec.width);
+                const height = finiteSurfaceNumber(rec.height);
+                const existingElevationFt = finiteSurfaceNumber(rec.existing_elevation_ft);
+                const proposedElevationFt = finiteSurfaceNumber(rec.proposed_elevation_ft);
+                const deltaFt = finiteSurfaceNumber(rec.delta_ft);
+                const cutCf = finiteSurfaceNumber(rec.cut_cf);
+                const fillCf = finiteSurfaceNumber(rec.fill_cf);
+                if (x === null || y === null || width === null || height === null || existingElevationFt === null ||
+                    proposedElevationFt === null || deltaFt === null || cutCf === null || fillCf === null ||
+                    width <= 0 || height <= 0 || cutCf < 0 || fillCf < 0) return null;
+                const normalizedMode: "cut" | "fill" | "balanced" = deltaFt < 0 ? "cut" : deltaFt > 0 ? "fill" : "balanced";
                 return [x, y, width, height, existingElevationFt, proposedElevationFt, deltaFt, cutCf, fillCf].every(Number.isFinite)
                   ? ({ id: `surface-cell-${index}`, x, y, width, height, existingElevationFt,
                       proposedElevationFt, deltaFt, cutCf, fillCf, mode: normalizedMode })
@@ -210,12 +223,16 @@ export function buildDashboardGradingEarthworkUx({
   const balancePct =
     cutCf && fillCf ? Math.max(0, Math.min(100, (Math.min(cutCf, fillCf) / Math.max(cutCf, fillCf)) * 100)) : 0;
   const direction = "unknown" as const;
-  const bounds = Array.isArray(rawSurfaceModel.bounds) ? rawSurfaceModel.bounds.map(Number) : [];
-  const [surfaceXMin, surfaceYMin, surfaceXMax, surfaceYMax] = bounds;
+  const bounds = Array.isArray(rawSurfaceModel.bounds) ? rawSurfaceModel.bounds.map(finiteSurfaceNumber) : [];
+  const hasSurfaceBounds = bounds.length >= 4 && bounds.slice(0, 4).every((value) => value !== null);
+  const surfaceXMin = hasSurfaceBounds ? bounds[0]! : 0;
+  const surfaceYMin = hasSurfaceBounds ? bounds[1]! : 0;
+  const surfaceXMax = hasSurfaceBounds ? bounds[2]! : 0;
+  const surfaceYMax = hasSurfaceBounds ? bounds[3]! : 0;
   const surfaceWidth = surfaceXMax - surfaceXMin;
   const surfaceHeight = surfaceYMax - surfaceYMin;
   const heatmapCells: GradingEarthworkUx["heatmapCells"] = surfaceModel &&
-    [surfaceXMin, surfaceYMin, surfaceXMax, surfaceYMax].every(Number.isFinite) && surfaceWidth > 0 && surfaceHeight > 0
+    hasSurfaceBounds && surfaceWidth > 0 && surfaceHeight > 0
     ? surfaceModel.comparisonCells.map((cell) => ({
         id: cell.id,
         xPct: ((cell.x - cell.width / 2 - surfaceXMin) / surfaceWidth) * 100,
