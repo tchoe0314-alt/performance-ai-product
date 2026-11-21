@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import type { ChatMessage } from "../types";
-import { getChatThreadStorageKey } from "../utils/chat";
+import { getChatThreadStorageKey, resolveStoredChatThread } from "../utils/chat";
 
 type UseChatPersistenceOptions = {
   chatMessages: ChatMessage[];
@@ -22,6 +22,12 @@ export default function useChatPersistence({
   projectId,
   currentProjectId,
 }: UseChatPersistenceOptions) {
+  const activeStorageKeyRef = useRef<string | null>(null);
+  const storageKey =
+    currentProjectId || projectId
+      ? getChatThreadStorageKey(currentProjectId || projectId || "draft")
+      : null;
+
   useEffect(() => {
     // Chat panel is mounted lazily; guard until the scroll container exists.
     const node = chatScrollRef.current;
@@ -37,60 +43,28 @@ export default function useChatPersistence({
   }, [chatMessages, chatMessagesRef]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!currentProjectId && !projectId) return;
-    const key = getChatThreadStorageKey(currentProjectId || projectId || "draft");
+    if (typeof window === "undefined" || !storageKey) return;
+    if (activeStorageKeyRef.current === storageKey) return;
+    activeStorageKeyRef.current = storageKey;
+    const restored = resolveStoredChatThread(
+      chatMessagesRef.current,
+      window.localStorage.getItem(storageKey),
+    );
+    if (restored !== chatMessagesRef.current) {
+      chatMessagesRef.current = restored;
+      setChatMessages(restored);
+    }
+  }, [chatMessagesRef, setChatMessages, storageKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !storageKey) return;
+    // On a project switch, the restoration effect above must claim the new key
+    // before any thread is persisted under it.
+    if (activeStorageKeyRef.current !== storageKey) return;
     try {
-      window.localStorage.setItem(key, JSON.stringify(chatMessagesRef.current));
+      window.localStorage.setItem(storageKey, JSON.stringify(chatMessagesRef.current));
     } catch {
       // Ignore local storage failures.
     }
-  }, [chatMessages, chatMessagesRef, currentProjectId, projectId]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!currentProjectId && !projectId) return;
-    const key = getChatThreadStorageKey(currentProjectId || projectId || "draft");
-    if (chatMessagesRef.current.length > 1) return;
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return;
-    try {
-      const stored = JSON.parse(raw);
-      if (!Array.isArray(stored) || !stored.length) return;
-      const restored = stored
-        .filter((message: ChatMessage) => message && typeof message.content === "string")
-        .map((message: ChatMessage): ChatMessage => ({
-          id:
-            typeof message.id === "string"
-              ? message.id
-              : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          role:
-            message.role === "user" ||
-            message.role === "assistant" ||
-            message.role === "system"
-              ? message.role
-              : "assistant",
-          content: message.content,
-          createdAt:
-            typeof message.createdAt === "number" ? message.createdAt : Date.now(),
-          kind:
-            message.kind === "status" ||
-            message.kind === "explanation" ||
-            message.kind === "action"
-              ? message.kind
-              : "message",
-          feedback:
-            message.feedback === "up" || message.feedback === "down"
-              ? message.feedback
-              : undefined,
-          phaseTag: typeof message.phaseTag === "string" ? message.phaseTag : undefined,
-        }));
-      if (restored.length) {
-        chatMessagesRef.current = restored;
-        setChatMessages(restored);
-      }
-    } catch {
-      // Ignore invalid local storage payloads.
-    }
-  }, [chatMessagesRef, currentProjectId, projectId, setChatMessages]);
+  }, [chatMessages, chatMessagesRef, storageKey]);
 }

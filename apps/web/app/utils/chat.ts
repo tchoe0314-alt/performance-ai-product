@@ -35,6 +35,51 @@ export function createWelcomeMessage(): ChatMessage {
   };
 }
 
+export function resolveStoredChatThread(
+  currentThread: ChatMessage[],
+  rawStoredThread: string | null,
+): ChatMessage[] {
+  // A populated project payload is authoritative. Local storage is only a
+  // recovery path for projects whose saved payload contains no conversation.
+  if (currentThread.length > 1 || !rawStoredThread) return currentThread;
+
+  try {
+    const stored = JSON.parse(rawStoredThread);
+    if (!Array.isArray(stored) || !stored.length) return currentThread;
+    const restored = stored
+      .filter((message: ChatMessage) => message && typeof message.content === "string")
+      .map((message: ChatMessage): ChatMessage => ({
+        id:
+          typeof message.id === "string"
+            ? message.id
+            : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role:
+          message.role === "user" ||
+          message.role === "assistant" ||
+          message.role === "system"
+            ? message.role
+            : "assistant",
+        content: message.content,
+        createdAt:
+          typeof message.createdAt === "number" ? message.createdAt : Date.now(),
+        kind:
+          message.kind === "status" ||
+          message.kind === "explanation" ||
+          message.kind === "action"
+            ? message.kind
+            : "message",
+        feedback:
+          message.feedback === "up" || message.feedback === "down"
+            ? message.feedback
+            : undefined,
+        phaseTag: typeof message.phaseTag === "string" ? message.phaseTag : undefined,
+      }));
+    return restored.length ? restored : currentThread;
+  } catch {
+    return currentThread;
+  }
+}
+
 export function extractDesignMemory(thread: ChatMessage[]): {
   preferences: string[];
   constraints: string[];
