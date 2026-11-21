@@ -3304,9 +3304,18 @@ function PerformanceAIDashboardView({
     const payloadCheckpoint = (payload.result?.metadata as Record<string, unknown> | undefined)?.runtime_phase_checkpoint as
       | { stage_name?: string; yielded?: boolean }
       | undefined;
+    const payloadMetadata = (payload.result?.metadata ?? {}) as Record<string, unknown>;
+    const payloadCalculation = (payloadMetadata.calculation_save_v1 ?? {}) as Record<string, unknown>;
     const yieldedCheckpoint = payloadCheckpoint?.yielded === true ? payloadCheckpoint : approvalCheckpoint;
+    const approvalRunIdentity = String(
+      payloadMetadata._workflow_run_id ||
+      payloadCalculation.calculation_id ||
+      previewJob?.job_id ||
+      payload.project_id ||
+      "",
+    ).trim();
     const approvalPreviewStage = activeJobStatus === "awaiting_approval" || payloadCheckpoint?.yielded === true
-      ? `${previewJob?.job_id || payload.project_id || ""}:${String(yieldedCheckpoint?.stage_name || previewJob?.stage || "").trim()}`
+      ? `${approvalRunIdentity}:${String(yieldedCheckpoint?.stage_name || previewJob?.stage || "").trim()}`
       : "";
     if (approvalPreviewStage && approvalPreviewStageRef.current === approvalPreviewStage) return;
     const workspaceGeneration = projectLoadRequestRef.current;

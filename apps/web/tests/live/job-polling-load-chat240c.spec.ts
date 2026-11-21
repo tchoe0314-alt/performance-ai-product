@@ -68,6 +68,8 @@ test("an approval hold does not create overlapping project or job polling", asyn
   let projectResultCalls = 0;
   let continueCalls = 0;
   let previewCalls = 0;
+  let previewRequestBytes = 0;
+  const previewStates: Array<{ continued: boolean; bytes: number }> = [];
   let queueCalls = 0;
   let continued = false;
   let jobListInFlight = 0;
@@ -101,10 +103,41 @@ test("an approval hold does not create overlapping project or job polling", asyn
     can_resume: true,
     result: {
       success: true,
-      final_plan: { project_name: project.name, actions: [], meta: {} },
+      final_plan: {
+        project_name: project.name,
+        actions: [{ action: "add_building", id: "synthetic-building-1", x: 10, y: 10, w: 20, d: 20 }],
+        meta: {},
+      },
       metadata: {
+        // Mirrors the measured checkpoint-detail size without checking a large
+        // fixture into source. This must never be echoed back to /api/preview
+        // when the request is bound to an authoritative saved project.
+        synthetic_checkpoint_detail: "x".repeat(7_450_000),
+        _workflow_run_id: "workflow-awaiting-1",
+        calculation_save_v1: { calculation_id: "calculation-awaiting-1" },
+        canvas_result_binding_v1: { input_signature: "input-awaiting-1" },
         runtime_phase_checkpoint: {
           stage_name: "storm_pipes",
+          status: "complete",
+          yielded: true,
+        },
+      },
+    },
+  };
+  const nextJob = {
+    ...job,
+    status: "awaiting_approval",
+    stage: "Awaiting Approval",
+    stage_detail: "Drainage checkpoint is ready for review.",
+    progress: 70,
+    updated_at: job.updated_at + 1,
+    result: {
+      ...job.result,
+      metadata: {
+        ...job.result.metadata,
+        canvas_result_binding_v1: { input_signature: "input-awaiting-2" },
+        runtime_phase_checkpoint: {
+          stage_name: "drainage",
           status: "complete",
           yielded: true,
         },
@@ -161,7 +194,7 @@ test("an approval hold does not create overlapping project or job polling", asyn
         contentType: "application/json",
         body: JSON.stringify({
           success: true,
-          jobs: [continued ? { ...job, status: "running", stage: "Utilities", can_resume: false } : job],
+          jobs: [continued ? nextJob : job],
         }),
       });
       jobListInFlight -= 1;
@@ -175,7 +208,7 @@ test("an approval hold does not create overlapping project or job polling", asyn
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ success: true, job: continued ? { ...job, status: "running", stage: "Utilities", can_resume: false } : job }),
+        body: JSON.stringify({ success: true, job: continued ? nextJob : job }),
       });
       jobDetailInFlight -= 1;
       return;
@@ -202,7 +235,27 @@ test("an approval hold does not create overlapping project or job polling", asyn
     }
     if (path === "/api/preview") {
       previewCalls += 1;
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true, image_url: "", summary: {} }) });
+      const rawBody = request.postDataBuffer() ?? Buffer.alloc(0);
+      previewRequestBytes = rawBody.byteLength;
+      previewStates.push({ continued, bytes: rawBody.byteLength });
+      const body = request.postDataJSON();
+      expect(body.project_id).toBe(project.project_id);
+      expect(body.result).toBeUndefined();
+      expect(body.final_plan).toBeUndefined();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          preview_image_data_url: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='2' height='2'/%3E",
+          summary: {
+            review: {
+              release_status: "review",
+              blocked_reasons: ["Storm pipe checkpoint requires explicit review."],
+            },
+          },
+        }),
+      });
       return;
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ success: true }) });
@@ -224,17 +277,30 @@ test("an approval hold does not create overlapping project or job polling", asyn
   await expect.poll(() => queueCalls).toBe(1);
   await expect(page.getByTestId("generate-review-hold")).toContainText(/Review storm pipes/i);
   await expect(page.getByTestId("generate-main-action")).toContainText(/Continue after storm pipes/i);
+  await expect.poll(() => previewCalls).toBeGreaterThan(0);
+  expect(previewRequestBytes).toBeGreaterThan(0);
+  expect(previewRequestBytes).toBeLessThan(2_000);
+  await expect(page.getByTestId("generated-plan-preview")).toHaveAttribute("src", /^data:image\/svg\+xml/);
+  // Preview completion must not implicitly approve the authoritative hold.
+  expect(continueCalls).toBe(0);
   const jobListCallsBeforeContinue = jobListCalls;
   await page.getByTestId("generate-main-action").click();
   await expect.poll(() => continueCalls).toBe(1);
   await expect(page.getByTestId("generate-latest-status")).toContainText(/Continuing to the next applicable stage/i);
+  await expect(page.getByTestId("generate-review-hold")).toContainText(/Review drainage/i);
+  await expect(page.getByTestId("generate-main-action")).toContainText(/Continue after drainage/i);
+  await expect.poll(() => previewCalls).toBe(2);
+  // The second checkpoint also remains held until a second explicit click.
+  expect(continueCalls).toBe(1);
 
   expect(jobListCalls).toBeLessThanOrEqual(jobListCallsBeforeContinue + 1);
   expect(jobDetailCalls).toBeLessThanOrEqual(2);
   expect(maxJobListInFlight).toBeLessThanOrEqual(1);
   expect(maxJobDetailInFlight).toBeLessThanOrEqual(1);
-  expect(projectResultCalls).toBeLessThanOrEqual(3);
-  expect(previewCalls).toBeLessThanOrEqual(1);
+  expect(projectResultCalls).toBeLessThanOrEqual(4);
+  expect(previewStates).toHaveLength(2);
+  expect(previewStates.map((entry) => entry.continued)).toEqual([false, true]);
+  expect(previewStates.every((entry) => entry.bytes > 0 && entry.bytes < 2_000)).toBe(true);
 });
 
 test("a completed job does not block the next review export", async ({ page }) => {
