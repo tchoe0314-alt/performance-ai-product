@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "kind": "acceptance_preparation_not_a_run",
+  "candidate": {
+    "git_revision": "944ce3455c9d18db7cbe88c35867d66bbd8da84e",
+    "frontend_expected_revision": "944ce3455c9d18db7cbe88c35867d66bbd8da84e",
+    "api_expected_revision": "944ce3455c9d18db7cbe88c35867d66bbd8da84e",
+    "worker_expected_revision": "944ce3455c9d18db7cbe88c35867d66bbd8da84e",
+    "live_baseline_reverification_required": true
+  },
+  "suite_sources": {
+    "suite_version": "2026-11-18.1",
+    "major_case_count": 26,
+    "historical_family_count": 131,
+    "catalog_sha256": "855a90e9e689ac7dd95b1678185b9705b3297203b210b37b4baedf778104900f",
+    "baseline_run_sha256": "652dacf2dd0d3b21e7fbedc7274c677645cdbb3bd6d0b73a15751bcdfb63a45f",
+    "case_ids": ["AUTH-X", "PUB-01", "PRJ-01", "DRAW-01", "IMP-01", "GEN-01", "GEN-02", "CAN-01", "GRADE-01", "STORM-01", "UTIL-01", "QTY-01", "REV-01", "DEL-01", "CHAT-01", "COLLAB-01", "UX-01", "UX-02", "PERF-01", "REL-01", "SEC-01", "OPS-01", "DATA-01", "BILL-01", "C3D-01", "PE-01"]
+  },
+  "fixture": {
+    "name": "canonical-building-and-storm-a-b",
+    "units": "ft",
+    "building": {
+      "id": "office",
+      "initial_width_ft": 169,
+      "revised_width_ft": 179,
+      "depth_ft": 85,
+      "initial_area_sq_ft": 14365,
+      "revised_area_sq_ft": 15215,
+      "expected_delta_sq_ft": 850
+    },
+    "storm_pipe": {
+      "id": "SYN-STORM-PIPE-1",
+      "from_node": "SYN-STORM-START",
+      "to_node": "SYN-STORM-END",
+      "length_ft": 178.885,
+      "diameter_in": 18,
+      "slope_ft_ft": 0.01,
+      "invert_start_ft": 90,
+      "invert_end_ft": 88.21115,
+      "review_required": true,
+      "construction_release_allowed": false
+    }
+  },
+  "acceptance": {
+    "terminal_job_budget_ms": 120000,
+    "known_prior_wall_time_ms": 138574,
+    "required_artifacts": ["PDF", "DXF", "LandXML"],
+    "same_saved_revision_required": true,
+    "native_civil_3d_claim_allowed": false
+  }
+}
