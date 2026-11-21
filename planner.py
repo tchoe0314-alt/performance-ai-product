@@ -111,6 +111,7 @@ from backend.planning.field_contract import (
 )
 from backend.planning.runtime import (
     PlanQualityReport,
+    PLANNER_STAGE_ORDER,
     PlannerExecutionContext,
     RoutingDecision,
     PlannerStageResult,
@@ -124,6 +125,7 @@ from backend.planning.runtime import (
     _lot_area,
     _compute_hydrology_metrics,
     _planner_score_from_manager,
+    declared_stage_dependencies,
 )
 from backend.planning.export_validation import (
     drainage_export_validation as _drainage_export_validation,
@@ -9922,8 +9924,28 @@ def _run_model_first_workflow(
 
         resumable_statuses = {"complete", "assumed"}
         resumed: set[str] = set()
+        checkpoint_frontier_stages = {
+            safe_str(stage_name)
+            for stage_name, status in stage_statuses.items()
+            if safe_str(stage_name)
+            and lower_text(status)
+            and lower_text(status) != "complete"
+        }
+        invalidated_downstream_stages: set[str] = set()
+        pending_invalidations = set(checkpoint_frontier_stages)
+        while pending_invalidations:
+            upstream = pending_invalidations.pop()
+            for candidate_stage in PLANNER_STAGE_ORDER:
+                if candidate_stage in invalidated_downstream_stages:
+                    continue
+                if upstream not in declared_stage_dependencies(candidate_stage):
+                    continue
+                invalidated_downstream_stages.add(candidate_stage)
+                pending_invalidations.add(candidate_stage)
 
         def _stage_is_resumable(stage_name: str) -> bool:
+            if stage_name in invalidated_downstream_stages:
+                return False
             return (
                 lower_text(stage_statuses.get(stage_name)) in resumable_statuses
                 or stage_name in approved_stage_names
@@ -10054,6 +10076,11 @@ def _run_model_first_workflow(
         if resumed:
             ctx.record_assumption(
                 f"Resumed saved engineering phases from checkpoint state: {', '.join(sorted(resumed))}."
+            )
+        if invalidated_downstream_stages:
+            ctx.record_assumption(
+                "Did not resume downstream phases invalidated by non-complete checkpoint frontier stages: "
+                f"{', '.join(sorted(invalidated_downstream_stages))}."
             )
         return resumed
 

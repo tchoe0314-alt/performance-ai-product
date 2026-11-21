@@ -178,6 +178,56 @@ class EngineeringGenerationWorkflowTests(unittest.TestCase):
         self.assertEqual(runtime_checkpoint["stage_name"], "sanitary")
         self.assertTrue(runtime_checkpoint["yielded"])
 
+    def test_runtime_resume_keeps_complete_downstream_checkpoint_state(self) -> None:
+        payload = _supported_minimal_payload()
+        checkpoint = planner.build_plan(deepcopy(payload))
+        statuses = checkpoint["meta"]["stage_completeness"]["statuses"]
+
+        resumed_payload = deepcopy(payload)
+        resumed_payload["meta"] = {
+            "orchestrator_meta": {
+                "runtime_resume": {
+                    "final_plan": checkpoint,
+                    "stage_statuses": statuses,
+                },
+                "runtime_phase_batch_limit": 1,
+            }
+        }
+
+        resumed = planner.build_plan(resumed_payload)
+        self.assertEqual(resumed["meta"]["runtime_phase_checkpoint"]["stage_name"], "sheets")
+
+    def test_accepted_partial_sanitary_invalidates_dependent_outputs(self) -> None:
+        payload = _supported_minimal_payload()
+        checkpoint = planner.build_plan(deepcopy(payload))
+        checkpoint_meta = checkpoint["meta"]
+        statuses = checkpoint_meta["stage_completeness"]["statuses"]
+        statuses["sanitary"] = "partial"
+
+        resumed_payload = deepcopy(payload)
+        resumed_payload["meta"] = {
+            "orchestrator_meta": {
+                "runtime_resume": {
+                    "final_plan": checkpoint,
+                    "stage_statuses": statuses,
+                },
+                "runtime_approved_stages": ["sanitary"],
+                "runtime_phase_batch_limit": 1,
+            }
+        }
+
+        resumed = planner.build_plan(resumed_payload)
+        runtime_checkpoint = resumed["meta"]["runtime_phase_checkpoint"]
+        self.assertEqual(runtime_checkpoint["stage_name"], "utility_network")
+        stage_rows = resumed["meta"]["stage_results"]
+        self.assertTrue(
+            any(
+                row.get("stage_name") == "utility_network"
+                and not row.get("meta", {}).get("resumed_from_checkpoint")
+                for row in stage_rows
+            )
+        )
+
     def test_runtime_checkpoints_preserve_drawn_drainage_for_storm_generation(self) -> None:
         payload = _supported_minimal_payload()
         payload["disciplines"] = ["grading", "drainage", "storm", "sanitary", "water", "utility"]
