@@ -44,6 +44,86 @@ def _blocker_inputs(plan: dict, name: str) -> set[str]:
 
 
 class EngineeringGenerationWorkflowTests(unittest.TestCase):
+    def test_generated_storm_identity_resolves_protected_authored_pipe_fail_closed(self) -> None:
+        payload = _supported_minimal_payload()
+        payload["disciplines"] = ["grading", "drainage", "storm"]
+        payload["drainage_structures"] = [
+            {"id": "IN-1", "name": "IN-1", "x": 40, "y": 80, "structure_type": "inlet", "rim_elev_ft": 98},
+            {"id": "OF-1", "name": "OF-1", "x": 180, "y": 20, "structure_type": "outfall", "rim_elev_ft": 94},
+        ]
+
+        generated = planner.build_plan(deepcopy(payload))
+        generated_segments = generated["meta"]["storm_pipes"]["segments"]
+        target = next(item for item in generated_segments if item.get("id") == "P-001")
+        control = next(item for item in generated_segments if item.get("id") == "P-002")
+
+        authored = {
+            "id": "P-001",
+            "canonical_id": "P-001",
+            "utility_type": "storm",
+            "path": deepcopy(target["path"]),
+            "points": deepcopy(target["path"]),
+            "endpoint_inverts_protected": True,
+            "invert_start_ft": 95.0,
+            "invert_end_ft": 94.5,
+            "invert_provenance": {"source": "synthetic explicit", "reviewed": True},
+        }
+        protected_payload = deepcopy(payload)
+        unprotected_control = {
+            "id": "P-002",
+            "canonical_id": "P-002",
+            "utility_type": "storm",
+            "path": deepcopy(control["path"]),
+            "points": deepcopy(control["path"]),
+            "endpoint_inverts_protected": False,
+        }
+        # Authored input order differs from generated order; identity, not list
+        # position, must decide which segment receives protected values.
+        protected_payload["pipe_network"] = [unprotected_control, authored]
+        protected = planner.build_plan(protected_payload)
+        protected_segments = protected["meta"]["storm_pipes"]["segments"]
+        protected_target = next(item for item in protected_segments if item.get("id") == "P-001")
+        protected_control = next(item for item in protected_segments if item.get("id") == "P-002")
+        self.assertEqual(protected_target["canonical_id"], "P-001")
+        self.assertEqual(protected_target["start_invert"], 95.0)
+        self.assertEqual(protected_target["end_invert"], 94.5)
+        self.assertTrue(protected_target["endpoint_inverts_protected"])
+        self.assertEqual(protected_target["path"], target["path"])
+        self.assertEqual(protected_control["path"], control["path"])
+        self.assertEqual(protected_control["start_invert"], control["start_invert"])
+        self.assertEqual(protected_control["end_invert"], control["end_invert"])
+
+        ambiguous_payload = deepcopy(payload)
+        conflicting_authored = deepcopy(authored)
+        conflicting_authored["invert_start_ft"] = 91.0
+        conflicting_authored["invert_end_ft"] = 90.5
+        ambiguous_payload["pipe_network"] = [authored, conflicting_authored]
+        ambiguous = planner.build_plan(ambiguous_payload)
+        ambiguous_storm = ambiguous["meta"]["storm_pipes"]
+        ambiguous_target = next(item for item in ambiguous_storm["segments"] if item.get("id") == "P-001")
+        self.assertEqual(ambiguous_target["start_invert"], target["start_invert"])
+        self.assertEqual(ambiguous_target["end_invert"], target["end_invert"])
+        self.assertTrue(any("ambiguous" in item for item in ambiguous_storm["errors"]))
+        self.assertFalse(ambiguous_storm["export_validation"]["ready"])
+        self.assertFalse(
+            next(row for row in ambiguous["meta"]["stage_results"] if row["stage_name"] == "storm_pipes")["success"]
+        )
+
+        missing_payload = deepcopy(payload)
+        missing_authored = deepcopy(authored)
+        missing_authored["id"] = "MISSING-PIPE"
+        missing_authored["canonical_id"] = "MISSING-PIPE"
+        missing_payload["pipe_network"] = [missing_authored]
+        missing = planner.build_plan(missing_payload)
+        missing_storm = missing["meta"]["storm_pipes"]
+        missing_target = next(item for item in missing_storm["segments"] if item.get("id") == "P-001")
+        self.assertEqual(missing_target["start_invert"], target["start_invert"])
+        self.assertEqual(missing_target["end_invert"], target["end_invert"])
+        self.assertTrue(any("could not be matched" in item for item in missing_storm["errors"]))
+        self.assertFalse(
+            next(row for row in missing["meta"]["stage_results"] if row["stage_name"] == "storm_pipes")["success"]
+        )
+
     def test_traceable_building_quantity_and_review_pipe_reach_exports(self) -> None:
         from tempfile import TemporaryDirectory
         from pathlib import Path

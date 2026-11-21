@@ -1158,13 +1158,40 @@ def run_storm_pipe_stage(
         summary_segments = [safe_dict(item) for item in safe_list(storm_pipe_summary.get("segments"))]
         for segment in summary_segments:
             segment["effective_min_slope_ft_ft"] = min_pipe_slope
-        summary_by_id = {safe_str(segment.get("canonical_id") or segment.get("id") or segment.get("pipe")): segment for segment in summary_segments if safe_str(segment.get("canonical_id") or segment.get("id") or segment.get("pipe"))}
-        protection_errors: List[str] = []
+        summary_matches_by_id: Dict[str, List[Dict[str, Any]]] = {}
+        for segment in summary_segments:
+            segment_id = safe_str(segment.get("canonical_id") or segment.get("id") or segment.get("pipe"))
+            if segment_id:
+                summary_matches_by_id.setdefault(segment_id, []).append(segment)
+        protected_authored_by_id: Dict[str, List[Dict[str, Any]]] = {}
+        missing_id_authored: List[Dict[str, Any]] = []
         for authored in [safe_dict(item) for item in safe_list(execution_payload.get("pipe_network"))]:
             if authored.get("endpoint_inverts_protected") is not True:
                 continue
             canonical_id = safe_str(authored.get("canonical_id") or authored.get("id"))
-            segment = summary_by_id.get(canonical_id)
+            if canonical_id:
+                protected_authored_by_id.setdefault(canonical_id, []).append(authored)
+            else:
+                missing_id_authored.append(authored)
+        protection_errors: List[str] = []
+        if missing_id_authored:
+            protection_errors.append(
+                "Protected authored pipe identity is missing; endpoint inverts were not applied to any calculated segment."
+            )
+        for canonical_id, authored_matches in protected_authored_by_id.items():
+            if len(authored_matches) != 1:
+                protection_errors.append(
+                    f"Protected authored pipe {canonical_id} is ambiguous because {len(authored_matches)} authored records share its canonical identity. No endpoint inverts were applied."
+                )
+                continue
+            generated_matches = summary_matches_by_id.get(canonical_id, [])
+            if len(generated_matches) > 1:
+                protection_errors.append(
+                    f"Protected authored pipe {canonical_id} is ambiguous because {len(generated_matches)} calculated segments share its canonical identity. No endpoint inverts were applied."
+                )
+                continue
+            authored = authored_matches[0]
+            segment = generated_matches[0] if generated_matches else None
             authored_path = safe_list(authored.get("path") or authored.get("points"))
             if segment is None:
                 protection_errors.append(f"Protected authored pipe {canonical_id or '(missing id)'} could not be matched to the calculated storm network. Its endpoint inverts were not adjusted.")
