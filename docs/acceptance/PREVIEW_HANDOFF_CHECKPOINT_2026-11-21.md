@@ -56,9 +56,9 @@ The aggregate above is the last complete **live** classification. It must not er
 - `PRJ-01`: local synthetic case PASS at `d1cdc517` for project duplication and inaccessible-project state clearing. Archive/role/live coverage remains outside that local scope.
 - `REV-01`: local focused case PASS at product `ed10548c` with acceptance alignment recorded at `e1252f00`; it covers Review navigation/currentness and normal local downloads, not every hosted failure/history state.
 - `UX-01`: local focused case PASS at `e1252f00` for the card's desktop interaction/navigation assertions. Full live control inventory and supported-browser coverage remain separate.
-- `GEN-01`: local focused PASS on the descendant of `05d6407c` recorded by the next commit. A genuinely blank Industrial project generated one 14,400-sf Industrial review building and a 48-stall parking concept, preserved `industrial_site` through the real worker, and stopped at an explicit Grading approval. The prior live GEN-01 failure remains historical until this exact case runs live.
+- `GEN-01`: local focused PASS on the descendant of `05d6407c` recorded by the subsequent commits. A genuinely blank Industrial project generated one 14,400-sf Industrial review building and a 48-stall parking concept, preserved `industrial_site` through the real worker, and stopped at an explicit Layout approval. The prior live GEN-01 failure remains historical until this exact case runs live.
 
-The GEN-01 run also truthfully retained a failed Layout checkpoint (`spacing and overlap checks failed`) and review-only generated objects. This is not engineering acceptance and it does not make downstream grading, drainage, utilities, Review, or Deliver pass.
+The first GEN-01 run truthfully exposed an invalid generated placement: building `[216,88]–[396,168]` overlapped parking `[96,72]–[348,184]` by 132 × 80 ft. The corrected generator places the same building at `[372,88]–[552,168]`, leaving 24 ft to the parking court. The unchanged validator now reports Layout complete and still rejects the original overlap in a focused adverse test. Generated objects remain review-only. This is not engineering acceptance and it does not make downstream grading, drainage, utilities, Review, or Deliver pass.
 
 ## Next distinct case
 

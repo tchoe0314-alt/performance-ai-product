@@ -28,13 +28,25 @@ const conceptArgs = (overrides: Partial<Parameters<typeof buildGenerateConceptPl
 });
 
 test("Generate respects the explicitly selected project type without changing the program", () => {
-  const industrial = buildGenerateConceptPlacements(conceptArgs({ projectType: "industrial_site", buildingProgramSf: 14_400 }));
+  const industrial = buildGenerateConceptPlacements(conceptArgs({
+    projectType: "industrial_site",
+    buildingProgramSf: 14_400,
+    lot: { w: 600, h: 400 },
+    parkingCount: 48,
+  }));
   const industrialBuilding = industrial.find(item => item.type === "industrial_building");
+  const industrialParking = industrial.find(item => item.type === "parking");
   expect(industrialBuilding?.label).toContain("industrial building");
   expect(industrialBuilding?.meta?.requested_area_sf).toBe(14_400);
   expect(industrialBuilding?.meta?.requested_project_type).toBe("industrial_site");
   expect(industrialBuilding?.meta?.building_use).toBe("industrial");
   expect(industrial.some(item => item.type === "office_building")).toBe(false);
+  expect(industrialBuilding).toMatchObject({ x: 372, y: 88, w: 180, d: 80 });
+  expect(industrialParking).toMatchObject({ x: 96, y: 72, w: 252 });
+  expect(industrialParking?.d).toBeCloseTo(112, 9);
+  // The exact GEN-01 fixture has 24 ft between the parking court and building,
+  // comfortably above the validator's 2 ft schematic separation check.
+  expect((industrialBuilding!.x ?? 0) - ((industrialParking!.x ?? 0) + (industrialParking!.w ?? 0))).toBe(24);
 
   const commercial = buildGenerateConceptPlacements(conceptArgs({ projectType: "commercial_pad" }));
   expect(commercial.some(item => item.type === "retail_building")).toBe(true);

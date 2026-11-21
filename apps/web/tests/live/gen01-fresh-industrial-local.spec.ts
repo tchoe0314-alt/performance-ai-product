@@ -112,12 +112,12 @@ test("GEN-01 fresh Industrial project preserves its explicit program through the
     },
   });
   expect(job.result?.metadata?.runtime_phase_checkpoint).toMatchObject({
-    stage_name: "grading",
+    stage_name: "layout",
     yielded: true,
   });
   expect(job.result?.final_plan?.meta?.phase_checkpoints?.layout).toMatchObject({
-    status: "failed",
-    ready: false,
+    status: "complete",
+    ready: true,
   });
   expect(job.can_resume).toBe(true);
 
@@ -137,8 +137,8 @@ test("GEN-01 fresh Industrial project preserves its explicit program through the
   expect(saved.site_objects.some((item: { type?: string; label?: string }) =>
     item.type === "parking" && /48 stalls/i.test(String(item.label || "")))).toBe(true);
 
-  await expect(page.getByTestId("generate-review-hold")).toContainText(/Review grading/i);
-  await expect(page.getByTestId("generate-main-action")).toContainText(/Continue after grading/i);
+  await expect(page.getByTestId("generate-review-hold")).toContainText(/Review layout/i);
+  await expect(page.getByTestId("generate-main-action")).toContainText(/Continue after layout/i);
   // Rendering and polling must never consume the approval automatically.
   const stillHeld = await (await request.get(`${api}/api/jobs/${jobId}`, { headers })).json();
   expect(stillHeld.job.status).toBe("awaiting_approval");

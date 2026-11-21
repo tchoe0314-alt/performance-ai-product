@@ -130,7 +130,12 @@ export function buildGenerateConceptPlacements({
       id: `generate-${generatedBuilding.use}-${now}`,
       label: `Review ${generatedBuilding.label} concept - ${requestedArea.toLocaleString()} sf`,
       type: generatedBuilding.type,
-      x: lot.w * 0.36,
+      // Keep the program building in the right-side band. The parking review
+      // court occupies x=16%..58% of the parcel, so the former 36% origin
+      // placed the two rectangles on top of each other on ordinary sites.
+      // A 62% origin plus the existing 34%-of-lot width cap leaves a visible
+      // separation while keeping the building inside the right parcel edge.
+      x: lot.w * 0.62,
       y: lot.h * 0.22,
       w: buildingWidthFt,
       d: buildingDepthFt,
