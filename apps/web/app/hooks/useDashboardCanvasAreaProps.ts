@@ -44,6 +44,7 @@ type UseDashboardCanvasAreaPropsInput = Omit<WorkspaceCanvasAreaProps, "projectN
   onPlaceObject: PreviewPanelProps["onPlaceObject"];
   onCreateCustomGeometry: PreviewPanelProps["onCreateCustomGeometry"];
   onCreateSiteBoundary: NonNullable<PreviewPanelProps["onCreateSiteBoundary"]>;
+  onEnterAddress: NonNullable<PreviewPanelProps["onEnterAddress"]>;
   onUnlockSite: NonNullable<PreviewPanelProps["onUnlockSite"]>;
   buildingPlacements: BuildingPlacement[];
   cadEntityPreviewObjects: PreviewPanelProps["cadEntityPreviewObjects"];
@@ -156,6 +157,7 @@ export function useDashboardCanvasAreaProps({
   onPlaceObject,
   onCreateCustomGeometry,
   onCreateSiteBoundary,
+  onEnterAddress,
   onUnlockSite,
   buildingPlacements,
   cadEntityPreviewObjects,
@@ -282,6 +284,7 @@ export function useDashboardCanvasAreaProps({
       onPlaceObject,
       onCreateCustomGeometry,
       onCreateSiteBoundary,
+      onEnterAddress,
       onUnlockSite,
       buildingPlacements,
       cadEntityPreviewObjects,

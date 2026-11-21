@@ -5759,6 +5759,10 @@ function PerformanceAIDashboardView({
     onPlaceObject: handlePlaceObject,
     onCreateCustomGeometry: handleCreateCustomGeometry,
     onCreateSiteBoundary: handleCreateSiteBoundary,
+    onEnterAddress: () => {
+      handleOpenSidePanel("site_existing");
+      window.requestAnimationFrame(() => siteAddressInputRef.current?.focus());
+    },
     onUnlockSite: handleUnlockSite,
     buildingPlacements: canvasBuildingPlacements,
     cadEntityPreviewObjects: cadEntityPreview.objects,

@@ -12,6 +12,7 @@ import { PreviewMapStatusOverlay } from "./PreviewMapStatusOverlay";
 import { PreviewPlanAnnotationOverlay } from "./PreviewPlanAnnotationOverlay";
 import { PreviewDependencyProposalCard } from "./PreviewDependencyProposal";
 import { LayoutAlternativesCard } from "./LayoutAlternativesCard";
+import { PreviewBlankCanvasActions } from "./PreviewBlankCanvasActions";
 
 type CadWindowSelect = {
   startX: number;
@@ -50,6 +51,7 @@ type Preview2DSurfaceProps = {
   planAnnotationOverlayProps?: ComponentProps<typeof PreviewPlanAnnotationOverlay>;
   dependencyProposalCardProps?: ComponentProps<typeof PreviewDependencyProposalCard>;
   layoutAlternativesCardProps?: ComponentProps<typeof LayoutAlternativesCard>;
+  blankCanvasActionsProps: ComponentProps<typeof PreviewBlankCanvasActions>;
 };
 
 export function Preview2DSurface({
@@ -74,6 +76,7 @@ export function Preview2DSurface({
   planAnnotationOverlayProps,
   dependencyProposalCardProps,
   layoutAlternativesCardProps,
+  blankCanvasActionsProps,
 }: Preview2DSurfaceProps) {
   return (
     <div
@@ -102,9 +105,7 @@ export function Preview2DSurface({
           onLoad={() => updateImageBounds(previewRef, previewImageRef, setPreviewImageBounds)}
         />
       ) : !showMap && !hasLiveObjects ? (
-        <div className="flex h-full w-full items-center justify-center text-sm text-slate-400">
-          Add objects to start building the site. Then click Place and drop them here.
-        </div>
+        <PreviewBlankCanvasActions {...blankCanvasActionsProps} />
       ) : null}
       {overlayBoundsResolved && previewMode === "2d" && !showGeneratedPlan ? (
         <Preview2DOverlayStack {...overlayStackProps} />

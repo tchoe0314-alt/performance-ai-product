@@ -193,6 +193,7 @@ export default function PreviewPanel({
   onPlaceObject,
   onCreateCustomGeometry,
   onCreateSiteBoundary,
+  onEnterAddress,
   onLockSite,
   onUnlockSite,
   buildingPlacements,
@@ -2936,6 +2937,14 @@ export default function PreviewPanel({
                         onGoalsChange: onLayoutAlternativeGoalsChange,
                       }
                     : undefined,
+                blankCanvasActionsProps: {
+                  hasDrawableSiteSize,
+                  onEnterAddress,
+                  onDrawBoundary: () => {
+                    onSetPreviewInteraction("edit");
+                    activateDrawTool("site");
+                  },
+                },
               }}
               annotationHoverCardProps={
                 showHover && activeAnnotation && hoverPoint
