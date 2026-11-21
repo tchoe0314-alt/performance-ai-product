@@ -223,7 +223,9 @@ test.describe("Chat 265 human UI friction repair", () => {
 
     await page.getByRole("button", { name: /^Review$/ }).filter({ visible: true }).first().click();
     await expect(page.getByTestId("clean-review-panel")).toContainText("Setup needs input before a full review");
-    await expect(page.getByTestId("clean-review-panel")).toContainText("No conflicts are detected yet");
+    await expect(page.getByTestId("clean-review-panel")).toContainText("No current calculation");
+    await expect(page.getByTestId("clean-review-panel")).toContainText("before interpreting an empty issue list as a clean result");
+    await expect(page.getByTestId("clean-review-panel")).not.toContainText("No conflicts are detected yet");
 
     await page.getByRole("button", { name: /^Deliver$/ }).filter({ visible: true }).first().click();
     await expect(page.getByTestId("deliver-review-package-flow")).toContainText("Needs input");

@@ -4,6 +4,16 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 async function openCleanWorkspace(page: Page) {
   await page.goto("/demo/workspace?debugPreview=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("workspace-canvas-shell")).toBeVisible({ timeout: 30_000 });
+  // Next's empty development-tools portal can cover the mobile viewport even
+  // when it contains no error dialog. Keep genuine overlays blocking input,
+  // but do not let that development-only host invalidate product interaction.
+  await page.locator("nextjs-portal").evaluateAll((portals) => {
+    for (const portal of portals) {
+      const root = portal.shadowRoot;
+      const hasDialog = Boolean(root?.querySelector('[role="dialog"], nextjs-errors-dialog'));
+      if (!hasDialog) (portal as HTMLElement).style.pointerEvents = "none";
+    }
+  });
 }
 
 function overlap(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) {
