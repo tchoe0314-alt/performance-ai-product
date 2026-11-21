@@ -1,12 +1,107 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict, Iterable, List
+import hashlib
+from typing import Any, Dict, Iterable, List, TypedDict
 
 from .common import readiness_issue_explanations, safe_dict, safe_float, safe_str
 
 
 SURVEY_CONTROL_PACKAGE_VERSION = "survey_control_package_v1"
+
+
+class SurveyControlEvidenceReview(TypedDict):
+    status: str
+    source_digest: str
+    missing_fields: List[str]
+    mismatched_fields: List[str]
+    review_only: bool
+    grading_authorized: bool
+    independently_authorized_verification_required: bool
+    truth_label: str
+
+
+def survey_control_source_digest(payload: bytes) -> str:
+    """Return the stable identity used to bind review evidence to an import."""
+
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def validate_survey_control_evidence_for_review(
+    evidence: Dict[str, Any] | None,
+    *,
+    imported_source: Dict[str, Any] | None,
+) -> SurveyControlEvidenceReview:
+    """Compare a control artifact with one imported source without authorizing it.
+
+    This is deliberately an offline completeness and identity check. A complete
+    result remains review-only until a separate, independently authorized
+    verification workflow exists.
+    """
+
+    control = safe_dict(evidence)
+    imported = safe_dict(imported_source)
+    control_coordinate = safe_dict(control.get("coordinate_system"))
+    imported_coordinate = safe_dict(imported.get("coordinate_system"))
+    fields = {
+        "source_digest": (
+            safe_str(control.get("source_digest")),
+            safe_str(imported.get("source_digest")),
+        ),
+        "source": (
+            safe_str(control.get("survey_source") or control.get("source")),
+            safe_str(imported.get("source")),
+        ),
+        "coordinate_system": (
+            safe_str(control_coordinate.get("epsg") or control_coordinate.get("name")),
+            safe_str(imported_coordinate.get("epsg") or imported_coordinate.get("name")),
+        ),
+        "units": (
+            safe_str(control_coordinate.get("units")),
+            safe_str(imported_coordinate.get("units")),
+        ),
+        "horizontal_datum": (
+            safe_str(control.get("horizontal_datum") or control_coordinate.get("horizontal_datum")),
+            safe_str(imported.get("horizontal_datum") or imported_coordinate.get("horizontal_datum")),
+        ),
+        "vertical_datum": (
+            safe_str(control.get("vertical_datum") or control.get("datum") or control_coordinate.get("vertical_datum")),
+            safe_str(imported.get("vertical_datum") or imported.get("datum") or imported_coordinate.get("vertical_datum")),
+        ),
+        "benchmark_id": (
+            safe_str(control.get("benchmark_id") or control.get("benchmark")),
+            safe_str(imported.get("benchmark_id") or imported.get("benchmark")),
+        ),
+        "benchmark_elevation": (
+            safe_str(control.get("benchmark_elevation")),
+            safe_str(imported.get("benchmark_elevation")),
+        ),
+    }
+    missing_fields = [
+        f"{side}_{field}"
+        for field, pair in fields.items()
+        for side, value in zip(("evidence", "import"), pair)
+        if not value
+    ]
+    mismatched_fields = [
+        field
+        for field, (evidence_value, import_value) in fields.items()
+        if evidence_value and import_value and evidence_value.casefold() != import_value.casefold()
+    ]
+    complete = not missing_fields and not mismatched_fields
+    return {
+        "status": "complete_for_review" if complete else "blocked",
+        "source_digest": fields["source_digest"][0] if fields["source_digest"][0] == fields["source_digest"][1] else "",
+        "missing_fields": missing_fields,
+        "mismatched_fields": mismatched_fields,
+        "review_only": True,
+        "grading_authorized": False,
+        "independently_authorized_verification_required": True,
+        "truth_label": (
+            "This offline check binds survey-control evidence to imported source metadata for review only; "
+            "it does not verify survey control or authorize grading."
+        ),
+    }
 
 
 def _first_value(*values: Any) -> Any:
@@ -186,4 +281,10 @@ def build_survey_control_package(
     return package
 
 
-__all__ = ["SURVEY_CONTROL_PACKAGE_VERSION", "build_survey_control_package"]
+__all__ = [
+    "SURVEY_CONTROL_PACKAGE_VERSION",
+    "SurveyControlEvidenceReview",
+    "build_survey_control_package",
+    "survey_control_source_digest",
+    "validate_survey_control_evidence_for_review",
+]

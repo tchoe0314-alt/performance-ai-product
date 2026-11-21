@@ -1,6 +1,10 @@
 import unittest
 
 from backend.planning.existing_conditions_package import build_existing_conditions_package
+from backend.planning.survey_control import (
+    survey_control_source_digest,
+    validate_survey_control_evidence_for_review,
+)
 
 
 def _complete_meta(*, accepted: bool = True) -> dict:
@@ -61,6 +65,83 @@ def _complete_meta(*, accepted: bool = True) -> dict:
 
 
 class ExistingConditionsPackageTests(unittest.TestCase):
+    def test_offline_survey_control_evidence_is_complete_but_review_only(self) -> None:
+        digest = survey_control_source_digest(b"synthetic survey source\n")
+        source = {
+            "source_digest": digest,
+            "source": "survey.csv",
+            "coordinate_system": {
+                "epsg": "EPSG:2276",
+                "units": "ft",
+                "horizontal_datum": "NAD83",
+                "vertical_datum": "NAVD88",
+            },
+            "benchmark_id": "BM-1",
+            "benchmark_elevation": "612.42",
+        }
+        evidence = {
+            "source_digest": digest,
+            "survey_source": "survey.csv",
+            "coordinate_system": source["coordinate_system"],
+            "benchmark_id": "BM-1",
+            "benchmark_elevation": "612.42",
+        }
+
+        review = validate_survey_control_evidence_for_review(evidence, imported_source=source)
+
+        self.assertEqual(review["status"], "complete_for_review")
+        self.assertEqual(review["source_digest"], digest)
+        self.assertFalse(review["missing_fields"])
+        self.assertFalse(review["mismatched_fields"])
+        self.assertTrue(review["review_only"])
+        self.assertFalse(review["grading_authorized"])
+        self.assertTrue(review["independently_authorized_verification_required"])
+
+    def test_offline_survey_control_evidence_reports_source_and_control_mismatches(self) -> None:
+        review = validate_survey_control_evidence_for_review(
+            {
+                "source_digest": survey_control_source_digest(b"different source\n"),
+                "survey_source": "other.csv",
+                "coordinate_system": {
+                    "epsg": "EPSG:26915",
+                    "units": "m",
+                    "horizontal_datum": "NAD83(2011)",
+                    "vertical_datum": "NGVD29",
+                },
+                "benchmark_id": "BM-OTHER",
+                "benchmark_elevation": "610.00",
+            },
+            imported_source={
+                "source_digest": survey_control_source_digest(b"synthetic survey source\n"),
+                "source": "survey.csv",
+                "coordinate_system": {
+                    "epsg": "EPSG:2276",
+                    "units": "ft",
+                    "horizontal_datum": "NAD83",
+                    "vertical_datum": "NAVD88",
+                },
+                "benchmark_id": "BM-1",
+                "benchmark_elevation": "612.42",
+            },
+        )
+
+        self.assertEqual(review["status"], "blocked")
+        self.assertEqual(
+            review["mismatched_fields"],
+            [
+                "source_digest",
+                "source",
+                "coordinate_system",
+                "units",
+                "horizontal_datum",
+                "vertical_datum",
+                "benchmark_id",
+                "benchmark_elevation",
+            ],
+        )
+        self.assertEqual(review["source_digest"], "")
+        self.assertFalse(review["grading_authorized"])
+
     def test_complete_accepted_import_package_is_ready(self) -> None:
         package = build_existing_conditions_package({"meta": _complete_meta(accepted=True)})
 
