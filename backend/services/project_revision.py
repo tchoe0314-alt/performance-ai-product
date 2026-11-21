@@ -54,6 +54,10 @@ def next_design_generation(record: dict | None) -> int:
 
 def merge_save_metadata(existing: dict, incoming: dict, *, replaced_record: dict | None = None) -> dict:
     metadata = {**deepcopy(existing), **deepcopy(incoming)}
+    # Survey-control review history is server-owned audit evidence. Browser
+    # autosaves may carry an older metadata snapshot but cannot rewrite it.
+    if "survey_control_reviews_v1" in existing:
+        metadata["survey_control_reviews_v1"] = deepcopy(existing["survey_control_reviews_v1"])
     # Workflow history is server-owned. A browser autosave must not erase an
     # artifact/calculation that committed after its original project read.
     if existing.get("workflow"):

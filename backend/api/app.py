@@ -482,6 +482,13 @@ class ProjectReviewRequestPayload(BaseModel):
     message: str = ""
 
 
+class SurveyControlReviewPayload(BaseModel):
+    source_id: str = Field(min_length=1, max_length=255)
+    source_digest: str = Field(min_length=71, max_length=71, pattern=r"^sha256:[0-9a-fA-F]{64}$")
+    decision: Literal["accepted_for_review", "rejected"]
+    note: str = Field(default="", max_length=2000)
+
+
 class MemoryConsentPayload(BaseModel):
     personal_enabled: bool = False
     company_enabled: bool = False
@@ -2970,6 +2977,26 @@ def get_project_collaboration(project_id: str, current_user: Dict[str, Any] = De
     if surface is None:
         raise HTTPException(status_code=404, detail="Project not found.")
     return {"success": True, **surface}
+
+
+@app.post("/api/projects/{project_id}/survey-control-review")
+def record_survey_control_review(
+    project_id: str,
+    payload: SurveyControlReviewPayload,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        review = PROJECT_STORE.record_survey_control_review(
+            user_id=current_user["user_id"],
+            project_id=project_id,
+            source_id=payload.source_id,
+            source_digest=payload.source_digest,
+            decision=payload.decision,
+            note=payload.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return {"success": True, "survey_control_review": review}
 
 
 @app.post("/api/projects/{project_id}/presence")

@@ -1696,6 +1696,134 @@ class ProjectStore:
             connection.close()
         return {"request_id": request_id, "project_id": project_id, "status": normalized_status, "updated_at": now}
 
+    def record_survey_control_review(
+        self,
+        *,
+        user_id: str,
+        project_id: str,
+        source_id: str,
+        source_digest: str,
+        decision: str,
+        note: str = "",
+    ) -> Dict[str, Any]:
+        """Record a review-only decision bound to the current saved upload.
+
+        This deliberately does not alter survey control verification, grading
+        eligibility, calculation state, or construction-release gates.
+        """
+
+        normalized_decision = str(decision or "").strip().lower()
+        if normalized_decision not in {"accepted_for_review", "rejected"}:
+            raise ValueError("Survey-control review decision must be accepted_for_review or rejected.")
+        expected_source_id = str(source_id or "").strip()
+        expected_digest = str(source_digest or "").strip().lower()
+        if not expected_source_id or not expected_digest.startswith("sha256:") or len(expected_digest) != 71:
+            raise ValueError("Exact survey source identity and SHA-256 digest are required.")
+
+        connection = self.db.connect()
+        try:
+            if self.db.storage_kind == "sqlite":
+                connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(_project_by_id_sql(self.db.storage_kind), (project_id,)).fetchone()
+            if row is None or row["deleted_at"] is not None:
+                raise ValueError("Project not found.")
+            membership = connection.execute(
+                "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
+                (project_id, user_id),
+            ).fetchone()
+            role = "owner" if row["user_id"] == user_id else (membership["role"] if membership else "viewer")
+            if row["user_id"] != user_id and not (membership and _role_allows(role, "reviewer")):
+                raise ValueError("You need reviewer access to review survey-control evidence.")
+
+            project_input = _json_loads(row["project_input_json"], {})
+            input_meta = dict(project_input.get("meta") or {})
+            site_inputs = dict(input_meta.get("site_inputs") or {})
+            if not site_inputs:
+                document = dict(project_input.get(PROJECT_DOCUMENT_KEY) or {})
+                site_inputs = dict(dict(document.get("site") or {}).get("site_inputs_v1") or {})
+                record_input_meta = dict(
+                    dict(dict(document.get("extensions") or {}).get("project_record_v1") or {}).get("input_meta") or {}
+                )
+                input_meta = {**record_input_meta, **input_meta}
+            survey_file = dict(site_inputs.get("survey_file") or {})
+            source_reference = dict(survey_file.get("source_reference") or {})
+            current_source_id = str(source_reference.get("source_id") or "").strip()
+            current_digest = str(source_reference.get("source_digest") or "").strip().lower()
+            source_owner_user_id = str(source_reference.get("owner_user_id") or "").strip()
+            if source_reference.get("immutable") is not True:
+                raise ValueError("The saved survey source does not have immutable upload identity evidence.")
+            if current_source_id != expected_source_id or current_digest != expected_digest:
+                raise ValueError("Survey source was replaced or does not belong to this saved project revision.")
+            source_owner = connection.execute(
+                """
+                SELECT 1 FROM projects p
+                LEFT JOIN project_members pm ON pm.project_id = p.project_id AND pm.user_id = ?
+                WHERE p.project_id = ? AND (p.user_id = ? OR pm.user_id = ?)
+                """,
+                (source_owner_user_id, project_id, source_owner_user_id, source_owner_user_id),
+            ).fetchone()
+            if not source_owner_user_id or source_owner is None:
+                raise ValueError("Survey source owner is not an authorized member of this project.")
+
+            evidence_review = dict(
+                site_inputs.get("survey_control_evidence_review")
+                or input_meta.get("survey_control_evidence_review")
+                or {}
+            )
+            if normalized_decision == "accepted_for_review" and (
+                evidence_review.get("status") != "complete_for_review"
+                or str(evidence_review.get("source_digest") or "").strip().lower() != current_digest
+            ):
+                raise ValueError("Survey-control evidence is incomplete, mismatched, or stale and cannot be accepted for review.")
+
+            now = _now()
+            review = {
+                "review_id": _new_id("survey_review"),
+                "project_id": project_id,
+                "source_id": current_source_id,
+                "source_digest": current_digest,
+                "source_owner_user_id": source_owner_user_id,
+                "reviewer_user_id": user_id,
+                "reviewer_role": _normalize_role(role),
+                "decision": normalized_decision,
+                "note": str(note or "").strip()[:2000],
+                "reviewed_at": now,
+                "review_only": True,
+                "grading_authorized": False,
+                "construction_release_allowed": False,
+            }
+            metadata = _json_loads(row["metadata_json"], {})
+            history = list(metadata.get("survey_control_reviews_v1") or [])
+            history.append(review)
+            metadata["survey_control_reviews_v1"] = history[-100:]
+            connection.execute(
+                "UPDATE projects SET metadata_json = ?, updated_at = ? WHERE project_id = ?",
+                (_json_dumps(metadata), now, project_id),
+            )
+            self._log_access_event(
+                connection,
+                actor_user_id=user_id,
+                organization_id=row["organization_id"],
+                project_id=project_id,
+                action="survey_control_review_recorded",
+                role=_normalize_role(role),
+                metadata={
+                    "review_id": review["review_id"],
+                    "source_id": current_source_id,
+                    "source_digest": current_digest,
+                    "decision": normalized_decision,
+                    "review_only": True,
+                    "grading_authorized": False,
+                },
+            )
+            connection.commit()
+            return review
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     def project_collaboration_surface(self, *, user_id: str, project_id: str) -> Optional[Dict[str, Any]]:
         if not self.has_project_permission(user_id=user_id, project_id=project_id, minimum_role="viewer"):
             return None
