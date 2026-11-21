@@ -22,7 +22,7 @@ export function PreviewCanvasControlStack({
       <div className="civora-preview-view-toolbar absolute right-3 top-3 z-[250]">
         <PreviewCanvasHeaderControls {...headerProps} />
       </div>
-      {activeDrawHudProps.drawMode !== "select" ? (
+      {activeDrawHudProps.drawMode !== "select" && activeDrawHudProps.drawMode !== "pan" ? (
         <div className="civora-active-draw-hud absolute left-1/2 top-20 z-[250] hidden w-[min(36rem,calc(100%-1.5rem))] -translate-x-1/2 overflow-hidden rounded-[8px] border border-slate-200 bg-white/97 shadow-[0_16px_46px_-28px_rgba(15,23,42,0.55)] backdrop-blur-xl md:block">
           <PreviewActiveDrawHud {...activeDrawHudProps} />
         </div>

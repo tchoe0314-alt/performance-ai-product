@@ -2484,6 +2484,9 @@ export default function PreviewPanel({
                 if (!cadPrecisionToolsVisible) onSetPreviewInteraction("edit");
                 setCadPrecisionToolsVisible((value) => !value);
               },
+              onZoomIn: () => zoomActiveView(1),
+              onZoomOut: () => zoomActiveView(-1),
+              onFitView: resetActiveView,
             }}
             activeDrawHudProps={{
               drawMode,
@@ -2753,9 +2756,6 @@ export default function PreviewPanel({
                   draftPrecisionReadout,
                   activeDrawToolLabel,
                   activeSnapKind: activeSnapPoint?.kind,
-                  onZoomIn: () => zoomActiveView(1),
-                  onZoomOut: () => zoomActiveView(-1),
-                  onResetView: resetActiveView,
                 },
                 overlayStackProps: {
                   drawMode,

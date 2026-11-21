@@ -1,4 +1,4 @@
-import { Navigation, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { Navigation } from "lucide-react";
 
 import type { CadSnapKind } from "../utils/cadGeometryKernel";
 import { displayLength, type DisplayUnits } from "../utils/workspaceEnvironment";
@@ -24,9 +24,6 @@ type PreviewCanvasHudProps = {
   draftPrecisionReadout: DraftPrecisionReadout;
   activeDrawToolLabel: string;
   activeSnapKind?: CadSnapKind | null;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onResetView: () => void;
 };
 
 export function PreviewCanvasHud({
@@ -41,9 +38,6 @@ export function PreviewCanvasHud({
   draftPrecisionReadout,
   activeDrawToolLabel,
   activeSnapKind,
-  onZoomIn,
-  onZoomOut,
-  onResetView,
 }: PreviewCanvasHudProps) {
   return (
     <>
@@ -75,39 +69,6 @@ export function PreviewCanvasHud({
             ))}
           </div>
         </div>
-      </div>
-      <div
-        className="civora-preview-zoom-controls absolute right-3 top-[4.25rem] z-[45] flex flex-col overflow-hidden rounded-md border border-slate-300 bg-white/92 shadow-sm backdrop-blur max-md:right-2"
-        onMouseDown={(event) => event.stopPropagation()}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <button
-          type="button"
-          aria-label="Zoom in canvas"
-          title="Zoom in canvas"
-          onClick={onZoomIn}
-          className="inline-flex h-10 w-10 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 md:h-8 md:w-8"
-        >
-          <ZoomIn className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom out canvas"
-          title="Zoom out canvas"
-          onClick={onZoomOut}
-          className="inline-flex h-10 w-10 items-center justify-center border-b border-slate-200 text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 md:h-8 md:w-8"
-        >
-          <ZoomOut className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          aria-label="Reset canvas view"
-          title="Reset canvas view"
-          onClick={onResetView}
-          className="inline-flex h-10 w-10 items-center justify-center text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 md:h-8 md:w-8"
-        >
-          <RotateCcw className="h-4 w-4" />
-        </button>
       </div>
       <div
         aria-label="Canvas coordinate readout"

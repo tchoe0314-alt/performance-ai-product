@@ -5,13 +5,17 @@ import {
   Eye,
   EyeOff,
   Layers3,
+  Hand,
   Map,
   Lock,
   MoreHorizontal,
   MousePointer2,
+  Minus,
+  Plus,
   RefreshCw,
   RotateCcw,
   Ruler,
+  Scan,
   Unlock,
   X,
 } from "lucide-react";
@@ -74,6 +78,9 @@ type PreviewCanvasHeaderControlsProps = {
   onShowAllSemanticLayers: () => void;
   onToggleSourceLayer: (layer: keyof PreviewSourceLayerVisibility) => void;
   onTogglePrecisionTools: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onFitView: () => void;
 };
 
 const controlClass = (active: boolean) =>
@@ -125,6 +132,9 @@ export function PreviewCanvasHeaderControls({
   onShowAllSemanticLayers,
   onToggleSourceLayer,
   onTogglePrecisionTools,
+  onZoomIn,
+  onZoomOut,
+  onFitView,
 }: PreviewCanvasHeaderControlsProps) {
   const layerMenuRef = useRef<HTMLDetailsElement>(null);
   const viewMenuRef = useRef<HTMLDetailsElement>(null);
@@ -180,9 +190,39 @@ export function PreviewCanvasHeaderControls({
           onSetPreviewInteraction("edit");
           onActivateDrawTool("select");
         }}
-        className={`${controlClass(allowEdits && drawMode === "select")} w-8 px-0`}
+        className={`${controlClass(allowEdits && drawMode === "select")} gap-1.5`}
       >
         <MousePointer2 className="h-4 w-4" />
+        <span>Select</span>
+      </button>
+      <button
+        type="button"
+        data-testid="preview-pan-tool"
+        aria-label="Pan canvas"
+        aria-pressed={drawMode === "pan"}
+        title="Pan"
+        onClick={() => {
+          closeHeaderMenus();
+          if (aiRealismEnabled) onSetAiVisualizationOff();
+          onSetPreviewInteraction("edit");
+          onActivateDrawTool("pan");
+        }}
+        className={`${controlClass(drawMode === "pan")} gap-1.5`}
+      >
+        <Hand aria-hidden="true" className="h-4 w-4" />
+        <span>Pan</span>
+      </button>
+      <div className="pointer-events-auto flex overflow-hidden rounded-[6px] border border-slate-200 bg-white" aria-label="Canvas zoom controls">
+        <button type="button" aria-label="Zoom out canvas" title="Zoom out" onClick={onZoomOut} className="inline-flex h-8 w-8 items-center justify-center text-slate-600 hover:bg-slate-100 hover:text-slate-950">
+          <Minus aria-hidden="true" className="h-4 w-4" />
+        </button>
+        <button type="button" aria-label="Zoom in canvas" title="Zoom in" onClick={onZoomIn} className="inline-flex h-8 w-8 items-center justify-center border-l border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-950">
+          <Plus aria-hidden="true" className="h-4 w-4" />
+        </button>
+      </div>
+      <button type="button" data-testid="preview-fit-view" aria-label="Fit drawing to canvas" title="Fit" onClick={onFitView} className={`${controlClass(false)} gap-1.5`}>
+        <Scan aria-hidden="true" className="h-4 w-4" />
+        <span>Fit</span>
       </button>
       <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden="true" />
       <button
