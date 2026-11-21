@@ -1,3 +1,4 @@
+import json
 import tempfile
 import threading
 import time
@@ -5,6 +6,8 @@ import unittest
 from pathlib import Path
 
 from backend.services.auth_store import AuthStore
+from backend.services.canonical_canvas import with_canvas_snapshot
+from backend.services.canonical_results import bind_canvas_result, canvas_result_freshness
 from backend.services.database import Database
 from backend.services.job_queue import JobQueueService
 from backend.services.project_store import ProjectStore
@@ -1375,6 +1378,21 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertTrue(started.wait(timeout=1.0))
 
     def test_restart_parks_running_orchestration_at_saved_checkpoint(self):
+        project_store = ProjectStore(self.db)
+        original_input = with_canvas_snapshot({"manual_fields": {"units": "ft", "site_objects": [
+            {"id": "authored-building", "type": "industrial_building", "x": 10, "y": 10, "w": 169, "d": 85},
+        ]}})
+        project = project_store.save_project(
+            user_id=self.user_id,
+            project_id="project_restart_checkpoint",
+            name="Restart checkpoint fixture",
+            project_input=original_input,
+        )
+        checkpoint_result = bind_canvas_result({
+            "success": True,
+            "final_plan": {"actions": [], "meta": {}},
+            "metadata": {"runtime_phase_checkpoint": {"stage_name": "storm_pipes", "yielded": True}},
+        }, original_input, calculation_executed=True)
         connection = self.db.connect()
         try:
             connection.execute(
@@ -1391,12 +1409,12 @@ class JobQueueServiceTest(unittest.TestCase):
                     "running",
                     1.0,
                     2.0,
-                    None,
+                    project["project_id"],
                     "Sanitary Phase",
                     "Running sanitary phase.",
                     64,
-                    "{}",
-                    '{"metadata":{"runtime_phase_checkpoint":{"stage_name":"storm_pipes","yielded":true}}}',
+                    json.dumps({"manual_fields": {"site_objects": original_input["manual_fields"]["site_objects"]}}),
+                    json.dumps(checkpoint_result),
                     None,
                 ),
             )
@@ -1404,8 +1422,20 @@ class JobQueueServiceTest(unittest.TestCase):
         finally:
             connection.close()
 
+        self.queue.shutdown()
         recovery_queue = self.track_queue(JobQueueService(self.db, worker_count=0))
         recovery_queue._enqueue_pending_jobs("orchestrate")
+
+        edited_input = with_canvas_snapshot({"manual_fields": {"units": "ft", "site_objects": [
+            {"id": "authored-building", "type": "industrial_building", "x": 10, "y": 10, "w": 179, "d": 85},
+        ]}})
+        edited_project = project_store.save_project(
+            user_id=self.user_id,
+            project_id=project["project_id"],
+            name=project["name"],
+            project_input=edited_input,
+            expected_revision=project["revision_token"],
+        )
 
         record = recovery_queue.get_job_detail(
             user_id=self.user_id,
@@ -1416,6 +1446,31 @@ class JobQueueServiceTest(unittest.TestCase):
         self.assertTrue(record["can_resume"])
         self.assertTrue(record["resume_feasible"])
         self.assertEqual(recovery_queue._queue.qsize(), 0)
+        self.assertEqual(len(recovery_queue.list_jobs(user_id=self.user_id)), 1)
+        self.assertEqual(record["artifact_history"], [])
+        self.assertEqual(canvas_result_freshness(record["result"], edited_project["project_input"])["status"], "stale")
+        saved_building = project_store.get_project(
+            user_id=self.user_id, project_id=project["project_id"],
+        )["project_input"]["manual_fields"]["site_objects"][0]
+        self.assertEqual((saved_building["w"], saved_building["d"]), (179, 85))
+
+        with self.assertRaisesRegex(ValueError, "visible review checkpoint is stale"):
+            recovery_queue.continue_job(
+                user_id=self.user_id,
+                job_id="job_restart_checkpoint",
+                expected_stage="drainage",
+            )
+        still_held = recovery_queue.get_job_detail(user_id=self.user_id, job_id="job_restart_checkpoint")
+        self.assertEqual(still_held["status"], "awaiting_approval")
+        self.assertNotIn("runtime_approved_stages", still_held["payload"].get("meta", {}).get("orchestrator_meta", {}))
+
+        cancelled = recovery_queue.cancel_job(user_id=self.user_id, job_id="job_restart_checkpoint")
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(len(recovery_queue.list_jobs(user_id=self.user_id)), 1)
+        retried = recovery_queue.retry_job(user_id=self.user_id, job_id="job_restart_checkpoint")
+        self.assertEqual(retried["retry_of_job_id"], "job_restart_checkpoint")
+        self.assertNotEqual(retried["job_id"], "job_restart_checkpoint")
+        self.assertEqual(len(recovery_queue.list_jobs(user_id=self.user_id)), 2)
 
     def test_revise_job_requeues_saved_phase_with_updated_payload(self):
         call_payloads = []
