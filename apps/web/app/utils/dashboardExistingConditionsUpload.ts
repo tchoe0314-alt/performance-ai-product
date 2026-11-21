@@ -1,4 +1,4 @@
-import type { UploadExistingConditionsResponse } from "../types";
+import type { SiteInputs, UploadExistingConditionsResponse } from "../types";
 
 export function buildImportedSurveyProvenance(data: UploadExistingConditionsResponse) {
   const canonical = data.canonical_existing_conditions ?? {};
@@ -25,6 +25,30 @@ export function buildImportedSurveyProvenance(data: UploadExistingConditionsResp
       truth_label: typeof eligibility.truth_label === "string" ? eligibility.truth_label : "Imported survey/control acceptance is not established.",
     },
   };
+}
+
+export function buildPersistedSurveyProvenanceRows(siteInputs: SiteInputs): string[] {
+  const coordinate = siteInputs.survey_coordinate_system ?? {};
+  const eligibility = siteInputs.survey_grading_eligibility;
+  if (!eligibility) return [];
+  const coordinateName = String(coordinate.epsg || coordinate.name || coordinate.crs || "not recorded");
+  const units = eligibility.coordinate_units || String(coordinate.units || "not recorded");
+  const horizontalDatum = eligibility.horizontal_datum || "not recorded";
+  const verticalDatum = eligibility.vertical_datum || "not recorded";
+  const rows = [
+    `Coordinate system: ${coordinateName}; units: ${units}.`,
+    `Datum: horizontal ${horizontalDatum}; vertical ${verticalDatum}.`,
+    eligibility.accepted_grading_input
+      ? "Grading eligibility: accepted survey/control input."
+      : eligibility.review_context_usable
+        ? "Grading eligibility: review context only; accepted survey/control is still required."
+        : "Grading eligibility: not usable as grading context.",
+  ];
+  const blockerText = (eligibility.blockers ?? [])
+    .map((item) => String(item.reason || item.message || item.field || ""))
+    .filter(Boolean);
+  if (blockerText.length) rows.push(`Control blockers: ${blockerText.join(" ")}`);
+  return rows;
 }
 
 export function mapSurveyPointsToSite(
@@ -124,5 +148,6 @@ export function buildExistingConditionsSourceEffects(data: UploadExistingConditi
   if (blockedMessages.length) {
     rows.push(`Needs review: ${blockedMessages.join(" ")}`);
   }
+  rows.push(...buildPersistedSurveyProvenanceRows(buildImportedSurveyProvenance(data)));
   return rows;
 }

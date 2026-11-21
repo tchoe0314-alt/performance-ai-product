@@ -198,6 +198,7 @@ import { createDashboardExportActions } from "./utils/dashboardExportActions";
 import { useDashboardJobActions } from "./hooks/useDashboardJobActions";
 import { useDashboardJobLoader } from "./hooks/useDashboardJobLoader";
 import { useDashboardExistingConditionsUpload } from "./hooks/useDashboardExistingConditionsUpload";
+import { buildPersistedSurveyProvenanceRows } from "./utils/dashboardExistingConditionsUpload";
 import { useDashboardImageDetectionActions } from "./hooks/useDashboardImageDetectionActions";
 import { useDashboardAutoExistingConditions } from "./hooks/useDashboardAutoExistingConditions";
 import { useDashboardApplySiteAction } from "./hooks/useDashboardApplySiteAction";
@@ -998,6 +999,9 @@ function PerformanceAIDashboardView({
     token,
   });
   const siteInputs = (currentProject?.project_input?.meta?.site_inputs ?? {}) as SiteInputs;
+  const displayedSourceEffectRows = sourceEffectRows.length
+    ? sourceEffectRows
+    : buildPersistedSurveyProvenanceRows(siteInputs);
   const engineDepthDashboard = useMemo<EngineDepthDashboard | null>(() => {
     const direct = currentPlanMeta.engine_depth_dashboard_v1;
     if (direct?.version) return direct;
@@ -5256,7 +5260,7 @@ function PerformanceAIDashboardView({
     uploadedImageApiUrl,
     surveyPreviewPointCount: surveyPreviewPoints.length,
     surveyUploadMessage,
-    sourceEffectRows,
+    sourceEffectRows: displayedSourceEffectRows,
     imageUploadState,
     imageUploadNote,
     mapSnapshotPath,
@@ -5628,7 +5632,7 @@ function PerformanceAIDashboardView({
     surveyFileName,
     projectRecordLabel: currentProject?.project_id || projectId || "Draft",
     surveyUploadMessage,
-    sourceEffectRows,
+    sourceEffectRows: displayedSourceEffectRows,
     planPreviewUrl,
     hasBackendResult: Boolean(backendResult),
     dxfStatus: getExportBlockReason() || (backendResult ? "Review export" : "Needs run"),

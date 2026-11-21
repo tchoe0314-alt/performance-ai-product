@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { buildImportedSurveyProvenance } from "../../app/utils/dashboardExistingConditionsUpload";
+import { buildImportedSurveyProvenance, buildPersistedSurveyProvenanceRows } from "../../app/utils/dashboardExistingConditionsUpload";
 
 test("survey import preserves known units and datum without promoting missing control", () => {
   const provenance = buildImportedSurveyProvenance({
@@ -28,6 +28,12 @@ test("survey import preserves known units and datum without promoting missing co
     vertical_datum: "NAVD88",
     control_verified: false,
   });
+  expect(buildPersistedSurveyProvenanceRows(provenance)).toEqual(expect.arrayContaining([
+    "Coordinate system: EPSG:2276; units: ft.",
+    "Datum: horizontal NAD83; vertical NAVD88.",
+    "Grading eligibility: review context only; accepted survey/control is still required.",
+    "Control blockers: survey_control_verified",
+  ]));
 });
 
 test("missing datum remains explicit and cannot become accepted grading input", () => {
@@ -46,6 +52,7 @@ test("missing datum remains explicit and cannot become accepted grading input", 
     vertical_datum: null,
     control_verified: false,
   });
+  expect(buildPersistedSurveyProvenanceRows(provenance)).toContain("Datum: horizontal not recorded; vertical not recorded.");
 });
 
 test("explicitly verified survey eligibility remains accepted", () => {
