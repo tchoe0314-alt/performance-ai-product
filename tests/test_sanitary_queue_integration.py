@@ -2,6 +2,7 @@ import json
 import importlib
 import logging
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -150,6 +151,132 @@ def test_transition_diagnostic_is_fail_closed(monkeypatch, caplog):
     diagnostic_text = " ".join(item.getMessage() for item in caplog.records)
     for forbidden in ("must-not-log-user", "must-not-log-secret", "geometry", "1,2"):
         assert forbidden not in diagnostic_text
+
+
+def test_project_trace_admits_only_first_concurrent_orchestration(monkeypatch, caplog, tmp_path):
+    db = Database(tmp_path / "project-trace.db")
+    auth = AuthStore(db)
+    user_id = auth.register_user(
+        email="project-trace@example.invalid",
+        password="synthetic-password-123",
+        name="Project Trace",
+    )["user"]["user_id"]
+    queue = JobQueueService(db, worker_count=0)
+    project_id = "project_exact_disposable_trace"
+    ProjectStore(db).save_project(
+        user_id=user_id,
+        project_id=project_id,
+        name="Exact Disposable Trace",
+        project_input={},
+    )
+    trace_start = time.time() - 1
+    trace_until = time.time() + 300
+    monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_ID", project_id)
+    monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_START_EPOCH", str(trace_start))
+    monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH", str(trace_until))
+    monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_SINGLE_API_PROCESS_CONFIRMED", "true")
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+    created = []
+
+    def submit(sequence):
+        created.append(
+            queue.submit_job(
+                user_id=user_id,
+                project_id=project_id,
+                job_type="orchestrate",
+                payload={"prompt": f"must-not-log-prompt-{sequence}"},
+            )
+        )
+
+    threads = [threading.Thread(target=submit, args=(sequence,)) for sequence in (1, 2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=3)
+        assert not thread.is_alive()
+    assert len(created) == 2
+    assert len({item["job_id"] for item in created}) == 1
+    first_job_id = created[0]["job_id"]
+    queue._update_job_state(first_job_id, status="completed", result={"final_plan": {}}, error=None)
+    second = queue.submit_job(
+        user_id=user_id,
+        project_id=project_id,
+        job_type="orchestrate",
+        payload={"prompt": "must-not-log-second-completed-run"},
+    )
+    assert second["job_id"] != first_job_id
+    details = [
+        queue.get_job_detail(user_id=user_id, job_id=job_id)
+        for job_id in (first_job_id, second["job_id"])
+    ]
+    marked = [
+        detail
+        for detail in details
+        if dict(detail["payload"].get("meta") or {}).get("_job_transition_diagnostic_v1")
+    ]
+    assert len(marked) == 1, [
+        (detail["job_id"], detail["payload"].get("meta")) for detail in details
+    ]
+    events = [
+        json.loads(record.getMessage().split("JOB_LIFECYCLE ", 1)[1])
+        for record in caplog.records
+        if "JOB_LIFECYCLE " in record.getMessage()
+    ]
+    assert len(events) == 1
+    assert events[0]["event"] == "job_admitted"
+    assert events[0]["correlation_id"] == marked[0]["job_id"]
+    diagnostic_text = " ".join(record.getMessage() for record in caplog.records)
+    for forbidden in (
+        project_id,
+        "project-trace@example.invalid",
+        "must-not-log-prompt",
+        "synthetic-password-123",
+    ):
+        assert forbidden not in diagnostic_text
+    queue.shutdown()
+
+
+@pytest.mark.parametrize(
+    "scope,confirm,start_offset,until_offset",
+    [
+        ("project_one,project_two", "true", -1, 300),
+        ("project_one", "", -1, 300),
+        ("project_one", "true", -901, 300),
+        ("project_one", "true", 30, 300),
+        ("project_one", "true", -1, -0.1),
+    ],
+)
+def test_project_trace_scope_fails_closed(monkeypatch, caplog, tmp_path, scope, confirm, start_offset, until_offset):
+    now = time.time()
+    monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_ID", scope)
+    monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_START_EPOCH", str(now + start_offset))
+    monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH", str(now + until_offset))
+    monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_SINGLE_API_PROCESS_CONFIRMED", confirm)
+    caplog.set_level(logging.INFO, logger="uvicorn.error")
+    db = Database(tmp_path / f"fail-closed-{abs(hash((scope, confirm, start_offset, until_offset)))}.db")
+    auth = AuthStore(db)
+    user_id = auth.register_user(
+        email=f"fail-closed-{abs(hash(scope))}@example.invalid",
+        password="synthetic-password-123",
+        name="Fail Closed",
+    )["user"]["user_id"]
+    queue = JobQueueService(db, worker_count=0)
+    ProjectStore(db).save_project(
+        user_id=user_id,
+        project_id="project_one",
+        name="Fail Closed Project",
+        project_input={},
+    )
+    created = queue.submit_job(
+        user_id=user_id,
+        project_id="project_one",
+        job_type="orchestrate",
+        payload={"prompt": "must-not-log"},
+    )
+    detail = queue.get_job_detail(user_id=user_id, job_id=created["job_id"])
+    assert "_job_transition_diagnostic_v1" not in dict(detail["payload"].get("meta") or {})
+    assert not [record for record in caplog.records if "JOB_LIFECYCLE " in record.getMessage()]
+    queue.shutdown()
 
 
 def test_sqlite_queue_preserves_sanitary_approval_into_real_planner():
@@ -394,14 +521,17 @@ def test_sqlite_queue_consumes_authored_sanitary_approval_once(monkeypatch, capl
             ]
             assert [event["reason_category"] for event in transition_events] == [
                 "approval_queued",
+                "queue_claimed",
                 "advanced",
             ]
             assert transition_events[0]["prior_stage"] == "sanitary"
             assert transition_events[0]["approved_stage"] == "sanitary"
             assert transition_events[0]["next_stage"] == "utility_network"
             assert transition_events[1]["next_stage"] == "utility_network"
+            assert transition_events[2]["next_stage"] == "utility_network"
             assert [event["checkpoint_cause"] for event in transition_events] == [
                 "atomic_approval_accepted",
+                "queue_claim_after_approval",
                 "advanced_to_next_stage",
             ]
             assert all(event["attempt"] == 1 for event in transition_events)
@@ -418,7 +548,7 @@ def test_sqlite_queue_consumes_authored_sanitary_approval_once(monkeypatch, capl
             queue.shutdown()
 
 
-def test_asgi_continue_advances_authored_sanitary_through_one_real_consumer(monkeypatch):
+def test_asgi_continue_advances_authored_sanitary_through_one_real_consumer(monkeypatch, caplog):
     """Exercise the production HTTP acknowledgement and one queue consumer together."""
     api = importlib.import_module("backend.api.app")
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -463,7 +593,14 @@ def test_asgi_continue_advances_authored_sanitary_through_one_real_consumer(monk
                 "construction_release_allowed": False,
             }
         ]
-        project_id = "synthetic-asgi-sanitary-resume"
+        project_id = "project_synthetic_asgi_sanitary_resume"
+        trace_start = time.time() - 1
+        trace_until = time.time() + 300
+        monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_ID", project_id)
+        monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_START_EPOCH", str(trace_start))
+        monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH", str(trace_until))
+        monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_SINGLE_API_PROCESS_CONFIRMED", "true")
+        caplog.set_level(logging.INFO, logger="uvicorn.error")
         store.save_project(
             user_id=user_id,
             project_id=project_id,
@@ -521,5 +658,42 @@ def test_asgi_continue_advances_authored_sanitary_through_one_real_consumer(monk
             assert next_held["payload"]["meta"]["orchestrator_meta"]["runtime_approved_stages"].count(
                 "sanitary"
             ) == 1
+            events = [
+                json.loads(record.getMessage().split("JOB_LIFECYCLE ", 1)[1])
+                for record in caplog.records
+                if "JOB_LIFECYCLE " in record.getMessage()
+            ]
+            assert events[0]["event"] == "job_admitted"
+            assert events[0]["checkpoint_cause"] == "first_project_job_admitted"
+            assert {event["correlation_id"] for event in events} == {job_id}
+            sanitary_continue = [
+                event
+                for event in events
+                if event["event"] == "continue_accepted" and event["approved_stage"] == "sanitary"
+            ]
+            assert len(sanitary_continue) == 1
+            sanitary_claim = [
+                event
+                for event in events
+                if event["event"] == "queue_claimed" and event["approved_stage"] == "sanitary"
+            ]
+            assert len(sanitary_claim) == 1
+            assert sanitary_claim[0]["checkpoint_cause"] == "queue_claim_after_approval"
+            assert any(
+                event["event"] == "checkpoint_returned"
+                and event["prior_stage"] == "sanitary"
+                and event["next_stage"] == "utility_network"
+                and event["checkpoint_cause"] == "advanced_to_next_stage"
+                for event in events
+            )
+            diagnostic_text = " ".join(record.getMessage() for record in caplog.records)
+            for forbidden in (
+                project_id,
+                "asgi-sanitary-queue@example.invalid",
+                "QA-SANITARY-CORRIDOR-1",
+                "Review sanitary corridor concept",
+                "synthetic-password-123",
+            ):
+                assert forbidden not in diagnostic_text
         finally:
             queue.shutdown()

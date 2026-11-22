@@ -31,12 +31,17 @@ _DIAGNOSTIC_STAGE_ORDER = (
 )
 _DIAGNOSTIC_STAGES = {*_DIAGNOSTIC_STAGE_ORDER, "none", "unknown"}
 _DIAGNOSTIC_REASONS = {
+    "job_created",
+    "queue_claimed",
     "approval_queued",
     "advanced",
     "cas_rejected",
     "repeated_checkpoint",
 }
 _DIAGNOSTIC_CHECKPOINT_CAUSES = {
+    "first_project_job_admitted",
+    "initial_queue_claim",
+    "queue_claim_after_approval",
     "atomic_approval_accepted",
     "atomic_approval_rejected",
     "advanced_to_next_stage",
@@ -47,6 +52,13 @@ _DIAGNOSTIC_CHECKPOINT_CAUSES = {
     "repeated_after_stale_checkpoint_restart",
     "repeated_after_type_conflict_restart",
     "unknown",
+}
+_DIAGNOSTIC_EVENTS = {
+    "job_admitted",
+    "queue_claimed",
+    "continue_accepted",
+    "continue_rejected",
+    "checkpoint_returned",
 }
 
 
@@ -62,7 +74,31 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
 
-def _diagnostic_job_ids() -> set[str]:
+def _diagnostic_window() -> Optional[tuple[float, float]]:
+    try:
+        start = float(os.getenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_START_EPOCH") or "")
+        until = float(os.getenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH") or "")
+    except (TypeError, ValueError):
+        return None
+    now = _now()
+    if start <= 0 or start > now or until <= now or until <= start or until - start > 900:
+        return None
+    return start, until
+
+
+def _diagnostic_project_scope() -> Optional[tuple[str, float, float]]:
+    window = _diagnostic_window()
+    if window is None:
+        return None
+    if str(os.getenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_SINGLE_API_PROCESS_CONFIRMED") or "").strip().lower() != "true":
+        return None
+    project_id = str(os.getenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_ID") or "").strip()
+    if not project_id.startswith("project_") or len(project_id) > 80 or "," in project_id:
+        return None
+    return project_id, window[0], window[1]
+
+
+def _diagnostic_job_ids(record: Optional[Dict[str, Any]] = None) -> set[str]:
     try:
         until = float(os.getenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH") or "")
     except (TypeError, ValueError):
@@ -71,9 +107,28 @@ def _diagnostic_job_ids() -> set[str]:
     if until <= now or until > now + 900:
         return set()
     correlation_id = str(os.getenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_IDS") or "").strip()
-    if not correlation_id.startswith("job_") or len(correlation_id) > 80 or "," in correlation_id:
-        return set()
-    return {correlation_id}
+    direct_ids = (
+        {correlation_id}
+        if correlation_id.startswith("job_") and len(correlation_id) <= 80 and "," not in correlation_id
+        else set()
+    )
+    if not record:
+        return direct_ids
+    scope = _diagnostic_project_scope()
+    marker = dict(dict(record.get("payload") or {}).get("meta") or {}).get(
+        "_job_transition_diagnostic_v1"
+    )
+    if (
+        scope is not None
+        and str(record.get("project_id") or "") == scope[0]
+        and isinstance(marker, dict)
+        and marker.get("admitted") is True
+        and float(marker.get("expires_at") or 0) == scope[2]
+    ):
+        job_id = str(record.get("job_id") or "").strip()
+        if job_id.startswith("job_") and len(job_id) <= 80:
+            direct_ids.add(job_id)
+    return direct_ids
 
 
 def _job_attempt(record: Dict[str, Any]) -> int:
@@ -104,6 +159,7 @@ def _log_job_transition(
     next_stage: str,
     reason_category: str,
     checkpoint_cause: str = "unknown",
+    event: str = "checkpoint_returned",
 ) -> None:
     """Emit a minimal, explicitly allowlisted lifecycle diagnostic.
 
@@ -111,7 +167,7 @@ def _log_job_transition(
     geometry, payload, result, error text, or arbitrary metadata is accepted.
     """
     correlation_id = str(record.get("job_id") or "").strip()
-    if correlation_id not in _diagnostic_job_ids():
+    if correlation_id not in _diagnostic_job_ids(record):
         return
     normalized = {
         "prior_stage": str(prior_stage or "none").strip(),
@@ -126,6 +182,9 @@ def _log_job_transition(
         return
     if normalized["checkpoint_cause"] not in _DIAGNOSTIC_CHECKPOINT_CAUSES:
         return
+    normalized_event = str(event or "").strip()
+    if normalized_event not in _DIAGNOSTIC_EVENTS:
+        return
     LOGGER.info(
         "JOB_LIFECYCLE %s",
         json.dumps(
@@ -134,7 +193,7 @@ def _log_job_transition(
                 "attempt": _job_attempt(record),
                 "checkpoint_cause": normalized["checkpoint_cause"],
                 "correlation_id": correlation_id,
-                "event": "approval_transition",
+                "event": normalized_event,
                 "next_stage": normalized["next_stage"],
                 "prior_stage": normalized["prior_stage"],
                 "reason_category": normalized["reason_category"],
@@ -214,6 +273,7 @@ class JobQueueService:
         self._queue: Queue[str] = Queue()
         self._handlers: Dict[str, JobRunner] = {}
         self._lock = threading.Lock()
+        self._diagnostic_admission_lock = threading.Lock()
         self._shutdown_event = threading.Event()
         raw_worker_count = str(os.getenv("PERFORMANCE_AI_JOB_WORKERS") or "").strip()
         if worker_count is None:
@@ -434,36 +494,72 @@ class JobQueueService:
         }
         job_progress = dict((record["result"] or {}).get("job_progress") or {})
 
-        connection = self.db.connect()
+        connection = None
         try:
-            connection.execute(
-                """
-                INSERT INTO jobs (
-                    job_id, user_id, job_type, status, created_at, updated_at, project_id,
-                    stage, stage_detail, progress, payload_json, result_json, error_text
+            # Production currently has one API process/replica. Serialize
+            # diagnostic admission inside that process and prove that no job
+            # for the scoped project has already been created in the window.
+            # A multi-process API must not enable this scope without a shared
+            # admission primitive.
+            with self._diagnostic_admission_lock:
+                connection = self.db.connect()
+                scope = _diagnostic_project_scope()
+                if scope is not None and job_type == "orchestrate" and project_id == scope[0]:
+                    existing_trace = connection.execute(
+                        """
+                        SELECT job_id FROM jobs
+                        WHERE project_id = ? AND job_type = 'orchestrate' AND created_at >= ?
+                        ORDER BY created_at ASC LIMIT 1
+                        """,
+                        (project_id, scope[1]),
+                    ).fetchone()
+                    if existing_trace is None:
+                        traced_payload = dict(record["payload"])
+                        traced_meta = dict(traced_payload.get("meta") or {})
+                        traced_meta["_job_transition_diagnostic_v1"] = {
+                            "admitted": True,
+                            "expires_at": scope[2],
+                        }
+                        traced_payload["meta"] = traced_meta
+                        record["payload"] = traced_payload
+                connection.execute(
+                    """
+                    INSERT INTO jobs (
+                        job_id, user_id, job_type, status, created_at, updated_at, project_id,
+                        stage, stage_detail, progress, payload_json, result_json, error_text
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record["job_id"],
+                        record["user_id"],
+                        record["job_type"],
+                        record["status"],
+                        record["created_at"],
+                        record["updated_at"],
+                        record["project_id"],
+                        str(job_progress.get("stage") or ""),
+                        str(job_progress.get("detail") or ""),
+                        _coerce_progress(job_progress.get("progress")),
+                        _json_dumps(record["payload"]),
+                        _json_dumps(record["result"]),
+                        record["error"],
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    record["job_id"],
-                    record["user_id"],
-                    record["job_type"],
-                    record["status"],
-                    record["created_at"],
-                    record["updated_at"],
-                    record["project_id"],
-                    str(job_progress.get("stage") or ""),
-                    str(job_progress.get("detail") or ""),
-                    _coerce_progress(job_progress.get("progress")),
-                    _json_dumps(record["payload"]),
-                    _json_dumps(record["result"]),
-                    record["error"],
-                ),
-            )
-            connection.commit()
+                connection.commit()
         finally:
-            connection.close()
+            if connection is not None:
+                connection.close()
 
+        _log_job_transition(
+            record=record,
+            prior_stage="none",
+            approved_stage="none",
+            next_stage="layout",
+            reason_category="job_created",
+            checkpoint_cause="first_project_job_admitted",
+            event="job_admitted",
+        )
         if self._worker_count > 0 and job_type in self._handlers:
             self._enqueue_after_api_acknowledgement(record["job_id"])
         return self._job_summary(record)
@@ -728,6 +824,7 @@ class JobQueueService:
                 next_stage="unknown",
                 reason_category="cas_rejected",
                 checkpoint_cause="atomic_approval_rejected",
+                event="continue_rejected",
             )
             current = self.get_job(user_id=user_id, job_id=job_id)
             if current is None:
@@ -742,6 +839,7 @@ class JobQueueService:
             next_stage=_next_diagnostic_stage(stage_name),
             reason_category="approval_queued",
             checkpoint_cause="atomic_approval_accepted",
+            event="continue_accepted",
         )
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
@@ -896,7 +994,36 @@ class JobQueueService:
                 return None
         finally:
             connection.close()
-        return self._get_job_for_worker(job_id)
+        claimed = self._get_job_for_worker(job_id)
+        if claimed is not None:
+            prior_checkpoint = dict(
+                dict((claimed.get("result") or {}).get("metadata") or {}).get("runtime_phase_checkpoint")
+                or {}
+            )
+            prior_stage = str(prior_checkpoint.get("stage_name") or "none").strip() or "none"
+            approved_stages = {
+                str(item).strip()
+                for item in list(
+                    dict(
+                        dict(dict(claimed.get("payload") or {}).get("meta") or {}).get("orchestrator_meta")
+                        or {}
+                    ).get("runtime_approved_stages", [])
+                )
+                if str(item).strip()
+            }
+            approved_stage = prior_stage if prior_stage in approved_stages else "none"
+            _log_job_transition(
+                record=claimed,
+                prior_stage=prior_stage,
+                approved_stage=approved_stage,
+                next_stage=_next_diagnostic_stage(prior_stage) if prior_stage != "none" else "layout",
+                reason_category="queue_claimed",
+                checkpoint_cause=(
+                    "queue_claim_after_approval" if approved_stage != "none" else "initial_queue_claim"
+                ),
+                event="queue_claimed",
+            )
+        return claimed
 
     def _find_next_pending_job_id(self) -> Optional[str]:
         if not self._handlers:
@@ -1501,6 +1628,7 @@ class JobQueueService:
                             next_stage=stage_name,
                         ),
                         checkpoint_cause=checkpoint_cause,
+                        event="checkpoint_returned",
                     )
                     checkpoint_message = str(checkpoint.get("message") or "").strip()
                     detail = (
