@@ -90,8 +90,6 @@ def _diagnostic_project_scope() -> Optional[tuple[str, float, float]]:
     window = _diagnostic_window()
     if window is None:
         return None
-    if str(os.getenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_SINGLE_API_PROCESS_CONFIRMED") or "").strip().lower() != "true":
-        return None
     project_id = str(os.getenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_ID") or "").strip()
     if not project_id.startswith("project_") or len(project_id) > 80 or "," in project_id:
         return None
@@ -496,15 +494,25 @@ class JobQueueService:
 
         connection = None
         try:
-            # Production currently has one API process/replica. Serialize
-            # diagnostic admission inside that process and prove that no job
-            # for the scoped project has already been created in the window.
-            # A multi-process API must not enable this scope without a shared
-            # admission primitive.
+            # Serialize locally, then take a durable database lock on the
+            # existing project row. The database lock is the cross-process
+            # admission primitive; the local lock only avoids needless
+            # contention inside one process.
             with self._diagnostic_admission_lock:
                 connection = self.db.connect()
                 scope = _diagnostic_project_scope()
                 if scope is not None and job_type == "orchestrate" and project_id == scope[0]:
+                    if self.db.storage_kind == "postgres":
+                        project_row = connection.execute(
+                            "SELECT project_id FROM projects WHERE project_id = ? FOR UPDATE",
+                            (project_id,),
+                        ).fetchone()
+                    else:
+                        connection.execute("BEGIN IMMEDIATE")
+                        project_row = connection.execute(
+                            "SELECT project_id FROM projects WHERE project_id = ?",
+                            (project_id,),
+                        ).fetchone()
                     existing_trace = connection.execute(
                         """
                         SELECT job_id FROM jobs
@@ -513,7 +521,7 @@ class JobQueueService:
                         """,
                         (project_id, scope[1]),
                     ).fetchone()
-                    if existing_trace is None:
+                    if project_row is not None and existing_trace is None:
                         traced_payload = dict(record["payload"])
                         traced_meta = dict(traced_payload.get("meta") or {})
                         traced_meta["_job_transition_diagnostic_v1"] = {

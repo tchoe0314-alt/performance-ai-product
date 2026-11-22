@@ -162,6 +162,7 @@ def test_project_trace_admits_only_first_concurrent_orchestration(monkeypatch, c
         name="Project Trace",
     )["user"]["user_id"]
     queue = JobQueueService(db, worker_count=0)
+    overlapping_queue = JobQueueService(db, worker_count=0)
     project_id = "project_exact_disposable_trace"
     ProjectStore(db).save_project(
         user_id=user_id,
@@ -174,13 +175,12 @@ def test_project_trace_admits_only_first_concurrent_orchestration(monkeypatch, c
     monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_ID", project_id)
     monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_START_EPOCH", str(trace_start))
     monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH", str(trace_until))
-    monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_SINGLE_API_PROCESS_CONFIRMED", "true")
     caplog.set_level(logging.INFO, logger="uvicorn.error")
     created = []
 
-    def submit(sequence):
+    def submit(sequence, service):
         created.append(
-            queue.submit_job(
+            service.submit_job(
                 user_id=user_id,
                 project_id=project_id,
                 job_type="orchestrate",
@@ -188,26 +188,42 @@ def test_project_trace_admits_only_first_concurrent_orchestration(monkeypatch, c
             )
         )
 
-    threads = [threading.Thread(target=submit, args=(sequence,)) for sequence in (1, 2)]
+    threads = [
+        threading.Thread(target=submit, args=(1, queue)),
+        threading.Thread(target=submit, args=(2, overlapping_queue)),
+    ]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join(timeout=3)
         assert not thread.is_alive()
     assert len(created) == 2
-    assert len({item["job_id"] for item in created}) == 1
-    first_job_id = created[0]["job_id"]
-    queue._update_job_state(first_job_id, status="completed", result={"final_plan": {}}, error=None)
-    second = queue.submit_job(
+    initial_job_ids = {item["job_id"] for item in created}
+    initial_details = [
+        queue.get_job_detail(user_id=user_id, job_id=job_id)
+        for job_id in initial_job_ids
+    ]
+    initially_marked = [
+        detail
+        for detail in initial_details
+        if dict(detail["payload"].get("meta") or {}).get("_job_transition_diagnostic_v1")
+    ]
+    assert len(initially_marked) == 1
+    for job_id in initial_job_ids:
+        queue._update_job_state(job_id, status="completed", result={"final_plan": {}}, error=None)
+    # A fresh service instance models an API restart during the active trace
+    # window. The durable first-job marker must keep the later job untraced.
+    restarted_queue = JobQueueService(db, worker_count=0)
+    second = restarted_queue.submit_job(
         user_id=user_id,
         project_id=project_id,
         job_type="orchestrate",
         payload={"prompt": "must-not-log-second-completed-run"},
     )
-    assert second["job_id"] != first_job_id
+    assert second["job_id"] not in initial_job_ids
     details = [
-        queue.get_job_detail(user_id=user_id, job_id=job_id)
-        for job_id in (first_job_id, second["job_id"])
+        restarted_queue.get_job_detail(user_id=user_id, job_id=job_id)
+        for job_id in (*initial_job_ids, second["job_id"])
     ]
     marked = [
         detail
@@ -234,26 +250,27 @@ def test_project_trace_admits_only_first_concurrent_orchestration(monkeypatch, c
     ):
         assert forbidden not in diagnostic_text
     queue.shutdown()
+    overlapping_queue.shutdown()
+    restarted_queue.shutdown()
 
 
 @pytest.mark.parametrize(
-    "scope,confirm,start_offset,until_offset",
+    "scope,start_offset,until_offset",
     [
-        ("project_one,project_two", "true", -1, 300),
-        ("project_one", "", -1, 300),
-        ("project_one", "true", -901, 300),
-        ("project_one", "true", 30, 300),
-        ("project_one", "true", -1, -0.1),
+        ("project_one,project_two", -1, 300),
+        ("", -1, 300),
+        ("project_one", -901, 300),
+        ("project_one", 30, 300),
+        ("project_one", -1, -0.1),
     ],
 )
-def test_project_trace_scope_fails_closed(monkeypatch, caplog, tmp_path, scope, confirm, start_offset, until_offset):
+def test_project_trace_scope_fails_closed(monkeypatch, caplog, tmp_path, scope, start_offset, until_offset):
     now = time.time()
     monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_ID", scope)
     monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_START_EPOCH", str(now + start_offset))
     monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH", str(now + until_offset))
-    monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_SINGLE_API_PROCESS_CONFIRMED", confirm)
     caplog.set_level(logging.INFO, logger="uvicorn.error")
-    db = Database(tmp_path / f"fail-closed-{abs(hash((scope, confirm, start_offset, until_offset)))}.db")
+    db = Database(tmp_path / f"fail-closed-{abs(hash((scope, start_offset, until_offset)))}.db")
     auth = AuthStore(db)
     user_id = auth.register_user(
         email=f"fail-closed-{abs(hash(scope))}@example.invalid",
@@ -599,7 +616,6 @@ def test_asgi_continue_advances_authored_sanitary_through_one_real_consumer(monk
         monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_ID", project_id)
         monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_START_EPOCH", str(trace_start))
         monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH", str(trace_until))
-        monkeypatch.setenv("CIVORA_PROJECT_TRANSITION_DIAGNOSTIC_SINGLE_API_PROCESS_CONFIRMED", "true")
         caplog.set_level(logging.INFO, logger="uvicorn.error")
         store.save_project(
             user_id=user_id,
