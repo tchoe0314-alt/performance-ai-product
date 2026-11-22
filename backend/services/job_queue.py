@@ -595,8 +595,20 @@ class JobQueueService:
             f"Approval received. Queued the next engineering phase after {stage_name or 'the saved'} checkpoint."
         )
         result.update(_job_progress_payload("Queued Next Phase", detail, 64))
-        self._update_job_payload(job_id, payload)
-        self._update_job_state(job_id, status="queued", result=result, error=None)
+        transitioned = self._approve_checkpoint_and_queue(
+            user_id=user_id,
+            job_id=job_id,
+            expected_updated_at=record.get("updated_at"),
+            payload=payload,
+            result=result,
+        )
+        if not transitioned:
+            current = self.get_job(user_id=user_id, job_id=job_id)
+            if current is None:
+                return None
+            if current["status"] != "awaiting_approval":
+                raise ValueError("This review checkpoint is no longer waiting for approval.")
+            raise ValueError("The visible review checkpoint is stale. Refresh before continuing.")
         updated = self.get_job(user_id=user_id, job_id=job_id)
         summary = None if updated is None else self._job_summary(updated)
         if self._worker_count > 0 and str(record.get("job_type") or "") in self._handlers:
@@ -875,6 +887,47 @@ class JobQueueService:
                 ),
             )
             connection.commit()
+        finally:
+            connection.close()
+
+    def _approve_checkpoint_and_queue(
+        self,
+        *,
+        user_id: str,
+        job_id: str,
+        expected_updated_at: Any,
+        payload: Dict[str, Any],
+        result: Dict[str, Any],
+    ) -> bool:
+        """Consume one unchanged approval checkpoint and queue it atomically."""
+        job_progress = dict((result or {}).get("job_progress") or {})
+        connection = self.db.connect()
+        try:
+            cursor = connection.execute(
+                """
+                UPDATE jobs
+                SET payload_json = ?, status = ?, updated_at = ?, stage = ?,
+                    stage_detail = ?, progress = ?, result_json = ?, error_text = ?
+                WHERE job_id = ? AND user_id = ? AND status = ? AND updated_at = ?
+                """,
+                (
+                    _json_dumps(payload or {}),
+                    "queued",
+                    _now(),
+                    str(job_progress.get("stage") or ""),
+                    str(job_progress.get("detail") or ""),
+                    _coerce_progress(job_progress.get("progress")),
+                    _json_dumps(result or {}),
+                    None,
+                    job_id,
+                    user_id,
+                    "awaiting_approval",
+                    expected_updated_at,
+                ),
+            )
+            transitioned = cursor.rowcount == 1
+            connection.commit()
+            return transitioned
         finally:
             connection.close()
 
