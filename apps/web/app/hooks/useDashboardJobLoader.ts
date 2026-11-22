@@ -11,6 +11,7 @@ import {
 import { summarizePlanResponse, toReadableLabel } from "../utils/formatting";
 import type { EngineeringSystemKey, SystemStatus } from "../utils/workflowConstants";
 import type { ProjectStatusSummary } from "../utils/workspaceShell";
+import { isJobSnapshotOlderThan, upsertJobSnapshot } from "../utils/jobSummaryMerge";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type AppendChatMessage = (role: ChatMessage["role"], content: string, kind?: ChatMessage["kind"]) => void;
@@ -61,6 +62,7 @@ type UseDashboardJobLoaderOptions = {
   fileName: string;
   handleArtifactDownload: (downloadPath: string, filename: string) => Promise<void>;
   lastJobPartialResultRefreshRef: MutableRefObject<Record<string, number>>;
+  latestJobUpdatedAtRef: MutableRefObject<Record<string, number>>;
   lastJobPhaseSignatureRef: MutableRefObject<Record<string, string>>;
   lastJobStatusRef: MutableRefObject<Record<string, string>>;
   lastProjectResultRefreshRef: MutableRefObject<Record<string, number>>;
@@ -102,6 +104,7 @@ export function useDashboardJobLoader({
   fileName,
   handleArtifactDownload,
   lastJobPartialResultRefreshRef,
+  latestJobUpdatedAtRef,
   lastJobPhaseSignatureRef,
   lastJobStatusRef,
   lastProjectResultRefreshRef,
@@ -133,6 +136,13 @@ export function useDashboardJobLoader({
         return;
       }
       const job = data.job;
+      if (isJobSnapshotOlderThan(job, latestJobUpdatedAtRef.current[job.job_id])) {
+        return;
+      }
+      const jobUpdatedAt = Number(job.updated_at);
+      if (Number.isFinite(jobUpdatedAt) && jobUpdatedAt > 0) {
+        latestJobUpdatedAtRef.current[job.job_id] = jobUpdatedAt;
+      }
       setJobsPanelStatusMessage("");
       const jobProjectId = String(job.project_id || "").trim();
       const activeJobProjectSignature = `${job.job_id}:${jobProjectId}`;
@@ -216,16 +226,7 @@ export function useDashboardJobLoader({
             });
         }
       }
-      setJobs((current) => {
-        const next = [...current];
-        const existingIndex = next.findIndex((item) => item.job_id === job.job_id);
-        if (existingIndex >= 0) {
-          next[existingIndex] = { ...next[existingIndex], ...job };
-        } else {
-          next.unshift(job);
-        }
-        return next;
-      });
+      setJobs((current) => upsertJobSnapshot(current, job));
       if (options?.selectionOnly) {
         setJobsPanelStatusMessage("");
         return;
@@ -503,6 +504,7 @@ export function useDashboardJobLoader({
     fileName,
     handleArtifactDownload,
     lastJobPartialResultRefreshRef,
+    latestJobUpdatedAtRef,
     lastJobPhaseSignatureRef,
     lastJobStatusRef,
     lastProjectResultRefreshRef,

@@ -5,6 +5,7 @@ import { postJson } from "../../lib/api";
 import type { ChatMessage, JobSummary, PlanToolMode } from "../types";
 import type { WorkspaceToast } from "../components/WorkspaceToasts";
 import { toReadableLabel } from "../utils/formatting";
+import { upsertJobSnapshot } from "../utils/jobSummaryMerge";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type AppendChatMessage = (role: ChatMessage["role"], content: string, kind?: ChatMessage["kind"]) => void;
@@ -17,6 +18,7 @@ type UseDashboardJobActionsOptions = {
   activeJobId: string;
   appendChatMessage: AppendChatMessage;
   directRunAbortRef: MutableRefObject<AbortController | null>;
+  latestJobUpdatedAtRef: MutableRefObject<Record<string, number>>;
   previewNextPendingPhase?: { label?: string | null } | null;
   previewRunningPhase?: { label?: string | null } | null;
   queuePreviewRefresh: (reason: string) => void;
@@ -41,6 +43,7 @@ export function useDashboardJobActions({
   activeJobId,
   appendChatMessage,
   directRunAbortRef,
+  latestJobUpdatedAtRef,
   previewNextPendingPhase,
   previewRunningPhase,
   queuePreviewRefresh,
@@ -69,17 +72,12 @@ export function useDashboardJobActions({
   }, [setJobToasts]);
 
   const upsertJobSummary = useCallback((job: JobSummary) => {
-    setJobs((current) => {
-      const next = [...current];
-      const index = next.findIndex((item) => item.job_id === job.job_id);
-      if (index >= 0) {
-        next[index] = { ...next[index], ...job };
-      } else {
-        next.unshift(job);
-      }
-      return next;
-    });
-  }, [setJobs]);
+    const updatedAt = Number(job.updated_at);
+    if (Number.isFinite(updatedAt) && updatedAt > (latestJobUpdatedAtRef.current[job.job_id] ?? 0)) {
+      latestJobUpdatedAtRef.current[job.job_id] = updatedAt;
+    }
+    setJobs((current) => upsertJobSnapshot(current, job));
+  }, [latestJobUpdatedAtRef, setJobs]);
 
   const handleCancelJobById = useCallback(async (jobId: string) => {
     if (!token || !jobId) return;

@@ -734,6 +734,7 @@ function PerformanceAIDashboardView({
     jobs,
     setJobs,
     refreshJobs,
+    latestJobUpdatedAtRef,
   } = useJobsState({ activeJobId });
 
   const {
@@ -4045,6 +4046,7 @@ function PerformanceAIDashboardView({
     activeJobId,
     appendChatMessage,
     directRunAbortRef,
+    latestJobUpdatedAtRef,
     previewNextPendingPhase,
     previewRunningPhase,
     queuePreviewRefresh,
@@ -4075,6 +4077,7 @@ function PerformanceAIDashboardView({
     fileName,
     handleArtifactDownload,
     lastJobPartialResultRefreshRef,
+    latestJobUpdatedAtRef,
     lastJobPhaseSignatureRef,
     lastJobStatusRef,
     lastProjectResultRefreshRef,

@@ -10,6 +10,7 @@ type RefreshJobsOptions = { suppressError?: boolean; force?: boolean };
 export default function useJobsState({ activeJobId }: { activeJobId: string }) {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
+  const latestJobUpdatedAtRef = useRef<Record<string, number>>({});
 
   const hasTrackedJobs = useMemo(
     () =>
@@ -39,7 +40,14 @@ export default function useJobsState({ activeJobId }: { activeJobId: string }) {
         const data = await getJson<{ jobs: JobSummary[] }>("/api/jobs", {
           token: authToken,
         });
-        setJobs(current => mergeJobSummaries(current, Array.isArray(data.jobs) ? data.jobs : []));
+        const incoming = Array.isArray(data.jobs) ? data.jobs : [];
+        incoming.forEach((job) => {
+          const updatedAt = Number(job.updated_at);
+          if (Number.isFinite(updatedAt) && updatedAt > (latestJobUpdatedAtRef.current[job.job_id] ?? 0)) {
+            latestJobUpdatedAtRef.current[job.job_id] = updatedAt;
+          }
+        });
+        setJobs(current => mergeJobSummaries(current, incoming));
       } catch (error) {
         if (!suppressError) {
           throw error;
@@ -55,6 +63,7 @@ export default function useJobsState({ activeJobId }: { activeJobId: string }) {
   return {
     jobs,
     setJobs,
+    latestJobUpdatedAtRef,
     hasTrackedJobs,
     refreshJobs,
   };
