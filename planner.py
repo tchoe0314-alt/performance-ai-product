@@ -9929,7 +9929,13 @@ def _run_model_first_workflow(
             for stage_name, status in stage_statuses.items()
             if safe_str(stage_name)
             and lower_text(status)
-            and lower_text(status) != "complete"
+            and lower_text(status) not in resumable_statuses
+            # A partial stage can be the truthful result of a successful
+            # review checkpoint (for example Storm with no inlet records).
+            # Once that exact checkpoint is explicitly approved, it is no
+            # longer an invalidation frontier for downstream stages. Input or
+            # revision conflicts clear these approvals before planner entry.
+            and safe_str(stage_name) not in approved_stage_names
         }
         invalidated_downstream_stages: set[str] = set()
         pending_invalidations = set(checkpoint_frontier_stages)

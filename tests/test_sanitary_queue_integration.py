@@ -381,6 +381,68 @@ def test_sqlite_queue_preserves_sanitary_approval_into_real_planner():
             queue.shutdown()
 
 
+def test_unapproved_partial_storm_remains_a_resume_frontier():
+    manual_fields = _supported_minimal_payload()
+    payload = {
+        "project_id": "synthetic-unapproved-partial-storm",
+        "full_design_mode": False,
+        "input_mode": "user",
+        "strict_mode": False,
+        "manual_fields": manual_fields,
+        "allow_ai_fill_for_blanks": False,
+        "meta": {
+            "orchestrator_meta": {
+                "runtime_phase_batch_limit": 1,
+                "runtime_approved_stages": ["layout", "grading", "drainage"],
+                "runtime_resume": {
+                    "project_id": "synthetic-unapproved-partial-storm",
+                    "stage_statuses": {
+                        "layout": "complete",
+                        "grading": "complete",
+                        "drainage": "complete",
+                        "storm_pipes": "partial",
+                    },
+                    "phase_checkpoints": {},
+                    "final_plan": {
+                        "project_name": "Unapproved partial Storm checkpoint",
+                        "actions": [],
+                        "meta": {
+                            "calculation_engine_revision": ENGINE_REVISION,
+                            "stage_completeness": {
+                                "statuses": {
+                                    "layout": "complete",
+                                    "grading": "complete",
+                                    "drainage": "complete",
+                                    "storm_pipes": "partial",
+                                }
+                            },
+                        },
+                    },
+                    "source": "synthetic_exact_checkpoint",
+                },
+            }
+        },
+    }
+
+    result = run_orchestration(
+        payload,
+        load_orchestrator=_load_orchestrator,
+        assess_design_readiness=lambda *_args, **_kwargs: None,
+    )
+
+    storm_rows = [
+        row
+        for row in result["final_plan"]["meta"]["stage_results"]
+        if row.get("stage_name") == "storm_pipes"
+    ]
+    assert storm_rows
+    assert any(
+        not bool(dict(row.get("meta") or {}).get("resumed_from_checkpoint"))
+        and not bool(dict(row.get("meta") or {}).get("rerun_skipped"))
+        for row in storm_rows
+    ), storm_rows
+
+
 def test_sqlite_queue_consumes_authored_sanitary_approval_once(monkeypatch, caplog):
     """Match the normal UI sanitary path through durable queue continuation."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -503,6 +565,27 @@ def test_sqlite_queue_consumes_authored_sanitary_approval_once(monkeypatch, capl
             )
             assert "sanitary" not in before_approval
 
+            # Match the live Haggard chain: Storm was explicitly reviewed and
+            # approved after a truthful no-inlet partial result. The Sanitary
+            # hold itself is otherwise an authentic result from the real
+            # planner/queue path above.
+            partial_result = dict(sanitary["result"])
+            partial_plan = dict(partial_result["final_plan"])
+            partial_meta = dict(partial_plan["meta"])
+            partial_completeness = dict(partial_meta["stage_completeness"])
+            partial_statuses = dict(partial_completeness["statuses"])
+            partial_statuses["storm_pipes"] = "partial"
+            partial_completeness["statuses"] = partial_statuses
+            partial_meta["stage_completeness"] = partial_completeness
+            partial_plan["meta"] = partial_meta
+            partial_result["final_plan"] = partial_plan
+            queue._update_job_state(
+                created["job_id"],
+                status="awaiting_approval",
+                result=partial_result,
+                error=None,
+            )
+
             monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_IDS", created["job_id"])
             monkeypatch.setenv("CIVORA_JOB_TRANSITION_DIAGNOSTIC_UNTIL_EPOCH", str(time.time() + 300))
             caplog.set_level(logging.INFO, logger="uvicorn.error")
@@ -523,6 +606,12 @@ def test_sqlite_queue_consumes_authored_sanitary_approval_once(monkeypatch, capl
                 ),
                 "next_stage": next_stage,
             }
+            assert (
+                next_held["result"]["final_plan"]["meta"]["stage_completeness"]["statuses"][
+                    "storm_pipes"
+                ]
+                == "partial"
+            )
             sanitary_rows = [
                 row
                 for row in next_held["result"]["final_plan"]["meta"]["stage_results"]
