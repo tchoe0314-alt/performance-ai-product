@@ -2745,6 +2745,7 @@ function PerformanceAIDashboardView({
     loadProjectResultInBackgroundRef,
     projectId,
     projectLoadRequestRef,
+    refreshJobs,
     resetWorkspaceStateRef,
     resolvedProjectIdRef,
     restoredActiveProjectRef,

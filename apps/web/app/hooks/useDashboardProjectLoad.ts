@@ -11,6 +11,10 @@ import {validateLedger} from "../utils/editTransactions";
 
 type StateSetter<T> = (value: T | ((prev: T) => T)) => void;
 type UpdateProjectStatus = (updates: Omit<ProjectStatusSummary, "updatedAt">) => void;
+type RefreshJobs = (
+  token: string,
+  options?: { suppressError?: boolean; force?: boolean },
+) => Promise<void> | void;
 
 type UseDashboardProjectLoadOptions = {
   cancelPendingRun: () => void;
@@ -28,6 +32,7 @@ type UseDashboardProjectLoadOptions = {
   loadProjectResultInBackgroundRef: MutableRefObject<((project: ProjectRecord) => void) | null>;
   projectId: string;
   projectLoadRequestRef: MutableRefObject<number>;
+  refreshJobs: RefreshJobs;
   resetWorkspaceStateRef: MutableRefObject<(() => void) | null>;
   resolvedProjectIdRef: MutableRefObject<string>;
   restoredActiveProjectRef: MutableRefObject<boolean>;
@@ -61,6 +66,7 @@ export function useDashboardProjectLoad({
   loadProjectResultInBackgroundRef,
   projectId,
   projectLoadRequestRef,
+  refreshJobs,
   resetWorkspaceStateRef,
   resolvedProjectIdRef,
   restoredActiveProjectRef,
@@ -143,6 +149,13 @@ export function useDashboardProjectLoad({
         window.sessionStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, project.project_id);
       }
       loadProjectResultInBackgroundRef.current?.(project);
+      // The cold auth refresh can finish before a newly queued durable job is
+      // visible (or be suppressed during a transient reconnect). Reconcile at
+      // the project-open boundary as well. The jobs endpoint remains
+      // account-scoped, and the workflow selector below only activates a
+      // non-terminal job whose project_id matches this exact project.
+      await refreshJobs(token, { suppressError: true, force: true });
+      if (projectLoadRequestRef.current !== requestId) return;
       if (activeJobId && (!projectId || currentProjectActiveJob?.project_id === id || activeJob?.project_id === id)) {
         void loadJobRef.current?.(activeJobId);
       }
@@ -208,6 +221,7 @@ export function useDashboardProjectLoad({
     loadProjectResultInBackgroundRef,
     projectId,
     projectLoadRequestRef,
+    refreshJobs,
     resetWorkspaceStateRef,
     resolvedProjectIdRef,
     restoredActiveProjectRef,
