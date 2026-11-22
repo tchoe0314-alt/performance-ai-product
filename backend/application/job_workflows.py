@@ -1380,6 +1380,7 @@ def build_orchestrate_job_runner(
         persisted_runtime_checkpoint_stages: set[str] = set()
         final_tail_resume = False
         resume_type_conflict = False
+        resume_input_conflict = False
         invalidated_active_approvals: list[str] = []
         invalidated_effective_type = ""
 
@@ -1463,6 +1464,7 @@ def build_orchestrate_job_runner(
         resume_final_plan: Dict[str, Any] = {}
         stage_statuses: Dict[str, Any] = {}
         phase_checkpoints: Dict[str, Any] = {}
+        existing_result: Dict[str, Any] = {}
         if (
             job_final_plan
             and (job_stage_statuses or job_phase_checkpoints)
@@ -1473,6 +1475,8 @@ def build_orchestrate_job_runner(
                 resume_final_plan = job_final_plan
                 stage_statuses = job_stage_statuses
                 phase_checkpoints = job_phase_checkpoints
+            elif not resume_type_conflict:
+                resume_input_conflict = True
         if existing is not None:
                 existing_result = _load_project_latest_result(
                     project_store=project_store,
@@ -1503,17 +1507,25 @@ def build_orchestrate_job_runner(
                         resume_final_plan = existing_final_plan
                         stage_statuses = existing_stage_statuses
                         phase_checkpoints = existing_phase_checkpoints
-        if resume_type_conflict and job_id and not resume_final_plan:
+                    elif not _resume_project_type_conflict(existing_result, run_payload):
+                        resume_input_conflict = True
+        if (resume_type_conflict or resume_input_conflict) and job_id and not resume_final_plan:
             update_job_progress(
                 job_id,
                 stage="Layout Refresh",
-                detail="The saved checkpoint used a different project type. Starting a fresh Layout for review and approval.",
+                detail=(
+                    "The saved checkpoint used different project inputs. Starting a fresh Layout for review and approval."
+                    if resume_input_conflict
+                    else "The saved checkpoint used a different project type. Starting a fresh Layout for review and approval."
+                ),
                 progress=44,
             )
-        if resume_type_conflict and not resume_final_plan:
+        if (resume_type_conflict or resume_input_conflict) and not resume_final_plan:
             # Approvals are bound to the rejected checkpoint geometry. Do not
-            # let an approval for the old type advance the newly generated
-            # Layout before the user has reviewed it.
+            # let an approval for old inputs advance the newly generated
+            # Layout before the user has reviewed it. In particular, discard
+            # an embedded runtime_resume when server-owned persisted evidence
+            # proves it stale.
             run_meta = dict(run_payload.get("meta") or {})
             invalidated_active_approvals = [
                 str(item).strip()
@@ -1521,6 +1533,8 @@ def build_orchestrate_job_runner(
                 if str(item).strip()
             ]
             orchestrator_meta = dict(run_meta.get("orchestrator_meta") or {})
+            run_meta.pop("runtime_resume", None)
+            orchestrator_meta.pop("runtime_resume", None)
             invalidated_active_approvals.extend(
                 str(item).strip()
                 for item in list(orchestrator_meta.pop("runtime_approved_stages", None) or [])
@@ -1611,9 +1625,9 @@ def build_orchestrate_job_runner(
             user_id=user_id,
         )
         enriched_metadata = dict(enriched.get("metadata") or {})
-        if resume_type_conflict and not resume_final_plan:
+        if (resume_type_conflict or resume_input_conflict) and not resume_final_plan:
             enriched_metadata["runtime_approval_reset"] = {
-                "reason": "project_type_changed",
+                "reason": "project_type_changed" if resume_type_conflict else "project_inputs_changed",
                 "cleared_stages": invalidated_active_approvals,
                 "prior_effective_type": invalidated_effective_type,
                 "current_explicit_type": _normalized_selectable_project_type(
