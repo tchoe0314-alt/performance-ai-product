@@ -1,10 +1,12 @@
 import json
+import importlib
 import logging
 import tempfile
 import time
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from backend.application.design_workflows import run_orchestration
 from backend.application.job_workflows import build_orchestrate_job_runner
@@ -17,6 +19,7 @@ from backend.services.job_queue import (
     _transition_reason_category,
 )
 from backend.services.project_store import ProjectStore
+from backend.services.rate_limit_store import RateLimitStore
 from tests.test_engineering_generation_workflows import _supported_minimal_payload
 
 
@@ -411,5 +414,112 @@ def test_sqlite_queue_consumes_authored_sanitary_approval_once(monkeypatch, capl
                 "synthetic-password-123",
             ):
                 assert forbidden not in diagnostic_text
+        finally:
+            queue.shutdown()
+
+
+def test_asgi_continue_advances_authored_sanitary_through_one_real_consumer(monkeypatch):
+    """Exercise the production HTTP acknowledgement and one queue consumer together."""
+    api = importlib.import_module("backend.api.app")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db = Database(Path(tmpdir) / "jobs.db")
+        auth = AuthStore(db)
+        registration = auth.register_user(
+            email="asgi-sanitary-queue@example.invalid",
+            password="synthetic-password-123",
+            name="ASGI Sanitary Queue Regression",
+        )
+        user_id = registration["user"]["user_id"]
+        headers = {"Authorization": f"Bearer {registration['token']}"}
+        store = ProjectStore(db)
+        manual_fields = _supported_minimal_payload()
+        manual_fields["lot"] = {"x": 0, "y": 0, "w": 600, "h": 400}
+        manual_fields["site_plan"] = {
+            "building_width": 30,
+            "building_depth": 20,
+            "parking_count": 4,
+        }
+        manual_fields["ponds"] = [{"name": "BASIN-1", "x": 520, "y": 24, "w": 48, "d": 36}]
+        manual_fields["survey_control"]["points"][1].update({"x": 600, "y": 400})
+        manual_fields["disciplines"] = [
+            "grading",
+            "drainage",
+            "storm",
+            "sanitary",
+            "water",
+            "utility",
+        ]
+        manual_fields["utility_network"] = [
+            {
+                "id": "QA-SANITARY-CORRIDOR-1",
+                "canonical_id": "QA-SANITARY-CORRIDOR-1",
+                "placement_id": "QA-SANITARY-CORRIDOR-1",
+                "label": "Review sanitary corridor concept",
+                "utility_type": "sanitary",
+                "points": [[24.0, 42.0], [120.0, 42.0], [216.0, 18.0]],
+                "source": "manual_drawn",
+                "source_confidence": "user_drawn_review_required",
+                "review_required": True,
+                "construction_release_allowed": False,
+            }
+        ]
+        project_id = "synthetic-asgi-sanitary-resume"
+        store.save_project(
+            user_id=user_id,
+            project_id=project_id,
+            name="Synthetic ASGI Sanitary Resume",
+            project_input=manual_fields,
+        )
+        queue = JobQueueService(
+            db,
+            worker_count=1,
+            heartbeat_interval_sec=0.2,
+            resume_poll_interval_sec=0.2,
+            in_process_start_delay_sec=0.05,
+        )
+        runner = build_orchestrate_job_runner(
+            project_store=store,
+            update_job_progress=queue.update_job_progress,
+            run_orchestration=lambda value, progress_callback=None: run_orchestration(
+                value,
+                load_orchestrator=_load_orchestrator,
+                assess_design_readiness=lambda *_args, **_kwargs: None,
+                progress_callback=progress_callback,
+            ),
+            build_run_summary=_summary,
+            merge_project_metadata=lambda metadata, **_kwargs: metadata,
+            final_plan_from_result=lambda result, **_kwargs: dict(result.get("final_plan") or {}),
+        )
+        queue.register_handler("orchestrate", runner)
+        monkeypatch.setattr(api, "AUTH_STORE", auth)
+        monkeypatch.setattr(api, "PROJECT_STORE", store)
+        monkeypatch.setattr(api, "JOB_QUEUE", queue)
+        monkeypatch.setattr(api, "RATE_LIMIT_STORE", RateLimitStore(db))
+        client = TestClient(api.app)
+        try:
+            created_response = client.post(
+                "/api/jobs/orchestrate",
+                headers=headers,
+                json={"project_id": project_id, "request": manual_fields},
+            )
+            assert created_response.status_code == 200, created_response.text
+            job_id = created_response.json()["job"]["job_id"]
+
+            for expected in ("layout", "grading", "drainage", "storm_pipes", "sanitary"):
+                held = _wait_for_review(queue, user_id=user_id, job_id=job_id)
+                assert held["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"] == expected
+                continued = client.post(
+                    f"/api/jobs/{job_id}/continue",
+                    headers=headers,
+                    json={"expected_stage": expected},
+                )
+                assert continued.status_code == 200, continued.text
+                assert continued.json()["job"]["status"] == "queued"
+
+            next_held = _wait_for_review(queue, user_id=user_id, job_id=job_id)
+            assert next_held["result"]["metadata"]["runtime_phase_checkpoint"]["stage_name"] == "utility_network"
+            assert next_held["payload"]["meta"]["orchestrator_meta"]["runtime_approved_stages"].count(
+                "sanitary"
+            ) == 1
         finally:
             queue.shutdown()
